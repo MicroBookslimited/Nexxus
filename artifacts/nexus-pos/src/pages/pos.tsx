@@ -8,19 +8,17 @@ import {
   useDeleteHeldOrder,
   useGetProductCustomization,
 } from "@workspace/api-client-react";
-import type { GetOrderResponse, GetProductCustomizationResponse } from "@workspace/api-zod";
-import { Card, CardContent } from "@/components/ui/card";
+import type { GetOrderResponse } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
   Search, CreditCard, Banknote, Trash2, ShoppingCart, ScanBarcode,
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
-  Download, Printer, CheckCircle2, Settings2, ChevronDown,
+  Download, Printer, CheckCircle2, Settings2,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -62,6 +60,23 @@ function formatCurrency(val: number) {
 
 function choiceLabel(choices: ChoiceItem[]) {
   return choices.map((c) => c.optionName).join(", ");
+}
+
+const CARD_PALETTES = [
+  { bg: "from-blue-600/20 to-blue-800/10", accent: "border-blue-500/40", dot: "bg-blue-500" },
+  { bg: "from-violet-600/20 to-violet-800/10", accent: "border-violet-500/40", dot: "bg-violet-500" },
+  { bg: "from-emerald-600/20 to-emerald-800/10", accent: "border-emerald-500/40", dot: "bg-emerald-500" },
+  { bg: "from-amber-600/20 to-amber-800/10", accent: "border-amber-500/40", dot: "bg-amber-500" },
+  { bg: "from-rose-600/20 to-rose-800/10", accent: "border-rose-500/40", dot: "bg-rose-500" },
+  { bg: "from-cyan-600/20 to-cyan-800/10", accent: "border-cyan-500/40", dot: "bg-cyan-500" },
+  { bg: "from-pink-600/20 to-pink-800/10", accent: "border-pink-500/40", dot: "bg-pink-500" },
+  { bg: "from-indigo-600/20 to-indigo-800/10", accent: "border-indigo-500/40", dot: "bg-indigo-500" },
+  { bg: "from-teal-600/20 to-teal-800/10", accent: "border-teal-500/40", dot: "bg-teal-500" },
+  { bg: "from-orange-600/20 to-orange-800/10", accent: "border-orange-500/40", dot: "bg-orange-500" },
+];
+
+function getProductPalette(id: number) {
+  return CARD_PALETTES[id % CARD_PALETTES.length];
 }
 
 /* ─── Customization Dialog ─── */
@@ -531,30 +546,34 @@ export function POS() {
                 ? Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="h-28 rounded-xl bg-secondary/30 animate-pulse" />
                   ))
-                : filteredProducts?.map((product) => (
-                    <motion.div key={product.id} whileTap={{ scale: 0.96 }}>
-                      <Card
-                        className={`cursor-pointer border hover:border-primary/60 transition-colors ${!product.inStock ? "opacity-50 pointer-events-none" : ""}`}
-                        onClick={() => handleProductTap(product)}
-                      >
-                        <CardContent className="p-3 flex flex-col gap-1 h-28 justify-between">
-                          <div>
-                            <p className="text-sm font-semibold leading-snug line-clamp-2">{product.name}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">{product.category}</p>
+                : filteredProducts?.map((product) => {
+                    const palette = getProductPalette(product.id);
+                    return (
+                      <motion.div key={product.id} whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.02 }}>
+                        <div
+                          onClick={() => !product.inStock ? undefined : handleProductTap(product)}
+                          className={`relative cursor-pointer rounded-xl border bg-gradient-to-br ${palette.bg} ${palette.accent} h-28 p-3 flex flex-col justify-between transition-all duration-150 ${!product.inStock ? "opacity-40 cursor-not-allowed" : "hover:shadow-lg hover:shadow-black/20 active:scale-95"}`}
+                        >
+                          <div className={`absolute top-2.5 right-2.5 h-2 w-2 rounded-full ${palette.dot} opacity-70`} />
+                          <div className="pr-4">
+                            <p className="text-sm font-bold leading-snug line-clamp-2 text-white">{product.name}</p>
+                            <p className="text-[11px] text-white/50 mt-0.5">{product.category}</p>
                           </div>
                           <div className="flex items-end justify-between">
-                            <p className="text-base font-bold text-primary font-mono">{formatCurrency(product.price)}</p>
+                            <p className="text-base font-bold font-mono text-white">{formatCurrency(product.price)}</p>
                             <div className="flex items-center gap-1">
                               {(product.hasVariants || product.hasModifiers) && (
-                                <Settings2 className="h-3.5 w-3.5 text-amber-400" />
+                                <Settings2 className="h-3.5 w-3.5 text-white/60" />
                               )}
-                              {!product.inStock && <Badge variant="destructive" className="text-[10px]">Out</Badge>}
+                              {!product.inStock && (
+                                <span className="text-[10px] font-semibold bg-red-500/30 text-red-300 px-1.5 py-0.5 rounded">Out</span>
+                              )}
                             </div>
                           </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
             </div>
           </ScrollArea>
         </div>
