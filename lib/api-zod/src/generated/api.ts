@@ -378,3 +378,44 @@ export const GetSalesByCategoryResponseItem = zod.object({
 export const GetSalesByCategoryResponse = zod.array(
   GetSalesByCategoryResponseItem,
 );
+
+/**
+ * @summary Get daily revenue for the last N days
+ */
+export const GetDailySalesQueryParams = zod.object({
+  days: zod.coerce.number().optional(),
+});
+
+export const GetDailySalesResponseItem = zod.object({
+  date: zod.string(),
+  revenue: zod.number(),
+  orders: zod.number(),
+});
+export const GetDailySalesResponse = zod.array(GetDailySalesResponseItem);
+
+/**
+ * @summary Get top selling products by revenue
+ */
+export const GetTopProductsQueryParams = zod.object({
+  limit: zod.coerce.number().optional(),
+});
+
+export const GetTopProductsResponseItem = zod.object({
+  productId: zod.number(),
+  productName: zod.string(),
+  totalRevenue: zod.number(),
+  unitsSold: zod.number(),
+});
+export const GetTopProductsResponse = zod.array(GetTopProductsResponseItem);
+
+/**
+ * @summary Get revenue breakdown by payment method
+ */
+export const GetPaymentMethodBreakdownResponseItem = zod.object({
+  method: zod.string(),
+  revenue: zod.number(),
+  count: zod.number(),
+});
+export const GetPaymentMethodBreakdownResponse = zod.array(
+  GetPaymentMethodBreakdownResponseItem,
+);

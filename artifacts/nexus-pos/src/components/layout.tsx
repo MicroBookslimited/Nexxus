@@ -1,12 +1,13 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, ShoppingCart, ListOrdered, Store } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package } from "lucide-react";
 import { ReactNode } from "react";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/pos", label: "Point of Sale", icon: ShoppingCart },
   { href: "/orders", label: "Orders", icon: ListOrdered },
+  { href: "/products", label: "Products", icon: Package },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {

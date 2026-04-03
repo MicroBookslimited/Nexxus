@@ -21,14 +21,19 @@ import type {
   CreateHeldOrderBody,
   CreateOrderBody,
   CreateProductBody,
+  DailySales,
   DashboardSummary,
+  GetDailySalesParams,
   GetRecentOrdersParams,
+  GetTopProductsParams,
   HealthStatus,
   HeldOrder,
   ListOrdersParams,
   ListProductsParams,
   Order,
+  PaymentMethodSales,
   Product,
+  TopProduct,
   UpdateOrderStatusBody,
 } from "./api.schemas";
 
@@ -1474,6 +1479,270 @@ export function useGetSalesByCategory<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetSalesByCategoryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get daily revenue for the last N days
+ */
+export const getGetDailySalesUrl = (params?: GetDailySalesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/daily-sales?${stringifiedParams}`
+    : `/api/dashboard/daily-sales`;
+};
+
+export const getDailySales = async (
+  params?: GetDailySalesParams,
+  options?: RequestInit,
+): Promise<DailySales[]> => {
+  return customFetch<DailySales[]>(getGetDailySalesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDailySalesQueryKey = (params?: GetDailySalesParams) => {
+  return [`/api/dashboard/daily-sales`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetDailySalesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDailySales>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDailySalesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDailySales>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDailySalesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDailySales>>> = ({
+    signal,
+  }) => getDailySales(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDailySales>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDailySalesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDailySales>>
+>;
+export type GetDailySalesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get daily revenue for the last N days
+ */
+
+export function useGetDailySales<
+  TData = Awaited<ReturnType<typeof getDailySales>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDailySalesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDailySales>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDailySalesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get top selling products by revenue
+ */
+export const getGetTopProductsUrl = (params?: GetTopProductsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/top-products?${stringifiedParams}`
+    : `/api/dashboard/top-products`;
+};
+
+export const getTopProducts = async (
+  params?: GetTopProductsParams,
+  options?: RequestInit,
+): Promise<TopProduct[]> => {
+  return customFetch<TopProduct[]>(getGetTopProductsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTopProductsQueryKey = (params?: GetTopProductsParams) => {
+  return [`/api/dashboard/top-products`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetTopProductsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTopProducts>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetTopProductsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTopProducts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTopProductsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTopProducts>>> = ({
+    signal,
+  }) => getTopProducts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTopProducts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTopProductsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTopProducts>>
+>;
+export type GetTopProductsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get top selling products by revenue
+ */
+
+export function useGetTopProducts<
+  TData = Awaited<ReturnType<typeof getTopProducts>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetTopProductsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTopProducts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTopProductsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get revenue breakdown by payment method
+ */
+export const getGetPaymentMethodBreakdownUrl = () => {
+  return `/api/dashboard/payment-methods`;
+};
+
+export const getPaymentMethodBreakdown = async (
+  options?: RequestInit,
+): Promise<PaymentMethodSales[]> => {
+  return customFetch<PaymentMethodSales[]>(getGetPaymentMethodBreakdownUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPaymentMethodBreakdownQueryKey = () => {
+  return [`/api/dashboard/payment-methods`] as const;
+};
+
+export const getGetPaymentMethodBreakdownQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPaymentMethodBreakdown>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPaymentMethodBreakdown>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPaymentMethodBreakdownQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPaymentMethodBreakdown>>
+  > = ({ signal }) => getPaymentMethodBreakdown({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPaymentMethodBreakdown>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPaymentMethodBreakdownQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPaymentMethodBreakdown>>
+>;
+export type GetPaymentMethodBreakdownQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get revenue breakdown by payment method
+ */
+
+export function useGetPaymentMethodBreakdown<
+  TData = Awaited<ReturnType<typeof getPaymentMethodBreakdown>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPaymentMethodBreakdown>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPaymentMethodBreakdownQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

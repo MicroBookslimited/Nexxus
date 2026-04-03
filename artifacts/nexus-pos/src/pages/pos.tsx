@@ -7,16 +7,18 @@ import {
   useCreateHeldOrder,
   useDeleteHeldOrder
 } from "@workspace/api-client-react";
+import type { GetOrderResponse } from "@workspace/api-zod";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Search, CreditCard, Banknote, Trash2, ShoppingCart, ScanBarcode, Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll, Download } from "lucide-react";
+import { Search, CreditCard, Banknote, Trash2, ShoppingCart, ScanBarcode, Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll, Download, Printer, CheckCircle2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { format } from "date-fns";
 
 type CartItem = {
@@ -52,6 +54,7 @@ export function POS() {
 
   const [splitCardAmount, setSplitCardAmount] = useState<number>(0);
   const [splitCashAmount, setSplitCashAmount] = useState<number>(0);
+  const [receiptOrder, setReceiptOrder] = useState<GetOrderResponse | null>(null);
 
   const categories = useMemo(() => {
     if (!products) return [];
@@ -172,11 +175,8 @@ export function POS() {
         notes: notes || undefined,
       }
     }, {
-      onSuccess: () => {
-        toast({
-          title: "Payment Successful",
-          description: `Charged ${formatCurrency(total)}`,
-        });
+      onSuccess: (data) => {
+        setReceiptOrder(data);
         resetCart();
       },
       onError: () => {
@@ -246,6 +246,7 @@ export function POS() {
   };
 
   return (
+    <>
     <div className="flex h-full w-full overflow-hidden">
       {/* Products Area */}
       <div className="flex-1 flex flex-col min-w-0 border-r border-border">
@@ -542,5 +543,102 @@ export function POS() {
         </div>
       </div>
     </div>
+
+    {/* Receipt Modal */}
+    <Dialog open={!!receiptOrder} onOpenChange={(o) => !o && setReceiptOrder(null)}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-green-400">
+            <CheckCircle2 className="h-5 w-5" />
+            Payment Successful
+          </DialogTitle>
+        </DialogHeader>
+
+        {receiptOrder && (
+          <div className="space-y-4 text-sm" id="receipt-print-area">
+            <div className="text-center py-2 border-b border-border">
+              <p className="font-bold text-base">Nexus POS</p>
+              <p className="text-xs text-muted-foreground">Your Business, Connected.</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {format(new Date(receiptOrder.createdAt), "MMM d, yyyy h:mm a")}
+              </p>
+              <p className="font-mono text-xs mt-1">{receiptOrder.orderNumber}</p>
+            </div>
+
+            <div className="space-y-1">
+              {receiptOrder.items.map((item) => (
+                <div key={item.id} className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    {item.productName} × {item.quantity}
+                  </span>
+                  <span className="font-mono">{formatCurrency(item.lineTotal)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-dashed border-border pt-2 space-y-1">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Subtotal</span>
+                <span className="font-mono">{formatCurrency(receiptOrder.subtotal)}</span>
+              </div>
+              {receiptOrder.discountValue && receiptOrder.discountValue > 0 && (
+                <div className="flex justify-between text-amber-400">
+                  <span>Discount</span>
+                  <span className="font-mono">-{formatCurrency(receiptOrder.discountValue)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-muted-foreground">
+                <span>Tax</span>
+                <span className="font-mono">{formatCurrency(receiptOrder.tax)}</span>
+              </div>
+              <div className="flex justify-between font-bold text-base pt-1 border-t border-border">
+                <span>Total</span>
+                <span className="font-mono text-primary">{formatCurrency(receiptOrder.total)}</span>
+              </div>
+            </div>
+
+            <div className="border-t border-border pt-2 space-y-1">
+              {receiptOrder.paymentMethod === "split" ? (
+                <>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Card</span>
+                    <span className="font-mono">{formatCurrency(receiptOrder.splitCardAmount ?? 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Cash</span>
+                    <span className="font-mono">{formatCurrency(receiptOrder.splitCashAmount ?? 0)}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Payment</span>
+                  <span className="capitalize">{receiptOrder.paymentMethod ?? "—"}</span>
+                </div>
+              )}
+              {receiptOrder.notes && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  <span className="font-medium">Note:</span> {receiptOrder.notes}
+                </div>
+              )}
+            </div>
+
+            <p className="text-center text-xs text-muted-foreground pt-2 border-t border-border">
+              Powered by MicroBooks
+            </p>
+          </div>
+        )}
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => window.print()} className="gap-2 flex-1">
+            <Printer className="h-4 w-4" />
+            Print
+          </Button>
+          <Button onClick={() => setReceiptOrder(null)} className="flex-1">
+            New Sale
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

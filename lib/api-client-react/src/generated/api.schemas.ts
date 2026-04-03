@@ -179,6 +179,25 @@ export interface CategorySales {
   orderCount: number;
 }
 
+export interface DailySales {
+  date: string;
+  revenue: number;
+  orders: number;
+}
+
+export interface TopProduct {
+  productId: number;
+  productName: string;
+  totalRevenue: number;
+  unitsSold: number;
+}
+
+export interface PaymentMethodSales {
+  method: string;
+  revenue: number;
+  count: number;
+}
+
 export type ListProductsParams = {
   category?: string;
   search?: string;
@@ -201,5 +220,13 @@ export const ListOrdersStatus = {
 } as const;
 
 export type GetRecentOrdersParams = {
+  limit?: number;
+};
+
+export type GetDailySalesParams = {
+  days?: number;
+};
+
+export type GetTopProductsParams = {
   limit?: number;
 };

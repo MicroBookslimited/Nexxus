@@ -8,6 +8,7 @@ import { Login } from "@/pages/login";
 import { Dashboard } from "@/pages/dashboard";
 import { POS } from "@/pages/pos";
 import { Orders } from "@/pages/orders";
+import { Products } from "@/pages/products";
 import { Layout } from "@/components/layout";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ function Router() {
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
       <Route path="/pos"><ProtectedRoute component={POS} /></Route>
       <Route path="/orders"><ProtectedRoute component={Orders} /></Route>
+      <Route path="/products"><ProtectedRoute component={Products} /></Route>
       <Route component={NotFound} />
     </Switch>
   );

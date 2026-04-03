@@ -326,6 +326,61 @@ paths:
                 items:
                   $ref: "#/components/schemas/CategorySales"
 
+  /dashboard/daily-sales:
+    get:
+      operationId: getDailySales
+      tags: [dashboard]
+      summary: Get daily revenue for the last N days
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Daily sales data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailySales"
+
+  /dashboard/top-products:
+    get:
+      operationId: getTopProducts
+      tags: [dashboard]
+      summary: Get top selling products by revenue
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Top products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TopProduct"
+
+  /dashboard/payment-methods:
+    get:
+      operationId: getPaymentMethodBreakdown
+      tags: [dashboard]
+      summary: Get revenue breakdown by payment method
+      responses:
+        "200":
+          description: Payment method breakdown
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PaymentMethodSales"
+
 components:
   schemas:
     HealthStatus:
@@ -654,3 +709,51 @@ components:
         - category
         - totalSales
         - orderCount
+
+    DailySales:
+      type: object
+      properties:
+        date:
+          type: string
+        revenue:
+          type: number
+          format: float
+        orders:
+          type: integer
+      required:
+        - date
+        - revenue
+        - orders
+
+    TopProduct:
+      type: object
+      properties:
+        productId:
+          type: integer
+        productName:
+          type: string
+        totalRevenue:
+          type: number
+          format: float
+        unitsSold:
+          type: integer
+      required:
+        - productId
+        - productName
+        - totalRevenue
+        - unitsSold
+
+    PaymentMethodSales:
+      type: object
+      properties:
+        method:
+          type: string
+        revenue:
+          type: number
+          format: float
+        count:
+          type: integer
+      required:
+        - method
+        - revenue
+        - count
