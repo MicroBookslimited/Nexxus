@@ -1,0 +1,271 @@
+Good. That’s exactly the right ambition—but let’s be clear:
+
+👉 You’re not “copying features”
+👉 You’re building a hybrid POS ecosystem optimized for Caribbean businesses
+
+If you try to copy everything blindly, you’ll build a bloated mess.
+If you combine strategically, you’ll dominate.
+
+⸻
+
+🔥 Nexus POS — Feature Blueprint (Square + Loyverse + Lavu Hybrid)
+
+I’m going to structure this like a real product spec, not a wishlist.
+
+⸻
+
+🧠 1. CORE POS ENGINE (Your Money Maker)
+
+Inspired by: Square + Loyverse POS
+
+Must-Have Features:
+	•	Tap-to-add product grid (with images)
+	•	Barcode scanning
+	•	Quick search
+	•	Variants (size, color, add-ons)
+	•	Discounts (item + cart level)
+	•	Notes (kitchen / custom requests)
+	•	Split payments
+	•	Hold / recall orders
+	•	Refunds & voids
+
+👉 Critical upgrade (your edge):
+	•	Ultra-fast checkout (sub 2 seconds)
+	•	Offline transaction queue
+
+⸻
+
+📊 2. INVENTORY SYSTEM (Loyverse Strength)
+
+Inspired by: Loyverse POS
+
+Features:
+	•	Real-time stock tracking
+	•	Low stock alerts
+	•	Purchase orders (supplier management)
+	•	Stock transfers (THIS is huge for your branches)
+	•	Bulk import (Excel / CSV)
+	•	Multi-location inventory
+
+👉 Your advantage:
+	•	Integrate with OrdazShipt logistics
+→ automatic inventory sync across branches
+
+⸻
+
+💳 3. PAYMENTS (Square-Level Simplicity)
+
+Inspired by: Square
+
+Features:
+	•	Cash
+	•	Card (FAC integration later)
+	•	Split payments
+	•	Partial payments
+	•	Tips (restaurants)
+	•	Refund workflows
+
+👉 Future:
+	•	Tap-to-pay on tablet (NFC)
+	•	Payment links (WhatsApp invoices)
+
+⸻
+
+👥 4. CUSTOMER SYSTEM (CRM Layer)
+
+Features:
+	•	Customer profiles
+	•	Purchase history
+	•	Loyalty points
+	•	Store credit
+	•	Discounts per customer
+
+👉 Add this (your edge):
+	•	WhatsApp integration (Jamaica specific)
+	•	SMS receipts
+
+⸻
+
+🍽️ 5. RESTAURANT MODE (Lavu Strength)
+
+Inspired by: Lavu POS
+
+Features:
+	•	Table layout view
+	•	Open / close tables
+	•	Split bills
+	•	Kitchen display system (KDS)
+	•	Order routing (bar vs kitchen)
+	•	Course timing
+
+👉 Must include:
+	•	Kitchen printer support
+	•	Void reason tracking
+
+⸻
+
+📈 6. REPORTING & ANALYTICS
+
+Inspired by all three
+
+Features:
+	•	Daily sales reports
+	•	Product performance
+	•	Staff performance
+	•	Profit tracking
+	•	Expense logging
+
+👉 Upgrade:
+	•	“Owner dashboard” (simple, visual, mobile-ready)
+
+⸻
+
+🏢 7. MULTI-BUSINESS / MULTI-BRANCH (YOUR SUPERPOWER)
+
+Features:
+	•	Multiple locations under one account
+	•	Central dashboard
+	•	Branch-level reporting
+	•	Stock transfers between branches
+
+👉 This is where you beat everyone locally.
+
+⸻
+
+🌐 8. OFFLINE-FIRST ARCHITECTURE (NON-NEGOTIABLE)
+
+Features:
+	•	Local database (SQLite)
+	•	Sync when online
+	•	No sales interruption
+
+👉 Jamaica reality:
+If your POS can’t work offline → it’s dead on arrival.
+
+⸻
+
+🛠️ 9. ADMIN DASHBOARD (WEB)
+
+Features:
+	•	Manage products
+	•	Manage staff
+	•	View reports
+	•	Configure taxes (GCT)
+	•	Pricing rules
+
+⸻
+
+🔐 10. USER ROLES & SECURITY
+
+Features:
+	•	Admin
+	•	Manager
+	•	Cashier
+
+Permissions:
+	•	Refund access
+	•	Discount limits
+	•	Report visibility
+
+⸻
+
+🚀 11. NEXT-LEVEL FEATURES (THIS IS WHERE YOU WIN)
+
+Don’t just match competitors—beat them.
+
+🔥 Differentiators:
+	•	WhatsApp receipt + payment link
+	•	Integration with QuickBooks Online
+	•	OrdazShipt shipping integration
+	•	Built-in HR/payroll sync (MicroBooks HRMS)
+	•	Cloud backup + restore
+
+⸻
+
+🤖 REPLIT AGENT MASTER PROMPT (FULL SYSTEM)
+
+This is your “build the product” prompt:
+
+Build a full-featured tablet-based POS system called "Nexus POS – Powered by MicroBooks".
+
+Goal:
+Combine the best features of Square, Loyverse, and Lavu into one system optimized for retail and restaurants.
+
+Core Modules:
+1. POS Interface
+2. Inventory Management
+3. Customer Management (CRM)
+4. Payments System
+5. Restaurant Mode (tables, kitchen routing)
+6. Reporting Dashboard
+7. Multi-branch management
+8. Offline-first sync engine
+
+Technical Requirements:
+- React Native (tablet-first UI)
+- Node.js backend (multi-tenant)
+- PostgreSQL database
+- Local SQLite for offline storage
+
+Key Features:
+- Fast checkout (<2 seconds)
+- Offline mode with auto-sync
+- Product variants and modifiers
+- Split payments
+- Loyalty system
+- Kitchen display system
+- Multi-location inventory
+
+Branding:
+- Name: Nexus POS
+- Tagline: Your Business, Connected.
+- Footer: Powered by MicroBooks
+
+Design:
+- Premium SaaS look (dark blue + white)
+- Clean, modern UI like Stripe
+
+Output:
+- Modular architecture
+- Scalable codebase
+- API + frontend structure
+
+
+⸻
+
+🎯 Final Strategy (Straight Talk)
+
+If you execute this properly:
+
+👉 You won’t just compete with:
+	•	Square
+	•	Loyverse
+	•	Lavu
+
+👉 You’ll become:
+
+The default POS system for Jamaican SMEs
+
+⸻
+
+⚠️ Reality Check
+
+Don’t try to build everything at once.
+
+Phase 1 (MVP):
+	•	POS + Inventory + Payments + Offline
+
+Phase 2:
+	•	CRM + Reports + Multi-branch
+
+Phase 3:
+	•	Restaurant + Integrations
+
+⸻
+
+If you want next, I can:
+	•	Design your exact tablet UI screens (cashier flow)
+	•	Create your pricing strategy that crushes competitors
+	•	Or build your launch campaign (this can go viral locally fast)
+
+Just say where you want to go next.
