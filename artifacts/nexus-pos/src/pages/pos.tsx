@@ -1,4 +1,4 @@
-import { useState, useMemo, KeyboardEvent } from "react";
+import { useState, useMemo, useRef, useEffect, KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   useListProducts,
@@ -306,6 +306,12 @@ export function POS() {
   const [searchTerm, setSearchTerm] = useState("");
   const [barcodeTerm, setBarcodeTerm] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  const cartBottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (cart.length > 0) {
+      cartBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [cart.length]);
   const [paymentMethod, setPaymentMethod] = useState<"card" | "cash" | "split">("card");
 
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
@@ -684,6 +690,7 @@ export function POS() {
                 ))
               )}
             </AnimatePresence>
+            <div ref={cartBottomRef} />
           </ScrollArea>
 
           {/* Totals & payment */}
