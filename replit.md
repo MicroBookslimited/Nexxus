@@ -36,10 +36,13 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - **Pages**:
   - `/login` — Branded login screen
   - `/dashboard` — Business overview with Recharts charts (revenue, top products, payment methods, category breakdown)
-  - `/pos` — Main POS with product grid, cart, discounts, notes, hold/recall, split payments, barcode scanning, receipt modal
+  - `/pos` — Main POS with product grid, cart, discounts, notes, hold/recall, split payments, barcode scanning, receipt modal, customer selector, loyalty points redemption, table selector (dine-in)
+  - `/tables` — Floor plan / Restaurant Table Management (add/edit/delete tables, color-coded, status badges: available/occupied/reserved)
+  - `/kitchen` — Kitchen Display System (KDS) with 3-column kanban (Pending → Preparing → Ready), auto-refreshes every 15s
   - `/orders` — Order history with status filtering, void/refund support
-  - `/products` — Full product CRUD (add/edit/delete, search, category filter)
+  - `/products` — Full product CRUD (add/edit/delete, search, category filter, variants, modifiers)
   - `/customers` — Customer management with loyalty points, order history, search
+  - `/staff` — Staff Management (add/edit/deactivate, roles: admin/manager/cashier/kitchen, PIN-based auth)
   - `/reports` — Business reports with date range presets, hourly chart, KPIs, CSV export
 
 ### API Server (`artifacts/api-server`)
@@ -64,19 +67,33 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `GET /api/reports/summary` — Period summary (revenue, orders, AOV, top product, etc.)
   - `GET /api/reports/hourly` — Hourly sales breakdown for a given date
   - `GET /api/reports/export` — CSV export of orders for a date range
+  - `GET/POST /api/tables` — Dining table CRUD
+  - `PATCH/DELETE /api/tables/:id` — Update/delete table
+  - `GET /api/kitchen` — Pending kitchen orders (pending/preparing/ready)
+  - `PATCH /api/kitchen/:id/status` — Advance kitchen order status
+  - `GET/POST /api/staff` — Staff accounts CRUD
+  - `PATCH/DELETE /api/staff/:id` — Update/deactivate staff
+  - `POST /api/staff/verify-pin` — PIN authentication
 
 ## Database Schema
 
-- `products` — Product catalog with name, price, category, stock, barcode
-- `orders` — Order records with status, totals, payment method, discount, notes, customerId
-- `order_items` — Line items linking orders to products
+- `products` — Product catalog with name, price, category, stock, barcode, hasVariants, hasModifiers
+- `product_variants` — Variant groups/options with price adjustments
+- `product_modifiers` — Modifier groups/options with price adjustments
+- `orders` — Order records with status, totals, payment method, discount, notes, customerId, tableId, staffId, orderType, loyaltyPointsRedeemed, loyaltyDiscount
+- `order_items` — Line items with variantChoices, modifierChoices (JSON)
 - `held_orders` — Temporarily held carts (serialized JSON)
 - `customers` — Customer profiles with name, email, phone, loyaltyPoints, totalSpent, orderCount
+- `dining_tables` — Restaurant tables with name, capacity, status, color, position, currentOrderId
+- `staff` — Staff members with name, PIN (hashed), role, isActive
 
 ## Business Rules
 
-- Tax rate: 10% (server-side)
-- Loyalty points: 1 point per $10 spent, awarded on order completion
+- Tax rate: 10% (server-side and frontend)
+- Loyalty earn: 1 point per $10 spent, awarded on order completion
+- Loyalty redeem: 100 points = $1.00 discount; deducted from customer balance on checkout
 - Low-stock threshold: configurable via `?threshold=N` (default 10)
 - Stock auto-deducted from products on order completion
 - Customer stats (totalSpent, orderCount, loyaltyPoints) updated on every order
+- Staff roles: admin, manager, cashier, kitchen — PIN-based (4-6 digits)
+- Order types: counter (default), dine-in, takeout

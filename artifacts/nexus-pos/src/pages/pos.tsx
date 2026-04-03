@@ -7,6 +7,8 @@ import {
   useCreateHeldOrder,
   useDeleteHeldOrder,
   useGetProductCustomization,
+  useListCustomers,
+  useListTables,
 } from "@workspace/api-client-react";
 import type { GetOrderResponse } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
@@ -316,6 +318,14 @@ export function POS() {
   const [splitCashAmount, setSplitCashAmount] = useState<number>(0);
   const [receiptOrder, setReceiptOrder] = useState<GetOrderResponse | null>(null);
 
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+  const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState<number>(0);
+  const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
+  const [customerSearch, setCustomerSearch] = useState("");
+
+  const { data: customers } = useListCustomers();
+  const { data: tables } = useListTables();
+
   // Customization dialog state
   const [customizingProductId, setCustomizingProductId] = useState<number | null>(null);
 
@@ -404,8 +414,13 @@ export function POS() {
   else if (discountType === "fixed") cartDiscountValue = discountAmount || 0;
   cartDiscountValue = Math.min(cartDiscountValue, subtotal);
 
-  const discountedSubtotal = subtotal - cartDiscountValue;
-  const tax = discountedSubtotal * 0.08;
+  const selectedCustomer = customers?.find((c) => c.id === selectedCustomerId) ?? null;
+  const maxRedeemable = selectedCustomer ? Math.min(selectedCustomer.loyaltyPoints, Math.floor((subtotal - cartDiscountValue) * 100)) : 0;
+  const clampedPoints = Math.min(loyaltyPointsToRedeem, maxRedeemable);
+  const loyaltyDiscountValue = clampedPoints > 0 ? clampedPoints / 100 : 0;
+
+  const discountedSubtotal = Math.max(0, subtotal - cartDiscountValue - loyaltyDiscountValue);
+  const tax = discountedSubtotal * 0.1;
   const total = discountedSubtotal + tax;
 
   const handleSplitClick = () => {
@@ -424,6 +439,10 @@ export function POS() {
     setPaymentMethod("card");
     setSplitCardAmount(0);
     setSplitCashAmount(0);
+    setSelectedCustomerId(null);
+    setLoyaltyPointsToRedeem(0);
+    setSelectedTableId(null);
+    setCustomerSearch("");
   };
 
   const handleCharge = () => {
@@ -449,6 +468,10 @@ export function POS() {
           discountType: discountType ?? undefined,
           discountAmount: discountAmount > 0 ? discountAmount : undefined,
           notes: notes || undefined,
+          customerId: selectedCustomerId ?? undefined,
+          loyaltyPointsToRedeem: clampedPoints > 0 ? clampedPoints : undefined,
+          tableId: selectedTableId ?? undefined,
+          orderType: selectedTableId ? "dine-in" : "counter",
         },
       },
       {
@@ -685,6 +708,87 @@ export function POS() {
               )}
             </div>
 
+            {/* Customer Selector */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Customer</p>
+              {selectedCustomer ? (
+                <div className="flex items-center justify-between bg-primary/10 rounded-md px-3 py-2 border border-primary/20">
+                  <div>
+                    <p className="text-sm font-medium text-primary">{selectedCustomer.name}</p>
+                    <p className="text-xs text-muted-foreground">{selectedCustomer.loyaltyPoints} pts available</p>
+                  </div>
+                  <Button size="sm" variant="ghost" className="h-6 text-xs text-muted-foreground" onClick={() => { setSelectedCustomerId(null); setLoyaltyPointsToRedeem(0); }}>
+                    ✕
+                  </Button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Input
+                    className="text-xs h-8"
+                    placeholder="Search customer…"
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
+                  />
+                  {customerSearch && customers && (
+                    <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-auto">
+                      {customers.filter((c) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.email?.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 5).map((c) => (
+                        <button
+                          key={c.id}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex justify-between items-center"
+                          onClick={() => { setSelectedCustomerId(c.id); setCustomerSearch(""); setLoyaltyPointsToRedeem(0); }}
+                        >
+                          <span>{c.name}</span>
+                          <span className="text-xs text-muted-foreground">{c.loyaltyPoints} pts</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Loyalty Redemption */}
+            {selectedCustomer && selectedCustomer.loyaltyPoints > 0 && (
+              <div className="bg-amber-500/5 border border-amber-500/20 rounded-md px-3 py-2 space-y-1.5">
+                <p className="text-xs font-medium text-amber-400">Redeem Loyalty Points</p>
+                <p className="text-xs text-muted-foreground">100 pts = $1.00 · Max: {maxRedeemable} pts</p>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    type="number"
+                    min={0}
+                    step={100}
+                    max={maxRedeemable}
+                    value={loyaltyPointsToRedeem || ""}
+                    onChange={(e) => setLoyaltyPointsToRedeem(Math.min(Number(e.target.value), maxRedeemable))}
+                    className="h-7 text-xs font-mono flex-1"
+                    placeholder="0 pts"
+                  />
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setLoyaltyPointsToRedeem(maxRedeemable)}>
+                    Max
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Table Selector */}
+            {tables && tables.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Table (optional)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {tables.filter((t) => t.isActive && t.status !== "occupied").map((t) => (
+                    <button
+                      key={t.id}
+                      className={`px-2.5 py-1 rounded text-xs font-medium border transition-all ${selectedTableId === t.id ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}
+                      style={selectedTableId === t.id ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}15` } : {}}
+                      onClick={() => setSelectedTableId(selectedTableId === t.id ? null : t.id)}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Notes */}
             <Textarea
               className="text-xs resize-none h-14"
@@ -706,8 +810,14 @@ export function POS() {
                   <span className="font-mono">-{formatCurrency(cartDiscountValue)}</span>
                 </div>
               )}
+              {loyaltyDiscountValue > 0 && (
+                <div className="flex justify-between text-amber-400">
+                  <span>Loyalty ({clampedPoints} pts)</span>
+                  <span className="font-mono">-{formatCurrency(loyaltyDiscountValue)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-muted-foreground">
-                <span>Tax (8%)</span>
+                <span>Tax (10%)</span>
                 <span className="font-mono">{formatCurrency(tax)}</span>
               </div>
               <div className="flex justify-between font-bold text-base pt-1 border-t border-border">

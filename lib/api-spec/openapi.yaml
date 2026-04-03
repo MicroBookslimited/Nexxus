@@ -24,6 +24,12 @@ tags:
     description: Customer management
   - name: reports
     description: Business reports
+  - name: tables
+    description: Restaurant table management
+  - name: kitchen
+    description: Kitchen display system
+  - name: staff
+    description: Staff accounts and roles
 paths:
   /healthz:
     get:
@@ -697,6 +703,229 @@ paths:
               schema:
                 type: string
 
+  /tables:
+    get:
+      operationId: listTables
+      tags: [tables]
+      summary: List all dining tables
+      responses:
+        "200":
+          description: List of tables
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DiningTable"
+    post:
+      operationId: createTable
+      tags: [tables]
+      summary: Create a dining table
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTableBody"
+      responses:
+        "201":
+          description: Created table
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiningTable"
+
+  /tables/{id}:
+    patch:
+      operationId: updateTable
+      tags: [tables]
+      summary: Update a dining table
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTableBody"
+      responses:
+        "200":
+          description: Updated table
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiningTable"
+    delete:
+      operationId: deleteTable
+      tags: [tables]
+      summary: Delete a dining table
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /kitchen:
+    get:
+      operationId: listKitchenOrders
+      tags: [kitchen]
+      summary: List pending kitchen orders
+      responses:
+        "200":
+          description: Kitchen order queue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KitchenOrder"
+
+  /kitchen/{id}/status:
+    patch:
+      operationId: updateKitchenOrderStatus
+      tags: [kitchen]
+      summary: Update kitchen order status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, preparing, ready, completed]
+              required:
+                - status
+      responses:
+        "200":
+          description: Updated status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  status:
+                    type: string
+                required:
+                  - id
+                  - status
+
+  /staff:
+    get:
+      operationId: listStaff
+      tags: [staff]
+      summary: List all staff members
+      responses:
+        "200":
+          description: Staff list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StaffMember"
+    post:
+      operationId: createStaff
+      tags: [staff]
+      summary: Create a staff member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStaffBody"
+      responses:
+        "201":
+          description: Created staff member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffMember"
+
+  /staff/verify-pin:
+    post:
+      operationId: verifyStaffPin
+      tags: [staff]
+      summary: Verify staff PIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                staffId:
+                  type: integer
+                pin:
+                  type: string
+              required:
+                - staffId
+                - pin
+      responses:
+        "200":
+          description: Staff member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffMember"
+        "401":
+          description: Invalid PIN
+
+  /staff/{id}:
+    patch:
+      operationId: updateStaff
+      tags: [staff]
+      summary: Update a staff member
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStaffBody"
+      responses:
+        "200":
+          description: Updated staff member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffMember"
+    delete:
+      operationId: deleteStaff
+      tags: [staff]
+      summary: Deactivate a staff member
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deactivated
+
 components:
   schemas:
     HealthStatus:
@@ -937,6 +1166,15 @@ components:
         notes:
           type: string
         customerId:
+          type: integer
+        tableId:
+          type: integer
+        staffId:
+          type: integer
+        orderType:
+          type: string
+          enum: [counter, dine-in, takeout]
+        loyaltyPointsToRedeem:
           type: integer
       required:
         - items
@@ -1455,3 +1693,184 @@ components:
           type: integer
       required:
         - id
+
+    DiningTable:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        capacity:
+          type: integer
+        status:
+          type: string
+          enum: [available, occupied, reserved]
+        currentOrderId:
+          type: integer
+        color:
+          type: string
+        positionX:
+          type: integer
+        positionY:
+          type: integer
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - capacity
+        - status
+        - color
+        - positionX
+        - positionY
+        - isActive
+        - createdAt
+
+    CreateTableBody:
+      type: object
+      properties:
+        name:
+          type: string
+        capacity:
+          type: integer
+        color:
+          type: string
+        positionX:
+          type: integer
+        positionY:
+          type: integer
+      required:
+        - name
+
+    UpdateTableBody:
+      type: object
+      properties:
+        name:
+          type: string
+        capacity:
+          type: integer
+        color:
+          type: string
+        status:
+          type: string
+          enum: [available, occupied, reserved]
+        currentOrderId:
+          type: integer
+          nullable: true
+        positionX:
+          type: integer
+        positionY:
+          type: integer
+        isActive:
+          type: boolean
+
+    KitchenOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        orderNumber:
+          type: string
+        status:
+          type: string
+        tableId:
+          type: integer
+        orderType:
+          type: string
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              productName:
+                type: string
+              quantity:
+                type: integer
+              variantChoices:
+                type: array
+                items: {}
+              modifierChoices:
+                type: array
+                items: {}
+            required:
+              - id
+              - productName
+              - quantity
+      required:
+        - id
+        - orderNumber
+        - status
+        - orderType
+        - createdAt
+        - items
+
+    StaffMember:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, manager, cashier, kitchen]
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - role
+        - isActive
+        - createdAt
+
+    CreateStaffBody:
+      type: object
+      properties:
+        name:
+          type: string
+        pin:
+          type: string
+        role:
+          type: string
+          enum: [admin, manager, cashier, kitchen]
+      required:
+        - name
+        - pin
+
+    UpdateStaffBody:
+      type: object
+      properties:
+        name:
+          type: string
+        pin:
+          type: string
+        role:
+          type: string
+          enum: [admin, manager, cashier, kitchen]
+        isActive:
+          type: boolean
+
+    VerifyStaffPinBody:
+      type: object
+      properties:
+        staffId:
+          type: integer
+        pin:
+          type: string
+      required:
+        - staffId
+        - pin

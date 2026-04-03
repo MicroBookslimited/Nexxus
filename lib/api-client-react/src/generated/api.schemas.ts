@@ -113,6 +113,15 @@ export const CreateOrderBodyDiscountType = {
   fixed: "fixed",
 } as const;
 
+export type CreateOrderBodyOrderType =
+  (typeof CreateOrderBodyOrderType)[keyof typeof CreateOrderBodyOrderType];
+
+export const CreateOrderBodyOrderType = {
+  counter: "counter",
+  "dine-in": "dine-in",
+  takeout: "takeout",
+} as const;
+
 export interface CreateOrderBody {
   items: CreateOrderBodyItemsItem[];
   paymentMethod: string;
@@ -122,6 +131,10 @@ export interface CreateOrderBody {
   discountAmount?: number;
   notes?: string;
   customerId?: number;
+  tableId?: number;
+  staffId?: number;
+  orderType?: CreateOrderBodyOrderType;
+  loyaltyPointsToRedeem?: number;
 }
 
 export type UpdateOrderStatusBodyStatus =
@@ -355,6 +368,131 @@ export interface SaveProductModifiersParams {
   id: number;
 }
 
+export type DiningTableStatus =
+  (typeof DiningTableStatus)[keyof typeof DiningTableStatus];
+
+export const DiningTableStatus = {
+  available: "available",
+  occupied: "occupied",
+  reserved: "reserved",
+} as const;
+
+export interface DiningTable {
+  id: number;
+  name: string;
+  capacity: number;
+  status: DiningTableStatus;
+  currentOrderId?: number;
+  color: string;
+  positionX: number;
+  positionY: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreateTableBody {
+  name: string;
+  capacity?: number;
+  color?: string;
+  positionX?: number;
+  positionY?: number;
+}
+
+export type UpdateTableBodyStatus =
+  (typeof UpdateTableBodyStatus)[keyof typeof UpdateTableBodyStatus];
+
+export const UpdateTableBodyStatus = {
+  available: "available",
+  occupied: "occupied",
+  reserved: "reserved",
+} as const;
+
+export interface UpdateTableBody {
+  name?: string;
+  capacity?: number;
+  color?: string;
+  status?: UpdateTableBodyStatus;
+  currentOrderId?: number | null;
+  positionX?: number;
+  positionY?: number;
+  isActive?: boolean;
+}
+
+export type KitchenOrderItemsItem = {
+  id: number;
+  productName: string;
+  quantity: number;
+  variantChoices?: unknown[];
+  modifierChoices?: unknown[];
+};
+
+export interface KitchenOrder {
+  id: number;
+  orderNumber: string;
+  status: string;
+  tableId?: number;
+  orderType: string;
+  notes?: string;
+  createdAt: string;
+  items: KitchenOrderItemsItem[];
+}
+
+export type StaffMemberRole =
+  (typeof StaffMemberRole)[keyof typeof StaffMemberRole];
+
+export const StaffMemberRole = {
+  admin: "admin",
+  manager: "manager",
+  cashier: "cashier",
+  kitchen: "kitchen",
+} as const;
+
+export interface StaffMember {
+  id: number;
+  name: string;
+  role: StaffMemberRole;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export type CreateStaffBodyRole =
+  (typeof CreateStaffBodyRole)[keyof typeof CreateStaffBodyRole];
+
+export const CreateStaffBodyRole = {
+  admin: "admin",
+  manager: "manager",
+  cashier: "cashier",
+  kitchen: "kitchen",
+} as const;
+
+export interface CreateStaffBody {
+  name: string;
+  pin: string;
+  role?: CreateStaffBodyRole;
+}
+
+export type UpdateStaffBodyRole =
+  (typeof UpdateStaffBodyRole)[keyof typeof UpdateStaffBodyRole];
+
+export const UpdateStaffBodyRole = {
+  admin: "admin",
+  manager: "manager",
+  cashier: "cashier",
+  kitchen: "kitchen",
+} as const;
+
+export interface UpdateStaffBody {
+  name?: string;
+  pin?: string;
+  role?: UpdateStaffBodyRole;
+  isActive?: boolean;
+}
+
+export interface VerifyStaffPinBody {
+  staffId: number;
+  pin: string;
+}
+
 export type ListProductsParams = {
   category?: string;
   search?: string;
@@ -408,4 +546,28 @@ export type GetHourlySalesParams = {
 export type ExportOrdersParams = {
   from?: string;
   to?: string;
+};
+
+export type UpdateKitchenOrderStatusBodyStatus =
+  (typeof UpdateKitchenOrderStatusBodyStatus)[keyof typeof UpdateKitchenOrderStatusBodyStatus];
+
+export const UpdateKitchenOrderStatusBodyStatus = {
+  pending: "pending",
+  preparing: "preparing",
+  ready: "ready",
+  completed: "completed",
+} as const;
+
+export type UpdateKitchenOrderStatusBody = {
+  status: UpdateKitchenOrderStatusBodyStatus;
+};
+
+export type UpdateKitchenOrderStatus200 = {
+  id: number;
+  status: string;
+};
+
+export type VerifyStaffPinBody = {
+  staffId: number;
+  pin: string;
 };

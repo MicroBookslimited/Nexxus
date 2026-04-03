@@ -1,15 +1,18 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2, Maximize, Minimize } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2, Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/pos", label: "Point of Sale", icon: ShoppingCart },
+  { href: "/pos", label: "POS", icon: ShoppingCart },
+  { href: "/tables", label: "Tables", icon: UtensilsCrossed },
+  { href: "/kitchen", label: "Kitchen", icon: ChefHat },
   { href: "/orders", label: "Orders", icon: ListOrdered },
   { href: "/products", label: "Products", icon: Package },
   { href: "/customers", label: "Customers", icon: Users },
+  { href: "/staff", label: "Staff", icon: UserCog },
   { href: "/reports", label: "Reports", icon: BarChart2 },
 ];
 

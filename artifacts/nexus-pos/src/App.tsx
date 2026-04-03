@@ -11,6 +11,9 @@ import { Orders } from "@/pages/orders";
 import { Products } from "@/pages/products";
 import { Customers } from "@/pages/customers";
 import { Reports } from "@/pages/reports";
+import { Tables } from "@/pages/tables";
+import { Kitchen } from "@/pages/kitchen";
+import { Staff } from "@/pages/staff";
 import { Layout } from "@/components/layout";
 
 const queryClient = new QueryClient();
@@ -43,6 +46,9 @@ function Router() {
       <Route path="/products"><ProtectedRoute component={Products} /></Route>
       <Route path="/customers"><ProtectedRoute component={Customers} /></Route>
       <Route path="/reports"><ProtectedRoute component={Reports} /></Route>
+      <Route path="/tables"><ProtectedRoute component={Tables} /></Route>
+      <Route path="/kitchen"><ProtectedRoute component={Kitchen} /></Route>
+      <Route path="/staff"><ProtectedRoute component={Staff} /></Route>
       <Route component={NotFound} />
     </Switch>
   );

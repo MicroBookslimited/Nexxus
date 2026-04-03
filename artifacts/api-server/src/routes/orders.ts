@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable } from "@workspace/db";
 import {
   CreateOrderBody,
   GetOrderParams,
@@ -26,6 +26,11 @@ function normalizeOrder(order: typeof ordersTable.$inferSelect) {
     notes: order.notes ?? undefined,
     voidReason: order.voidReason ?? undefined,
     customerId: order.customerId ?? undefined,
+    tableId: order.tableId ?? undefined,
+    staffId: order.staffId ?? undefined,
+    orderType: order.orderType ?? undefined,
+    loyaltyPointsRedeemed: order.loyaltyPointsRedeemed ?? undefined,
+    loyaltyDiscount: order.loyaltyDiscount ?? undefined,
     completedAt: order.completedAt ?? undefined,
   };
 }
@@ -163,8 +168,13 @@ router.post("/orders", async (req, res): Promise<void> => {
     discountValue = Math.min(discountValue, rawSubtotal);
   }
 
+  // Apply loyalty points redemption: 100 pts = $1
+  const LOYALTY_REDEEM_RATE = 100; // points per dollar
+  const pointsToRedeem = parsed.data.loyaltyPointsToRedeem ?? 0;
+  const loyaltyDiscount = pointsToRedeem > 0 ? Math.round((pointsToRedeem / LOYALTY_REDEEM_RATE) * 100) / 100 : 0;
+
   const subtotal = Math.round(rawSubtotal * 100) / 100;
-  const discountedSubtotal = Math.max(0, rawSubtotal - discountValue);
+  const discountedSubtotal = Math.max(0, rawSubtotal - discountValue - loyaltyDiscount);
   const tax = Math.round(discountedSubtotal * 0.1 * 100) / 100;
   const total = Math.round((discountedSubtotal + tax) * 100) / 100;
 
@@ -186,6 +196,11 @@ router.post("/orders", async (req, res): Promise<void> => {
       splitCashAmount: parsed.data.splitCashAmount,
       notes: parsed.data.notes,
       customerId: parsed.data.customerId,
+      tableId: parsed.data.tableId,
+      staffId: parsed.data.staffId,
+      orderType: parsed.data.orderType ?? "counter",
+      loyaltyPointsRedeemed: pointsToRedeem > 0 ? pointsToRedeem : undefined,
+      loyaltyDiscount: loyaltyDiscount > 0 ? loyaltyDiscount : undefined,
       completedAt: new Date(),
     })
     .returning();
@@ -219,16 +234,25 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   // Update customer stats if customerId provided
   if (parsed.data.customerId) {
-    const LOYALTY_RATE = 10; // 1 point per $10 spent
-    const pointsEarned = Math.floor(total / LOYALTY_RATE);
+    const LOYALTY_EARN_RATE = 10; // 1 point per $10 spent
+    const pointsEarned = Math.floor(total / LOYALTY_EARN_RATE);
+    const netPoints = pointsEarned - pointsToRedeem;
     await db
       .update(customersTable)
       .set({
         totalSpent: sql`${customersTable.totalSpent} + ${total}`,
         orderCount: sql`${customersTable.orderCount} + 1`,
-        loyaltyPoints: sql`${customersTable.loyaltyPoints} + ${pointsEarned}`,
+        loyaltyPoints: sql`GREATEST(0, ${customersTable.loyaltyPoints} + ${netPoints})`,
       })
       .where(eq(customersTable.id, parsed.data.customerId));
+  }
+
+  // Free up dining table if tableId provided (counter orders complete immediately)
+  if (parsed.data.tableId && (parsed.data.orderType === "counter" || !parsed.data.orderType)) {
+    await db
+      .update(diningTablesTable)
+      .set({ status: "available", currentOrderId: null })
+      .where(eq(diningTablesTable.id, parsed.data.tableId));
   }
 
   const fullOrder = await getOrderWithItems(order.id);

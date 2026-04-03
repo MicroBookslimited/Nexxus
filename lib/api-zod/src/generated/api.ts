@@ -409,6 +409,10 @@ export const CreateOrderBody = zod.object({
   discountAmount: zod.number().optional(),
   notes: zod.string().optional(),
   customerId: zod.number().optional(),
+  tableId: zod.number().optional(),
+  staffId: zod.number().optional(),
+  orderType: zod.enum(["counter", "dine-in", "takeout"]).optional(),
+  loyaltyPointsToRedeem: zod.number().optional(),
 });
 
 /**
@@ -942,4 +946,177 @@ export const GetHourlySalesResponse = zod.array(GetHourlySalesResponseItem);
 export const ExportOrdersQueryParams = zod.object({
   from: zod.coerce.string().optional(),
   to: zod.coerce.string().optional(),
+});
+
+/**
+ * @summary List all dining tables
+ */
+export const ListTablesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  capacity: zod.number(),
+  status: zod.enum(["available", "occupied", "reserved"]),
+  currentOrderId: zod.number().optional(),
+  color: zod.string(),
+  positionX: zod.number(),
+  positionY: zod.number(),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+export const ListTablesResponse = zod.array(ListTablesResponseItem);
+
+/**
+ * @summary Create a dining table
+ */
+export const CreateTableBody = zod.object({
+  name: zod.string(),
+  capacity: zod.number().optional(),
+  color: zod.string().optional(),
+  positionX: zod.number().optional(),
+  positionY: zod.number().optional(),
+});
+
+/**
+ * @summary Update a dining table
+ */
+export const UpdateTableParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateTableBody = zod.object({
+  name: zod.string().optional(),
+  capacity: zod.number().optional(),
+  color: zod.string().optional(),
+  status: zod.enum(["available", "occupied", "reserved"]).optional(),
+  currentOrderId: zod.number().nullish(),
+  positionX: zod.number().optional(),
+  positionY: zod.number().optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateTableResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  capacity: zod.number(),
+  status: zod.enum(["available", "occupied", "reserved"]),
+  currentOrderId: zod.number().optional(),
+  color: zod.string(),
+  positionX: zod.number(),
+  positionY: zod.number(),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a dining table
+ */
+export const DeleteTableParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary List pending kitchen orders
+ */
+export const ListKitchenOrdersResponseItem = zod.object({
+  id: zod.number(),
+  orderNumber: zod.string(),
+  status: zod.string(),
+  tableId: zod.number().optional(),
+  orderType: zod.string(),
+  notes: zod.string().optional(),
+  createdAt: zod.coerce.date(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      productName: zod.string(),
+      quantity: zod.number(),
+      variantChoices: zod.array(zod.unknown()).optional(),
+      modifierChoices: zod.array(zod.unknown()).optional(),
+    }),
+  ),
+});
+export const ListKitchenOrdersResponse = zod.array(
+  ListKitchenOrdersResponseItem,
+);
+
+/**
+ * @summary Update kitchen order status
+ */
+export const UpdateKitchenOrderStatusParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateKitchenOrderStatusBody = zod.object({
+  status: zod.enum(["pending", "preparing", "ready", "completed"]),
+});
+
+export const UpdateKitchenOrderStatusResponse = zod.object({
+  id: zod.number(),
+  status: zod.string(),
+});
+
+/**
+ * @summary List all staff members
+ */
+export const ListStaffResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  role: zod.enum(["admin", "manager", "cashier", "kitchen"]),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+export const ListStaffResponse = zod.array(ListStaffResponseItem);
+
+/**
+ * @summary Create a staff member
+ */
+export const CreateStaffBody = zod.object({
+  name: zod.string(),
+  pin: zod.string(),
+  role: zod.enum(["admin", "manager", "cashier", "kitchen"]).optional(),
+});
+
+/**
+ * @summary Verify staff PIN
+ */
+export const VerifyStaffPinBody = zod.object({
+  staffId: zod.number(),
+  pin: zod.string(),
+});
+
+export const VerifyStaffPinResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  role: zod.enum(["admin", "manager", "cashier", "kitchen"]),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update a staff member
+ */
+export const UpdateStaffParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateStaffBody = zod.object({
+  name: zod.string().optional(),
+  pin: zod.string().optional(),
+  role: zod.enum(["admin", "manager", "cashier", "kitchen"]).optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateStaffResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  role: zod.enum(["admin", "manager", "cashier", "kitchen"]),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Deactivate a staff member
+ */
+export const DeleteStaffParams = zod.object({
+  id: zod.coerce.number(),
 });

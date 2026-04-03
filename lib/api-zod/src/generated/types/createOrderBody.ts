@@ -7,6 +7,7 @@
  */
 import type { CreateOrderBodyDiscountType } from "./createOrderBodyDiscountType";
 import type { CreateOrderBodyItemsItem } from "./createOrderBodyItemsItem";
+import type { CreateOrderBodyOrderType } from "./createOrderBodyOrderType";
 
 export interface CreateOrderBody {
   items: CreateOrderBodyItemsItem[];
@@ -17,4 +18,8 @@ export interface CreateOrderBody {
   discountAmount?: number;
   notes?: string;
   customerId?: number;
+  tableId?: number;
+  staffId?: number;
+  orderType?: CreateOrderBodyOrderType;
+  loyaltyPointsToRedeem?: number;
 }
