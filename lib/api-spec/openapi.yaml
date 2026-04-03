@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: products
     description: Product catalog
+  - name: variants
+    description: Product variants and modifiers
   - name: orders
     description: Order management
   - name: held-orders
@@ -133,6 +135,119 @@ paths:
       responses:
         "204":
           description: Deleted
+
+  /products/{id}/customize:
+    get:
+      operationId: getProductCustomization
+      tags: [variants]
+      summary: Get full variant groups + modifier groups for POS customization dialog
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Product customization data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductCustomization"
+        "404":
+          description: Not found
+
+  /products/{id}/variants:
+    get:
+      operationId: getProductVariants
+      tags: [variants]
+      summary: Get all variant groups with options for a product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Variant groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VariantGroup"
+    put:
+      operationId: saveProductVariants
+      tags: [variants]
+      summary: Replace all variant groups for a product (full overwrite)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveVariantsBody"
+      responses:
+        "200":
+          description: Saved variant groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VariantGroup"
+
+  /products/{id}/modifiers:
+    get:
+      operationId: getProductModifiers
+      tags: [variants]
+      summary: Get all modifier groups with options for a product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Modifier groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ModifierGroup"
+    put:
+      operationId: saveProductModifiers
+      tags: [variants]
+      summary: Replace all modifier groups for a product (full overwrite)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveModifiersBody"
+      responses:
+        "200":
+          description: Saved modifier groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ModifierGroup"
 
   /orders:
     get:
@@ -617,6 +732,10 @@ components:
           type: boolean
         stockCount:
           type: integer
+        hasVariants:
+          type: boolean
+        hasModifiers:
+          type: boolean
         createdAt:
           type: string
           format: date-time
@@ -627,6 +746,8 @@ components:
         - category
         - inStock
         - stockCount
+        - hasVariants
+        - hasModifiers
         - createdAt
 
     CreateProductBody:
@@ -744,6 +865,24 @@ components:
           type: number
           format: float
           nullable: true
+        variantAdjustment:
+          type: number
+          format: float
+          nullable: true
+        modifierAdjustment:
+          type: number
+          format: float
+          nullable: true
+        variantChoices:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/ChoiceItem"
+        modifierChoices:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/ChoiceItem"
         lineTotal:
           type: number
           format: float
@@ -770,6 +909,14 @@ components:
               discountAmount:
                 type: number
                 format: float
+              variantChoices:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChoiceItem"
+              modifierChoices:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChoiceItem"
             required:
               - productId
               - quantity
@@ -1066,3 +1213,245 @@ components:
       properties:
         date:
           type: string
+
+    ChoiceItem:
+      type: object
+      properties:
+        groupId:
+          type: integer
+        groupName:
+          type: string
+        optionId:
+          type: integer
+        optionName:
+          type: string
+        priceAdjustment:
+          type: number
+          format: float
+      required:
+        - groupId
+        - groupName
+        - optionId
+        - optionName
+        - priceAdjustment
+
+    VariantOption:
+      type: object
+      properties:
+        id:
+          type: integer
+        groupId:
+          type: integer
+        name:
+          type: string
+        priceAdjustment:
+          type: number
+          format: float
+        position:
+          type: integer
+      required:
+        - id
+        - groupId
+        - name
+        - priceAdjustment
+        - position
+
+    VariantGroup:
+      type: object
+      properties:
+        id:
+          type: integer
+        productId:
+          type: integer
+        name:
+          type: string
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/VariantOption"
+      required:
+        - id
+        - productId
+        - name
+        - required
+        - options
+
+    ModifierOption:
+      type: object
+      properties:
+        id:
+          type: integer
+        groupId:
+          type: integer
+        name:
+          type: string
+        priceAdjustment:
+          type: number
+          format: float
+        position:
+          type: integer
+      required:
+        - id
+        - groupId
+        - name
+        - priceAdjustment
+        - position
+
+    ModifierGroup:
+      type: object
+      properties:
+        id:
+          type: integer
+        productId:
+          type: integer
+        name:
+          type: string
+        required:
+          type: boolean
+        minSelections:
+          type: integer
+        maxSelections:
+          type: integer
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModifierOption"
+      required:
+        - id
+        - productId
+        - name
+        - required
+        - minSelections
+        - maxSelections
+        - options
+
+    ProductCustomization:
+      type: object
+      properties:
+        productId:
+          type: integer
+        productName:
+          type: string
+        basePrice:
+          type: number
+          format: float
+        variantGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/VariantGroup"
+        modifierGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModifierGroup"
+      required:
+        - productId
+        - productName
+        - basePrice
+        - variantGroups
+        - modifierGroups
+
+    SaveVariantsBody:
+      type: object
+      properties:
+        groups:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              required:
+                type: boolean
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    priceAdjustment:
+                      type: number
+                      format: float
+                  required:
+                    - name
+            required:
+              - name
+              - options
+      required:
+        - groups
+
+    SaveModifiersBody:
+      type: object
+      properties:
+        groups:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              required:
+                type: boolean
+              minSelections:
+                type: integer
+              maxSelections:
+                type: integer
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    priceAdjustment:
+                      type: number
+                      format: float
+                  required:
+                    - name
+            required:
+              - name
+              - options
+      required:
+        - groups
+
+    GetProductCustomizationParams:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+        - id
+
+    GetProductVariantsParams:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+        - id
+
+    SaveProductVariantsParams:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+        - id
+
+    GetProductModifiersParams:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+        - id
+
+    SaveProductModifiersParams:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+        - id

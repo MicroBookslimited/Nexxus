@@ -16,5 +16,7 @@ export interface Product {
   barcode?: string | null;
   inStock: boolean;
   stockCount: number;
+  hasVariants: boolean;
+  hasModifiers: boolean;
   createdAt: Date;
 }

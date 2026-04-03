@@ -5,9 +5,12 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ChoiceItem } from "./choiceItem";
 
 export type CreateOrderBodyItemsItem = {
   productId: number;
   quantity: number;
   discountAmount?: number;
+  variantChoices?: ChoiceItem[];
+  modifierChoices?: ChoiceItem[];
 };

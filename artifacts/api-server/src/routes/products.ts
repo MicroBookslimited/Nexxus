@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, like, and, type SQL } from "drizzle-orm";
-import { db, productsTable } from "@workspace/db";
+import { eq, like, and, type SQL, count } from "drizzle-orm";
+import { db, productsTable, variantGroupsTable, modifierGroupsTable } from "@workspace/db";
 import {
   CreateProductBody,
   UpdateProductBody,
@@ -15,12 +15,23 @@ import {
 
 const router: IRouter = Router();
 
-function normalizeProduct(p: typeof productsTable.$inferSelect) {
+async function withFlags(p: typeof productsTable.$inferSelect) {
+  const [vCount] = await db
+    .select({ n: count() })
+    .from(variantGroupsTable)
+    .where(eq(variantGroupsTable.productId, p.id));
+  const [mCount] = await db
+    .select({ n: count() })
+    .from(modifierGroupsTable)
+    .where(eq(modifierGroupsTable.productId, p.id));
+
   return {
     ...p,
     imageUrl: p.imageUrl ?? undefined,
     description: p.description ?? undefined,
     barcode: p.barcode ?? undefined,
+    hasVariants: Number(vCount.n) > 0,
+    hasModifiers: Number(mCount.n) > 0,
   };
 }
 
@@ -44,7 +55,8 @@ router.get("/products", async (req, res): Promise<void> => {
       ? await db.select().from(productsTable).where(and(...conditions))
       : await db.select().from(productsTable);
 
-  res.json(ListProductsResponse.parse(products.map(normalizeProduct)));
+  const enriched = await Promise.all(products.map(withFlags));
+  res.json(ListProductsResponse.parse(enriched));
 });
 
 router.post("/products", async (req, res): Promise<void> => {
@@ -68,7 +80,7 @@ router.post("/products", async (req, res): Promise<void> => {
     })
     .returning();
 
-  res.status(201).json(GetProductResponse.parse(normalizeProduct(product)));
+  res.status(201).json(GetProductResponse.parse(await withFlags(product)));
 });
 
 router.get("/products/:id", async (req, res): Promise<void> => {
@@ -89,7 +101,7 @@ router.get("/products/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(GetProductResponse.parse(normalizeProduct(product)));
+  res.json(GetProductResponse.parse(await withFlags(product)));
 });
 
 router.put("/products/:id", async (req, res): Promise<void> => {
@@ -126,7 +138,7 @@ router.put("/products/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(UpdateProductResponse.parse(normalizeProduct(product)));
+  res.json(UpdateProductResponse.parse(await withFlags(product)));
 });
 
 router.delete("/products/:id", async (req, res): Promise<void> => {

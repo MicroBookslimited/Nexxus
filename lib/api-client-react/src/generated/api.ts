@@ -38,12 +38,17 @@ import type {
   ListCustomersParams,
   ListOrdersParams,
   ListProductsParams,
+  ModifierGroup,
   Order,
   PaymentMethodSales,
   Product,
+  ProductCustomization,
   ReportSummary,
+  SaveModifiersBody,
+  SaveVariantsBody,
   TopProduct,
   UpdateOrderStatusBody,
+  VariantGroup,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -566,6 +571,443 @@ export const useDeleteProduct = <
   TContext
 > => {
   return useMutation(getDeleteProductMutationOptions(options));
+};
+
+/**
+ * @summary Get full variant groups + modifier groups for POS customization dialog
+ */
+export const getGetProductCustomizationUrl = (id: number) => {
+  return `/api/products/${id}/customize`;
+};
+
+export const getProductCustomization = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProductCustomization> => {
+  return customFetch<ProductCustomization>(getGetProductCustomizationUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProductCustomizationQueryKey = (id: number) => {
+  return [`/api/products/${id}/customize`] as const;
+};
+
+export const getGetProductCustomizationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductCustomization>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProductCustomization>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProductCustomizationQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProductCustomization>>
+  > = ({ signal }) =>
+    getProductCustomization(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProductCustomization>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProductCustomizationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductCustomization>>
+>;
+export type GetProductCustomizationQueryError = ErrorType<void>;
+
+/**
+ * @summary Get full variant groups + modifier groups for POS customization dialog
+ */
+
+export function useGetProductCustomization<
+  TData = Awaited<ReturnType<typeof getProductCustomization>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProductCustomization>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProductCustomizationQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get all variant groups with options for a product
+ */
+export const getGetProductVariantsUrl = (id: number) => {
+  return `/api/products/${id}/variants`;
+};
+
+export const getProductVariants = async (
+  id: number,
+  options?: RequestInit,
+): Promise<VariantGroup[]> => {
+  return customFetch<VariantGroup[]>(getGetProductVariantsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProductVariantsQueryKey = (id: number) => {
+  return [`/api/products/${id}/variants`] as const;
+};
+
+export const getGetProductVariantsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductVariants>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProductVariants>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductVariantsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProductVariants>>
+  > = ({ signal }) => getProductVariants(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProductVariants>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProductVariantsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductVariants>>
+>;
+export type GetProductVariantsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get all variant groups with options for a product
+ */
+
+export function useGetProductVariants<
+  TData = Awaited<ReturnType<typeof getProductVariants>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProductVariants>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProductVariantsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Replace all variant groups for a product (full overwrite)
+ */
+export const getSaveProductVariantsUrl = (id: number) => {
+  return `/api/products/${id}/variants`;
+};
+
+export const saveProductVariants = async (
+  id: number,
+  saveVariantsBody: SaveVariantsBody,
+  options?: RequestInit,
+): Promise<VariantGroup[]> => {
+  return customFetch<VariantGroup[]>(getSaveProductVariantsUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(saveVariantsBody),
+  });
+};
+
+export const getSaveProductVariantsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveProductVariants>>,
+    TError,
+    { id: number; data: BodyType<SaveVariantsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveProductVariants>>,
+  TError,
+  { id: number; data: BodyType<SaveVariantsBody> },
+  TContext
+> => {
+  const mutationKey = ["saveProductVariants"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveProductVariants>>,
+    { id: number; data: BodyType<SaveVariantsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return saveProductVariants(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveProductVariantsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveProductVariants>>
+>;
+export type SaveProductVariantsMutationBody = BodyType<SaveVariantsBody>;
+export type SaveProductVariantsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Replace all variant groups for a product (full overwrite)
+ */
+export const useSaveProductVariants = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveProductVariants>>,
+    TError,
+    { id: number; data: BodyType<SaveVariantsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveProductVariants>>,
+  TError,
+  { id: number; data: BodyType<SaveVariantsBody> },
+  TContext
+> => {
+  return useMutation(getSaveProductVariantsMutationOptions(options));
+};
+
+/**
+ * @summary Get all modifier groups with options for a product
+ */
+export const getGetProductModifiersUrl = (id: number) => {
+  return `/api/products/${id}/modifiers`;
+};
+
+export const getProductModifiers = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ModifierGroup[]> => {
+  return customFetch<ModifierGroup[]>(getGetProductModifiersUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProductModifiersQueryKey = (id: number) => {
+  return [`/api/products/${id}/modifiers`] as const;
+};
+
+export const getGetProductModifiersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProductModifiers>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProductModifiers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProductModifiersQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProductModifiers>>
+  > = ({ signal }) => getProductModifiers(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProductModifiers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProductModifiersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProductModifiers>>
+>;
+export type GetProductModifiersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get all modifier groups with options for a product
+ */
+
+export function useGetProductModifiers<
+  TData = Awaited<ReturnType<typeof getProductModifiers>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProductModifiers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProductModifiersQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Replace all modifier groups for a product (full overwrite)
+ */
+export const getSaveProductModifiersUrl = (id: number) => {
+  return `/api/products/${id}/modifiers`;
+};
+
+export const saveProductModifiers = async (
+  id: number,
+  saveModifiersBody: SaveModifiersBody,
+  options?: RequestInit,
+): Promise<ModifierGroup[]> => {
+  return customFetch<ModifierGroup[]>(getSaveProductModifiersUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(saveModifiersBody),
+  });
+};
+
+export const getSaveProductModifiersMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveProductModifiers>>,
+    TError,
+    { id: number; data: BodyType<SaveModifiersBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveProductModifiers>>,
+  TError,
+  { id: number; data: BodyType<SaveModifiersBody> },
+  TContext
+> => {
+  const mutationKey = ["saveProductModifiers"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveProductModifiers>>,
+    { id: number; data: BodyType<SaveModifiersBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return saveProductModifiers(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveProductModifiersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveProductModifiers>>
+>;
+export type SaveProductModifiersMutationBody = BodyType<SaveModifiersBody>;
+export type SaveProductModifiersMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Replace all modifier groups for a product (full overwrite)
+ */
+export const useSaveProductModifiers = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveProductModifiers>>,
+    TError,
+    { id: number; data: BodyType<SaveModifiersBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveProductModifiers>>,
+  TError,
+  { id: number; data: BodyType<SaveModifiersBody> },
+  TContext
+> => {
+  return useMutation(getSaveProductModifiersMutationOptions(options));
 };
 
 /**

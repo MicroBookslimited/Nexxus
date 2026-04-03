@@ -5,6 +5,7 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ChoiceItem } from "./choiceItem";
 
 export interface OrderItem {
   id: number;
@@ -13,5 +14,9 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   discountAmount?: number | null;
+  variantAdjustment?: number | null;
+  modifierAdjustment?: number | null;
+  variantChoices?: ChoiceItem[] | null;
+  modifierChoices?: ChoiceItem[] | null;
   lineTotal: number;
 }

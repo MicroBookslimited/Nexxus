@@ -32,6 +32,8 @@ export const ListProductsResponseItem = zod.object({
   barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
+  hasVariants: zod.boolean(),
+  hasModifiers: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
 export const ListProductsResponse = zod.array(ListProductsResponseItem);
@@ -67,6 +69,8 @@ export const GetProductResponse = zod.object({
   barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
+  hasVariants: zod.boolean(),
+  hasModifiers: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
 
@@ -98,6 +102,8 @@ export const UpdateProductResponse = zod.object({
   barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
+  hasVariants: zod.boolean(),
+  hasModifiers: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
 
@@ -107,6 +113,195 @@ export const UpdateProductResponse = zod.object({
 export const DeleteProductParams = zod.object({
   id: zod.coerce.number(),
 });
+
+/**
+ * @summary Get full variant groups + modifier groups for POS customization dialog
+ */
+export const GetProductCustomizationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProductCustomizationResponse = zod.object({
+  productId: zod.number(),
+  productName: zod.string(),
+  basePrice: zod.number(),
+  variantGroups: zod.array(
+    zod.object({
+      id: zod.number(),
+      productId: zod.number(),
+      name: zod.string(),
+      required: zod.boolean(),
+      options: zod.array(
+        zod.object({
+          id: zod.number(),
+          groupId: zod.number(),
+          name: zod.string(),
+          priceAdjustment: zod.number(),
+          position: zod.number(),
+        }),
+      ),
+    }),
+  ),
+  modifierGroups: zod.array(
+    zod.object({
+      id: zod.number(),
+      productId: zod.number(),
+      name: zod.string(),
+      required: zod.boolean(),
+      minSelections: zod.number(),
+      maxSelections: zod.number(),
+      options: zod.array(
+        zod.object({
+          id: zod.number(),
+          groupId: zod.number(),
+          name: zod.string(),
+          priceAdjustment: zod.number(),
+          position: zod.number(),
+        }),
+      ),
+    }),
+  ),
+});
+
+/**
+ * @summary Get all variant groups with options for a product
+ */
+export const GetProductVariantsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProductVariantsResponseItem = zod.object({
+  id: zod.number(),
+  productId: zod.number(),
+  name: zod.string(),
+  required: zod.boolean(),
+  options: zod.array(
+    zod.object({
+      id: zod.number(),
+      groupId: zod.number(),
+      name: zod.string(),
+      priceAdjustment: zod.number(),
+      position: zod.number(),
+    }),
+  ),
+});
+export const GetProductVariantsResponse = zod.array(
+  GetProductVariantsResponseItem,
+);
+
+/**
+ * @summary Replace all variant groups for a product (full overwrite)
+ */
+export const SaveProductVariantsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SaveProductVariantsBody = zod.object({
+  groups: zod.array(
+    zod.object({
+      name: zod.string(),
+      required: zod.boolean().optional(),
+      options: zod.array(
+        zod.object({
+          name: zod.string(),
+          priceAdjustment: zod.number().optional(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export const SaveProductVariantsResponseItem = zod.object({
+  id: zod.number(),
+  productId: zod.number(),
+  name: zod.string(),
+  required: zod.boolean(),
+  options: zod.array(
+    zod.object({
+      id: zod.number(),
+      groupId: zod.number(),
+      name: zod.string(),
+      priceAdjustment: zod.number(),
+      position: zod.number(),
+    }),
+  ),
+});
+export const SaveProductVariantsResponse = zod.array(
+  SaveProductVariantsResponseItem,
+);
+
+/**
+ * @summary Get all modifier groups with options for a product
+ */
+export const GetProductModifiersParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProductModifiersResponseItem = zod.object({
+  id: zod.number(),
+  productId: zod.number(),
+  name: zod.string(),
+  required: zod.boolean(),
+  minSelections: zod.number(),
+  maxSelections: zod.number(),
+  options: zod.array(
+    zod.object({
+      id: zod.number(),
+      groupId: zod.number(),
+      name: zod.string(),
+      priceAdjustment: zod.number(),
+      position: zod.number(),
+    }),
+  ),
+});
+export const GetProductModifiersResponse = zod.array(
+  GetProductModifiersResponseItem,
+);
+
+/**
+ * @summary Replace all modifier groups for a product (full overwrite)
+ */
+export const SaveProductModifiersParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SaveProductModifiersBody = zod.object({
+  groups: zod.array(
+    zod.object({
+      name: zod.string(),
+      required: zod.boolean().optional(),
+      minSelections: zod.number().optional(),
+      maxSelections: zod.number().optional(),
+      options: zod.array(
+        zod.object({
+          name: zod.string(),
+          priceAdjustment: zod.number().optional(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export const SaveProductModifiersResponseItem = zod.object({
+  id: zod.number(),
+  productId: zod.number(),
+  name: zod.string(),
+  required: zod.boolean(),
+  minSelections: zod.number(),
+  maxSelections: zod.number(),
+  options: zod.array(
+    zod.object({
+      id: zod.number(),
+      groupId: zod.number(),
+      name: zod.string(),
+      priceAdjustment: zod.number(),
+      position: zod.number(),
+    }),
+  ),
+});
+export const SaveProductModifiersResponse = zod.array(
+  SaveProductModifiersResponseItem,
+);
 
 /**
  * @summary List orders
@@ -142,6 +337,30 @@ export const ListOrdersResponseItem = zod.object({
       quantity: zod.number(),
       unitPrice: zod.number(),
       discountAmount: zod.number().nullish(),
+      variantAdjustment: zod.number().nullish(),
+      modifierAdjustment: zod.number().nullish(),
+      variantChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
+      modifierChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
       lineTotal: zod.number(),
     }),
   ),
@@ -159,6 +378,28 @@ export const CreateOrderBody = zod.object({
       productId: zod.number(),
       quantity: zod.number(),
       discountAmount: zod.number().optional(),
+      variantChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .optional(),
+      modifierChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .optional(),
     }),
   ),
   paymentMethod: zod.string(),
@@ -201,6 +442,30 @@ export const GetOrderResponse = zod.object({
       quantity: zod.number(),
       unitPrice: zod.number(),
       discountAmount: zod.number().nullish(),
+      variantAdjustment: zod.number().nullish(),
+      modifierAdjustment: zod.number().nullish(),
+      variantChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
+      modifierChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
       lineTotal: zod.number(),
     }),
   ),
@@ -244,6 +509,30 @@ export const UpdateOrderStatusResponse = zod.object({
       quantity: zod.number(),
       unitPrice: zod.number(),
       discountAmount: zod.number().nullish(),
+      variantAdjustment: zod.number().nullish(),
+      modifierAdjustment: zod.number().nullish(),
+      variantChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
+      modifierChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
       lineTotal: zod.number(),
     }),
   ),
@@ -364,6 +653,30 @@ export const GetRecentOrdersResponseItem = zod.object({
       quantity: zod.number(),
       unitPrice: zod.number(),
       discountAmount: zod.number().nullish(),
+      variantAdjustment: zod.number().nullish(),
+      modifierAdjustment: zod.number().nullish(),
+      variantChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
+      modifierChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
       lineTotal: zod.number(),
     }),
   ),
@@ -533,6 +846,30 @@ export const GetCustomerOrdersResponseItem = zod.object({
       quantity: zod.number(),
       unitPrice: zod.number(),
       discountAmount: zod.number().nullish(),
+      variantAdjustment: zod.number().nullish(),
+      modifierAdjustment: zod.number().nullish(),
+      variantChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
+      modifierChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
       lineTotal: zod.number(),
     }),
   ),
@@ -560,6 +897,8 @@ export const GetLowStockProductsResponseItem = zod.object({
   barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
+  hasVariants: zod.boolean(),
+  hasModifiers: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
 export const GetLowStockProductsResponse = zod.array(

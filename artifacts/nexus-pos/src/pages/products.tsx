@@ -1,21 +1,26 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   useListProducts,
   useCreateProduct,
   useUpdateProduct,
   useDeleteProduct,
+  useGetProductVariants,
+  useSaveProductVariants,
+  useGetProductModifiers,
+  useSaveProductModifiers,
 } from "@workspace/api-client-react";
 import type { GetProductResponse } from "@workspace/api-zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -40,10 +45,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search, Package } from "lucide-react";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers } from "lucide-react";
 
 const CATEGORIES = ["Beverages", "Food", "Bakery", "Merchandise", "Other"];
 
+/* ─── Product form types ─── */
 type ProductForm = {
   name: string;
   description: string;
@@ -64,33 +76,340 @@ const emptyForm = (): ProductForm => ({
   stockCount: "0",
 });
 
+/* ─── Variant/modifier editor types ─── */
+type DraftOption = { tempId: string; name: string; priceAdjustment: string };
+type DraftVariantGroup = { tempId: string; name: string; required: boolean; options: DraftOption[] };
+type DraftModifierGroup = { tempId: string; name: string; required: boolean; minSelections: string; maxSelections: string; options: DraftOption[] };
+
+function makeId() { return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
+function emptyOption(): DraftOption { return { tempId: makeId(), name: "", priceAdjustment: "0" }; }
+function emptyVariantGroup(): DraftVariantGroup { return { tempId: makeId(), name: "", required: true, options: [emptyOption()] }; }
+function emptyModifierGroup(): DraftModifierGroup { return { tempId: makeId(), name: "", required: false, minSelections: "0", maxSelections: "0", options: [emptyOption()] }; }
+
+function formatCurrency(v: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
+}
+
+/* ─── Variant editor ─── */
+function VariantEditor({ productId }: { productId: number }) {
+  const { data: serverGroups } = useGetProductVariants({ id: productId });
+  const saveVariants = useSaveProductVariants();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [groups, setGroups] = useState<DraftVariantGroup[]>([]);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!serverGroups) return;
+    setGroups(
+      serverGroups.map((g) => ({
+        tempId: makeId(),
+        name: g.name,
+        required: g.required,
+        options: g.options.map((o) => ({
+          tempId: makeId(),
+          name: o.name,
+          priceAdjustment: o.priceAdjustment.toString(),
+        })),
+      })),
+    );
+    setDirty(false);
+  }, [serverGroups]);
+
+  const addGroup = () => { setGroups((g) => [...g, emptyVariantGroup()]); setDirty(true); };
+  const removeGroup = (tempId: string) => { setGroups((g) => g.filter((x) => x.tempId !== tempId)); setDirty(true); };
+  const updateGroup = (tempId: string, patch: Partial<DraftVariantGroup>) => {
+    setGroups((g) => g.map((x) => x.tempId === tempId ? { ...x, ...patch } : x));
+    setDirty(true);
+  };
+  const addOption = (groupTempId: string) => {
+    setGroups((g) => g.map((x) => x.tempId === groupTempId ? { ...x, options: [...x.options, emptyOption()] } : x));
+    setDirty(true);
+  };
+  const removeOption = (groupTempId: string, optTempId: string) => {
+    setGroups((g) => g.map((x) => x.tempId === groupTempId ? { ...x, options: x.options.filter((o) => o.tempId !== optTempId) } : x));
+    setDirty(true);
+  };
+  const updateOption = (groupTempId: string, optTempId: string, patch: Partial<DraftOption>) => {
+    setGroups((g) => g.map((x) => x.tempId === groupTempId ? {
+      ...x,
+      options: x.options.map((o) => o.tempId === optTempId ? { ...o, ...patch } : o),
+    } : x));
+    setDirty(true);
+  };
+
+  const handleSave = () => {
+    saveVariants.mutate(
+      {
+        id: productId,
+        data: {
+          groups: groups.map((g) => ({
+            name: g.name,
+            required: g.required,
+            options: g.options.filter((o) => o.name.trim()).map((o) => ({
+              name: o.name,
+              priceAdjustment: parseFloat(o.priceAdjustment) || 0,
+            })),
+          })).filter((g) => g.name.trim()),
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Variants saved" });
+          queryClient.invalidateQueries({ queryKey: [`/api/products/${productId}/variants`] });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          setDirty(false);
+        },
+        onError: () => toast({ title: "Save failed", variant: "destructive" }),
+      },
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">Variant groups let customers choose between options (e.g., Size: Small / Medium / Large). Each product can only have one option selected per group.</p>
+      {groups.map((group) => (
+        <Card key={group.tempId} className="border-border/50">
+          <CardContent className="pt-3 pb-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Group name (e.g. Size)"
+                value={group.name}
+                onChange={(e) => updateGroup(group.tempId, { name: e.target.value })}
+                className="flex-1 h-8 text-sm"
+              />
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs text-muted-foreground">Required</span>
+                <Switch checked={group.required} onCheckedChange={(v) => updateGroup(group.tempId, { required: v })} />
+              </div>
+              <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeGroup(group.tempId)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="space-y-2 pl-2 border-l-2 border-border/40">
+              {group.options.map((opt) => (
+                <div key={opt.tempId} className="flex items-center gap-2">
+                  <Input
+                    placeholder="Option name (e.g. Large)"
+                    value={opt.name}
+                    onChange={(e) => updateOption(group.tempId, opt.tempId, { name: e.target.value })}
+                    className="flex-1 h-7 text-xs"
+                  />
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={opt.priceAdjustment}
+                      onChange={(e) => updateOption(group.tempId, opt.tempId, { priceAdjustment: e.target.value })}
+                      className="w-20 h-7 text-xs pl-5"
+                    />
+                  </div>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeOption(group.tempId, opt.tempId)}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+              <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 text-muted-foreground" onClick={() => addOption(group.tempId)}>
+                <Plus className="h-3 w-3" />Add option
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+      <Button size="sm" variant="outline" className="gap-1.5 w-full" onClick={addGroup}>
+        <Plus className="h-3.5 w-3.5" />Add variant group
+      </Button>
+      {dirty && (
+        <Button onClick={handleSave} disabled={saveVariants.isPending} className="w-full">
+          {saveVariants.isPending ? "Saving…" : "Save Variants"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/* ─── Modifier editor ─── */
+function ModifierEditor({ productId }: { productId: number }) {
+  const { data: serverGroups } = useGetProductModifiers({ id: productId });
+  const saveModifiers = useSaveProductModifiers();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [groups, setGroups] = useState<DraftModifierGroup[]>([]);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!serverGroups) return;
+    setGroups(
+      serverGroups.map((g) => ({
+        tempId: makeId(),
+        name: g.name,
+        required: g.required,
+        minSelections: g.minSelections.toString(),
+        maxSelections: g.maxSelections.toString(),
+        options: g.options.map((o) => ({
+          tempId: makeId(),
+          name: o.name,
+          priceAdjustment: o.priceAdjustment.toString(),
+        })),
+      })),
+    );
+    setDirty(false);
+  }, [serverGroups]);
+
+  const addGroup = () => { setGroups((g) => [...g, emptyModifierGroup()]); setDirty(true); };
+  const removeGroup = (tempId: string) => { setGroups((g) => g.filter((x) => x.tempId !== tempId)); setDirty(true); };
+  const updateGroup = (tempId: string, patch: Partial<DraftModifierGroup>) => {
+    setGroups((g) => g.map((x) => x.tempId === tempId ? { ...x, ...patch } : x));
+    setDirty(true);
+  };
+  const addOption = (groupTempId: string) => {
+    setGroups((g) => g.map((x) => x.tempId === groupTempId ? { ...x, options: [...x.options, emptyOption()] } : x));
+    setDirty(true);
+  };
+  const removeOption = (groupTempId: string, optTempId: string) => {
+    setGroups((g) => g.map((x) => x.tempId === groupTempId ? { ...x, options: x.options.filter((o) => o.tempId !== optTempId) } : x));
+    setDirty(true);
+  };
+  const updateOption = (groupTempId: string, optTempId: string, patch: Partial<DraftOption>) => {
+    setGroups((g) => g.map((x) => x.tempId === groupTempId ? {
+      ...x,
+      options: x.options.map((o) => o.tempId === optTempId ? { ...o, ...patch } : o),
+    } : x));
+    setDirty(true);
+  };
+
+  const handleSave = () => {
+    saveModifiers.mutate(
+      {
+        id: productId,
+        data: {
+          groups: groups.map((g) => ({
+            name: g.name,
+            required: g.required,
+            minSelections: parseInt(g.minSelections) || 0,
+            maxSelections: parseInt(g.maxSelections) || 0,
+            options: g.options.filter((o) => o.name.trim()).map((o) => ({
+              name: o.name,
+              priceAdjustment: parseFloat(o.priceAdjustment) || 0,
+            })),
+          })).filter((g) => g.name.trim()),
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Modifiers saved" });
+          queryClient.invalidateQueries({ queryKey: [`/api/products/${productId}/modifiers`] });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          setDirty(false);
+        },
+        onError: () => toast({ title: "Save failed", variant: "destructive" }),
+      },
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">Modifier groups let customers add optional customizations (e.g., Extras: Extra Shot, Oat Milk). Multiple can be selected per group.</p>
+      {groups.map((group) => (
+        <Card key={group.tempId} className="border-border/50">
+          <CardContent className="pt-3 pb-3 space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Input
+                placeholder="Group name (e.g. Extras)"
+                value={group.name}
+                onChange={(e) => updateGroup(group.tempId, { name: e.target.value })}
+                className="flex-1 h-8 text-sm min-w-[120px]"
+              />
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs text-muted-foreground">Required</span>
+                <Switch checked={group.required} onCheckedChange={(v) => updateGroup(group.tempId, { required: v })} />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">Min</span>
+                <Input type="number" min={0} value={group.minSelections} onChange={(e) => updateGroup(group.tempId, { minSelections: e.target.value })} className="w-12 h-7 text-xs text-center" />
+                <span className="text-xs text-muted-foreground">Max</span>
+                <Input type="number" min={0} value={group.maxSelections} onChange={(e) => updateGroup(group.tempId, { maxSelections: e.target.value })} className="w-12 h-7 text-xs text-center" />
+                <span className="text-xs text-muted-foreground">(0=unlimited)</span>
+              </div>
+              <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeGroup(group.tempId)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="space-y-2 pl-2 border-l-2 border-border/40">
+              {group.options.map((opt) => (
+                <div key={opt.tempId} className="flex items-center gap-2">
+                  <Input
+                    placeholder="Option name (e.g. Extra Shot)"
+                    value={opt.name}
+                    onChange={(e) => updateOption(group.tempId, opt.tempId, { name: e.target.value })}
+                    className="flex-1 h-7 text-xs"
+                  />
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={opt.priceAdjustment}
+                      onChange={(e) => updateOption(group.tempId, opt.tempId, { priceAdjustment: e.target.value })}
+                      className="w-20 h-7 text-xs pl-5"
+                    />
+                  </div>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeOption(group.tempId, opt.tempId)}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+              <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 text-muted-foreground" onClick={() => addOption(group.tempId)}>
+                <Plus className="h-3 w-3" />Add option
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+      <Button size="sm" variant="outline" className="gap-1.5 w-full" onClick={addGroup}>
+        <Plus className="h-3.5 w-3.5" />Add modifier group
+      </Button>
+      {dirty && (
+        <Button onClick={handleSave} disabled={saveModifiers.isPending} className="w-full">
+          {saveModifiers.isPending ? "Saving…" : "Save Modifiers"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/* ─── Main Products page ─── */
 export function Products() {
-  const { data: products, isLoading } = useListProducts();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+
+  const { data: products, isLoading } = useListProducts(
+    categoryFilter ? { category: categoryFilter } : {},
+  );
+
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogTab, setDialogTab] = useState("details");
   const [editingProduct, setEditingProduct] = useState<GetProductResponse | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm());
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const filtered = (products ?? []).filter((p) => {
-    const matchSearch =
-      !search ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.barcode?.toLowerCase().includes(search.toLowerCase()) ?? false);
-    const matchCat = categoryFilter === "all" || p.category === categoryFilter;
-    return matchSearch && matchCat;
-  });
+  const filteredProducts = products?.filter((p) =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
 
   const openAdd = () => {
     setEditingProduct(null);
     setForm(emptyForm());
+    setDialogTab("details");
     setDialogOpen(true);
   };
 
@@ -105,24 +424,23 @@ export function Products() {
       inStock: p.inStock,
       stockCount: p.stockCount.toString(),
     });
+    setDialogTab("details");
     setDialogOpen(true);
   };
 
   const handleSave = () => {
-    const price = parseFloat(form.price);
-    if (!form.name.trim() || isNaN(price) || price < 0) {
-      toast({ title: "Invalid input", description: "Name and a valid price are required.", variant: "destructive" });
+    if (!form.name.trim() || !form.price || !form.category) {
+      toast({ title: "Name, price and category are required.", variant: "destructive" });
       return;
     }
-
     const payload = {
       name: form.name.trim(),
-      description: form.description.trim() || undefined,
-      price,
+      description: form.description || undefined,
+      price: parseFloat(form.price),
       category: form.category,
-      barcode: form.barcode.trim() || undefined,
+      barcode: form.barcode || undefined,
       inStock: form.inStock,
-      stockCount: parseInt(form.stockCount, 10) || 0,
+      stockCount: parseInt(form.stockCount) || 0,
     };
 
     if (editingProduct) {
@@ -132,7 +450,6 @@ export function Products() {
           onSuccess: () => {
             toast({ title: "Product updated" });
             queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-            setDialogOpen(false);
           },
           onError: () => toast({ title: "Update failed", variant: "destructive" }),
         },
@@ -141,10 +458,11 @@ export function Products() {
       createProduct.mutate(
         { data: payload },
         {
-          onSuccess: () => {
+          onSuccess: (newProduct) => {
             toast({ title: "Product created" });
             queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-            setDialogOpen(false);
+            setEditingProduct(newProduct);
+            setDialogTab("variants");
           },
           onError: () => toast({ title: "Create failed", variant: "destructive" }),
         },
@@ -167,119 +485,77 @@ export function Products() {
     );
   };
 
-  const formatCurrency = (v: number) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
-
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="p-8 space-y-6"
-    >
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Products</h2>
-          <p className="text-muted-foreground mt-1">Manage your product catalog.</p>
+          <p className="text-muted-foreground mt-1">Manage your product catalog, variants, and modifiers.</p>
         </div>
         <Button onClick={openAdd} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add Product
+          <Plus className="h-4 w-4" />Add Product
         </Button>
       </div>
 
-      <div className="flex gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex gap-3 flex-wrap">
+        <div className="relative max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            className="pl-9"
-            placeholder="Search name or barcode..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <Input className="pl-9" placeholder="Search products…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {CATEGORIES.map((c) => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant={!categoryFilter ? "default" : "outline"} onClick={() => setCategoryFilter(null)}>All</Button>
+          {CATEGORIES.map((c) => (
+            <Button key={c} size="sm" variant={categoryFilter === c ? "default" : "outline"} onClick={() => setCategoryFilter(c)}>{c}</Button>
+          ))}
+        </div>
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {[...Array(8)].map((_, i) => (
-            <Skeleton key={i} className="h-40 rounded-xl" />
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : !filteredProducts?.length ? (
         <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
           <Package className="h-12 w-12 opacity-30" />
           <p className="text-lg">No products found</p>
+          <Button variant="outline" onClick={openAdd}>Add your first product</Button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           <AnimatePresence>
-            {filtered.map((product) => (
-              <motion.div
-                key={product.id}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-              >
-                <Card className="group relative overflow-hidden hover:border-primary/50 transition-colors">
-                  <CardContent className="p-4 space-y-2">
+            {filteredProducts.map((product) => (
+              <motion.div key={product.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
+                <Card className="group hover:border-primary/50 transition-colors">
+                  <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm leading-tight truncate">{product.name}</p>
-                        <Badge variant="outline" className="text-xs mt-1">{product.category}</Badge>
+                      <CardTitle className="text-sm font-semibold leading-snug flex-1 truncate">{product.name}</CardTitle>
+                      <Badge variant="outline" className="text-[10px] shrink-0">{product.category}</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xl font-bold font-mono text-primary">{formatCurrency(product.price)}</p>
+                      <div className="flex items-center gap-1.5">
+                        {product.hasVariants && (
+                          <Badge variant="secondary" className="text-[10px] h-4 gap-0.5 px-1">
+                            <Layers className="h-2.5 w-2.5" />V
+                          </Badge>
+                        )}
+                        {product.hasModifiers && (
+                          <Badge variant="secondary" className="text-[10px] h-4 gap-0.5 px-1">
+                            <Settings2 className="h-2.5 w-2.5" />M
+                          </Badge>
+                        )}
+                        <Badge variant={product.inStock ? "default" : "destructive"} className="text-[10px] h-4">
+                          {product.inStock ? `${product.stockCount} in stock` : "Out"}
+                        </Badge>
                       </div>
-                      <span className="text-primary font-bold font-mono text-sm whitespace-nowrap">
-                        {formatCurrency(product.price)}
-                      </span>
                     </div>
-
-                    {product.barcode && (
-                      <p className="text-xs text-muted-foreground font-mono truncate">
-                        #{product.barcode}
-                      </p>
-                    )}
-
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-flex items-center gap-1 text-xs font-medium ${
-                          product.inStock ? "text-green-400" : "text-red-400"
-                        }`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            product.inStock ? "bg-green-400" : "bg-red-400"
-                          }`}
-                        />
-                        {product.inStock ? `In Stock (${product.stockCount})` : "Out of Stock"}
-                      </span>
-                    </div>
-
-                    <div className="flex gap-2 pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1 h-7 text-xs"
-                        onClick={() => openEdit(product)}
-                      >
-                        <Pencil className="h-3 w-3 mr-1" />
-                        Edit
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => openEdit(product)}>
+                        <Pencil className="h-3 w-3 mr-1" />Edit
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:border-destructive"
-                        onClick={() => setDeleteId(product.id)}
-                      >
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
@@ -293,101 +569,75 @@ export function Products() {
 
       {/* Add / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{editingProduct ? "Edit Product" : "Add Product"}</DialogTitle>
           </DialogHeader>
 
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-1.5">
-              <Label>Name *</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Espresso Shot"
-              />
-            </div>
+          <Tabs value={dialogTab} onValueChange={setDialogTab} className="flex-1 overflow-hidden flex flex-col">
+            <TabsList className="shrink-0">
+              <TabsTrigger value="details">Details</TabsTrigger>
+              <TabsTrigger value="variants" disabled={!editingProduct}>Variants</TabsTrigger>
+              <TabsTrigger value="modifiers" disabled={!editingProduct}>Modifiers</TabsTrigger>
+            </TabsList>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-1.5">
-                <Label>Price *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.price}
-                  onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
-                  placeholder="0.00"
-                  className="font-mono"
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label>Category *</Label>
-                <Select
-                  value={form.category}
-                  onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <div className="flex-1 overflow-y-auto mt-2 pr-1">
+              <TabsContent value="details" className="mt-0 space-y-4">
+                <div className="grid gap-1.5">
+                  <Label>Name *</Label>
+                  <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Cappuccino" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label>Price *</Label>
+                    <Input type="number" step="0.01" min="0" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} placeholder="0.00" />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label>Category *</Label>
+                    <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Description</Label>
+                  <Input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description" />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Barcode</Label>
+                  <Input value={form.barcode} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} placeholder="EAN / UPC" />
+                </div>
+                <Separator />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label>Stock count</Label>
+                    <Input type="number" min="0" value={form.stockCount} onChange={(e) => setForm((f) => ({ ...f, stockCount: e.target.value }))} />
+                  </div>
+                  <div className="flex items-end gap-2 pb-0.5">
+                    <Switch id="inStock" checked={form.inStock} onCheckedChange={(v) => setForm((f) => ({ ...f, inStock: v }))} />
+                    <Label htmlFor="inStock">In stock</Label>
+                  </div>
+                </div>
+                <DialogFooter className="pt-2">
+                  <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                  <Button onClick={handleSave} disabled={createProduct.isPending || updateProduct.isPending}>
+                    {editingProduct ? "Save Changes" : "Create & Continue"}
+                  </Button>
+                </DialogFooter>
+              </TabsContent>
 
-            <div className="grid gap-1.5">
-              <Label>Description</Label>
-              <Input
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                placeholder="Optional description"
-              />
-            </div>
+              <TabsContent value="variants" className="mt-0">
+                {editingProduct && <VariantEditor productId={editingProduct.id} />}
+              </TabsContent>
 
-            <div className="grid gap-1.5">
-              <Label>Barcode</Label>
-              <Input
-                value={form.barcode}
-                onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))}
-                placeholder="Scan or type barcode"
-                className="font-mono"
-              />
+              <TabsContent value="modifiers" className="mt-0">
+                {editingProduct && <ModifierEditor productId={editingProduct.id} />}
+              </TabsContent>
             </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-1.5">
-                <Label>Stock Count</Label>
-                <Input
-                  type="number"
-                  value={form.stockCount}
-                  onChange={(e) => setForm((f) => ({ ...f, stockCount: e.target.value }))}
-                  className="font-mono"
-                />
-              </div>
-              <div className="flex items-end gap-3 pb-1">
-                <Label>In Stock</Label>
-                <Switch
-                  checked={form.inStock}
-                  onCheckedChange={(v) => setForm((f) => ({ ...f, inStock: v }))}
-                />
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={createProduct.isPending || updateProduct.isPending}
-            >
-              {editingProduct ? "Save Changes" : "Create Product"}
-            </Button>
-          </DialogFooter>
+          </Tabs>
         </DialogContent>
       </Dialog>
 
@@ -397,15 +647,12 @@ export function Products() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete product?</AlertDialogTitle>
             <AlertDialogDescription>
-              This product will be permanently removed from your catalog. This cannot be undone.
+              This product will be permanently removed from the catalog along with all its variants and modifiers.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-              onClick={handleDelete}
-            >
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleDelete}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

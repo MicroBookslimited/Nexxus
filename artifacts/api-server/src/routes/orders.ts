@@ -52,6 +52,10 @@ async function getOrderWithItems(orderId: number) {
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       discountAmount: item.discountAmount ?? undefined,
+      variantAdjustment: item.variantAdjustment ?? undefined,
+      modifierAdjustment: item.modifierAdjustment ?? undefined,
+      variantChoices: (item.variantChoices as any[] | null) ?? undefined,
+      modifierChoices: (item.modifierChoices as any[] | null) ?? undefined,
       lineTotal: item.lineTotal,
     })),
   };
@@ -83,6 +87,10 @@ router.get("/orders", async (req, res): Promise<void> => {
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           discountAmount: item.discountAmount ?? undefined,
+          variantAdjustment: item.variantAdjustment ?? undefined,
+          modifierAdjustment: item.modifierAdjustment ?? undefined,
+          variantChoices: (item.variantChoices as any[] | null) ?? undefined,
+          modifierChoices: (item.modifierChoices as any[] | null) ?? undefined,
           lineTotal: item.lineTotal,
         })),
       };
@@ -100,12 +108,17 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   let rawSubtotal = 0;
+  type ChoiceItem = { groupId: number; groupName: string; optionId: number; optionName: string; priceAdjustment: number };
   const resolvedItems: Array<{
     productId: number;
     productName: string;
     quantity: number;
     unitPrice: number;
     discountAmount: number | undefined;
+    variantAdjustment: number | undefined;
+    modifierAdjustment: number | undefined;
+    variantChoices: ChoiceItem[] | undefined;
+    modifierChoices: ChoiceItem[] | undefined;
     lineTotal: number;
   }> = [];
 
@@ -121,7 +134,10 @@ router.post("/orders", async (req, res): Promise<void> => {
     }
 
     const itemDiscount = item.discountAmount ?? 0;
-    const lineTotal = Math.max(0, product.price * item.quantity - itemDiscount);
+    const variantAdj = (item.variantChoices ?? []).reduce((s, c) => s + c.priceAdjustment, 0);
+    const modifierAdj = (item.modifierChoices ?? []).reduce((s, c) => s + c.priceAdjustment, 0);
+    const effectiveUnitPrice = product.price + variantAdj + modifierAdj;
+    const lineTotal = Math.max(0, effectiveUnitPrice * item.quantity - itemDiscount);
     rawSubtotal += lineTotal;
     resolvedItems.push({
       productId: product.id,
@@ -129,6 +145,10 @@ router.post("/orders", async (req, res): Promise<void> => {
       quantity: item.quantity,
       unitPrice: product.price,
       discountAmount: itemDiscount > 0 ? itemDiscount : undefined,
+      variantAdjustment: variantAdj !== 0 ? variantAdj : undefined,
+      modifierAdjustment: modifierAdj !== 0 ? modifierAdj : undefined,
+      variantChoices: item.variantChoices && item.variantChoices.length > 0 ? item.variantChoices : undefined,
+      modifierChoices: item.modifierChoices && item.modifierChoices.length > 0 ? item.modifierChoices : undefined,
       lineTotal,
     });
   }
@@ -178,6 +198,10 @@ router.post("/orders", async (req, res): Promise<void> => {
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       discountAmount: item.discountAmount,
+      variantAdjustment: item.variantAdjustment,
+      modifierAdjustment: item.modifierAdjustment,
+      variantChoices: item.variantChoices ?? null,
+      modifierChoices: item.modifierChoices ?? null,
       lineTotal: item.lineTotal,
     })),
   );

@@ -31,6 +31,22 @@ export const orderItemsTable = pgTable("order_items", {
   quantity: integer("quantity").notNull(),
   unitPrice: real("unit_price").notNull(),
   discountAmount: real("discount_amount"),
+  variantAdjustment: real("variant_adjustment"),
+  modifierAdjustment: real("modifier_adjustment"),
+  variantChoices: jsonb("variant_choices").$type<Array<{
+    groupId: number;
+    groupName: string;
+    optionId: number;
+    optionName: string;
+    priceAdjustment: number;
+  }>>(),
+  modifierChoices: jsonb("modifier_choices").$type<Array<{
+    groupId: number;
+    groupName: string;
+    optionId: number;
+    optionName: string;
+    priceAdjustment: number;
+  }>>(),
   lineTotal: real("line_total").notNull(),
 });
 

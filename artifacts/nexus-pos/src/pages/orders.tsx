@@ -189,9 +189,21 @@ export function Orders() {
                               <h4 className="font-semibold mb-3">Order Items</h4>
                               <div className="space-y-2">
                                 {order.items.map(item => (
-                                  <div key={item.id} className="flex justify-between text-sm">
-                                    <span className="text-muted-foreground">{item.quantity}x {item.productName}</span>
-                                    <span className="font-mono">{formatCurrency(item.lineTotal)}</span>
+                                  <div key={item.id} className="text-sm">
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">{item.quantity}x {item.productName}</span>
+                                      <span className="font-mono">{formatCurrency(item.lineTotal)}</span>
+                                    </div>
+                                    {item.variantChoices && (item.variantChoices as any[]).length > 0 && (
+                                      <p className="text-xs text-primary/70 pl-3 mt-0.5">
+                                        ↳ {(item.variantChoices as any[]).map((c: any) => c.optionName).join(", ")}
+                                      </p>
+                                    )}
+                                    {item.modifierChoices && (item.modifierChoices as any[]).length > 0 && (
+                                      <p className="text-xs text-amber-400/80 pl-3 mt-0.5">
+                                        ↳ + {(item.modifierChoices as any[]).map((c: any) => c.optionName).join(", ")}
+                                      </p>
+                                    )}
                                   </div>
                                 ))}
                                 <Separator className="my-2" />

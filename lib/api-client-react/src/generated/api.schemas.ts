@@ -19,6 +19,8 @@ export interface Product {
   barcode?: string | null;
   inStock: boolean;
   stockCount: number;
+  hasVariants: boolean;
+  hasModifiers: boolean;
   createdAt: string;
 }
 
@@ -52,6 +54,14 @@ export const OrderDiscountType = {
   fixed: "fixed",
 } as const;
 
+export interface ChoiceItem {
+  groupId: number;
+  groupName: string;
+  optionId: number;
+  optionName: string;
+  priceAdjustment: number;
+}
+
 export interface OrderItem {
   id: number;
   productId: number;
@@ -59,6 +69,10 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   discountAmount?: number | null;
+  variantAdjustment?: number | null;
+  modifierAdjustment?: number | null;
+  variantChoices?: ChoiceItem[] | null;
+  modifierChoices?: ChoiceItem[] | null;
   lineTotal: number;
 }
 
@@ -87,6 +101,8 @@ export type CreateOrderBodyItemsItem = {
   productId: number;
   quantity: number;
   discountAmount?: number;
+  variantChoices?: ChoiceItem[];
+  modifierChoices?: ChoiceItem[];
 };
 
 export type CreateOrderBodyDiscountType =
@@ -243,6 +259,100 @@ export interface GetReportSummaryQueryParams {
 
 export interface GetHourlySalesQueryParams {
   date?: string;
+}
+
+export interface VariantOption {
+  id: number;
+  groupId: number;
+  name: string;
+  priceAdjustment: number;
+  position: number;
+}
+
+export interface VariantGroup {
+  id: number;
+  productId: number;
+  name: string;
+  required: boolean;
+  options: VariantOption[];
+}
+
+export interface ModifierOption {
+  id: number;
+  groupId: number;
+  name: string;
+  priceAdjustment: number;
+  position: number;
+}
+
+export interface ModifierGroup {
+  id: number;
+  productId: number;
+  name: string;
+  required: boolean;
+  minSelections: number;
+  maxSelections: number;
+  options: ModifierOption[];
+}
+
+export interface ProductCustomization {
+  productId: number;
+  productName: string;
+  basePrice: number;
+  variantGroups: VariantGroup[];
+  modifierGroups: ModifierGroup[];
+}
+
+export type SaveVariantsBodyGroupsItemOptionsItem = {
+  name: string;
+  priceAdjustment?: number;
+};
+
+export type SaveVariantsBodyGroupsItem = {
+  name: string;
+  required?: boolean;
+  options: SaveVariantsBodyGroupsItemOptionsItem[];
+};
+
+export interface SaveVariantsBody {
+  groups: SaveVariantsBodyGroupsItem[];
+}
+
+export type SaveModifiersBodyGroupsItemOptionsItem = {
+  name: string;
+  priceAdjustment?: number;
+};
+
+export type SaveModifiersBodyGroupsItem = {
+  name: string;
+  required?: boolean;
+  minSelections?: number;
+  maxSelections?: number;
+  options: SaveModifiersBodyGroupsItemOptionsItem[];
+};
+
+export interface SaveModifiersBody {
+  groups: SaveModifiersBodyGroupsItem[];
+}
+
+export interface GetProductCustomizationParams {
+  id: number;
+}
+
+export interface GetProductVariantsParams {
+  id: number;
+}
+
+export interface SaveProductVariantsParams {
+  id: number;
+}
+
+export interface GetProductModifiersParams {
+  id: number;
+}
+
+export interface SaveProductModifiersParams {
+  id: number;
 }
 
 export type ListProductsParams = {
