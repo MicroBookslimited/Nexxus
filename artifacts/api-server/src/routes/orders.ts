@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable, productsTable } from "@workspace/db";
+import { eq, sql } from "drizzle-orm";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable } from "@workspace/db";
 import {
   CreateOrderBody,
   GetOrderParams,
@@ -25,6 +25,7 @@ function normalizeOrder(order: typeof ordersTable.$inferSelect) {
     splitCashAmount: order.splitCashAmount ?? undefined,
     notes: order.notes ?? undefined,
     voidReason: order.voidReason ?? undefined,
+    customerId: order.customerId ?? undefined,
     completedAt: order.completedAt ?? undefined,
   };
 }
@@ -164,6 +165,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       splitCardAmount: parsed.data.splitCardAmount,
       splitCashAmount: parsed.data.splitCashAmount,
       notes: parsed.data.notes,
+      customerId: parsed.data.customerId,
       completedAt: new Date(),
     })
     .returning();
@@ -179,6 +181,31 @@ router.post("/orders", async (req, res): Promise<void> => {
       lineTotal: item.lineTotal,
     })),
   );
+
+  // Deduct stock from products
+  for (const item of resolvedItems) {
+    await db
+      .update(productsTable)
+      .set({
+        stockCount: sql`GREATEST(0, ${productsTable.stockCount} - ${item.quantity})`,
+        inStock: sql`CASE WHEN ${productsTable.stockCount} - ${item.quantity} <= 0 THEN false ELSE ${productsTable.inStock} END`,
+      })
+      .where(eq(productsTable.id, item.productId));
+  }
+
+  // Update customer stats if customerId provided
+  if (parsed.data.customerId) {
+    const LOYALTY_RATE = 10; // 1 point per $10 spent
+    const pointsEarned = Math.floor(total / LOYALTY_RATE);
+    await db
+      .update(customersTable)
+      .set({
+        totalSpent: sql`${customersTable.totalSpent} + ${total}`,
+        orderCount: sql`${customersTable.orderCount} + 1`,
+        loyaltyPoints: sql`${customersTable.loyaltyPoints} + ${pointsEarned}`,
+      })
+      .where(eq(customersTable.id, parsed.data.customerId));
+  }
 
   const fullOrder = await getOrderWithItems(order.id);
   res.status(201).json(GetOrderResponse.parse(fullOrder));
@@ -220,8 +247,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     .set({
       status: parsed.data.status,
       voidReason: parsed.data.voidReason,
-      completedAt:
-        parsed.data.status === "completed" ? new Date() : undefined,
+      completedAt: parsed.data.status === "completed" ? new Date() : undefined,
     })
     .where(eq(ordersTable.id, params.data.id))
     .returning();

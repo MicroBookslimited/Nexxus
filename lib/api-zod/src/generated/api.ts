@@ -133,6 +133,7 @@ export const ListOrdersResponseItem = zod.object({
   splitCashAmount: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
+  customerId: zod.number().nullish(),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -166,6 +167,7 @@ export const CreateOrderBody = zod.object({
   discountType: zod.enum(["percent", "fixed"]).optional(),
   discountAmount: zod.number().optional(),
   notes: zod.string().optional(),
+  customerId: zod.number().optional(),
 });
 
 /**
@@ -190,6 +192,7 @@ export const GetOrderResponse = zod.object({
   splitCashAmount: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
+  customerId: zod.number().nullish(),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -232,6 +235,7 @@ export const UpdateOrderStatusResponse = zod.object({
   splitCashAmount: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
+  customerId: zod.number().nullish(),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -351,6 +355,7 @@ export const GetRecentOrdersResponseItem = zod.object({
   splitCashAmount: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
+  customerId: zod.number().nullish(),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -419,3 +424,183 @@ export const GetPaymentMethodBreakdownResponseItem = zod.object({
 export const GetPaymentMethodBreakdownResponse = zod.array(
   GetPaymentMethodBreakdownResponseItem,
 );
+
+/**
+ * @summary List all customers
+ */
+export const ListCustomersQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+});
+
+export const ListCustomersResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  email: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  loyaltyPoints: zod.number(),
+  totalSpent: zod.number(),
+  orderCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+export const ListCustomersResponse = zod.array(ListCustomersResponseItem);
+
+/**
+ * @summary Create a customer
+ */
+export const CreateCustomerBody = zod.object({
+  name: zod.string(),
+  email: zod.string().optional(),
+  phone: zod.string().optional(),
+});
+
+/**
+ * @summary Get a customer by ID
+ */
+export const GetCustomerParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCustomerResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  email: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  loyaltyPoints: zod.number(),
+  totalSpent: zod.number(),
+  orderCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update a customer
+ */
+export const UpdateCustomerParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateCustomerBody = zod.object({
+  name: zod.string(),
+  email: zod.string().optional(),
+  phone: zod.string().optional(),
+});
+
+export const UpdateCustomerResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  email: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  loyaltyPoints: zod.number(),
+  totalSpent: zod.number(),
+  orderCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a customer
+ */
+export const DeleteCustomerParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Get all orders for a customer
+ */
+export const GetCustomerOrdersParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCustomerOrdersResponseItem = zod.object({
+  id: zod.number(),
+  orderNumber: zod.string(),
+  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
+  subtotal: zod.number(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  discountValue: zod.number().nullish(),
+  tax: zod.number(),
+  total: zod.number(),
+  paymentMethod: zod.string().nullish(),
+  splitCardAmount: zod.number().nullish(),
+  splitCashAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  voidReason: zod.string().nullish(),
+  customerId: zod.number().nullish(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      productId: zod.number(),
+      productName: zod.string(),
+      quantity: zod.number(),
+      unitPrice: zod.number(),
+      discountAmount: zod.number().nullish(),
+      lineTotal: zod.number(),
+    }),
+  ),
+  createdAt: zod.coerce.date(),
+  completedAt: zod.coerce.date().nullish(),
+});
+export const GetCustomerOrdersResponse = zod.array(
+  GetCustomerOrdersResponseItem,
+);
+
+/**
+ * @summary Get products with low stock
+ */
+export const GetLowStockProductsQueryParams = zod.object({
+  threshold: zod.coerce.number().optional(),
+});
+
+export const GetLowStockProductsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  price: zod.number(),
+  category: zod.string(),
+  imageUrl: zod.string().nullish(),
+  barcode: zod.string().nullish(),
+  inStock: zod.boolean(),
+  stockCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+export const GetLowStockProductsResponse = zod.array(
+  GetLowStockProductsResponseItem,
+);
+
+/**
+ * @summary Get report summary for a date range
+ */
+export const GetReportSummaryQueryParams = zod.object({
+  from: zod.coerce.string().optional(),
+  to: zod.coerce.string().optional(),
+});
+
+export const GetReportSummaryResponse = zod.object({
+  revenue: zod.number(),
+  orders: zod.number(),
+  avgOrderValue: zod.number(),
+  newCustomers: zod.number(),
+  topProduct: zod.string().nullish(),
+  voidedOrders: zod.number(),
+});
+
+/**
+ * @summary Get hourly sales breakdown for a date
+ */
+export const GetHourlySalesQueryParams = zod.object({
+  date: zod.coerce.string().optional(),
+});
+
+export const GetHourlySalesResponseItem = zod.object({
+  hour: zod.number(),
+  revenue: zod.number(),
+  orders: zod.number(),
+});
+export const GetHourlySalesResponse = zod.array(GetHourlySalesResponseItem);
+
+/**
+ * @summary Export orders as CSV for a date range
+ */
+export const ExportOrdersQueryParams = zod.object({
+  from: zod.coerce.string().optional(),
+  to: zod.coerce.string().optional(),
+});

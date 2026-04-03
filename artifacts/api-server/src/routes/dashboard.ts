@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, sql, desc, lte } from "drizzle-orm";
 import { db, ordersTable, orderItemsTable, productsTable } from "@workspace/db";
 import {
   GetDashboardSummaryResponse,
@@ -11,6 +11,8 @@ import {
   GetTopProductsQueryParams,
   GetTopProductsResponse,
   GetPaymentMethodBreakdownResponse,
+  GetLowStockProductsQueryParams,
+  GetLowStockProductsResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -220,6 +222,33 @@ router.get("/dashboard/payment-methods", async (_req, res): Promise<void> => {
         method: r.method ?? "unknown",
         revenue: Math.round(Number(r.revenue) * 100) / 100,
         count: Number(r.count),
+      })),
+    ),
+  );
+});
+
+router.get("/dashboard/low-stock", async (req, res): Promise<void> => {
+  const query = GetLowStockProductsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+
+  const threshold = query.data.threshold ?? 10;
+
+  const products = await db
+    .select()
+    .from(productsTable)
+    .where(lte(productsTable.stockCount, threshold))
+    .orderBy(productsTable.stockCount);
+
+  res.json(
+    GetLowStockProductsResponse.parse(
+      products.map((p) => ({
+        ...p,
+        imageUrl: p.imageUrl ?? undefined,
+        description: p.description ?? undefined,
+        barcode: p.barcode ?? undefined,
       })),
     ),
   );

@@ -18,6 +18,10 @@ tags:
     description: Held (parked) order management
   - name: dashboard
     description: Dashboard analytics
+  - name: customers
+    description: Customer management
+  - name: reports
+    description: Business reports
 paths:
   /healthz:
     get:
@@ -381,6 +385,203 @@ paths:
                 items:
                   $ref: "#/components/schemas/PaymentMethodSales"
 
+  /customers:
+    get:
+      operationId: listCustomers
+      tags: [customers]
+      summary: List all customers
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of customers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Customer"
+    post:
+      operationId: createCustomer
+      tags: [customers]
+      summary: Create a customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomerBody"
+      responses:
+        "201":
+          description: Created customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+
+  /customers/{id}:
+    get:
+      operationId: getCustomer
+      tags: [customers]
+      summary: Get a customer by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+    put:
+      operationId: updateCustomer
+      tags: [customers]
+      summary: Update a customer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomerBody"
+      responses:
+        "200":
+          description: Updated customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+    delete:
+      operationId: deleteCustomer
+      tags: [customers]
+      summary: Delete a customer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /customers/{id}/orders:
+    get:
+      operationId: getCustomerOrders
+      tags: [customers]
+      summary: Get all orders for a customer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Customer orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+
+  /dashboard/low-stock:
+    get:
+      operationId: getLowStockProducts
+      tags: [dashboard]
+      summary: Get products with low stock
+      parameters:
+        - name: threshold
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Low stock products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+
+  /reports/summary:
+    get:
+      operationId: getReportSummary
+      tags: [reports]
+      summary: Get report summary for a date range
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Report summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportSummary"
+
+  /reports/hourly:
+    get:
+      operationId: getHourlySales
+      tags: [reports]
+      summary: Get hourly sales breakdown for a date
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Hourly sales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HourlySales"
+
+  /reports/export:
+    get:
+      operationId: exportOrders
+      tags: [reports]
+      summary: Export orders as CSV for a date range
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CSV export
+          content:
+            text/csv:
+              schema:
+                type: string
+
 components:
   schemas:
     HealthStatus:
@@ -501,6 +702,9 @@ components:
         voidReason:
           type: string
           nullable: true
+        customerId:
+          type: integer
+          nullable: true
         items:
           type: array
           items:
@@ -585,6 +789,8 @@ components:
           format: float
         notes:
           type: string
+        customerId:
+          type: integer
       required:
         - items
         - paymentMethod
@@ -757,3 +963,106 @@ components:
         - method
         - revenue
         - count
+
+    Customer:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        loyaltyPoints:
+          type: integer
+        totalSpent:
+          type: number
+          format: float
+        orderCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - loyaltyPoints
+        - totalSpent
+        - orderCount
+        - createdAt
+
+    CreateCustomerBody:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+      required:
+        - name
+
+    ReportSummary:
+      type: object
+      properties:
+        revenue:
+          type: number
+          format: float
+        orders:
+          type: integer
+        avgOrderValue:
+          type: number
+          format: float
+        newCustomers:
+          type: integer
+        topProduct:
+          type: string
+          nullable: true
+        voidedOrders:
+          type: integer
+      required:
+        - revenue
+        - orders
+        - avgOrderValue
+        - newCustomers
+        - voidedOrders
+
+    HourlySales:
+      type: object
+      properties:
+        hour:
+          type: integer
+        revenue:
+          type: number
+          format: float
+        orders:
+          type: integer
+      required:
+        - hour
+        - revenue
+        - orders
+
+    ListCustomersQueryParams:
+      type: object
+      properties:
+        search:
+          type: string
+
+    GetReportSummaryQueryParams:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+
+    GetHourlySalesQueryParams:
+      type: object
+      properties:
+        date:
+          type: string

@@ -9,6 +9,8 @@ import { Dashboard } from "@/pages/dashboard";
 import { POS } from "@/pages/pos";
 import { Orders } from "@/pages/orders";
 import { Products } from "@/pages/products";
+import { Customers } from "@/pages/customers";
+import { Reports } from "@/pages/reports";
 import { Layout } from "@/components/layout";
 
 const queryClient = new QueryClient();
@@ -39,6 +41,8 @@ function Router() {
       <Route path="/pos"><ProtectedRoute component={POS} /></Route>
       <Route path="/orders"><ProtectedRoute component={Orders} /></Route>
       <Route path="/products"><ProtectedRoute component={Products} /></Route>
+      <Route path="/customers"><ProtectedRoute component={Customers} /></Route>
+      <Route path="/reports"><ProtectedRoute component={Reports} /></Route>
       <Route component={NotFound} />
     </Switch>
   );

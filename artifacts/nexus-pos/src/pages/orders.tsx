@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 
 export function Orders() {
   const [statusFilter, setStatusFilter] = useState<string>("all");

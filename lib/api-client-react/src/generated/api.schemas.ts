@@ -77,6 +77,7 @@ export interface Order {
   splitCashAmount?: number | null;
   notes?: string | null;
   voidReason?: string | null;
+  customerId?: number | null;
   items: OrderItem[];
   createdAt: string;
   completedAt?: string | null;
@@ -104,6 +105,7 @@ export interface CreateOrderBody {
   discountType?: CreateOrderBodyDiscountType;
   discountAmount?: number;
   notes?: string;
+  customerId?: number;
 }
 
 export type UpdateOrderStatusBodyStatus =
@@ -198,6 +200,51 @@ export interface PaymentMethodSales {
   count: number;
 }
 
+export interface Customer {
+  id: number;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  loyaltyPoints: number;
+  totalSpent: number;
+  orderCount: number;
+  createdAt: string;
+}
+
+export interface CreateCustomerBody {
+  name: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface ReportSummary {
+  revenue: number;
+  orders: number;
+  avgOrderValue: number;
+  newCustomers: number;
+  topProduct?: string | null;
+  voidedOrders: number;
+}
+
+export interface HourlySales {
+  hour: number;
+  revenue: number;
+  orders: number;
+}
+
+export interface ListCustomersQueryParams {
+  search?: string;
+}
+
+export interface GetReportSummaryQueryParams {
+  from?: string;
+  to?: string;
+}
+
+export interface GetHourlySalesQueryParams {
+  date?: string;
+}
+
 export type ListProductsParams = {
   category?: string;
   search?: string;
@@ -229,4 +276,26 @@ export type GetDailySalesParams = {
 
 export type GetTopProductsParams = {
   limit?: number;
+};
+
+export type ListCustomersParams = {
+  search?: string;
+};
+
+export type GetLowStockProductsParams = {
+  threshold?: number;
+};
+
+export type GetReportSummaryParams = {
+  from?: string;
+  to?: string;
+};
+
+export type GetHourlySalesParams = {
+  date?: string;
+};
+
+export type ExportOrdersParams = {
+  from?: string;
+  to?: string;
 };

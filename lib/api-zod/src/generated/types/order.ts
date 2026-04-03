@@ -24,6 +24,7 @@ export interface Order {
   splitCashAmount?: number | null;
   notes?: string | null;
   voidReason?: string | null;
+  customerId?: number | null;
   items: OrderItem[];
   createdAt: Date;
   completedAt?: Date | null;

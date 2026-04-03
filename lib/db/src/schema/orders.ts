@@ -1,4 +1,5 @@
 import { pgTable, text, serial, timestamp, real, integer, jsonb } from "drizzle-orm/pg-core";
+import { customersTable } from "./customers";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -17,6 +18,7 @@ export const ordersTable = pgTable("orders", {
   splitCashAmount: real("split_cash_amount"),
   notes: text("notes"),
   voidReason: text("void_reason"),
+  customerId: integer("customer_id").references(() => customersTable.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });

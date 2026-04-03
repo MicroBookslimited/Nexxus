@@ -16,4 +16,5 @@ export interface CreateOrderBody {
   discountType?: CreateOrderBodyDiscountType;
   discountAmount?: number;
   notes?: string;
+  customerId?: number;
 }
