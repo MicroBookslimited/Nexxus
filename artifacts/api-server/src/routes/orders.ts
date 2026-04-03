@@ -14,6 +14,21 @@ import {
 
 const router: IRouter = Router();
 
+function normalizeOrder(order: typeof ordersTable.$inferSelect) {
+  return {
+    ...order,
+    discountType: order.discountType ?? undefined,
+    discountAmount: order.discountAmount ?? undefined,
+    discountValue: order.discountValue ?? undefined,
+    paymentMethod: order.paymentMethod ?? undefined,
+    splitCardAmount: order.splitCardAmount ?? undefined,
+    splitCashAmount: order.splitCashAmount ?? undefined,
+    notes: order.notes ?? undefined,
+    voidReason: order.voidReason ?? undefined,
+    completedAt: order.completedAt ?? undefined,
+  };
+}
+
 async function getOrderWithItems(orderId: number) {
   const [order] = await db
     .select()
@@ -28,13 +43,14 @@ async function getOrderWithItems(orderId: number) {
     .where(eq(orderItemsTable.orderId, orderId));
 
   return {
-    ...order,
+    ...normalizeOrder(order),
     items: items.map((item) => ({
       id: item.id,
       productId: item.productId,
       productName: item.productName,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
+      discountAmount: item.discountAmount ?? undefined,
       lineTotal: item.lineTotal,
     })),
   };
@@ -47,13 +63,9 @@ router.get("/orders", async (req, res): Promise<void> => {
     return;
   }
 
-  let ordersQuery = db.select().from(ordersTable);
-  if (query.data.status) {
-    // @ts-expect-error drizzle conditional chaining
-    ordersQuery = ordersQuery.where(eq(ordersTable.status, query.data.status));
-  }
-
-  const orders = await ordersQuery.orderBy(ordersTable.createdAt);
+  const orders = query.data.status
+    ? await db.select().from(ordersTable).where(eq(ordersTable.status, query.data.status))
+    : await db.select().from(ordersTable);
 
   const ordersWithItems = await Promise.all(
     orders.map(async (order) => {
@@ -62,13 +74,14 @@ router.get("/orders", async (req, res): Promise<void> => {
         .from(orderItemsTable)
         .where(eq(orderItemsTable.orderId, order.id));
       return {
-        ...order,
+        ...normalizeOrder(order),
         items: items.map((item) => ({
           id: item.id,
           productId: item.productId,
           productName: item.productName,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
+          discountAmount: item.discountAmount ?? undefined,
           lineTotal: item.lineTotal,
         })),
       };
@@ -85,12 +98,13 @@ router.post("/orders", async (req, res): Promise<void> => {
     return;
   }
 
-  let subtotal = 0;
+  let rawSubtotal = 0;
   const resolvedItems: Array<{
     productId: number;
     productName: string;
     quantity: number;
     unitPrice: number;
+    discountAmount: number | undefined;
     lineTotal: number;
   }> = [];
 
@@ -105,20 +119,33 @@ router.post("/orders", async (req, res): Promise<void> => {
       return;
     }
 
-    const lineTotal = product.price * item.quantity;
-    subtotal += lineTotal;
+    const itemDiscount = item.discountAmount ?? 0;
+    const lineTotal = Math.max(0, product.price * item.quantity - itemDiscount);
+    rawSubtotal += lineTotal;
     resolvedItems.push({
       productId: product.id,
       productName: product.name,
       quantity: item.quantity,
       unitPrice: product.price,
+      discountAmount: itemDiscount > 0 ? itemDiscount : undefined,
       lineTotal,
     });
   }
 
-  const tax = Math.round(subtotal * 0.1 * 100) / 100;
-  const total = Math.round((subtotal + tax) * 100) / 100;
-  subtotal = Math.round(subtotal * 100) / 100;
+  // Apply cart-level discount
+  let discountValue = 0;
+  if (parsed.data.discountAmount && parsed.data.discountType) {
+    discountValue =
+      parsed.data.discountType === "percent"
+        ? rawSubtotal * (parsed.data.discountAmount / 100)
+        : parsed.data.discountAmount;
+    discountValue = Math.min(discountValue, rawSubtotal);
+  }
+
+  const subtotal = Math.round(rawSubtotal * 100) / 100;
+  const discountedSubtotal = Math.max(0, rawSubtotal - discountValue);
+  const tax = Math.round(discountedSubtotal * 0.1 * 100) / 100;
+  const total = Math.round((discountedSubtotal + tax) * 100) / 100;
 
   const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
 
@@ -128,9 +155,15 @@ router.post("/orders", async (req, res): Promise<void> => {
       orderNumber,
       status: "completed",
       subtotal,
+      discountType: parsed.data.discountType,
+      discountAmount: parsed.data.discountAmount,
+      discountValue: discountValue > 0 ? Math.round(discountValue * 100) / 100 : undefined,
       tax,
       total,
       paymentMethod: parsed.data.paymentMethod,
+      splitCardAmount: parsed.data.splitCardAmount,
+      splitCashAmount: parsed.data.splitCashAmount,
+      notes: parsed.data.notes,
       completedAt: new Date(),
     })
     .returning();
@@ -138,7 +171,12 @@ router.post("/orders", async (req, res): Promise<void> => {
   await db.insert(orderItemsTable).values(
     resolvedItems.map((item) => ({
       orderId: order.id,
-      ...item,
+      productId: item.productId,
+      productName: item.productName,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      discountAmount: item.discountAmount,
+      lineTotal: item.lineTotal,
     })),
   );
 
@@ -181,7 +219,9 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     .update(ordersTable)
     .set({
       status: parsed.data.status,
-      completedAt: parsed.data.status === "completed" ? new Date() : undefined,
+      voidReason: parsed.data.voidReason,
+      completedAt:
+        parsed.data.status === "completed" ? new Date() : undefined,
     })
     .where(eq(ordersTable.id, params.data.id))
     .returning();

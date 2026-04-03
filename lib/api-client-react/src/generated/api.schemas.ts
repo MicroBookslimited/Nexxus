@@ -12,10 +12,11 @@ export interface HealthStatus {
 export interface Product {
   id: number;
   name: string;
-  description?: string;
+  description?: string | null;
   price: number;
   category: string;
-  imageUrl?: string;
+  imageUrl?: string | null;
+  barcode?: string | null;
   inStock: boolean;
   stockCount: number;
   createdAt: string;
@@ -27,6 +28,7 @@ export interface CreateProductBody {
   price: number;
   category: string;
   imageUrl?: string;
+  barcode?: string;
   inStock?: boolean;
   stockCount?: number;
 }
@@ -37,6 +39,17 @@ export const OrderStatus = {
   pending: "pending",
   completed: "completed",
   cancelled: "cancelled",
+  refunded: "refunded",
+  voided: "voided",
+} as const;
+
+export type OrderDiscountType =
+  | (typeof OrderDiscountType)[keyof typeof OrderDiscountType]
+  | null;
+
+export const OrderDiscountType = {
+  percent: "percent",
+  fixed: "fixed",
 } as const;
 
 export interface OrderItem {
@@ -45,6 +58,7 @@ export interface OrderItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  discountAmount?: number | null;
   lineTotal: number;
 }
 
@@ -53,22 +67,43 @@ export interface Order {
   orderNumber: string;
   status: OrderStatus;
   subtotal: number;
+  discountType?: OrderDiscountType;
+  discountAmount?: number | null;
+  discountValue?: number | null;
   tax: number;
   total: number;
-  paymentMethod?: string;
+  paymentMethod?: string | null;
+  splitCardAmount?: number | null;
+  splitCashAmount?: number | null;
+  notes?: string | null;
+  voidReason?: string | null;
   items: OrderItem[];
   createdAt: string;
-  completedAt?: string;
+  completedAt?: string | null;
 }
 
 export type CreateOrderBodyItemsItem = {
   productId: number;
   quantity: number;
+  discountAmount?: number;
 };
+
+export type CreateOrderBodyDiscountType =
+  (typeof CreateOrderBodyDiscountType)[keyof typeof CreateOrderBodyDiscountType];
+
+export const CreateOrderBodyDiscountType = {
+  percent: "percent",
+  fixed: "fixed",
+} as const;
 
 export interface CreateOrderBody {
   items: CreateOrderBodyItemsItem[];
   paymentMethod: string;
+  splitCardAmount?: number;
+  splitCashAmount?: number;
+  discountType?: CreateOrderBodyDiscountType;
+  discountAmount?: number;
+  notes?: string;
 }
 
 export type UpdateOrderStatusBodyStatus =
@@ -78,10 +113,55 @@ export const UpdateOrderStatusBodyStatus = {
   pending: "pending",
   completed: "completed",
   cancelled: "cancelled",
+  refunded: "refunded",
+  voided: "voided",
 } as const;
 
 export interface UpdateOrderStatusBody {
   status: UpdateOrderStatusBodyStatus;
+  voidReason?: string;
+}
+
+export type HeldOrderDiscountType =
+  | (typeof HeldOrderDiscountType)[keyof typeof HeldOrderDiscountType]
+  | null;
+
+export const HeldOrderDiscountType = {
+  percent: "percent",
+  fixed: "fixed",
+} as const;
+
+export interface HeldOrderItem {
+  productId: number;
+  productName: string;
+  price: number;
+  quantity: number;
+}
+
+export interface HeldOrder {
+  id: number;
+  label?: string | null;
+  items: HeldOrderItem[];
+  notes?: string | null;
+  discountType?: HeldOrderDiscountType;
+  discountAmount?: number | null;
+  createdAt: string;
+}
+
+export type CreateHeldOrderBodyDiscountType =
+  (typeof CreateHeldOrderBodyDiscountType)[keyof typeof CreateHeldOrderBodyDiscountType];
+
+export const CreateHeldOrderBodyDiscountType = {
+  percent: "percent",
+  fixed: "fixed",
+} as const;
+
+export interface CreateHeldOrderBody {
+  label?: string;
+  items: HeldOrderItem[];
+  notes?: string;
+  discountType?: CreateHeldOrderBodyDiscountType;
+  discountAmount?: number;
 }
 
 export interface DashboardSummary {
@@ -116,6 +196,8 @@ export const ListOrdersStatus = {
   pending: "pending",
   completed: "completed",
   cancelled: "cancelled",
+  refunded: "refunded",
+  voided: "voided",
 } as const;
 
 export type GetRecentOrdersParams = {

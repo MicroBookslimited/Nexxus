@@ -9,10 +9,11 @@
 export interface Product {
   id: number;
   name: string;
-  description?: string;
+  description?: string | null;
   price: number;
   category: string;
-  imageUrl?: string;
+  imageUrl?: string | null;
+  barcode?: string | null;
   inStock: boolean;
   stockCount: number;
   createdAt: Date;

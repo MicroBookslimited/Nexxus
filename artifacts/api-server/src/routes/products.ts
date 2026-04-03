@@ -15,6 +15,15 @@ import {
 
 const router: IRouter = Router();
 
+function normalizeProduct(p: typeof productsTable.$inferSelect) {
+  return {
+    ...p,
+    imageUrl: p.imageUrl ?? undefined,
+    description: p.description ?? undefined,
+    barcode: p.barcode ?? undefined,
+  };
+}
+
 router.get("/products", async (req, res): Promise<void> => {
   const query = ListProductsQueryParams.safeParse(req.query);
   if (!query.success) {
@@ -35,13 +44,7 @@ router.get("/products", async (req, res): Promise<void> => {
       ? await db.select().from(productsTable).where(and(...conditions))
       : await db.select().from(productsTable);
 
-  const normalized = products.map((p) => ({
-    ...p,
-    imageUrl: p.imageUrl ?? undefined,
-    description: p.description ?? undefined,
-  }));
-
-  res.json(ListProductsResponse.parse(normalized));
+  res.json(ListProductsResponse.parse(products.map(normalizeProduct)));
 });
 
 router.post("/products", async (req, res): Promise<void> => {
@@ -59,12 +62,13 @@ router.post("/products", async (req, res): Promise<void> => {
       price: parsed.data.price,
       category: parsed.data.category,
       imageUrl: parsed.data.imageUrl,
+      barcode: parsed.data.barcode,
       inStock: parsed.data.inStock ?? true,
       stockCount: parsed.data.stockCount ?? 0,
     })
     .returning();
 
-  res.status(201).json(GetProductResponse.parse(product));
+  res.status(201).json(GetProductResponse.parse(normalizeProduct(product)));
 });
 
 router.get("/products/:id", async (req, res): Promise<void> => {
@@ -85,11 +89,7 @@ router.get("/products/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(GetProductResponse.parse({
-    ...product,
-    imageUrl: product.imageUrl ?? undefined,
-    description: product.description ?? undefined,
-  }));
+  res.json(GetProductResponse.parse(normalizeProduct(product)));
 });
 
 router.put("/products/:id", async (req, res): Promise<void> => {
@@ -114,6 +114,7 @@ router.put("/products/:id", async (req, res): Promise<void> => {
       price: parsed.data.price,
       category: parsed.data.category,
       imageUrl: parsed.data.imageUrl,
+      barcode: parsed.data.barcode,
       inStock: parsed.data.inStock,
       stockCount: parsed.data.stockCount,
     })
@@ -125,11 +126,7 @@ router.put("/products/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(UpdateProductResponse.parse({
-    ...product,
-    imageUrl: product.imageUrl ?? undefined,
-    description: product.description ?? undefined,
-  }));
+  res.json(UpdateProductResponse.parse(normalizeProduct(product)));
 });
 
 router.delete("/products/:id", async (req, res): Promise<void> => {

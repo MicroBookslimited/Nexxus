@@ -14,6 +14,8 @@ tags:
     description: Product catalog
   - name: orders
     description: Order management
+  - name: held-orders
+    description: Held (parked) order management
   - name: dashboard
     description: Dashboard analytics
 paths:
@@ -22,7 +24,6 @@ paths:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -139,7 +140,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [pending, completed, cancelled]
+            enum: [pending, completed, cancelled, refunded, voided]
         - name: limit
           in: query
           schema:
@@ -192,7 +193,7 @@ paths:
     patch:
       operationId: updateOrderStatus
       tags: [orders]
-      summary: Update order status
+      summary: Update order status (also used for refund/void)
       parameters:
         - name: id
           in: path
@@ -212,6 +213,70 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Order"
+
+  /held-orders:
+    get:
+      operationId: listHeldOrders
+      tags: [held-orders]
+      summary: List all held (parked) orders
+      responses:
+        "200":
+          description: List of held orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HeldOrder"
+    post:
+      operationId: createHeldOrder
+      tags: [held-orders]
+      summary: Park (hold) the current cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHeldOrderBody"
+      responses:
+        "201":
+          description: Created held order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeldOrder"
+
+  /held-orders/{id}:
+    get:
+      operationId: getHeldOrder
+      tags: [held-orders]
+      summary: Recall a held order by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Held order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeldOrder"
+    delete:
+      operationId: deleteHeldOrder
+      tags: [held-orders]
+      summary: Delete a held order (after recall or dismiss)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
 
   /dashboard/summary:
     get:
@@ -280,6 +345,7 @@ components:
           type: string
         description:
           type: string
+          nullable: true
         price:
           type: number
           format: float
@@ -287,6 +353,10 @@ components:
           type: string
         imageUrl:
           type: string
+          nullable: true
+        barcode:
+          type: string
+          nullable: true
         inStock:
           type: boolean
         stockCount:
@@ -317,6 +387,8 @@ components:
           type: string
         imageUrl:
           type: string
+        barcode:
+          type: string
         inStock:
           type: boolean
         stockCount:
@@ -335,10 +407,22 @@ components:
           type: string
         status:
           type: string
-          enum: [pending, completed, cancelled]
+          enum: [pending, completed, cancelled, refunded, voided]
         subtotal:
           type: number
           format: float
+        discountType:
+          type: string
+          enum: [percent, fixed]
+          nullable: true
+        discountAmount:
+          type: number
+          format: float
+          nullable: true
+        discountValue:
+          type: number
+          format: float
+          nullable: true
         tax:
           type: number
           format: float
@@ -347,6 +431,21 @@ components:
           format: float
         paymentMethod:
           type: string
+          nullable: true
+        splitCardAmount:
+          type: number
+          format: float
+          nullable: true
+        splitCashAmount:
+          type: number
+          format: float
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        voidReason:
+          type: string
+          nullable: true
         items:
           type: array
           items:
@@ -357,6 +456,7 @@ components:
         completedAt:
           type: string
           format: date-time
+          nullable: true
       required:
         - id
         - orderNumber
@@ -381,6 +481,10 @@ components:
         unitPrice:
           type: number
           format: float
+        discountAmount:
+          type: number
+          format: float
+          nullable: true
         lineTotal:
           type: number
           format: float
@@ -404,10 +508,27 @@ components:
                 type: integer
               quantity:
                 type: integer
+              discountAmount:
+                type: number
+                format: float
             required:
               - productId
               - quantity
         paymentMethod:
+          type: string
+        splitCardAmount:
+          type: number
+          format: float
+        splitCashAmount:
+          type: number
+          format: float
+        discountType:
+          type: string
+          enum: [percent, fixed]
+        discountAmount:
+          type: number
+          format: float
+        notes:
           type: string
       required:
         - items
@@ -418,9 +539,80 @@ components:
       properties:
         status:
           type: string
-          enum: [pending, completed, cancelled]
+          enum: [pending, completed, cancelled, refunded, voided]
+        voidReason:
+          type: string
       required:
         - status
+
+    HeldOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        label:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HeldOrderItem"
+        notes:
+          type: string
+          nullable: true
+        discountType:
+          type: string
+          enum: [percent, fixed]
+          nullable: true
+        discountAmount:
+          type: number
+          format: float
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - items
+        - createdAt
+
+    HeldOrderItem:
+      type: object
+      properties:
+        productId:
+          type: integer
+        productName:
+          type: string
+        price:
+          type: number
+          format: float
+        quantity:
+          type: integer
+      required:
+        - productId
+        - productName
+        - price
+        - quantity
+
+    CreateHeldOrderBody:
+      type: object
+      properties:
+        label:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HeldOrderItem"
+        notes:
+          type: string
+        discountType:
+          type: string
+          enum: [percent, fixed]
+        discountAmount:
+          type: number
+          format: float
+      required:
+        - items
 
     DashboardSummary:
       type: object

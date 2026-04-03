@@ -6,12 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface OrderItem {
-  id: number;
+export interface HeldOrderItem {
   productId: number;
   productName: string;
+  price: number;
   quantity: number;
-  unitPrice: number;
-  discountAmount?: number | null;
-  lineTotal: number;
 }

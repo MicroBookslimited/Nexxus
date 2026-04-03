@@ -9,4 +9,5 @@
 export type CreateOrderBodyItemsItem = {
   productId: number;
   quantity: number;
+  discountAmount?: number;
 };

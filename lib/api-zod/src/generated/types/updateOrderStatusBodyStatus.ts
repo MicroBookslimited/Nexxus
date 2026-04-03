@@ -13,4 +13,6 @@ export const UpdateOrderStatusBodyStatus = {
   pending: "pending",
   completed: "completed",
   cancelled: "cancelled",
+  refunded: "refunded",
+  voided: "voided",
 } as const;

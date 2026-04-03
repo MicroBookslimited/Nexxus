@@ -7,16 +7,23 @@
  */
 
 export * from "./categorySales";
+export * from "./createHeldOrderBody";
+export * from "./createHeldOrderBodyDiscountType";
 export * from "./createOrderBody";
+export * from "./createOrderBodyDiscountType";
 export * from "./createOrderBodyItemsItem";
 export * from "./createProductBody";
 export * from "./dashboardSummary";
 export * from "./getRecentOrdersParams";
 export * from "./healthStatus";
+export * from "./heldOrder";
+export * from "./heldOrderDiscountType";
+export * from "./heldOrderItem";
 export * from "./listOrdersParams";
 export * from "./listOrdersStatus";
 export * from "./listProductsParams";
 export * from "./order";
+export * from "./orderDiscountType";
 export * from "./orderItem";
 export * from "./orderStatus";
 export * from "./product";

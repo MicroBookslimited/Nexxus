@@ -5,9 +5,15 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateOrderBodyDiscountType } from "./createOrderBodyDiscountType";
 import type { CreateOrderBodyItemsItem } from "./createOrderBodyItemsItem";
 
 export interface CreateOrderBody {
   items: CreateOrderBodyItemsItem[];
   paymentMethod: string;
+  splitCardAmount?: number;
+  splitCashAmount?: number;
+  discountType?: CreateOrderBodyDiscountType;
+  discountAmount?: number;
+  notes?: string;
 }

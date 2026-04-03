@@ -18,11 +18,13 @@ import type {
 
 import type {
   CategorySales,
+  CreateHeldOrderBody,
   CreateOrderBody,
   CreateProductBody,
   DashboardSummary,
   GetRecentOrdersParams,
   HealthStatus,
+  HeldOrder,
   ListOrdersParams,
   ListProductsParams,
   Order,
@@ -40,7 +42,6 @@ type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const getHealthCheckUrl = () => {
@@ -819,7 +820,7 @@ export function useGetOrder<
 }
 
 /**
- * @summary Update order status
+ * @summary Update order status (also used for refund/void)
  */
 export const getUpdateOrderStatusUrl = (id: number) => {
   return `/api/orders/${id}`;
@@ -883,7 +884,7 @@ export type UpdateOrderStatusMutationBody = BodyType<UpdateOrderStatusBody>;
 export type UpdateOrderStatusMutationError = ErrorType<unknown>;
 
 /**
- * @summary Update order status
+ * @summary Update order status (also used for refund/void)
  */
 export const useUpdateOrderStatus = <
   TError = ErrorType<unknown>,
@@ -903,6 +904,338 @@ export const useUpdateOrderStatus = <
   TContext
 > => {
   return useMutation(getUpdateOrderStatusMutationOptions(options));
+};
+
+/**
+ * @summary List all held (parked) orders
+ */
+export const getListHeldOrdersUrl = () => {
+  return `/api/held-orders`;
+};
+
+export const listHeldOrders = async (
+  options?: RequestInit,
+): Promise<HeldOrder[]> => {
+  return customFetch<HeldOrder[]>(getListHeldOrdersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListHeldOrdersQueryKey = () => {
+  return [`/api/held-orders`] as const;
+};
+
+export const getListHeldOrdersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listHeldOrders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listHeldOrders>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListHeldOrdersQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listHeldOrders>>> = ({
+    signal,
+  }) => listHeldOrders({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listHeldOrders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListHeldOrdersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listHeldOrders>>
+>;
+export type ListHeldOrdersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all held (parked) orders
+ */
+
+export function useListHeldOrders<
+  TData = Awaited<ReturnType<typeof listHeldOrders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listHeldOrders>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListHeldOrdersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Park (hold) the current cart
+ */
+export const getCreateHeldOrderUrl = () => {
+  return `/api/held-orders`;
+};
+
+export const createHeldOrder = async (
+  createHeldOrderBody: CreateHeldOrderBody,
+  options?: RequestInit,
+): Promise<HeldOrder> => {
+  return customFetch<HeldOrder>(getCreateHeldOrderUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createHeldOrderBody),
+  });
+};
+
+export const getCreateHeldOrderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createHeldOrder>>,
+    TError,
+    { data: BodyType<CreateHeldOrderBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createHeldOrder>>,
+  TError,
+  { data: BodyType<CreateHeldOrderBody> },
+  TContext
+> => {
+  const mutationKey = ["createHeldOrder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createHeldOrder>>,
+    { data: BodyType<CreateHeldOrderBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createHeldOrder(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateHeldOrderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createHeldOrder>>
+>;
+export type CreateHeldOrderMutationBody = BodyType<CreateHeldOrderBody>;
+export type CreateHeldOrderMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Park (hold) the current cart
+ */
+export const useCreateHeldOrder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createHeldOrder>>,
+    TError,
+    { data: BodyType<CreateHeldOrderBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createHeldOrder>>,
+  TError,
+  { data: BodyType<CreateHeldOrderBody> },
+  TContext
+> => {
+  return useMutation(getCreateHeldOrderMutationOptions(options));
+};
+
+/**
+ * @summary Recall a held order by ID
+ */
+export const getGetHeldOrderUrl = (id: number) => {
+  return `/api/held-orders/${id}`;
+};
+
+export const getHeldOrder = async (
+  id: number,
+  options?: RequestInit,
+): Promise<HeldOrder> => {
+  return customFetch<HeldOrder>(getGetHeldOrderUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetHeldOrderQueryKey = (id: number) => {
+  return [`/api/held-orders/${id}`] as const;
+};
+
+export const getGetHeldOrderQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHeldOrder>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getHeldOrder>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetHeldOrderQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getHeldOrder>>> = ({
+    signal,
+  }) => getHeldOrder(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getHeldOrder>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetHeldOrderQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getHeldOrder>>
+>;
+export type GetHeldOrderQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Recall a held order by ID
+ */
+
+export function useGetHeldOrder<
+  TData = Awaited<ReturnType<typeof getHeldOrder>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getHeldOrder>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetHeldOrderQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Delete a held order (after recall or dismiss)
+ */
+export const getDeleteHeldOrderUrl = (id: number) => {
+  return `/api/held-orders/${id}`;
+};
+
+export const deleteHeldOrder = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteHeldOrderUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteHeldOrderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteHeldOrder>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteHeldOrder>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteHeldOrder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteHeldOrder>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteHeldOrder(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteHeldOrderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteHeldOrder>>
+>;
+
+export type DeleteHeldOrderMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a held order (after recall or dismiss)
+ */
+export const useDeleteHeldOrder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteHeldOrder>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteHeldOrder>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteHeldOrderMutationOptions(options));
 };
 
 /**

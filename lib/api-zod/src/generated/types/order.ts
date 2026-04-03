@@ -5,6 +5,7 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { OrderDiscountType } from "./orderDiscountType";
 import type { OrderItem } from "./orderItem";
 import type { OrderStatus } from "./orderStatus";
 
@@ -13,10 +14,17 @@ export interface Order {
   orderNumber: string;
   status: OrderStatus;
   subtotal: number;
+  discountType?: OrderDiscountType;
+  discountAmount?: number | null;
+  discountValue?: number | null;
   tax: number;
   total: number;
-  paymentMethod?: string;
+  paymentMethod?: string | null;
+  splitCardAmount?: number | null;
+  splitCashAmount?: number | null;
+  notes?: string | null;
+  voidReason?: string | null;
   items: OrderItem[];
   createdAt: Date;
-  completedAt?: Date;
+  completedAt?: Date | null;
 }

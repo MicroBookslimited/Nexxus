@@ -9,4 +9,5 @@ import type { UpdateOrderStatusBodyStatus } from "./updateOrderStatusBodyStatus"
 
 export interface UpdateOrderStatusBody {
   status: UpdateOrderStatusBodyStatus;
+  voidReason?: string;
 }

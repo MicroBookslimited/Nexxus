@@ -8,7 +8,6 @@
 import * as zod from "zod";
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -26,10 +25,11 @@ export const ListProductsQueryParams = zod.object({
 export const ListProductsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
-  description: zod.string().optional(),
+  description: zod.string().nullish(),
   price: zod.number(),
   category: zod.string(),
-  imageUrl: zod.string().optional(),
+  imageUrl: zod.string().nullish(),
+  barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
   createdAt: zod.coerce.date(),
@@ -45,6 +45,7 @@ export const CreateProductBody = zod.object({
   price: zod.number(),
   category: zod.string(),
   imageUrl: zod.string().optional(),
+  barcode: zod.string().optional(),
   inStock: zod.boolean().optional(),
   stockCount: zod.number().optional(),
 });
@@ -59,10 +60,11 @@ export const GetProductParams = zod.object({
 export const GetProductResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
-  description: zod.string().optional(),
+  description: zod.string().nullish(),
   price: zod.number(),
   category: zod.string(),
-  imageUrl: zod.string().optional(),
+  imageUrl: zod.string().nullish(),
+  barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
   createdAt: zod.coerce.date(),
@@ -81,6 +83,7 @@ export const UpdateProductBody = zod.object({
   price: zod.number(),
   category: zod.string(),
   imageUrl: zod.string().optional(),
+  barcode: zod.string().optional(),
   inStock: zod.boolean().optional(),
   stockCount: zod.number().optional(),
 });
@@ -88,10 +91,11 @@ export const UpdateProductBody = zod.object({
 export const UpdateProductResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
-  description: zod.string().optional(),
+  description: zod.string().nullish(),
   price: zod.number(),
   category: zod.string(),
-  imageUrl: zod.string().optional(),
+  imageUrl: zod.string().nullish(),
+  barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
   createdAt: zod.coerce.date(),
@@ -108,18 +112,27 @@ export const DeleteProductParams = zod.object({
  * @summary List orders
  */
 export const ListOrdersQueryParams = zod.object({
-  status: zod.enum(["pending", "completed", "cancelled"]).optional(),
+  status: zod
+    .enum(["pending", "completed", "cancelled", "refunded", "voided"])
+    .optional(),
   limit: zod.coerce.number().optional(),
 });
 
 export const ListOrdersResponseItem = zod.object({
   id: zod.number(),
   orderNumber: zod.string(),
-  status: zod.enum(["pending", "completed", "cancelled"]),
+  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
   subtotal: zod.number(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  discountValue: zod.number().nullish(),
   tax: zod.number(),
   total: zod.number(),
-  paymentMethod: zod.string().optional(),
+  paymentMethod: zod.string().nullish(),
+  splitCardAmount: zod.number().nullish(),
+  splitCashAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  voidReason: zod.string().nullish(),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -127,11 +140,12 @@ export const ListOrdersResponseItem = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitPrice: zod.number(),
+      discountAmount: zod.number().nullish(),
       lineTotal: zod.number(),
     }),
   ),
   createdAt: zod.coerce.date(),
-  completedAt: zod.coerce.date().optional(),
+  completedAt: zod.coerce.date().nullish(),
 });
 export const ListOrdersResponse = zod.array(ListOrdersResponseItem);
 
@@ -143,9 +157,15 @@ export const CreateOrderBody = zod.object({
     zod.object({
       productId: zod.number(),
       quantity: zod.number(),
+      discountAmount: zod.number().optional(),
     }),
   ),
   paymentMethod: zod.string(),
+  splitCardAmount: zod.number().optional(),
+  splitCashAmount: zod.number().optional(),
+  discountType: zod.enum(["percent", "fixed"]).optional(),
+  discountAmount: zod.number().optional(),
+  notes: zod.string().optional(),
 });
 
 /**
@@ -158,11 +178,18 @@ export const GetOrderParams = zod.object({
 export const GetOrderResponse = zod.object({
   id: zod.number(),
   orderNumber: zod.string(),
-  status: zod.enum(["pending", "completed", "cancelled"]),
+  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
   subtotal: zod.number(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  discountValue: zod.number().nullish(),
   tax: zod.number(),
   total: zod.number(),
-  paymentMethod: zod.string().optional(),
+  paymentMethod: zod.string().nullish(),
+  splitCardAmount: zod.number().nullish(),
+  splitCashAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  voidReason: zod.string().nullish(),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -170,32 +197,41 @@ export const GetOrderResponse = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitPrice: zod.number(),
+      discountAmount: zod.number().nullish(),
       lineTotal: zod.number(),
     }),
   ),
   createdAt: zod.coerce.date(),
-  completedAt: zod.coerce.date().optional(),
+  completedAt: zod.coerce.date().nullish(),
 });
 
 /**
- * @summary Update order status
+ * @summary Update order status (also used for refund/void)
  */
 export const UpdateOrderStatusParams = zod.object({
   id: zod.coerce.number(),
 });
 
 export const UpdateOrderStatusBody = zod.object({
-  status: zod.enum(["pending", "completed", "cancelled"]),
+  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
+  voidReason: zod.string().optional(),
 });
 
 export const UpdateOrderStatusResponse = zod.object({
   id: zod.number(),
   orderNumber: zod.string(),
-  status: zod.enum(["pending", "completed", "cancelled"]),
+  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
   subtotal: zod.number(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  discountValue: zod.number().nullish(),
   tax: zod.number(),
   total: zod.number(),
-  paymentMethod: zod.string().optional(),
+  paymentMethod: zod.string().nullish(),
+  splitCardAmount: zod.number().nullish(),
+  splitCashAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  voidReason: zod.string().nullish(),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -203,11 +239,82 @@ export const UpdateOrderStatusResponse = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitPrice: zod.number(),
+      discountAmount: zod.number().nullish(),
       lineTotal: zod.number(),
     }),
   ),
   createdAt: zod.coerce.date(),
-  completedAt: zod.coerce.date().optional(),
+  completedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary List all held (parked) orders
+ */
+export const ListHeldOrdersResponseItem = zod.object({
+  id: zod.number(),
+  label: zod.string().nullish(),
+  items: zod.array(
+    zod.object({
+      productId: zod.number(),
+      productName: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+    }),
+  ),
+  notes: zod.string().nullish(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+});
+export const ListHeldOrdersResponse = zod.array(ListHeldOrdersResponseItem);
+
+/**
+ * @summary Park (hold) the current cart
+ */
+export const CreateHeldOrderBody = zod.object({
+  label: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      productId: zod.number(),
+      productName: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+    }),
+  ),
+  notes: zod.string().optional(),
+  discountType: zod.enum(["percent", "fixed"]).optional(),
+  discountAmount: zod.number().optional(),
+});
+
+/**
+ * @summary Recall a held order by ID
+ */
+export const GetHeldOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetHeldOrderResponse = zod.object({
+  id: zod.number(),
+  label: zod.string().nullish(),
+  items: zod.array(
+    zod.object({
+      productId: zod.number(),
+      productName: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+    }),
+  ),
+  notes: zod.string().nullish(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a held order (after recall or dismiss)
+ */
+export const DeleteHeldOrderParams = zod.object({
+  id: zod.coerce.number(),
 });
 
 /**
@@ -232,11 +339,18 @@ export const GetRecentOrdersQueryParams = zod.object({
 export const GetRecentOrdersResponseItem = zod.object({
   id: zod.number(),
   orderNumber: zod.string(),
-  status: zod.enum(["pending", "completed", "cancelled"]),
+  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
   subtotal: zod.number(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  discountValue: zod.number().nullish(),
   tax: zod.number(),
   total: zod.number(),
-  paymentMethod: zod.string().optional(),
+  paymentMethod: zod.string().nullish(),
+  splitCardAmount: zod.number().nullish(),
+  splitCashAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  voidReason: zod.string().nullish(),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -244,11 +358,12 @@ export const GetRecentOrdersResponseItem = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitPrice: zod.number(),
+      discountAmount: zod.number().nullish(),
       lineTotal: zod.number(),
     }),
   ),
   createdAt: zod.coerce.date(),
-  completedAt: zod.coerce.date().optional(),
+  completedAt: zod.coerce.date().nullish(),
 });
 export const GetRecentOrdersResponse = zod.array(GetRecentOrdersResponseItem);
 

@@ -12,6 +12,7 @@ export interface CreateProductBody {
   price: number;
   category: string;
   imageUrl?: string;
+  barcode?: string;
   inStock?: boolean;
   stockCount?: number;
 }
