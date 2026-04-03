@@ -544,11 +544,11 @@ export function POS() {
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input className="pl-9" placeholder="Search products…" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                <Input className="pl-9 w-full" placeholder="Search products…" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
               </div>
-              <div className="relative">
+              <div className="relative flex-1">
                 <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input className="pl-9 w-44" placeholder="Scan barcode…" value={barcodeTerm} onChange={(e) => setBarcodeTerm(e.target.value)} onKeyDown={handleBarcodeScan} />
+                <Input className="pl-9 w-full" placeholder="Scan barcode…" value={barcodeTerm} onChange={(e) => setBarcodeTerm(e.target.value)} onKeyDown={handleBarcodeScan} />
               </div>
             </div>
             <div className="flex gap-2 flex-wrap">
