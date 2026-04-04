@@ -856,7 +856,7 @@ export function POS() {
         {/* ── RIGHT: Bill preview + keypad ── */}
         <div className="w-[320px] shrink-0 border-l border-border flex flex-col bg-card">
           {/* Bill summary */}
-          <div className="p-3 border-b border-border shrink-0">
+          <div className="flex-1 overflow-y-auto p-3 border-b border-border">
             <div className="flex items-center gap-1.5 mb-2">
               <Printer className="h-3.5 w-3.5 text-primary" />
               <span className="text-xs font-semibold text-primary">Bill Preview</span>
@@ -865,7 +865,7 @@ export function POS() {
             {cart.length === 0 ? (
               <p className="text-center text-[10px] text-muted-foreground py-1 opacity-50">Add items to see bill</p>
             ) : (
-              <div className="space-y-0.5 text-xs max-h-40 overflow-auto">
+              <div className="space-y-0.5 text-xs">
                 {cart.map((item) => (
                   <div key={item.cartKey} className="flex justify-between text-muted-foreground">
                     <span className="truncate max-w-[150px]">{item.quantity}× {item.productName}</span>
@@ -956,7 +956,7 @@ export function POS() {
           </div>
 
           {/* Payment & action buttons */}
-          <div className="p-2 space-y-1.5">
+          <div className="p-2 space-y-1.5 shrink-0">
             <div className="flex gap-1.5">
               <Button variant={paymentMethod === "card" ? "default" : "outline"} onClick={() => { setPaymentMethod("card"); setNumpadValue(""); }} className="flex-1 h-9 text-xs">
                 <CreditCard className="h-3.5 w-3.5 mr-1" />Card
