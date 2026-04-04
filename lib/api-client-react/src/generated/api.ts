@@ -21,6 +21,7 @@ import type {
   CompleteOrderBody,
   CreateCustomerBody,
   CreateHeldOrderBody,
+  CreateKdsScreenBody,
   CreateOrderBody,
   CreateProductBody,
   CreateStaffBody,
@@ -39,6 +40,7 @@ import type {
   HealthStatus,
   HeldOrder,
   HourlySales,
+  KdsScreen,
   KitchenOrder,
   ListCustomersParams,
   ListOrdersParams,
@@ -53,6 +55,7 @@ import type {
   SaveVariantsBody,
   StaffMember,
   TopProduct,
+  UpdateKdsScreenBody,
   UpdateKitchenOrderStatus200,
   UpdateKitchenOrderStatusBody,
   UpdateOrderStatusBody,
@@ -3706,6 +3709,338 @@ export const useUpdateKitchenOrderStatus = <
   TContext
 > => {
   return useMutation(getUpdateKitchenOrderStatusMutationOptions(options));
+};
+
+/**
+ * @summary List all KDS screens
+ */
+export const getListKdsScreensUrl = () => {
+  return `/api/kds-screens`;
+};
+
+export const listKdsScreens = async (
+  options?: RequestInit,
+): Promise<KdsScreen[]> => {
+  return customFetch<KdsScreen[]>(getListKdsScreensUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListKdsScreensQueryKey = () => {
+  return [`/api/kds-screens`] as const;
+};
+
+export const getListKdsScreensQueryOptions = <
+  TData = Awaited<ReturnType<typeof listKdsScreens>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listKdsScreens>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListKdsScreensQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listKdsScreens>>> = ({
+    signal,
+  }) => listKdsScreens({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listKdsScreens>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListKdsScreensQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listKdsScreens>>
+>;
+export type ListKdsScreensQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all KDS screens
+ */
+
+export function useListKdsScreens<
+  TData = Awaited<ReturnType<typeof listKdsScreens>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listKdsScreens>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListKdsScreensQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a KDS screen
+ */
+export const getCreateKdsScreenUrl = () => {
+  return `/api/kds-screens`;
+};
+
+export const createKdsScreen = async (
+  createKdsScreenBody: CreateKdsScreenBody,
+  options?: RequestInit,
+): Promise<KdsScreen> => {
+  return customFetch<KdsScreen>(getCreateKdsScreenUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createKdsScreenBody),
+  });
+};
+
+export const getCreateKdsScreenMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createKdsScreen>>,
+    TError,
+    { data: BodyType<CreateKdsScreenBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createKdsScreen>>,
+  TError,
+  { data: BodyType<CreateKdsScreenBody> },
+  TContext
+> => {
+  const mutationKey = ["createKdsScreen"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createKdsScreen>>,
+    { data: BodyType<CreateKdsScreenBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createKdsScreen(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateKdsScreenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createKdsScreen>>
+>;
+export type CreateKdsScreenMutationBody = BodyType<CreateKdsScreenBody>;
+export type CreateKdsScreenMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a KDS screen
+ */
+export const useCreateKdsScreen = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createKdsScreen>>,
+    TError,
+    { data: BodyType<CreateKdsScreenBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createKdsScreen>>,
+  TError,
+  { data: BodyType<CreateKdsScreenBody> },
+  TContext
+> => {
+  return useMutation(getCreateKdsScreenMutationOptions(options));
+};
+
+/**
+ * @summary Update a KDS screen
+ */
+export const getUpdateKdsScreenUrl = (id: number) => {
+  return `/api/kds-screens/${id}`;
+};
+
+export const updateKdsScreen = async (
+  id: number,
+  updateKdsScreenBody: UpdateKdsScreenBody,
+  options?: RequestInit,
+): Promise<KdsScreen> => {
+  return customFetch<KdsScreen>(getUpdateKdsScreenUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateKdsScreenBody),
+  });
+};
+
+export const getUpdateKdsScreenMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateKdsScreen>>,
+    TError,
+    { id: number; data: BodyType<UpdateKdsScreenBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateKdsScreen>>,
+  TError,
+  { id: number; data: BodyType<UpdateKdsScreenBody> },
+  TContext
+> => {
+  const mutationKey = ["updateKdsScreen"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateKdsScreen>>,
+    { id: number; data: BodyType<UpdateKdsScreenBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateKdsScreen(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateKdsScreenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateKdsScreen>>
+>;
+export type UpdateKdsScreenMutationBody = BodyType<UpdateKdsScreenBody>;
+export type UpdateKdsScreenMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a KDS screen
+ */
+export const useUpdateKdsScreen = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateKdsScreen>>,
+    TError,
+    { id: number; data: BodyType<UpdateKdsScreenBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateKdsScreen>>,
+  TError,
+  { id: number; data: BodyType<UpdateKdsScreenBody> },
+  TContext
+> => {
+  return useMutation(getUpdateKdsScreenMutationOptions(options));
+};
+
+/**
+ * @summary Delete a KDS screen
+ */
+export const getDeleteKdsScreenUrl = (id: number) => {
+  return `/api/kds-screens/${id}`;
+};
+
+export const deleteKdsScreen = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteKdsScreenUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteKdsScreenMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteKdsScreen>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteKdsScreen>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteKdsScreen"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteKdsScreen>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteKdsScreen(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteKdsScreenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteKdsScreen>>
+>;
+
+export type DeleteKdsScreenMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a KDS screen
+ */
+export const useDeleteKdsScreen = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteKdsScreen>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteKdsScreen>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteKdsScreenMutationOptions(options));
 };
 
 /**

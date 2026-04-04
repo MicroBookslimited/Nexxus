@@ -1149,6 +1149,7 @@ export const ListKitchenOrdersResponseItem = zod.object({
       quantity: zod.number(),
       variantChoices: zod.array(zod.unknown()).optional(),
       modifierChoices: zod.array(zod.unknown()).optional(),
+      category: zod.string().optional(),
     }),
   ),
 });
@@ -1170,6 +1171,54 @@ export const UpdateKitchenOrderStatusBody = zod.object({
 export const UpdateKitchenOrderStatusResponse = zod.object({
   id: zod.number(),
   status: zod.string(),
+});
+
+/**
+ * @summary List all KDS screens
+ */
+export const ListKdsScreensResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  categories: zod.array(zod.string()),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+export const ListKdsScreensResponse = zod.array(ListKdsScreensResponseItem);
+
+/**
+ * @summary Create a KDS screen
+ */
+export const CreateKdsScreenBody = zod.object({
+  name: zod.string(),
+  categories: zod.array(zod.string()).optional(),
+});
+
+/**
+ * @summary Update a KDS screen
+ */
+export const UpdateKdsScreenParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateKdsScreenBody = zod.object({
+  name: zod.string().optional(),
+  categories: zod.array(zod.string()).optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateKdsScreenResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  categories: zod.array(zod.string()),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a KDS screen
+ */
+export const DeleteKdsScreenParams = zod.object({
+  id: zod.coerce.number(),
 });
 
 /**

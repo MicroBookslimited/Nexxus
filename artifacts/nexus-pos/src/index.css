@@ -76,13 +76,13 @@
 
   --background: 222 47% 11%;
   --foreground: 210 40% 98%;
-  --border: 217 32% 17%;
+  --border: 210 60% 38%;
   --card: 222 47% 11%;
   --card-foreground: 210 40% 98%;
-  --card-border: 217 32% 17%;
+  --card-border: 210 60% 38%;
   --sidebar: 222 47% 11%;
   --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 217 32% 17%;
+  --sidebar-border: 210 60% 38%;
   --sidebar-primary: 217 91% 60%;
   --sidebar-primary-foreground: 210 40% 98%;
   --sidebar-accent: 217 32% 17%;
@@ -132,13 +132,13 @@
 
   --background: 222 47% 11%;
   --foreground: 210 40% 98%;
-  --border: 217 32% 17%;
+  --border: 210 60% 38%;
   --card: 222 47% 11%;
   --card-foreground: 210 40% 98%;
-  --card-border: 217 32% 17%;
+  --card-border: 210 60% 38%;
   --sidebar: 222 47% 11%;
   --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 217 32% 17%;
+  --sidebar-border: 210 60% 38%;
   --sidebar-primary: 217 91% 60%;
   --sidebar-primary-foreground: 210 40% 98%;
   --sidebar-accent: 217 32% 17%;
@@ -174,3 +174,11 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
 }
+
+.border { border-width: 2px; }
+.border-t { border-top-width: 2px; }
+.border-b { border-bottom-width: 2px; }
+.border-l { border-left-width: 2px; }
+.border-r { border-right-width: 2px; }
+.border-x { border-left-width: 2px; border-right-width: 2px; }
+.border-y { border-top-width: 2px; border-bottom-width: 2px; }

@@ -12,4 +12,5 @@ export type KitchenOrderItemsItem = {
   quantity: number;
   variantChoices?: unknown[];
   modifierChoices?: unknown[];
+  category?: string;
 };

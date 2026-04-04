@@ -1,27 +1,35 @@
 import { Router, type IRouter } from "express";
 import { eq, inArray } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, kdsScreensTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
 router.get("/kitchen", async (req, res): Promise<void> => {
-  const pendingOrders = await db
+  const activeOrders = await db
     .select()
     .from(ordersTable)
-    .where(inArray(ordersTable.status, ["pending", "preparing"]))
+    .where(inArray(ordersTable.status, ["open", "pending", "preparing", "ready"]))
     .orderBy(ordersTable.createdAt);
 
   const ordersWithItems = await Promise.all(
-    pendingOrders.map(async (order) => {
+    activeOrders.map(async (order) => {
       const items = await db
-        .select()
+        .select({
+          id: orderItemsTable.id,
+          productName: orderItemsTable.productName,
+          quantity: orderItemsTable.quantity,
+          variantChoices: orderItemsTable.variantChoices,
+          modifierChoices: orderItemsTable.modifierChoices,
+          category: productsTable.category,
+        })
         .from(orderItemsTable)
+        .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
         .where(eq(orderItemsTable.orderId, order.id));
 
       return {
         id: order.id,
         orderNumber: order.orderNumber,
-        status: order.status,
+        status: order.status === "open" ? "pending" : order.status,
         tableId: order.tableId ?? undefined,
         orderType: order.orderType ?? "counter",
         notes: order.notes ?? undefined,
@@ -32,6 +40,7 @@ router.get("/kitchen", async (req, res): Promise<void> => {
           quantity: item.quantity,
           variantChoices: (item.variantChoices as any[] | null) ?? undefined,
           modifierChoices: (item.modifierChoices as any[] | null) ?? undefined,
+          category: item.category ?? "Other",
         })),
       };
     }),
@@ -66,6 +75,46 @@ router.patch("/kitchen/:id/status", async (req, res): Promise<void> => {
   }
 
   res.json({ id: order.id, status: order.status });
+});
+
+router.get("/kds-screens", async (req, res): Promise<void> => {
+  const screens = await db.select().from(kdsScreensTable).orderBy(kdsScreensTable.createdAt);
+  res.json(screens.map((s) => ({ ...s, categories: s.categories ?? [] })));
+});
+
+router.post("/kds-screens", async (req, res): Promise<void> => {
+  const { name, categories } = req.body as { name?: string; categories?: string[] };
+  if (!name?.trim()) {
+    res.status(400).json({ error: "Name is required" });
+    return;
+  }
+  const [screen] = await db
+    .insert(kdsScreensTable)
+    .values({ name: name.trim(), categories: categories ?? [] })
+    .returning();
+  res.status(201).json({ ...screen, categories: screen.categories ?? [] });
+});
+
+router.patch("/kds-screens/:id", async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? parseInt(req.params.id[0]) : parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const { name, categories, isActive } = req.body as { name?: string; categories?: string[]; isActive?: boolean };
+  const updates: Partial<typeof kdsScreensTable.$inferInsert> = {};
+  if (name !== undefined) updates.name = name.trim();
+  if (categories !== undefined) updates.categories = categories;
+  if (isActive !== undefined) updates.isActive = isActive;
+
+  const [screen] = await db.update(kdsScreensTable).set(updates).where(eq(kdsScreensTable.id, id)).returning();
+  if (!screen) { res.status(404).json({ error: "Screen not found" }); return; }
+  res.json({ ...screen, categories: screen.categories ?? [] });
+});
+
+router.delete("/kds-screens/:id", async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? parseInt(req.params.id[0]) : parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.delete(kdsScreensTable).where(eq(kdsScreensTable.id, id));
+  res.status(204).end();
 });
 
 export default router;

@@ -1,4 +1,5 @@
 import { pgTable, serial, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const diningTablesTable = pgTable("dining_tables", {
   id: serial("id").primaryKey(),
@@ -14,3 +15,13 @@ export const diningTablesTable = pgTable("dining_tables", {
 });
 
 export type DiningTable = typeof diningTablesTable.$inferSelect;
+
+export const kdsScreensTable = pgTable("kds_screens", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  categories: text("categories").array().notNull().default(sql`'{}'::text[]`),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type KdsScreen = typeof kdsScreensTable.$inferSelect;

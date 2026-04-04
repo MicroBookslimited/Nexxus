@@ -852,6 +852,76 @@ paths:
                   - id
                   - status
 
+  /kds-screens:
+    get:
+      operationId: listKdsScreens
+      tags: [kitchen]
+      summary: List all KDS screens
+      responses:
+        "200":
+          description: KDS screens list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KdsScreen"
+    post:
+      operationId: createKdsScreen
+      tags: [kitchen]
+      summary: Create a KDS screen
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKdsScreenBody"
+      responses:
+        "201":
+          description: Created KDS screen
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KdsScreen"
+
+  /kds-screens/{id}:
+    patch:
+      operationId: updateKdsScreen
+      tags: [kitchen]
+      summary: Update a KDS screen
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKdsScreenBody"
+      responses:
+        "200":
+          description: Updated KDS screen
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KdsScreen"
+    delete:
+      operationId: deleteKdsScreen
+      tags: [kitchen]
+      summary: Delete a KDS screen
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
   /staff:
     get:
       operationId: listStaff
@@ -1784,6 +1854,47 @@ components:
       required:
         - name
 
+    KdsScreen:
+      type: object
+      required: [id, name, categories, isActive, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        categories:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateKdsScreenBody:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        categories:
+          type: array
+          items:
+            type: string
+
+    UpdateKdsScreenBody:
+      type: object
+      properties:
+        name:
+          type: string
+        categories:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+
     UpdateTableBody:
       type: object
       properties:
@@ -1841,6 +1952,8 @@ components:
               modifierChoices:
                 type: array
                 items: {}
+              category:
+                type: string
             required:
               - id
               - productName

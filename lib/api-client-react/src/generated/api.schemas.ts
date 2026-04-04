@@ -407,6 +407,25 @@ export interface CreateTableBody {
   positionY?: number;
 }
 
+export interface KdsScreen {
+  id: number;
+  name: string;
+  categories: string[];
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreateKdsScreenBody {
+  name: string;
+  categories?: string[];
+}
+
+export interface UpdateKdsScreenBody {
+  name?: string;
+  categories?: string[];
+  isActive?: boolean;
+}
+
 export type UpdateTableBodyStatus =
   (typeof UpdateTableBodyStatus)[keyof typeof UpdateTableBodyStatus];
 
@@ -433,6 +452,7 @@ export type KitchenOrderItemsItem = {
   quantity: number;
   variantChoices?: unknown[];
   modifierChoices?: unknown[];
+  category?: string;
 };
 
 export interface KitchenOrder {
