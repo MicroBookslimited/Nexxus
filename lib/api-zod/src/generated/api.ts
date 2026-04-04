@@ -1265,6 +1265,22 @@ export const VerifyStaffPinResponse = zod.object({
 });
 
 /**
+ * @summary Authenticate staff by PIN only (no staffId needed)
+ */
+export const AuthenticateStaffBody = zod.object({
+  pin: zod.string(),
+  requiredRoles: zod.array(zod.string()).optional(),
+});
+
+export const AuthenticateStaffResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  role: zod.enum(["admin", "manager", "cashier", "kitchen"]),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
  * @summary Update a staff member
  */
 export const UpdateStaffParams = zod.object({

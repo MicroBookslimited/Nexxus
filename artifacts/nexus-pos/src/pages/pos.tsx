@@ -10,6 +10,7 @@ import {
   useListCustomers,
   useListTables,
 } from "@workspace/api-client-react";
+import { PinPad } from "@/components/PinPad";
 import type { GetOrderResponse } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -302,6 +303,15 @@ export function POS() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const [locked, setLocked] = useState(true);
+  const [sessionStaff, setSessionStaff] = useState<{ id: number; name: string; role: string } | null>(null);
+
+  const handlePinSuccess = (staff: { id: number; name: string; role: string }) => {
+    setSessionStaff(staff);
+    setLocked(false);
+    toast({ title: `Welcome, ${staff.name}!`, description: `Logged in as ${staff.role}` });
+  };
 
   const [searchTerm, setSearchTerm] = useState("");
   const [barcodeTerm, setBarcodeTerm] = useState("");
@@ -600,8 +610,52 @@ export function POS() {
     deleteHeldOrder.mutate({ id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/held-orders"] }) });
   };
 
+  if (locked) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-8 w-full max-w-xs">
+          {/* Brand */}
+          <div className="flex flex-col items-center gap-2 mb-2">
+            <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <svg viewBox="0 0 24 24" className="h-8 w-8 text-primary fill-current">
+                <path d="M19 7H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Zm-9 7H6v-2h4v2Zm8-4H6V9h12v1Z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight">Nexus POS</h1>
+            <p className="text-sm text-muted-foreground">Your Business, Connected.</p>
+          </div>
+
+          <PinPad
+            onSuccess={handlePinSuccess}
+            title="Staff PIN Required"
+            subtitle="Enter your 4-digit PIN to access the POS"
+            pinLength={4}
+          />
+
+          <p className="text-xs text-muted-foreground text-center mt-2">
+            Powered by MicroBooks
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
+      {/* Staff session badge */}
+      {sessionStaff && (
+        <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            Logged in: <span className="font-semibold text-foreground">{sessionStaff.name}</span>
+          </span>
+          <button
+            className="text-xs text-muted-foreground hover:text-destructive underline-offset-2 hover:underline transition-colors"
+            onClick={() => { setLocked(true); setSessionStaff(null); }}
+          >
+            Lock
+          </button>
+        </div>
+      )}
       <div className="flex h-full">
         {/* Product grid */}
         <div className="flex-1 flex flex-col min-w-0 border-r border-border">

@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AuthenticateStaffBody,
   CategorySales,
   CompleteOrderBody,
   CreateCustomerBody,
@@ -4286,6 +4287,92 @@ export const useVerifyStaffPin = <
   TContext
 > => {
   return useMutation(getVerifyStaffPinMutationOptions(options));
+};
+
+/**
+ * @summary Authenticate staff by PIN only (no staffId needed)
+ */
+export const getAuthenticateStaffUrl = () => {
+  return `/api/staff/authenticate`;
+};
+
+export const authenticateStaff = async (
+  authenticateStaffBody: AuthenticateStaffBody,
+  options?: RequestInit,
+): Promise<StaffMember> => {
+  return customFetch<StaffMember>(getAuthenticateStaffUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(authenticateStaffBody),
+  });
+};
+
+export const getAuthenticateStaffMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authenticateStaff>>,
+    TError,
+    { data: BodyType<AuthenticateStaffBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof authenticateStaff>>,
+  TError,
+  { data: BodyType<AuthenticateStaffBody> },
+  TContext
+> => {
+  const mutationKey = ["authenticateStaff"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof authenticateStaff>>,
+    { data: BodyType<AuthenticateStaffBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return authenticateStaff(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AuthenticateStaffMutationResult = NonNullable<
+  Awaited<ReturnType<typeof authenticateStaff>>
+>;
+export type AuthenticateStaffMutationBody = BodyType<AuthenticateStaffBody>;
+export type AuthenticateStaffMutationError = ErrorType<void>;
+
+/**
+ * @summary Authenticate staff by PIN only (no staffId needed)
+ */
+export const useAuthenticateStaff = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authenticateStaff>>,
+    TError,
+    { data: BodyType<AuthenticateStaffBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof authenticateStaff>>,
+  TError,
+  { data: BodyType<AuthenticateStaffBody> },
+  TContext
+> => {
+  return useMutation(getAuthenticateStaffMutationOptions(options));
 };
 
 /**

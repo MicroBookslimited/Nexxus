@@ -10,7 +10,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, ChevronUp, Printer, CreditCard, Banknote, SplitSquareHorizontal, Receipt } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, Printer, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert } from "lucide-react";
+import { PinPad } from "@/components/PinPad";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,8 @@ export function Orders() {
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [orderToVoid, setOrderToVoid] = useState<number | null>(null);
   const [voidReason, setVoidReason] = useState("");
+  const [managerPinOpen, setManagerPinOpen] = useState(false);
+  const [pendingVoidId, setPendingVoidId] = useState<number | null>(null);
 
   const [chargeDialogOpen, setChargeDialogOpen] = useState(false);
   const [orderToCharge, setOrderToCharge] = useState<{ id: number; orderNumber: string; total: number } | null>(null);
@@ -75,9 +78,16 @@ export function Orders() {
   };
 
   const openVoidDialog = (id: number) => {
-    setOrderToVoid(id);
+    setPendingVoidId(id);
+    setManagerPinOpen(true);
+  };
+
+  const handleManagerPinSuccess = () => {
+    setManagerPinOpen(false);
+    setOrderToVoid(pendingVoidId);
     setVoidReason("");
     setVoidDialogOpen(true);
+    setPendingVoidId(null);
   };
 
   const openChargeDialog = (order: { id: number; orderNumber: string; total: number }) => {
@@ -367,6 +377,30 @@ export function Orders() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Manager PIN Override Dialog */}
+      <Dialog open={managerPinOpen} onOpenChange={(o) => { if (!o) { setManagerPinOpen(false); setPendingVoidId(null); } }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <ShieldAlert className="h-4 w-4" />
+              Manager Override Required
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-muted-foreground text-center mb-6">
+              Voiding an order requires a manager or admin PIN.
+            </p>
+            <PinPad
+              onSuccess={handleManagerPinSuccess}
+              requiredRoles={["manager", "admin"]}
+              title=""
+              subtitle=""
+              pinLength={4}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Void Dialog */}
       <AlertDialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>

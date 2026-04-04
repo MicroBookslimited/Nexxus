@@ -121,4 +121,37 @@ router.post("/staff/verify-pin", async (req, res): Promise<void> => {
   res.json(sanitizeStaff(member));
 });
 
+router.post("/staff/authenticate", async (req, res): Promise<void> => {
+  const parsed = z.object({
+    pin: z.string().min(4).max(8),
+    requiredRoles: z.array(z.string()).optional(),
+  }).safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "pin is required" });
+    return;
+  }
+
+  const { pin, requiredRoles } = parsed.data;
+
+  const members = await db
+    .select()
+    .from(staffTable)
+    .where(eq(staffTable.isActive, true));
+
+  const match = members.find((m) => m.pin === pin);
+
+  if (!match) {
+    res.status(401).json({ error: "Invalid PIN" });
+    return;
+  }
+
+  if (requiredRoles && requiredRoles.length > 0 && !requiredRoles.includes(match.role)) {
+    res.status(403).json({ error: "Insufficient role", role: match.role });
+    return;
+  }
+
+  res.json(sanitizeStaff(match));
+});
+
 export default router;

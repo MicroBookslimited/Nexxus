@@ -692,6 +692,11 @@ export type VerifyStaffPinBody = {
   pin: string;
 };
 
+export type AuthenticateStaffBody = {
+  pin: string;
+  requiredRoles?: string[];
+};
+
 export type ListPurchasesParams = {
   productId?: number;
 };

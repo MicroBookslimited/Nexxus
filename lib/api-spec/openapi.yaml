@@ -987,6 +987,38 @@ paths:
         "401":
           description: Invalid PIN
 
+  /staff/authenticate:
+    post:
+      operationId: authenticateStaff
+      tags: [staff]
+      summary: Authenticate staff by PIN only (no staffId needed)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pin:
+                  type: string
+                requiredRoles:
+                  type: array
+                  items:
+                    type: string
+              required:
+                - pin
+      responses:
+        "200":
+          description: Authenticated staff member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffMember"
+        "401":
+          description: Invalid PIN
+        "403":
+          description: Insufficient role
+
   /staff/{id}:
     patch:
       operationId: updateStaff
