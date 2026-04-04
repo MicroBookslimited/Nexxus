@@ -629,7 +629,7 @@ export function POS() {
           </div>
 
           <ScrollArea className="flex-1">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 p-4">
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2 p-3">
               {loadingProducts
                 ? Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="aspect-square rounded-xl bg-secondary/30 animate-pulse" />
@@ -640,21 +640,21 @@ export function POS() {
                       <motion.div key={product.id} whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.02 }}>
                         <div
                           onClick={() => !product.inStock ? undefined : handleProductTap(product)}
-                          className={`relative cursor-pointer rounded-xl border ${palette.bg} ${palette.accent} aspect-square p-3 flex flex-col justify-between transition-all duration-150 ${!product.inStock ? "opacity-40 cursor-not-allowed" : "hover:brightness-110 hover:shadow-lg hover:shadow-black/30 active:scale-95"}`}
+                          className={`relative cursor-pointer rounded-xl border ${palette.bg} ${palette.accent} aspect-square p-2 flex flex-col justify-between transition-all duration-150 ${!product.inStock ? "opacity-40 cursor-not-allowed" : "hover:brightness-110 hover:shadow-lg hover:shadow-black/30 active:scale-95"}`}
                         >
-                          <div className={`absolute top-2.5 right-2.5 h-2 w-2 rounded-full ${palette.dot} opacity-70`} />
-                          <div className="pr-4">
-                            <p className="text-sm font-bold leading-snug line-clamp-2 text-white">{product.name}</p>
-                            <p className="text-[11px] text-white/50 mt-0.5">{product.category}</p>
+                          <div className={`absolute top-2 right-2 h-1.5 w-1.5 rounded-full ${palette.dot} opacity-70`} />
+                          <div className="pr-3">
+                            <p className="text-xs font-bold leading-snug line-clamp-2 text-white">{product.name}</p>
+                            <p className="text-[9px] text-white/50 mt-0.5">{product.category}</p>
                           </div>
                           <div className="flex items-end justify-between">
-                            <p className="text-base font-bold font-mono text-white">{formatCurrency(product.price)}</p>
-                            <div className="flex items-center gap-1">
+                            <p className="text-sm font-bold font-mono text-white">{formatCurrency(product.price)}</p>
+                            <div className="flex items-center gap-0.5">
                               {(product.hasVariants || product.hasModifiers) && (
-                                <Settings2 className="h-3.5 w-3.5 text-white/60" />
+                                <Settings2 className="h-3 w-3 text-white/60" />
                               )}
                               {!product.inStock && (
-                                <span className="text-[10px] font-semibold bg-red-500/30 text-red-300 px-1.5 py-0.5 rounded">Out</span>
+                                <span className="text-[9px] font-semibold bg-red-500/30 text-red-300 px-1 py-0.5 rounded">Out</span>
                               )}
                             </div>
                           </div>
