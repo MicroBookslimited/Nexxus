@@ -330,6 +330,9 @@ export function POS() {
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [orderMode, setOrderMode] = useState<"dine-in" | "takeout" | "delivery">("dine-in");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryPhone, setDeliveryPhone] = useState("");
+  const [deliveryDirections, setDeliveryDirections] = useState("");
 
   const { data: customers } = useListCustomers();
   const { data: tables } = useListTables();
@@ -452,10 +455,27 @@ export function POS() {
     setSelectedTableId(null);
     setCustomerSearch("");
     setOrderMode("dine-in");
+    setDeliveryAddress("");
+    setDeliveryPhone("");
+    setDeliveryDirections("");
+  };
+
+  const buildOrderNotes = () => {
+    if (orderMode !== "delivery") return notes || undefined;
+    const parts: string[] = [];
+    if (deliveryAddress) parts.push(`Address: ${deliveryAddress}`);
+    if (deliveryPhone) parts.push(`Phone: ${deliveryPhone}`);
+    if (deliveryDirections) parts.push(`Directions: ${deliveryDirections}`);
+    if (notes) parts.push(notes);
+    return parts.length > 0 ? parts.join(" | ") : undefined;
   };
 
   const handleCharge = () => {
     if (cart.length === 0) return;
+    if (orderMode === "delivery" && !deliveryAddress.trim()) {
+      toast({ title: "Address required", description: "Please enter a delivery address.", variant: "destructive" });
+      return;
+    }
     if (paymentMethod === "split" && !isSplitValid) {
       toast({ title: "Invalid Split", description: "Card and cash amounts must equal total.", variant: "destructive" });
       return;
@@ -476,7 +496,7 @@ export function POS() {
           splitCashAmount: paymentMethod === "split" ? splitCashAmount : undefined,
           discountType: discountType ?? undefined,
           discountAmount: discountAmount > 0 ? discountAmount : undefined,
-          notes: notes || undefined,
+          notes: buildOrderNotes(),
           customerId: selectedCustomerId ?? undefined,
           loyaltyPointsToRedeem: clampedPoints > 0 ? clampedPoints : undefined,
           tableId: orderMode === "dine-in" ? (selectedTableId ?? undefined) : undefined,
@@ -855,6 +875,36 @@ export function POS() {
                       {t.name}
                     </button>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Delivery details */}
+            {orderMode === "delivery" && (
+              <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-2.5">
+                <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                  <Truck className="h-3.5 w-3.5" /> Delivery Details
+                </p>
+                <div className="space-y-1.5">
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="Address *"
+                    value={deliveryAddress}
+                    onChange={(e) => setDeliveryAddress(e.target.value)}
+                  />
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="Phone number"
+                    type="tel"
+                    value={deliveryPhone}
+                    onChange={(e) => setDeliveryPhone(e.target.value)}
+                  />
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="Directions / landmark (optional)"
+                    value={deliveryDirections}
+                    onChange={(e) => setDeliveryDirections(e.target.value)}
+                  />
                 </div>
               </div>
             )}
