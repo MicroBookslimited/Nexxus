@@ -12,6 +12,7 @@ import kitchenRouter from "./kitchen";
 import staffRouter from "./staff";
 import purchasesRouter from "./purchases";
 import purchaseBillsRouter from "./purchase-bills";
+import cashRouter from "./cash";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(kitchenRouter);
 router.use(staffRouter);
 router.use(purchasesRouter);
 router.use(purchaseBillsRouter);
+router.use(cashRouter);
 
 export default router;
