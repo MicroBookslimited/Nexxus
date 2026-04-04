@@ -522,6 +522,24 @@ export interface VerifyStaffPinBody {
   pin: string;
 }
 
+export interface Purchase {
+  id: number;
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface CreatePurchaseBody {
+  productId: number;
+  quantity: number;
+  unitCost?: number;
+  notes?: string;
+}
+
 export type ListProductsParams = {
   category?: string;
   search?: string;
@@ -600,4 +618,8 @@ export type UpdateKitchenOrderStatus200 = {
 export type VerifyStaffPinBody = {
   staffId: number;
   pin: string;
+};
+
+export type ListPurchasesParams = {
+  productId?: number;
 };

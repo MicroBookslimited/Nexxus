@@ -74,6 +74,9 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `GET/POST /api/staff` — Staff accounts CRUD
   - `PATCH/DELETE /api/staff/:id` — Update/deactivate staff
   - `POST /api/staff/verify-pin` — PIN authentication
+  - `GET /api/purchases?productId=X` — List purchase records (optionally filtered by product)
+  - `POST /api/purchases` — Record a stock purchase (auto-increments product stockCount, sets inStock=true)
+  - `DELETE /api/purchases/:id` — Delete a purchase record
 
 ## Database Schema
 
@@ -86,6 +89,7 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - `customers` — Customer profiles with name, email, phone, loyaltyPoints, totalSpent, orderCount
 - `dining_tables` — Restaurant tables with name, capacity, status, color, position, currentOrderId
 - `staff` — Staff members with name, PIN (hashed), role, isActive
+- `purchases` — Stock purchase records with productId, quantity, unitCost, totalCost, notes; creating a purchase auto-increments product stockCount
 
 ## Business Rules
 

@@ -1,5 +1,6 @@
-import { pgTable, serial, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, boolean, real } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { productsTable } from "./products";
 
 export const diningTablesTable = pgTable("dining_tables", {
   id: serial("id").primaryKey(),
@@ -25,3 +26,15 @@ export const kdsScreensTable = pgTable("kds_screens", {
 });
 
 export type KdsScreen = typeof kdsScreensTable.$inferSelect;
+
+export const purchasesTable = pgTable("purchases", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  quantity: integer("quantity").notNull(),
+  unitCost: real("unit_cost").notNull().default(0),
+  totalCost: real("total_cost").notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type Purchase = typeof purchasesTable.$inferSelect;

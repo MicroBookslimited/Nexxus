@@ -28,6 +28,8 @@ tags:
     description: Restaurant table management
   - name: kitchen
     description: Kitchen display system
+  - name: purchases
+    description: Stock purchase management
   - name: staff
     description: Staff accounts and roles
 paths:
@@ -1020,6 +1022,58 @@ paths:
       responses:
         "204":
           description: Deactivated
+
+  /purchases:
+    get:
+      operationId: listPurchases
+      tags: [purchases]
+      summary: List all stock purchases
+      parameters:
+        - name: productId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of purchases
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Purchase"
+    post:
+      operationId: createPurchase
+      tags: [purchases]
+      summary: Record a new stock purchase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePurchaseBody"
+      responses:
+        "201":
+          description: Purchase recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Purchase"
+
+  /purchases/{id}:
+    delete:
+      operationId: deletePurchase
+      tags: [purchases]
+      summary: Delete a purchase record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
 
 components:
   schemas:
@@ -2025,3 +2079,51 @@ components:
       required:
         - staffId
         - pin
+
+    Purchase:
+      type: object
+      properties:
+        id:
+          type: integer
+        productId:
+          type: integer
+        productName:
+          type: string
+        quantity:
+          type: integer
+        unitCost:
+          type: number
+          format: float
+        totalCost:
+          type: number
+          format: float
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - productId
+        - productName
+        - quantity
+        - unitCost
+        - totalCost
+        - createdAt
+
+    CreatePurchaseBody:
+      type: object
+      properties:
+        productId:
+          type: integer
+        quantity:
+          type: integer
+        unitCost:
+          type: number
+          format: float
+        notes:
+          type: string
+      required:
+        - productId
+        - quantity

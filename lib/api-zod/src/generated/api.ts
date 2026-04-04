@@ -1286,3 +1286,39 @@ export const UpdateStaffResponse = zod.object({
 export const DeleteStaffParams = zod.object({
   id: zod.coerce.number(),
 });
+
+/**
+ * @summary List all stock purchases
+ */
+export const ListPurchasesQueryParams = zod.object({
+  productId: zod.coerce.number().optional(),
+});
+
+export const ListPurchasesResponseItem = zod.object({
+  id: zod.number(),
+  productId: zod.number(),
+  productName: zod.string(),
+  quantity: zod.number(),
+  unitCost: zod.number(),
+  totalCost: zod.number(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+export const ListPurchasesResponse = zod.array(ListPurchasesResponseItem);
+
+/**
+ * @summary Record a new stock purchase
+ */
+export const CreatePurchaseBody = zod.object({
+  productId: zod.number(),
+  quantity: zod.number(),
+  unitCost: zod.number().optional(),
+  notes: zod.string().optional(),
+});
+
+/**
+ * @summary Delete a purchase record
+ */
+export const DeletePurchaseParams = zod.object({
+  id: zod.coerce.number(),
+});
