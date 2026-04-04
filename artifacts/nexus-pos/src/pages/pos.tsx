@@ -66,16 +66,16 @@ function choiceLabel(choices: ChoiceItem[]) {
 }
 
 const CARD_PALETTES = [
-  { bg: "from-blue-600/20 to-blue-800/10", accent: "border-blue-500/40", dot: "bg-blue-500" },
-  { bg: "from-violet-600/20 to-violet-800/10", accent: "border-violet-500/40", dot: "bg-violet-500" },
-  { bg: "from-emerald-600/20 to-emerald-800/10", accent: "border-emerald-500/40", dot: "bg-emerald-500" },
-  { bg: "from-amber-600/20 to-amber-800/10", accent: "border-amber-500/40", dot: "bg-amber-500" },
-  { bg: "from-rose-600/20 to-rose-800/10", accent: "border-rose-500/40", dot: "bg-rose-500" },
-  { bg: "from-cyan-600/20 to-cyan-800/10", accent: "border-cyan-500/40", dot: "bg-cyan-500" },
-  { bg: "from-pink-600/20 to-pink-800/10", accent: "border-pink-500/40", dot: "bg-pink-500" },
-  { bg: "from-indigo-600/20 to-indigo-800/10", accent: "border-indigo-500/40", dot: "bg-indigo-500" },
-  { bg: "from-teal-600/20 to-teal-800/10", accent: "border-teal-500/40", dot: "bg-teal-500" },
-  { bg: "from-orange-600/20 to-orange-800/10", accent: "border-orange-500/40", dot: "bg-orange-500" },
+  { bg: "bg-blue-700", accent: "border-blue-600", dot: "bg-blue-300" },
+  { bg: "bg-violet-700", accent: "border-violet-600", dot: "bg-violet-300" },
+  { bg: "bg-emerald-700", accent: "border-emerald-600", dot: "bg-emerald-300" },
+  { bg: "bg-amber-700", accent: "border-amber-600", dot: "bg-amber-300" },
+  { bg: "bg-rose-700", accent: "border-rose-600", dot: "bg-rose-300" },
+  { bg: "bg-cyan-700", accent: "border-cyan-600", dot: "bg-cyan-300" },
+  { bg: "bg-pink-700", accent: "border-pink-600", dot: "bg-pink-300" },
+  { bg: "bg-indigo-700", accent: "border-indigo-600", dot: "bg-indigo-300" },
+  { bg: "bg-teal-700", accent: "border-teal-600", dot: "bg-teal-300" },
+  { bg: "bg-orange-700", accent: "border-orange-600", dot: "bg-orange-300" },
 ];
 
 function getProductPalette(id: number) {
@@ -632,7 +632,7 @@ export function POS() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 p-4">
               {loadingProducts
                 ? Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="h-28 rounded-xl bg-secondary/30 animate-pulse" />
+                    <div key={i} className="aspect-square rounded-xl bg-secondary/30 animate-pulse" />
                   ))
                 : filteredProducts?.map((product) => {
                     const palette = getProductPalette(product.id);
@@ -640,7 +640,7 @@ export function POS() {
                       <motion.div key={product.id} whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.02 }}>
                         <div
                           onClick={() => !product.inStock ? undefined : handleProductTap(product)}
-                          className={`relative cursor-pointer rounded-xl border bg-gradient-to-br ${palette.bg} ${palette.accent} h-28 p-3 flex flex-col justify-between transition-all duration-150 ${!product.inStock ? "opacity-40 cursor-not-allowed" : "hover:shadow-lg hover:shadow-black/20 active:scale-95"}`}
+                          className={`relative cursor-pointer rounded-xl border ${palette.bg} ${palette.accent} aspect-square p-3 flex flex-col justify-between transition-all duration-150 ${!product.inStock ? "opacity-40 cursor-not-allowed" : "hover:brightness-110 hover:shadow-lg hover:shadow-black/30 active:scale-95"}`}
                         >
                           <div className={`absolute top-2.5 right-2.5 h-2 w-2 rounded-full ${palette.dot} opacity-70`} />
                           <div className="pr-4">
