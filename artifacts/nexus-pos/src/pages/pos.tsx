@@ -630,7 +630,7 @@ export function POS() {
           </div>
 
           <ScrollArea className="flex-1">
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-4 gap-2 p-3">
+            <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-6 gap-2 p-3">
               {loadingProducts
                 ? Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="aspect-square rounded-xl bg-secondary/30 animate-pulse" />
