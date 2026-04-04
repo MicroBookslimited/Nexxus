@@ -121,6 +121,7 @@ export const CreateOrderBodyOrderType = {
   counter: "counter",
   "dine-in": "dine-in",
   takeout: "takeout",
+  delivery: "delivery",
 } as const;
 
 export interface CreateOrderBody {

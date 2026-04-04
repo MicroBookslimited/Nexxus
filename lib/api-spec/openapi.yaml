@@ -1198,7 +1198,7 @@ components:
           type: integer
         orderType:
           type: string
-          enum: [counter, dine-in, takeout]
+          enum: [counter, dine-in, takeout, delivery]
         loyaltyPointsToRedeem:
           type: integer
       required:

@@ -418,7 +418,7 @@ export const CreateOrderBody = zod.object({
   customerId: zod.number().optional(),
   tableId: zod.number().optional(),
   staffId: zod.number().optional(),
-  orderType: zod.enum(["counter", "dine-in", "takeout"]).optional(),
+  orderType: zod.enum(["counter", "dine-in", "takeout", "delivery"]).optional(),
   loyaltyPointsToRedeem: zod.number().optional(),
 });
 

@@ -21,6 +21,7 @@ import {
   Search, CreditCard, Banknote, Trash2, ShoppingCart, ScanBarcode,
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
+  UtensilsCrossed, ShoppingBag, Truck,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -328,6 +329,7 @@ export function POS() {
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState<number>(0);
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [orderMode, setOrderMode] = useState<"dine-in" | "takeout" | "delivery">("dine-in");
 
   const { data: customers } = useListCustomers();
   const { data: tables } = useListTables();
@@ -449,6 +451,7 @@ export function POS() {
     setLoyaltyPointsToRedeem(0);
     setSelectedTableId(null);
     setCustomerSearch("");
+    setOrderMode("dine-in");
   };
 
   const handleCharge = () => {
@@ -476,8 +479,8 @@ export function POS() {
           notes: notes || undefined,
           customerId: selectedCustomerId ?? undefined,
           loyaltyPointsToRedeem: clampedPoints > 0 ? clampedPoints : undefined,
-          tableId: selectedTableId ?? undefined,
-          orderType: selectedTableId ? "dine-in" : "counter",
+          tableId: orderMode === "dine-in" ? (selectedTableId ?? undefined) : undefined,
+          orderType: orderMode,
         },
       },
       {
@@ -494,10 +497,6 @@ export function POS() {
 
   const handleSendToKitchen = () => {
     if (cart.length === 0) return;
-    if (!selectedTableId) {
-      toast({ title: "Select a table", description: "Please select a table for dine-in orders.", variant: "destructive" });
-      return;
-    }
 
     createOrder.mutate(
       {
@@ -514,7 +513,7 @@ export function POS() {
           notes: notes || undefined,
           customerId: selectedCustomerId ?? undefined,
           loyaltyPointsToRedeem: clampedPoints > 0 ? clampedPoints : undefined,
-          tableId: selectedTableId,
+          tableId: selectedTableId ?? undefined,
           orderType: "dine-in",
         },
       },
@@ -649,6 +648,30 @@ export function POS() {
 
         {/* Cart sidebar */}
         <div className="w-[340px] shrink-0 flex flex-col bg-card">
+          {/* Order mode selector */}
+          <div className="grid grid-cols-3 gap-1 p-2 border-b border-border">
+            {([ 
+              { mode: "dine-in", label: "Dine In", icon: UtensilsCrossed },
+              { mode: "takeout", label: "Takeout", icon: ShoppingBag },
+              { mode: "delivery", label: "Delivery", icon: Truck },
+            ] as const).map(({ mode, label, icon: Icon }) => (
+              <button
+                key={mode}
+                onClick={() => {
+                  setOrderMode(mode);
+                  if (mode !== "dine-in") setSelectedTableId(null);
+                }}
+                className={`flex flex-col items-center gap-0.5 py-2 rounded-md text-xs font-medium transition-all ${
+                  orderMode === mode
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-primary" />
@@ -817,8 +840,8 @@ export function POS() {
               </div>
             )}
 
-            {/* Table Selector */}
-            {tables && tables.length > 0 && (
+            {/* Table Selector — Dine In only */}
+            {orderMode === "dine-in" && tables && tables.length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-xs font-medium text-muted-foreground">Table (optional)</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -902,7 +925,7 @@ export function POS() {
               <p className="text-amber-500 text-xs font-medium">Split amounts must equal total ({formatCurrency(total)})</p>
             )}
 
-            {selectedTableId && (
+            {orderMode === "dine-in" && (
               <Button
                 variant="outline"
                 className="w-full h-11 text-sm border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 mt-1"
