@@ -14,7 +14,6 @@ import type { GetOrderResponse } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import {
@@ -332,6 +331,7 @@ export function POS() {
   const [orderMode, setOrderMode] = useState<"dine-in" | "takeout" | "delivery">("dine-in");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryPhone, setDeliveryPhone] = useState("");
+  const [numpadValue, setNumpadValue] = useState("");
   const [deliveryDirections, setDeliveryDirections] = useState("");
 
   const { data: customers } = useListCustomers();
@@ -458,6 +458,7 @@ export function POS() {
     setDeliveryAddress("");
     setDeliveryPhone("");
     setDeliveryDirections("");
+    setNumpadValue("");
   };
 
   const buildOrderNotes = () => {
@@ -629,7 +630,7 @@ export function POS() {
           </div>
 
           <ScrollArea className="flex-1">
-            <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-6 gap-2 p-3">
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-4 gap-2 p-3">
               {loadingProducts
                 ? Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="aspect-square rounded-xl bg-secondary/30 animate-pulse" />
@@ -666,39 +667,33 @@ export function POS() {
           </ScrollArea>
         </div>
 
-        {/* Cart sidebar */}
-        <div className="w-[420px] shrink-0 flex flex-col bg-card">
+        {/* ── MIDDLE: Order controls ── */}
+        <div className="w-[300px] shrink-0 border-l border-border flex flex-col bg-card">
           {/* Order mode selector */}
-          <div className="grid grid-cols-3 gap-1 p-2 border-b border-border">
-            {([ 
+          <div className="grid grid-cols-3 gap-1 p-2 border-b border-border shrink-0">
+            {([
               { mode: "dine-in", label: "Dine In", icon: UtensilsCrossed },
               { mode: "takeout", label: "Takeout", icon: ShoppingBag },
               { mode: "delivery", label: "Delivery", icon: Truck },
             ] as const).map(({ mode, label, icon: Icon }) => (
               <button
                 key={mode}
-                onClick={() => {
-                  setOrderMode(mode);
-                  if (mode !== "dine-in") setSelectedTableId(null);
-                }}
-                className={`flex flex-col items-center gap-0.5 py-2 rounded-md text-xs font-medium transition-all ${
-                  orderMode === mode
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
-                }`}
+                onClick={() => { setOrderMode(mode); if (mode !== "dine-in") setSelectedTableId(null); }}
+                className={`flex flex-col items-center gap-0.5 py-2 rounded-md text-xs font-medium transition-all ${orderMode === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"}`}
               >
-                <Icon className="h-4 w-4" />
-                {label}
+                <Icon className="h-4 w-4" />{label}
               </button>
             ))}
           </div>
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+
+          {/* Cart header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-primary" />
               <span className="font-semibold text-sm">Cart</span>
               {cart.length > 0 && <Badge className="h-5 text-[10px] px-1.5">{cart.reduce((s, i) => s + i.quantity, 0)}</Badge>}
             </div>
-            <div className="flex gap-1.5">
+            <div className="flex gap-1">
               <Button size="icon" variant="ghost" className="h-7 w-7" title="Hold order" onClick={handleHoldOrder} disabled={cart.length === 0}>
                 <SaveAll className="h-3.5 w-3.5" />
               </Button>
@@ -732,266 +727,272 @@ export function POS() {
             </div>
           </div>
 
-          <ScrollArea className="flex-1 px-3 py-2">
-            <AnimatePresence initial={false}>
-              {cart.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
-                  <ShoppingCart className="h-8 w-8 opacity-30" />
-                  <p className="text-sm">Cart is empty</p>
-                </div>
-              ) : (
-                cart.map((item) => (
-                  <motion.div key={item.cartKey} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="mb-2">
-                    <div className="rounded-lg bg-secondary/30 p-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium leading-snug truncate">{item.productName}</p>
-                          {item.variantChoices.length > 0 && (
-                            <p className="text-xs text-primary/80 mt-0.5">{choiceLabel(item.variantChoices)}</p>
-                          )}
-                          {item.modifierChoices.length > 0 && (
-                            <p className="text-xs text-amber-400/90 mt-0.5">+ {choiceLabel(item.modifierChoices)}</p>
-                          )}
-                          <p className="text-xs font-mono text-primary mt-1">{formatCurrency(item.effectivePrice)} ea</p>
+          {/* Cart items */}
+          <ScrollArea className="flex-1">
+            <div className="px-2 py-2 space-y-1.5">
+              <AnimatePresence initial={false}>
+                {cart.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-32 text-muted-foreground gap-2">
+                    <ShoppingCart className="h-7 w-7 opacity-30" />
+                    <p className="text-xs">Cart is empty</p>
+                  </div>
+                ) : (
+                  cart.map((item) => (
+                    <motion.div key={item.cartKey} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}>
+                      <div className="rounded-lg bg-secondary/30 p-2">
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium leading-snug truncate">{item.productName}</p>
+                            {item.variantChoices.length > 0 && <p className="text-[10px] text-primary/80">{choiceLabel(item.variantChoices)}</p>}
+                            {item.modifierChoices.length > 0 && <p className="text-[10px] text-amber-400/90">+ {choiceLabel(item.modifierChoices)}</p>}
+                            <p className="text-[10px] font-mono text-primary mt-0.5">{formatCurrency(item.effectivePrice)} ea</p>
+                          </div>
+                          <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive shrink-0" onClick={() => removeFromCart(item.cartKey)}>
+                            <Trash2 className="h-2.5 w-2.5" />
+                          </Button>
                         </div>
-                        <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive shrink-0" onClick={() => removeFromCart(item.cartKey)}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                        <div className="flex items-center gap-1 mt-1.5">
+                          <Button size="icon" variant="outline" className="h-5 w-5" onClick={() => updateQuantity(item.cartKey, -1)}><Minus className="h-2.5 w-2.5" /></Button>
+                          <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
+                          <Button size="icon" variant="outline" className="h-5 w-5" onClick={() => updateQuantity(item.cartKey, 1)}><Plus className="h-2.5 w-2.5" /></Button>
+                          <span className="ml-auto text-xs font-mono font-semibold">{formatCurrency(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Button size="icon" variant="outline" className="h-6 w-6" onClick={() => updateQuantity(item.cartKey, -1)}>
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                        <span className="text-sm font-bold w-5 text-center">{item.quantity}</span>
-                        <Button size="icon" variant="outline" className="h-6 w-6" onClick={() => updateQuantity(item.cartKey, 1)}>
-                          <Plus className="h-3 w-3" />
-                        </Button>
-                        <span className="ml-auto text-sm font-mono font-semibold">{formatCurrency(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))
-              )}
-            </AnimatePresence>
-            <div ref={cartBottomRef} />
-          </ScrollArea>
-
-          {/* Totals & payment */}
-          <div className="border-t border-border p-3 space-y-2.5">
-            {/* Discount */}
-            <div className="flex gap-2">
-              <Button size="sm" variant={discountType === "percent" ? "default" : "outline"} className="flex-1 h-8 text-xs" onClick={() => setDiscountType(discountType === "percent" ? null : "percent")}>
-                <Percent className="h-3 w-3 mr-1" />%
-              </Button>
-              <Button size="sm" variant={discountType === "fixed" ? "default" : "outline"} className="flex-1 h-8 text-xs" onClick={() => setDiscountType(discountType === "fixed" ? null : "fixed")}>
-                <DollarSign className="h-3 w-3 mr-1" />Fixed
-              </Button>
-              {discountType && (
-                <Input
-                  type="number"
-                  min={0}
-                  className="flex-1 h-8 text-xs font-mono"
-                  placeholder={discountType === "percent" ? "%" : "$"}
-                  value={discountAmount || ""}
-                  onChange={(e) => setDiscountAmount(Number(e.target.value))}
-                />
-              )}
+                    </motion.div>
+                  ))
+                )}
+              </AnimatePresence>
+              <div ref={cartBottomRef} />
             </div>
 
-            {/* Customer Selector */}
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Customer</p>
+            {/* Order options */}
+            <div className="px-2 pb-3 space-y-2 border-t border-border pt-2">
+              {/* Discount */}
+              <div className="flex gap-1.5">
+                <Button size="sm" variant={discountType === "percent" ? "default" : "outline"} className="flex-1 h-7 text-xs" onClick={() => setDiscountType(discountType === "percent" ? null : "percent")}>
+                  <Percent className="h-3 w-3 mr-1" />%
+                </Button>
+                <Button size="sm" variant={discountType === "fixed" ? "default" : "outline"} className="flex-1 h-7 text-xs" onClick={() => setDiscountType(discountType === "fixed" ? null : "fixed")}>
+                  <DollarSign className="h-3 w-3 mr-1" />Fixed
+                </Button>
+                {discountType && (
+                  <Input type="number" min={0} className="flex-1 h-7 text-xs font-mono" placeholder={discountType === "percent" ? "%" : "$"}
+                    value={discountAmount || ""} onChange={(e) => setDiscountAmount(Number(e.target.value))} />
+                )}
+              </div>
+
+              {/* Customer */}
               {selectedCustomer ? (
-                <div className="flex items-center justify-between bg-primary/10 rounded-md px-3 py-2 border border-primary/20">
+                <div className="flex items-center justify-between bg-primary/10 rounded-md px-2 py-1.5 border border-primary/20">
                   <div>
-                    <p className="text-sm font-medium text-primary">{selectedCustomer.name}</p>
-                    <p className="text-xs text-muted-foreground">{selectedCustomer.loyaltyPoints} pts available</p>
+                    <p className="text-xs font-medium text-primary">{selectedCustomer.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{selectedCustomer.loyaltyPoints} pts</p>
                   </div>
-                  <Button size="sm" variant="ghost" className="h-6 text-xs text-muted-foreground" onClick={() => { setSelectedCustomerId(null); setLoyaltyPointsToRedeem(0); }}>
-                    ✕
-                  </Button>
+                  <Button size="sm" variant="ghost" className="h-5 text-xs p-1 text-muted-foreground" onClick={() => { setSelectedCustomerId(null); setLoyaltyPointsToRedeem(0); }}>✕</Button>
                 </div>
               ) : (
                 <div className="relative">
-                  <Input
-                    className="text-xs h-8"
-                    placeholder="Search customer…"
-                    value={customerSearch}
-                    onChange={(e) => setCustomerSearch(e.target.value)}
-                  />
+                  <Input className="text-xs h-7" placeholder="Search customer…" value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} />
                   {customerSearch && customers && (
-                    <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-auto">
-                      {customers.filter((c) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.email?.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 5).map((c) => (
-                        <button
-                          key={c.id}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex justify-between items-center"
-                          onClick={() => { setSelectedCustomerId(c.id); setCustomerSearch(""); setLoyaltyPointsToRedeem(0); }}
-                        >
+                    <div className="absolute z-10 w-full mt-0.5 bg-card border border-border rounded-md shadow-lg max-h-32 overflow-auto">
+                      {customers.filter((c) => c.name.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 4).map((c) => (
+                        <button key={c.id} className="w-full text-left px-2 py-1.5 text-xs hover:bg-secondary/50 flex justify-between"
+                          onClick={() => { setSelectedCustomerId(c.id); setCustomerSearch(""); setLoyaltyPointsToRedeem(0); }}>
                           <span>{c.name}</span>
-                          <span className="text-xs text-muted-foreground">{c.loyaltyPoints} pts</span>
+                          <span className="text-muted-foreground">{c.loyaltyPoints} pts</span>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
               )}
-            </div>
 
-            {/* Loyalty Redemption */}
-            {selectedCustomer && selectedCustomer.loyaltyPoints > 0 && (
-              <div className="bg-amber-500/5 border border-amber-500/20 rounded-md px-3 py-2 space-y-1.5">
-                <p className="text-xs font-medium text-amber-400">Redeem Loyalty Points</p>
-                <p className="text-xs text-muted-foreground">100 pts = $1.00 · Max: {maxRedeemable} pts</p>
-                <div className="flex gap-2 items-center">
-                  <Input
-                    type="number"
-                    min={0}
-                    step={100}
-                    max={maxRedeemable}
-                    value={loyaltyPointsToRedeem || ""}
-                    onChange={(e) => setLoyaltyPointsToRedeem(Math.min(Number(e.target.value), maxRedeemable))}
-                    className="h-7 text-xs font-mono flex-1"
-                    placeholder="0 pts"
-                  />
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setLoyaltyPointsToRedeem(maxRedeemable)}>
-                    Max
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Table Selector — Dine In only */}
-            {orderMode === "dine-in" && tables && tables.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">Table (optional)</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {tables.filter((t) => t.isActive && t.status !== "occupied").map((t) => (
-                    <button
-                      key={t.id}
-                      className={`px-2.5 py-1 rounded text-xs font-medium border transition-all ${selectedTableId === t.id ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}
-                      style={selectedTableId === t.id ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}15` } : {}}
-                      onClick={() => setSelectedTableId(selectedTableId === t.id ? null : t.id)}
-                    >
-                      {t.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Delivery details */}
-            {orderMode === "delivery" && (
-              <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-2.5">
-                <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                  <Truck className="h-3.5 w-3.5" /> Delivery Details
-                </p>
-                <div className="space-y-1.5">
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Address *"
-                    value={deliveryAddress}
-                    onChange={(e) => setDeliveryAddress(e.target.value)}
-                  />
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Phone number"
-                    type="tel"
-                    value={deliveryPhone}
-                    onChange={(e) => setDeliveryPhone(e.target.value)}
-                  />
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Directions / landmark (optional)"
-                    value={deliveryDirections}
-                    onChange={(e) => setDeliveryDirections(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Notes */}
-            <Textarea
-              className="text-xs resize-none h-14"
-              placeholder="Order notes…"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-
-            <Separator />
-
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between text-muted-foreground">
-                <span>Subtotal</span>
-                <span className="font-mono">{formatCurrency(subtotal)}</span>
-              </div>
-              {cartDiscountValue > 0 && (
-                <div className="flex justify-between text-amber-400">
-                  <span>Discount</span>
-                  <span className="font-mono">-{formatCurrency(cartDiscountValue)}</span>
+              {/* Loyalty */}
+              {selectedCustomer && selectedCustomer.loyaltyPoints > 0 && (
+                <div className="bg-amber-500/5 border border-amber-500/20 rounded-md px-2 py-1.5 space-y-1">
+                  <p className="text-[10px] font-medium text-amber-400">Loyalty · Max {maxRedeemable} pts</p>
+                  <div className="flex gap-1.5 items-center">
+                    <Input type="number" min={0} step={100} max={maxRedeemable} value={loyaltyPointsToRedeem || ""}
+                      onChange={(e) => setLoyaltyPointsToRedeem(Math.min(Number(e.target.value), maxRedeemable))}
+                      className="h-6 text-xs font-mono flex-1" placeholder="0 pts" />
+                    <Button size="sm" variant="outline" className="h-6 text-xs px-1.5" onClick={() => setLoyaltyPointsToRedeem(maxRedeemable)}>Max</Button>
+                  </div>
                 </div>
               )}
-              {loyaltyDiscountValue > 0 && (
-                <div className="flex justify-between text-amber-400">
-                  <span>Loyalty ({clampedPoints} pts)</span>
-                  <span className="font-mono">-{formatCurrency(loyaltyDiscountValue)}</span>
+
+              {/* Table */}
+              {orderMode === "dine-in" && tables && tables.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground mb-1">Table</p>
+                  <div className="flex flex-wrap gap-1">
+                    {tables.filter((t) => t.isActive && t.status !== "occupied").map((t) => (
+                      <button key={t.id}
+                        className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-all ${selectedTableId === t.id ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}
+                        style={selectedTableId === t.id ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}15` } : {}}
+                        onClick={() => setSelectedTableId(selectedTableId === t.id ? null : t.id)}>
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
-              <div className="flex justify-between text-muted-foreground">
-                <span>Tax (10%)</span>
-                <span className="font-mono">{formatCurrency(tax)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-base pt-1 border-t border-border">
-                <span>Total</span>
-                <span className="font-mono text-primary">{formatCurrency(total)}</span>
-              </div>
-            </div>
 
-            {/* Payment method */}
-            <div className="flex gap-2">
-              <Button variant={paymentMethod === "card" ? "default" : "outline"} onClick={() => setPaymentMethod("card")} className="flex-1 h-10">
-                <CreditCard className="mr-2 h-4 w-4" />Card
+              {/* Delivery */}
+              {orderMode === "delivery" && (
+                <div className="space-y-1 rounded-md border border-primary/20 bg-primary/5 p-2">
+                  <p className="text-[10px] font-semibold text-primary flex items-center gap-1"><Truck className="h-3 w-3" /> Delivery</p>
+                  <Input className="h-7 text-xs" placeholder="Address *" value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} />
+                  <Input className="h-7 text-xs" placeholder="Phone" type="tel" value={deliveryPhone} onChange={(e) => setDeliveryPhone(e.target.value)} />
+                  <Input className="h-7 text-xs" placeholder="Directions (optional)" value={deliveryDirections} onChange={(e) => setDeliveryDirections(e.target.value)} />
+                </div>
+              )}
+
+              {/* Notes */}
+              <Textarea className="text-xs resize-none h-12" placeholder="Order notes…" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* ── RIGHT: Bill preview + keypad ── */}
+        <div className="w-[280px] shrink-0 border-l border-border flex flex-col bg-card">
+          {/* Bill summary */}
+          <div className="p-3 border-b border-border shrink-0">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Printer className="h-3.5 w-3.5 text-primary" />
+              <span className="text-xs font-semibold text-primary">Bill Preview</span>
+              {cart.length > 0 && <span className="ml-auto text-[10px] text-muted-foreground">{cart.reduce((s, i) => s + i.quantity, 0)} items</span>}
+            </div>
+            {cart.length === 0 ? (
+              <p className="text-center text-[10px] text-muted-foreground py-1 opacity-50">Add items to see bill</p>
+            ) : (
+              <div className="space-y-0.5 text-xs max-h-40 overflow-auto">
+                {cart.map((item) => (
+                  <div key={item.cartKey} className="flex justify-between text-muted-foreground">
+                    <span className="truncate max-w-[150px]">{item.quantity}× {item.productName}</span>
+                    <span className="font-mono shrink-0 ml-1">{formatCurrency(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
+                  </div>
+                ))}
+                <div className="pt-1.5 mt-1 border-t border-border space-y-0.5">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal</span><span className="font-mono">{formatCurrency(subtotal)}</span>
+                  </div>
+                  {cartDiscountValue > 0 && (
+                    <div className="flex justify-between text-amber-400">
+                      <span>Discount</span><span className="font-mono">-{formatCurrency(cartDiscountValue)}</span>
+                    </div>
+                  )}
+                  {loyaltyDiscountValue > 0 && (
+                    <div className="flex justify-between text-amber-400">
+                      <span>Loyalty</span><span className="font-mono">-{formatCurrency(loyaltyDiscountValue)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Tax (10%)</span><span className="font-mono">{formatCurrency(tax)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-sm pt-1 border-t border-border">
+                    <span>Total</span><span className="font-mono text-primary">{formatCurrency(total)}</span>
+                  </div>
+                  {paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0 && (
+                    <>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Tendered</span><span className="font-mono">{formatCurrency(parseFloat(numpadValue))}</span>
+                      </div>
+                      <div className={`flex justify-between font-semibold ${parseFloat(numpadValue) >= total ? "text-emerald-400" : "text-red-400"}`}>
+                        <span>{parseFloat(numpadValue) >= total ? "Change" : "Short"}</span>
+                        <span className="font-mono">{formatCurrency(Math.abs(parseFloat(numpadValue) - total))}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Numpad */}
+          <div className="p-2 border-b border-border shrink-0">
+            <div className="font-mono text-base font-bold text-center bg-secondary/50 rounded-md py-1.5 mb-2 tracking-wider">
+              {paymentMethod === "cash"
+                ? (numpadValue ? `$${numpadValue}` : "— Cash —")
+                : <span className="text-muted-foreground text-xs font-normal">Select Cash to use keypad</span>}
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              {(["7","8","9","4","5","6","1","2","3",".","0","⌫"] as const).map((k) => (
+                <button key={k}
+                  onClick={() => {
+                    if (k === "⌫") { setNumpadValue((v) => v.slice(0, -1)); }
+                    else if (k === ".") { setNumpadValue((v) => v.includes(".") ? v : v + "."); }
+                    else {
+                      setNumpadValue((v) => {
+                        const next = v + k;
+                        const [int, dec] = next.split(".");
+                        if (dec !== undefined && dec.length > 2) return v;
+                        if (int.length > 5) return v;
+                        return next;
+                      });
+                    }
+                  }}
+                  disabled={paymentMethod !== "cash"}
+                  className={`h-9 rounded-md text-sm font-semibold border border-border transition-all active:scale-95 ${k === "⌫" ? "text-red-400 hover:bg-red-500/10" : "hover:bg-secondary/80"} ${paymentMethod !== "cash" ? "opacity-25 cursor-not-allowed" : ""}`}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+            {paymentMethod === "cash" && (
+              <div className="grid grid-cols-4 gap-1 mt-1">
+                {[
+                  { label: "Exact", val: total.toFixed(2) },
+                  { label: "$20", val: "20.00" },
+                  { label: "$50", val: "50.00" },
+                  { label: "$100", val: "100.00" },
+                ].map(({ label, val }) => (
+                  <button key={label} onClick={() => setNumpadValue(val)}
+                    className="h-7 rounded text-[10px] font-medium border border-border hover:bg-secondary/80 active:scale-95 transition-all">
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Payment & action buttons */}
+          <div className="p-2 space-y-1.5">
+            <div className="flex gap-1.5">
+              <Button variant={paymentMethod === "card" ? "default" : "outline"} onClick={() => { setPaymentMethod("card"); setNumpadValue(""); }} className="flex-1 h-9 text-xs">
+                <CreditCard className="h-3.5 w-3.5 mr-1" />Card
               </Button>
-              <Button variant={paymentMethod === "cash" ? "default" : "outline"} onClick={() => setPaymentMethod("cash")} className="flex-1 h-10">
-                <Banknote className="mr-2 h-4 w-4" />Cash
+              <Button variant={paymentMethod === "cash" ? "default" : "outline"} onClick={() => setPaymentMethod("cash")} className="flex-1 h-9 text-xs">
+                <Banknote className="h-3.5 w-3.5 mr-1" />Cash
               </Button>
-              <Button variant={paymentMethod === "split" ? "default" : "outline"} onClick={handleSplitClick} className="flex-1 h-10">
-                <SplitSquareHorizontal className="mr-2 h-4 w-4" />Split
+              <Button variant={paymentMethod === "split" ? "default" : "outline"} onClick={handleSplitClick} className="flex-1 h-9 text-xs">
+                <SplitSquareHorizontal className="h-3.5 w-3.5 mr-1" />Split
               </Button>
             </div>
 
             {paymentMethod === "split" && (
-              <div className="flex gap-2 items-center bg-secondary/50 p-2 rounded-md">
-                <div className="flex-1 space-y-1">
-                  <label className="text-xs text-muted-foreground">Card $</label>
-                  <Input type="number" value={splitCardAmount} onChange={(e) => setSplitCardAmount(Number(e.target.value))} className="h-8 font-mono text-sm" />
+              <div className="flex gap-1.5 bg-secondary/50 p-1.5 rounded-md">
+                <div className="flex-1 space-y-0.5">
+                  <label className="text-[10px] text-muted-foreground">Card $</label>
+                  <Input type="number" value={splitCardAmount} onChange={(e) => setSplitCardAmount(Number(e.target.value))} className="h-7 font-mono text-xs" />
                 </div>
-                <div className="flex-1 space-y-1">
-                  <label className="text-xs text-muted-foreground">Cash $</label>
-                  <Input type="number" value={splitCashAmount} onChange={(e) => setSplitCashAmount(Number(e.target.value))} className="h-8 font-mono text-sm" />
+                <div className="flex-1 space-y-0.5">
+                  <label className="text-[10px] text-muted-foreground">Cash $</label>
+                  <Input type="number" value={splitCashAmount} onChange={(e) => setSplitCashAmount(Number(e.target.value))} className="h-7 font-mono text-xs" />
                 </div>
               </div>
             )}
             {paymentMethod === "split" && !isSplitValid && (
-              <p className="text-amber-500 text-xs font-medium">Split amounts must equal total ({formatCurrency(total)})</p>
+              <p className="text-amber-500 text-[10px] font-medium">Must equal {formatCurrency(total)}</p>
             )}
 
             {orderMode === "dine-in" && (
-              <Button
-                variant="outline"
-                className="w-full h-11 text-sm border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 mt-1"
-                onClick={handleSendToKitchen}
-                disabled={cart.length === 0 || createOrder.isPending}
-              >
-                <ChefHat className="mr-2 h-4 w-4" />
-                Send to Kitchen (Pay Later)
+              <Button variant="outline" className="w-full h-9 text-xs border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+                onClick={handleSendToKitchen} disabled={cart.length === 0 || createOrder.isPending}>
+                <ChefHat className="mr-1.5 h-3.5 w-3.5" />Send to Kitchen (Pay Later)
               </Button>
             )}
-            <Button
-              className="w-full h-14 text-lg shadow-lg shadow-primary/20 mt-2"
-              size="lg"
-              onClick={handleCharge}
-              disabled={cart.length === 0 || createOrder.isPending || (paymentMethod === "split" && !isSplitValid)}
-            >
+            <Button className="w-full h-12 text-base shadow-lg shadow-primary/20" size="lg" onClick={handleCharge}
+              disabled={cart.length === 0 || createOrder.isPending || (paymentMethod === "split" && !isSplitValid)}>
               {createOrder.isPending ? "Processing…" : `Charge ${formatCurrency(total)}`}
             </Button>
           </div>
