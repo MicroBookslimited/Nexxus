@@ -51,7 +51,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List } from "lucide-react";
 
 const CATEGORIES = ["Beverages", "Food", "Bakery", "Merchandise", "Other"];
 
@@ -396,6 +396,7 @@ export function Products() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState("details");
   const [editingProduct, setEditingProduct] = useState<GetProductResponse | null>(null);
@@ -497,30 +498,51 @@ export function Products() {
         </Button>
       </div>
 
-      <div className="flex gap-3 flex-wrap">
+      <div className="flex gap-3 flex-wrap items-center">
         <div className="relative max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input className="pl-9" placeholder="Search products…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap flex-1">
           <Button size="sm" variant={!categoryFilter ? "default" : "outline"} onClick={() => setCategoryFilter(null)}>All</Button>
           {CATEGORIES.map((c) => (
             <Button key={c} size="sm" variant={categoryFilter === c ? "default" : "outline"} onClick={() => setCategoryFilter(c)}>{c}</Button>
           ))}
         </div>
+        {/* View toggle */}
+        <div className="flex items-center rounded-md border border-border overflow-hidden shrink-0">
+          <button
+            onClick={() => setViewMode("grid")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === "grid" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"}`}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />Grid
+          </button>
+          <button
+            onClick={() => setViewMode("list")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"}`}
+          >
+            <List className="h-3.5 w-3.5" />List
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
-        </div>
+        viewMode === "grid" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
+          </div>
+        )
       ) : !filteredProducts?.length ? (
         <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
           <Package className="h-12 w-12 opacity-30" />
           <p className="text-lg">No products found</p>
           <Button variant="outline" onClick={openAdd}>Add your first product</Button>
         </div>
-      ) : (
+      ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           <AnimatePresence>
             {filteredProducts.map((product) => (
@@ -561,6 +583,74 @@ export function Products() {
                     </div>
                   </CardContent>
                 </Card>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      ) : (
+        /* ── LIST VIEW ── */
+        <div className="rounded-xl border border-border overflow-hidden">
+          {/* Header row */}
+          <div className="grid grid-cols-[1fr_120px_100px_120px_100px_96px] gap-4 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            <span>Product</span>
+            <span>Category</span>
+            <span className="text-right">Price</span>
+            <span>Stock</span>
+            <span>Add-ons</span>
+            <span className="text-right">Actions</span>
+          </div>
+          <AnimatePresence initial={false}>
+            {filteredProducts.map((product, i) => (
+              <motion.div
+                key={product.id}
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ delay: i * 0.02 }}
+                className={`grid grid-cols-[1fr_120px_100px_120px_100px_96px] gap-4 px-4 py-3 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors group`}
+              >
+                {/* Name + description */}
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold truncate">{product.name}</p>
+                  {product.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{product.description}</p>}
+                </div>
+
+                {/* Category */}
+                <Badge variant="outline" className="text-[10px] w-fit">{product.category}</Badge>
+
+                {/* Price */}
+                <p className="text-sm font-bold font-mono text-primary text-right">{formatCurrency(product.price)}</p>
+
+                {/* Stock */}
+                <div>
+                  <Badge variant={product.inStock ? "default" : "destructive"} className="text-[10px]">
+                    {product.inStock ? `${product.stockCount} in stock` : "Out of stock"}
+                  </Badge>
+                </div>
+
+                {/* Add-ons */}
+                <div className="flex gap-1">
+                  {product.hasVariants && (
+                    <Badge variant="secondary" className="text-[10px] h-5 gap-0.5 px-1.5">
+                      <Layers className="h-2.5 w-2.5" />Variants
+                    </Badge>
+                  )}
+                  {product.hasModifiers && (
+                    <Badge variant="secondary" className="text-[10px] h-5 gap-0.5 px-1.5">
+                      <Settings2 className="h-2.5 w-2.5" />Mods
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => openEdit(product)}>
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                  <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
               </motion.div>
             ))}
           </AnimatePresence>
