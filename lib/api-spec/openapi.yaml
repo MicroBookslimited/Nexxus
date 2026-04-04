@@ -1247,7 +1247,7 @@ components:
           type: string
         status:
           type: string
-          enum: [open, pending, completed, cancelled, refunded, voided]
+          enum: [open, pending, ready, completed, cancelled, refunded, voided]
         subtotal:
           type: number
           format: float

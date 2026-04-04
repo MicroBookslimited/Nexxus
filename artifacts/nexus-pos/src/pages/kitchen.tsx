@@ -62,7 +62,7 @@ function KitchenCard({
 
   return (
     <div className={cn("rounded-xl bg-card border border-border flex flex-col shadow-sm transition-all", config.headerColor)}>
-      <div className="p-4 border-b border-border">
+      <div className="p-4 border-b border-border shrink-0">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="font-bold text-base">{order.orderNumber}</p>
@@ -95,7 +95,7 @@ function KitchenCard({
         )}
       </div>
 
-      <div className="p-4 flex-1 space-y-2">
+      <div className="p-4 overflow-y-auto max-h-64 space-y-2">
         {items.map((item) => (
           <div key={item.id} className="flex items-start gap-3">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary/20 text-primary text-xs font-bold">

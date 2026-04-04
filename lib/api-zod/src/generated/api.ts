@@ -319,6 +319,7 @@ export const ListOrdersResponseItem = zod.object({
   status: zod.enum([
     "open",
     "pending",
+    "ready",
     "completed",
     "cancelled",
     "refunded",
@@ -435,6 +436,7 @@ export const GetOrderResponse = zod.object({
   status: zod.enum([
     "open",
     "pending",
+    "ready",
     "completed",
     "cancelled",
     "refunded",
@@ -516,6 +518,7 @@ export const UpdateOrderStatusResponse = zod.object({
   status: zod.enum([
     "open",
     "pending",
+    "ready",
     "completed",
     "cancelled",
     "refunded",
@@ -591,6 +594,7 @@ export const ChargeOrderResponse = zod.object({
   status: zod.enum([
     "open",
     "pending",
+    "ready",
     "completed",
     "cancelled",
     "refunded",
@@ -742,6 +746,7 @@ export const GetRecentOrdersResponseItem = zod.object({
   status: zod.enum([
     "open",
     "pending",
+    "ready",
     "completed",
     "cancelled",
     "refunded",
@@ -942,6 +947,7 @@ export const GetCustomerOrdersResponseItem = zod.object({
   status: zod.enum([
     "open",
     "pending",
+    "ready",
     "completed",
     "cancelled",
     "refunded",

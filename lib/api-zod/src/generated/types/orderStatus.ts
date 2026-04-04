@@ -11,6 +11,7 @@ export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
 export const OrderStatus = {
   open: "open",
   pending: "pending",
+  ready: "ready",
   completed: "completed",
   cancelled: "cancelled",
   refunded: "refunded",
