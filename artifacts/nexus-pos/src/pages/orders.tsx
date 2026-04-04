@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useListOrders, useUpdateOrderStatus } from "@workspace/api-client-react";
+import { useListOrders, useUpdateOrderStatus, useChargeOrder } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, Printer, CreditCard, Banknote, SplitSquareHorizontal, Receipt } from "lucide-react";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -21,8 +21,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+
+function formatCurrency(val: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(val);
+}
 
 export function Orders() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -33,16 +38,20 @@ export function Orders() {
   const [orderToVoid, setOrderToVoid] = useState<number | null>(null);
   const [voidReason, setVoidReason] = useState("");
 
+  const [chargeDialogOpen, setChargeDialogOpen] = useState(false);
+  const [orderToCharge, setOrderToCharge] = useState<{ id: number; orderNumber: string; total: number } | null>(null);
+  const [chargePaymentMethod, setChargePaymentMethod] = useState<"card" | "cash" | "split">("card");
+  const [chargeSplitCard, setChargeSplitCard] = useState(0);
+  const [chargeSplitCash, setChargeSplitCash] = useState(0);
+
   const { data: orders, isLoading } = useListOrders(
     statusFilter !== "all" ? { status: statusFilter as any } : {}
   );
   
   const updateStatus = useUpdateOrderStatus();
+  const chargeOrder = useChargeOrder();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-
-  const formatCurrency = (val: number) => 
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 
   const filteredOrders = orders?.filter(order => 
     order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase())
@@ -71,12 +80,77 @@ export function Orders() {
     setVoidDialogOpen(true);
   };
 
+  const openChargeDialog = (order: { id: number; orderNumber: string; total: number }) => {
+    setOrderToCharge(order);
+    setChargePaymentMethod("card");
+    setChargeSplitCard(Number((order.total / 2).toFixed(2)));
+    setChargeSplitCash(Number((order.total - Number((order.total / 2).toFixed(2))).toFixed(2)));
+    setChargeDialogOpen(true);
+  };
+
+  const handleChargeConfirm = () => {
+    if (!orderToCharge) return;
+    const isSplitValid = chargePaymentMethod !== "split" || Math.abs(chargeSplitCard + chargeSplitCash - orderToCharge.total) < 0.01;
+    if (!isSplitValid) {
+      toast({ title: "Invalid split amounts", variant: "destructive" });
+      return;
+    }
+
+    chargeOrder.mutate({
+      id: orderToCharge.id,
+      data: {
+        paymentMethod: chargePaymentMethod,
+        splitCardAmount: chargePaymentMethod === "split" ? chargeSplitCard : undefined,
+        splitCashAmount: chargePaymentMethod === "split" ? chargeSplitCash : undefined,
+      }
+    }, {
+      onSuccess: () => {
+        toast({ title: "Payment Collected", description: `${orderToCharge.orderNumber} marked as completed.` });
+        queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+        setChargeDialogOpen(false);
+        setOrderToCharge(null);
+      },
+      onError: () => {
+        toast({ title: "Charge Failed", variant: "destructive" });
+      }
+    });
+  };
+
+  const handlePrintBill = (order: typeof orders extends Array<infer T> ? T : never) => {
+    const win = window.open("", "_blank", "width=400,height=600");
+    if (!win) return;
+    win.document.write(`
+      <html><head><title>Bill – ${order.orderNumber}</title>
+      <style>body{font-family:monospace;font-size:13px;padding:16px;} h2{text-align:center} .row{display:flex;justify-content:space-between;} .sep{border-top:1px dashed #333;margin:8px 0;} .bold{font-weight:bold;} .center{text-align:center;}</style>
+      </head><body>
+      <h2>Nexus POS</h2>
+      <p class="center">Your Business, Connected.</p>
+      <div class="sep"></div>
+      <div class="row"><span>Order:</span><span>${order.orderNumber}</span></div>
+      <div class="row"><span>Date:</span><span>${format(new Date(order.createdAt), "MMM d, yyyy h:mm a")}</span></div>
+      <div class="sep"></div>
+      ${order.items.map(item => `<div class="row"><span>${item.quantity}x ${item.productName}</span><span>${formatCurrency(item.lineTotal)}</span></div>`).join("")}
+      <div class="sep"></div>
+      <div class="row"><span>Subtotal</span><span>${formatCurrency(order.subtotal)}</span></div>
+      <div class="row"><span>Tax (10%)</span><span>${formatCurrency(order.tax)}</span></div>
+      <div class="row bold"><span>Total</span><span>${formatCurrency(order.total)}</span></div>
+      <div class="sep"></div>
+      <p class="center">*** BILL – PAYMENT PENDING ***</p>
+      <p class="center">Powered by MicroBooks</p>
+      </body></html>
+    `);
+    win.document.close();
+    win.print();
+  };
+
   const toggleExpand = (id: number) => {
     setExpandedOrderId(prev => prev === id ? null : id);
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'open': return <Badge className="bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border-0">Open</Badge>;
       case 'completed': return <Badge className="bg-green-500/10 text-green-500 hover:bg-green-500/20 border-0">Completed</Badge>;
       case 'pending': return <Badge className="bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-0">Pending</Badge>;
       case 'cancelled': return <Badge variant="secondary" className="border-0">Cancelled</Badge>;
@@ -114,6 +188,7 @@ export function Orders() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Orders</SelectItem>
+              <SelectItem value="open">Open (Unpaid)</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="completed">Completed</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -135,7 +210,7 @@ export function Orders() {
                 <TableHead>Status</TableHead>
                 <TableHead>Items</TableHead>
                 <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right pr-6 w-[100px]">Actions</TableHead>
+                <TableHead className="text-right pr-6 w-[180px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -167,11 +242,34 @@ export function Orders() {
                       {formatCurrency(order.total)}
                     </TableCell>
                     <TableCell className="text-right pr-6" onClick={e => e.stopPropagation()}>
-                      {order.status === 'completed' && (
-                        <Button variant="outline" size="sm" className="h-8 border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={() => openVoidDialog(order.id)}>
-                          Void
-                        </Button>
-                      )}
+                      <div className="flex gap-1.5 justify-end">
+                        {order.status === 'open' && (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1 text-xs border-muted-foreground/30 text-muted-foreground hover:text-foreground"
+                              onClick={() => handlePrintBill(order)}
+                            >
+                              <Receipt className="h-3 w-3" />
+                              Bill
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-8 gap-1 text-xs bg-primary hover:bg-primary/90"
+                              onClick={() => openChargeDialog({ id: order.id, orderNumber: order.orderNumber, total: order.total })}
+                            >
+                              <CreditCard className="h-3 w-3" />
+                              Charge
+                            </Button>
+                          </>
+                        )}
+                        {order.status === 'completed' && (
+                          <Button variant="outline" size="sm" className="h-8 border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={() => openVoidDialog(order.id)}>
+                            Void
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                   
@@ -231,9 +329,11 @@ export function Orders() {
                               <div>
                                 <h4 className="font-semibold mb-1 text-sm">Payment Method</h4>
                                 <p className="text-sm text-muted-foreground capitalize">
-                                  {order.paymentMethod === 'split' 
-                                    ? `Split (Card: ${formatCurrency(order.splitCardAmount || 0)}, Cash: ${formatCurrency(order.splitCashAmount || 0)})`
-                                    : order.paymentMethod}
+                                  {order.status === 'open'
+                                    ? <span className="text-blue-400">Pending payment</span>
+                                    : order.paymentMethod === 'split' 
+                                      ? `Split (Card: ${formatCurrency(order.splitCardAmount || 0)}, Cash: ${formatCurrency(order.splitCashAmount || 0)})`
+                                      : order.paymentMethod}
                                 </p>
                               </div>
                               {order.notes && (
@@ -268,6 +368,7 @@ export function Orders() {
         </CardContent>
       </Card>
 
+      {/* Void Dialog */}
       <AlertDialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -297,6 +398,84 @@ export function Orders() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Charge Dialog */}
+      <Dialog open={chargeDialogOpen} onOpenChange={setChargeDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" />
+              Collect Payment
+            </DialogTitle>
+          </DialogHeader>
+
+          {orderToCharge && (
+            <div className="space-y-4">
+              <div className="bg-secondary/30 rounded-lg p-3 flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">{orderToCharge.orderNumber}</span>
+                <span className="text-xl font-bold font-mono text-primary">{formatCurrency(orderToCharge.total)}</span>
+              </div>
+
+              <div>
+                <Label className="text-xs text-muted-foreground mb-2 block">Payment Method</Label>
+                <div className="flex gap-2">
+                  <Button
+                    variant={chargePaymentMethod === "card" ? "default" : "outline"}
+                    className="flex-1 h-10"
+                    onClick={() => setChargePaymentMethod("card")}
+                  >
+                    <CreditCard className="mr-2 h-4 w-4" />Card
+                  </Button>
+                  <Button
+                    variant={chargePaymentMethod === "cash" ? "default" : "outline"}
+                    className="flex-1 h-10"
+                    onClick={() => setChargePaymentMethod("cash")}
+                  >
+                    <Banknote className="mr-2 h-4 w-4" />Cash
+                  </Button>
+                  <Button
+                    variant={chargePaymentMethod === "split" ? "default" : "outline"}
+                    className="flex-1 h-10"
+                    onClick={() => {
+                      setChargePaymentMethod("split");
+                      setChargeSplitCard(Number((orderToCharge.total / 2).toFixed(2)));
+                      setChargeSplitCash(Number((orderToCharge.total - Number((orderToCharge.total / 2).toFixed(2))).toFixed(2)));
+                    }}
+                  >
+                    <SplitSquareHorizontal className="mr-2 h-4 w-4" />Split
+                  </Button>
+                </div>
+              </div>
+
+              {chargePaymentMethod === "split" && (
+                <div className="flex gap-2 items-center bg-secondary/50 p-3 rounded-md">
+                  <div className="flex-1 space-y-1">
+                    <label className="text-xs text-muted-foreground">Card $</label>
+                    <Input type="number" value={chargeSplitCard} onChange={e => setChargeSplitCard(Number(e.target.value))} className="h-8 font-mono text-sm" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <label className="text-xs text-muted-foreground">Cash $</label>
+                    <Input type="number" value={chargeSplitCash} onChange={e => setChargeSplitCash(Number(e.target.value))} className="h-8 font-mono text-sm" />
+                  </div>
+                </div>
+              )}
+              {chargePaymentMethod === "split" && Math.abs(chargeSplitCard + chargeSplitCash - orderToCharge.total) >= 0.01 && (
+                <p className="text-amber-500 text-xs">Amounts must equal {formatCurrency(orderToCharge.total)}</p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setChargeDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleChargeConfirm}
+              disabled={chargeOrder.isPending || (chargePaymentMethod === "split" && !!orderToCharge && Math.abs(chargeSplitCard + chargeSplitCash - orderToCharge.total) >= 0.01)}
+            >
+              {chargeOrder.isPending ? "Processing…" : `Confirm Payment`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }

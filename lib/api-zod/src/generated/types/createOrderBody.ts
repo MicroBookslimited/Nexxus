@@ -11,7 +11,7 @@ import type { CreateOrderBodyOrderType } from "./createOrderBodyOrderType";
 
 export interface CreateOrderBody {
   items: CreateOrderBodyItemsItem[];
-  paymentMethod: string;
+  paymentMethod?: string;
   splitCardAmount?: number;
   splitCashAmount?: number;
   discountType?: CreateOrderBodyDiscountType;

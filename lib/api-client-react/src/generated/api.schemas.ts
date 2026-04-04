@@ -38,6 +38,7 @@ export interface CreateProductBody {
 export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
 
 export const OrderStatus = {
+  open: "open",
   pending: "pending",
   completed: "completed",
   cancelled: "cancelled",
@@ -124,7 +125,7 @@ export const CreateOrderBodyOrderType = {
 
 export interface CreateOrderBody {
   items: CreateOrderBodyItemsItem[];
-  paymentMethod: string;
+  paymentMethod?: string;
   splitCardAmount?: number;
   splitCashAmount?: number;
   discountType?: CreateOrderBodyDiscountType;
@@ -137,10 +138,17 @@ export interface CreateOrderBody {
   loyaltyPointsToRedeem?: number;
 }
 
+export interface CompleteOrderBody {
+  paymentMethod: string;
+  splitCardAmount?: number;
+  splitCashAmount?: number;
+}
+
 export type UpdateOrderStatusBodyStatus =
   (typeof UpdateOrderStatusBodyStatus)[keyof typeof UpdateOrderStatusBodyStatus];
 
 export const UpdateOrderStatusBodyStatus = {
+  open: "open",
   pending: "pending",
   completed: "completed",
   cancelled: "cancelled",
@@ -507,6 +515,7 @@ export type ListOrdersStatus =
   (typeof ListOrdersStatus)[keyof typeof ListOrdersStatus];
 
 export const ListOrdersStatus = {
+  open: "open",
   pending: "pending",
   completed: "completed",
   cancelled: "cancelled",

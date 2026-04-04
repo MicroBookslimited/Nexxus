@@ -9,6 +9,7 @@
 export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
 
 export const OrderStatus = {
+  open: "open",
   pending: "pending",
   completed: "completed",
   cancelled: "cancelled",

@@ -8,6 +8,7 @@
 
 export * from "./categorySales";
 export * from "./choiceItem";
+export * from "./completeOrderBody";
 export * from "./createCustomerBody";
 export * from "./createHeldOrderBody";
 export * from "./createHeldOrderBodyDiscountType";

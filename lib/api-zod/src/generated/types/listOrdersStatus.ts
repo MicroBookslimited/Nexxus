@@ -10,6 +10,7 @@ export type ListOrdersStatus =
   (typeof ListOrdersStatus)[keyof typeof ListOrdersStatus];
 
 export const ListOrdersStatus = {
+  open: "open",
   pending: "pending",
   completed: "completed",
   cancelled: "cancelled",

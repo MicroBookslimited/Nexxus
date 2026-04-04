@@ -265,7 +265,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [pending, completed, cancelled, refunded, voided]
+            enum: [open, pending, completed, cancelled, refunded, voided]
         - name: limit
           in: query
           schema:
@@ -334,6 +334,31 @@ paths:
       responses:
         "200":
           description: Updated order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /orders/{id}/charge:
+    post:
+      operationId: chargeOrder
+      tags: [orders]
+      summary: Complete payment on an open (sent-to-kitchen) order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteOrderBody"
+      responses:
+        "200":
+          description: Completed order
           content:
             application/json:
               schema:
@@ -1013,7 +1038,7 @@ components:
           type: string
         status:
           type: string
-          enum: [pending, completed, cancelled, refunded, voided]
+          enum: [open, pending, completed, cancelled, refunded, voided]
         subtotal:
           type: number
           format: float
@@ -1178,6 +1203,19 @@ components:
           type: integer
       required:
         - items
+
+    CompleteOrderBody:
+      type: object
+      properties:
+        paymentMethod:
+          type: string
+        splitCardAmount:
+          type: number
+          format: float
+        splitCashAmount:
+          type: number
+          format: float
+      required:
         - paymentMethod
 
     UpdateOrderStatusBody:
@@ -1185,7 +1223,7 @@ components:
       properties:
         status:
           type: string
-          enum: [pending, completed, cancelled, refunded, voided]
+          enum: [open, pending, completed, cancelled, refunded, voided]
         voidReason:
           type: string
       required:

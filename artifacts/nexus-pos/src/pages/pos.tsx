@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import {
   Search, CreditCard, Banknote, Trash2, ShoppingCart, ScanBarcode,
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
-  Download, Printer, CheckCircle2, Settings2,
+  Download, Printer, CheckCircle2, Settings2, ChefHat,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -492,6 +492,46 @@ export function POS() {
     );
   };
 
+  const handleSendToKitchen = () => {
+    if (cart.length === 0) return;
+    if (!selectedTableId) {
+      toast({ title: "Select a table", description: "Please select a table for dine-in orders.", variant: "destructive" });
+      return;
+    }
+
+    createOrder.mutate(
+      {
+        data: {
+          items: cart.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            discountAmount: item.itemDiscount || undefined,
+            variantChoices: item.variantChoices.length > 0 ? item.variantChoices : undefined,
+            modifierChoices: item.modifierChoices.length > 0 ? item.modifierChoices : undefined,
+          })),
+          discountType: discountType ?? undefined,
+          discountAmount: discountAmount > 0 ? discountAmount : undefined,
+          notes: notes || undefined,
+          customerId: selectedCustomerId ?? undefined,
+          loyaltyPointsToRedeem: clampedPoints > 0 ? clampedPoints : undefined,
+          tableId: selectedTableId,
+          orderType: "dine-in",
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Order Sent to Kitchen", description: "The order is now visible on the kitchen display." });
+          queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/kitchen"] });
+          resetCart();
+        },
+        onError: () => {
+          toast({ title: "Failed to Send", description: "Could not send order to kitchen.", variant: "destructive" });
+        },
+      },
+    );
+  };
+
   const handleHoldOrder = () => {
     if (cart.length === 0) return;
     createHeldOrder.mutate(
@@ -862,6 +902,17 @@ export function POS() {
               <p className="text-amber-500 text-xs font-medium">Split amounts must equal total ({formatCurrency(total)})</p>
             )}
 
+            {selectedTableId && (
+              <Button
+                variant="outline"
+                className="w-full h-11 text-sm border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 mt-1"
+                onClick={handleSendToKitchen}
+                disabled={cart.length === 0 || createOrder.isPending}
+              >
+                <ChefHat className="mr-2 h-4 w-4" />
+                Send to Kitchen (Pay Later)
+              </Button>
+            )}
             <Button
               className="w-full h-14 text-lg shadow-lg shadow-primary/20 mt-2"
               size="lg"

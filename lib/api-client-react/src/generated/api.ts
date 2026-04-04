@@ -18,6 +18,7 @@ import type {
 
 import type {
   CategorySales,
+  CompleteOrderBody,
   CreateCustomerBody,
   CreateHeldOrderBody,
   CreateOrderBody,
@@ -1370,6 +1371,93 @@ export const useUpdateOrderStatus = <
   TContext
 > => {
   return useMutation(getUpdateOrderStatusMutationOptions(options));
+};
+
+/**
+ * @summary Complete payment on an open (sent-to-kitchen) order
+ */
+export const getChargeOrderUrl = (id: number) => {
+  return `/api/orders/${id}/charge`;
+};
+
+export const chargeOrder = async (
+  id: number,
+  completeOrderBody: CompleteOrderBody,
+  options?: RequestInit,
+): Promise<Order> => {
+  return customFetch<Order>(getChargeOrderUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(completeOrderBody),
+  });
+};
+
+export const getChargeOrderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof chargeOrder>>,
+    TError,
+    { id: number; data: BodyType<CompleteOrderBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof chargeOrder>>,
+  TError,
+  { id: number; data: BodyType<CompleteOrderBody> },
+  TContext
+> => {
+  const mutationKey = ["chargeOrder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof chargeOrder>>,
+    { id: number; data: BodyType<CompleteOrderBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return chargeOrder(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ChargeOrderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof chargeOrder>>
+>;
+export type ChargeOrderMutationBody = BodyType<CompleteOrderBody>;
+export type ChargeOrderMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Complete payment on an open (sent-to-kitchen) order
+ */
+export const useChargeOrder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof chargeOrder>>,
+    TError,
+    { id: number; data: BodyType<CompleteOrderBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof chargeOrder>>,
+  TError,
+  { id: number; data: BodyType<CompleteOrderBody> },
+  TContext
+> => {
+  return useMutation(getChargeOrderMutationOptions(options));
 };
 
 /**

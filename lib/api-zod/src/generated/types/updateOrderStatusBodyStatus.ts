@@ -10,6 +10,7 @@ export type UpdateOrderStatusBodyStatus =
   (typeof UpdateOrderStatusBodyStatus)[keyof typeof UpdateOrderStatusBodyStatus];
 
 export const UpdateOrderStatusBodyStatus = {
+  open: "open",
   pending: "pending",
   completed: "completed",
   cancelled: "cancelled",

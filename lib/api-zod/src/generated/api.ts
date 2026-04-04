@@ -308,7 +308,7 @@ export const SaveProductModifiersResponse = zod.array(
  */
 export const ListOrdersQueryParams = zod.object({
   status: zod
-    .enum(["pending", "completed", "cancelled", "refunded", "voided"])
+    .enum(["open", "pending", "completed", "cancelled", "refunded", "voided"])
     .optional(),
   limit: zod.coerce.number().optional(),
 });
@@ -316,7 +316,14 @@ export const ListOrdersQueryParams = zod.object({
 export const ListOrdersResponseItem = zod.object({
   id: zod.number(),
   orderNumber: zod.string(),
-  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
+  status: zod.enum([
+    "open",
+    "pending",
+    "completed",
+    "cancelled",
+    "refunded",
+    "voided",
+  ]),
   subtotal: zod.number(),
   discountType: zod.enum(["percent", "fixed"]).nullish(),
   discountAmount: zod.number().nullish(),
@@ -402,7 +409,7 @@ export const CreateOrderBody = zod.object({
         .optional(),
     }),
   ),
-  paymentMethod: zod.string(),
+  paymentMethod: zod.string().optional(),
   splitCardAmount: zod.number().optional(),
   splitCashAmount: zod.number().optional(),
   discountType: zod.enum(["percent", "fixed"]).optional(),
@@ -425,7 +432,14 @@ export const GetOrderParams = zod.object({
 export const GetOrderResponse = zod.object({
   id: zod.number(),
   orderNumber: zod.string(),
-  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
+  status: zod.enum([
+    "open",
+    "pending",
+    "completed",
+    "cancelled",
+    "refunded",
+    "voided",
+  ]),
   subtotal: zod.number(),
   discountType: zod.enum(["percent", "fixed"]).nullish(),
   discountAmount: zod.number().nullish(),
@@ -485,14 +499,103 @@ export const UpdateOrderStatusParams = zod.object({
 });
 
 export const UpdateOrderStatusBody = zod.object({
-  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
+  status: zod.enum([
+    "open",
+    "pending",
+    "completed",
+    "cancelled",
+    "refunded",
+    "voided",
+  ]),
   voidReason: zod.string().optional(),
 });
 
 export const UpdateOrderStatusResponse = zod.object({
   id: zod.number(),
   orderNumber: zod.string(),
-  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
+  status: zod.enum([
+    "open",
+    "pending",
+    "completed",
+    "cancelled",
+    "refunded",
+    "voided",
+  ]),
+  subtotal: zod.number(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  discountValue: zod.number().nullish(),
+  tax: zod.number(),
+  total: zod.number(),
+  paymentMethod: zod.string().nullish(),
+  splitCardAmount: zod.number().nullish(),
+  splitCashAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  voidReason: zod.string().nullish(),
+  customerId: zod.number().nullish(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      productId: zod.number(),
+      productName: zod.string(),
+      quantity: zod.number(),
+      unitPrice: zod.number(),
+      discountAmount: zod.number().nullish(),
+      variantAdjustment: zod.number().nullish(),
+      modifierAdjustment: zod.number().nullish(),
+      variantChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
+      modifierChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
+      lineTotal: zod.number(),
+    }),
+  ),
+  createdAt: zod.coerce.date(),
+  completedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Complete payment on an open (sent-to-kitchen) order
+ */
+export const ChargeOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ChargeOrderBody = zod.object({
+  paymentMethod: zod.string(),
+  splitCardAmount: zod.number().optional(),
+  splitCashAmount: zod.number().optional(),
+});
+
+export const ChargeOrderResponse = zod.object({
+  id: zod.number(),
+  orderNumber: zod.string(),
+  status: zod.enum([
+    "open",
+    "pending",
+    "completed",
+    "cancelled",
+    "refunded",
+    "voided",
+  ]),
   subtotal: zod.number(),
   discountType: zod.enum(["percent", "fixed"]).nullish(),
   discountAmount: zod.number().nullish(),
@@ -636,7 +739,14 @@ export const GetRecentOrdersQueryParams = zod.object({
 export const GetRecentOrdersResponseItem = zod.object({
   id: zod.number(),
   orderNumber: zod.string(),
-  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
+  status: zod.enum([
+    "open",
+    "pending",
+    "completed",
+    "cancelled",
+    "refunded",
+    "voided",
+  ]),
   subtotal: zod.number(),
   discountType: zod.enum(["percent", "fixed"]).nullish(),
   discountAmount: zod.number().nullish(),
@@ -829,7 +939,14 @@ export const GetCustomerOrdersParams = zod.object({
 export const GetCustomerOrdersResponseItem = zod.object({
   id: zod.number(),
   orderNumber: zod.string(),
-  status: zod.enum(["pending", "completed", "cancelled", "refunded", "voided"]),
+  status: zod.enum([
+    "open",
+    "pending",
+    "completed",
+    "cancelled",
+    "refunded",
+    "voided",
+  ]),
   subtotal: zod.number(),
   discountType: zod.enum(["percent", "fixed"]).nullish(),
   discountAmount: zod.number().nullish(),
