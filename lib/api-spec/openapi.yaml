@@ -30,6 +30,8 @@ tags:
     description: Kitchen display system
   - name: purchases
     description: Stock purchase management
+  - name: purchase-bills
+    description: Multi-product purchase bill management
   - name: staff
     description: Staff accounts and roles
 paths:
@@ -1022,6 +1024,89 @@ paths:
       responses:
         "204":
           description: Deactivated
+
+  /purchase-bills:
+    get:
+      operationId: listPurchaseBills
+      tags: [purchase-bills]
+      summary: List all purchase bills
+      responses:
+        "200":
+          description: List of purchase bills
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PurchaseBill"
+    post:
+      operationId: createPurchaseBill
+      tags: [purchase-bills]
+      summary: Create a purchase bill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePurchaseBillBody"
+      responses:
+        "201":
+          description: Created purchase bill
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseBill"
+
+  /purchase-bills/{id}:
+    get:
+      operationId: getPurchaseBill
+      tags: [purchase-bills]
+      summary: Get a purchase bill with items
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Purchase bill with items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseBillWithItems"
+    delete:
+      operationId: deletePurchaseBill
+      tags: [purchase-bills]
+      summary: Delete a draft purchase bill
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /purchase-bills/{id}/confirm:
+    post:
+      operationId: confirmPurchaseBill
+      tags: [purchase-bills]
+      summary: Confirm a purchase bill and update inventory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Confirmed purchase bill
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseBillWithItems"
 
   /purchases:
     get:
@@ -2127,3 +2212,134 @@ components:
       required:
         - productId
         - quantity
+
+    PurchaseBillItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        billId:
+          type: integer
+        productId:
+          type: integer
+        productName:
+          type: string
+        quantity:
+          type: integer
+        unitCost:
+          type: number
+          format: float
+        totalCost:
+          type: number
+          format: float
+      required:
+        - id
+        - billId
+        - productId
+        - productName
+        - quantity
+        - unitCost
+        - totalCost
+
+    PurchaseBill:
+      type: object
+      properties:
+        id:
+          type: integer
+        billNumber:
+          type: string
+        supplier:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, confirmed]
+        notes:
+          type: string
+          nullable: true
+        totalCost:
+          type: number
+          format: float
+        itemCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - billNumber
+        - status
+        - totalCost
+        - itemCount
+        - createdAt
+
+    PurchaseBillWithItems:
+      type: object
+      properties:
+        id:
+          type: integer
+        billNumber:
+          type: string
+        supplier:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, confirmed]
+        notes:
+          type: string
+          nullable: true
+        totalCost:
+          type: number
+          format: float
+        itemCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseBillItem"
+      required:
+        - id
+        - billNumber
+        - status
+        - totalCost
+        - itemCount
+        - createdAt
+        - items
+
+    CreatePurchaseBillItemBody:
+      type: object
+      properties:
+        productId:
+          type: integer
+        quantity:
+          type: integer
+        unitCost:
+          type: number
+          format: float
+      required:
+        - productId
+        - quantity
+
+    CreatePurchaseBillBody:
+      type: object
+      properties:
+        billNumber:
+          type: string
+        supplier:
+          type: string
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [draft, confirmed]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreatePurchaseBillItemBody"
+      required:
+        - billNumber
+        - items

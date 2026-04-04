@@ -1288,6 +1288,105 @@ export const DeleteStaffParams = zod.object({
 });
 
 /**
+ * @summary List all purchase bills
+ */
+export const ListPurchaseBillsResponseItem = zod.object({
+  id: zod.number(),
+  billNumber: zod.string(),
+  supplier: zod.string().nullish(),
+  status: zod.enum(["draft", "confirmed"]),
+  notes: zod.string().nullish(),
+  totalCost: zod.number(),
+  itemCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+export const ListPurchaseBillsResponse = zod.array(
+  ListPurchaseBillsResponseItem,
+);
+
+/**
+ * @summary Create a purchase bill
+ */
+export const CreatePurchaseBillBody = zod.object({
+  billNumber: zod.string(),
+  supplier: zod.string().optional(),
+  notes: zod.string().optional(),
+  status: zod.enum(["draft", "confirmed"]).optional(),
+  items: zod.array(
+    zod.object({
+      productId: zod.number(),
+      quantity: zod.number(),
+      unitCost: zod.number().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get a purchase bill with items
+ */
+export const GetPurchaseBillParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetPurchaseBillResponse = zod.object({
+  id: zod.number(),
+  billNumber: zod.string(),
+  supplier: zod.string().nullish(),
+  status: zod.enum(["draft", "confirmed"]),
+  notes: zod.string().nullish(),
+  totalCost: zod.number(),
+  itemCount: zod.number(),
+  createdAt: zod.coerce.date(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      billId: zod.number(),
+      productId: zod.number(),
+      productName: zod.string(),
+      quantity: zod.number(),
+      unitCost: zod.number(),
+      totalCost: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary Delete a draft purchase bill
+ */
+export const DeletePurchaseBillParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Confirm a purchase bill and update inventory
+ */
+export const ConfirmPurchaseBillParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ConfirmPurchaseBillResponse = zod.object({
+  id: zod.number(),
+  billNumber: zod.string(),
+  supplier: zod.string().nullish(),
+  status: zod.enum(["draft", "confirmed"]),
+  notes: zod.string().nullish(),
+  totalCost: zod.number(),
+  itemCount: zod.number(),
+  createdAt: zod.coerce.date(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      billId: zod.number(),
+      productId: zod.number(),
+      productName: zod.string(),
+      quantity: zod.number(),
+      unitCost: zod.number(),
+      totalCost: zod.number(),
+    }),
+  ),
+});
+
+/**
  * @summary List all stock purchases
  */
 export const ListPurchasesQueryParams = zod.object({

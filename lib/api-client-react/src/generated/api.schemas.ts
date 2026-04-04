@@ -540,6 +540,77 @@ export interface CreatePurchaseBody {
   notes?: string;
 }
 
+export interface PurchaseBillItem {
+  id: number;
+  billId: number;
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+}
+
+export type PurchaseBillStatus =
+  (typeof PurchaseBillStatus)[keyof typeof PurchaseBillStatus];
+
+export const PurchaseBillStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+} as const;
+
+export interface PurchaseBill {
+  id: number;
+  billNumber: string;
+  supplier?: string | null;
+  status: PurchaseBillStatus;
+  notes?: string | null;
+  totalCost: number;
+  itemCount: number;
+  createdAt: string;
+}
+
+export type PurchaseBillWithItemsStatus =
+  (typeof PurchaseBillWithItemsStatus)[keyof typeof PurchaseBillWithItemsStatus];
+
+export const PurchaseBillWithItemsStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+} as const;
+
+export interface PurchaseBillWithItems {
+  id: number;
+  billNumber: string;
+  supplier?: string | null;
+  status: PurchaseBillWithItemsStatus;
+  notes?: string | null;
+  totalCost: number;
+  itemCount: number;
+  createdAt: string;
+  items: PurchaseBillItem[];
+}
+
+export interface CreatePurchaseBillItemBody {
+  productId: number;
+  quantity: number;
+  unitCost?: number;
+}
+
+export type CreatePurchaseBillBodyStatus =
+  (typeof CreatePurchaseBillBodyStatus)[keyof typeof CreatePurchaseBillBodyStatus];
+
+export const CreatePurchaseBillBodyStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+} as const;
+
+export interface CreatePurchaseBillBody {
+  billNumber: string;
+  supplier?: string;
+  notes?: string;
+  status?: CreatePurchaseBillBodyStatus;
+  items: CreatePurchaseBillItemBody[];
+}
+
 export type ListProductsParams = {
   category?: string;
   search?: string;

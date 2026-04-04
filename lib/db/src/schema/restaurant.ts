@@ -38,3 +38,26 @@ export const purchasesTable = pgTable("purchases", {
 });
 
 export type Purchase = typeof purchasesTable.$inferSelect;
+
+export const purchaseBillsTable = pgTable("purchase_bills", {
+  id: serial("id").primaryKey(),
+  billNumber: text("bill_number").notNull(),
+  supplier: text("supplier"),
+  status: text("status").notNull().default("draft"),
+  notes: text("notes"),
+  totalCost: real("total_cost").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type PurchaseBill = typeof purchaseBillsTable.$inferSelect;
+
+export const purchaseBillItemsTable = pgTable("purchase_bill_items", {
+  id: serial("id").primaryKey(),
+  billId: integer("bill_id").notNull().references(() => purchaseBillsTable.id, { onDelete: "cascade" }),
+  productId: integer("product_id").notNull().references(() => productsTable.id),
+  quantity: integer("quantity").notNull(),
+  unitCost: real("unit_cost").notNull().default(0),
+  totalCost: real("total_cost").notNull().default(0),
+});
+
+export type PurchaseBillItem = typeof purchaseBillItemsTable.$inferSelect;

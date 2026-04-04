@@ -24,6 +24,7 @@ import type {
   CreateKdsScreenBody,
   CreateOrderBody,
   CreateProductBody,
+  CreatePurchaseBillBody,
   CreatePurchaseBody,
   CreateStaffBody,
   CreateTableBody,
@@ -53,6 +54,8 @@ import type {
   Product,
   ProductCustomization,
   Purchase,
+  PurchaseBill,
+  PurchaseBillWithItems,
   ReportSummary,
   SaveModifiersBody,
   SaveVariantsBody,
@@ -4454,6 +4457,422 @@ export const useDeleteStaff = <
   TContext
 > => {
   return useMutation(getDeleteStaffMutationOptions(options));
+};
+
+/**
+ * @summary List all purchase bills
+ */
+export const getListPurchaseBillsUrl = () => {
+  return `/api/purchase-bills`;
+};
+
+export const listPurchaseBills = async (
+  options?: RequestInit,
+): Promise<PurchaseBill[]> => {
+  return customFetch<PurchaseBill[]>(getListPurchaseBillsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPurchaseBillsQueryKey = () => {
+  return [`/api/purchase-bills`] as const;
+};
+
+export const getListPurchaseBillsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPurchaseBills>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPurchaseBills>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPurchaseBillsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPurchaseBills>>
+  > = ({ signal }) => listPurchaseBills({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPurchaseBills>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPurchaseBillsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPurchaseBills>>
+>;
+export type ListPurchaseBillsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all purchase bills
+ */
+
+export function useListPurchaseBills<
+  TData = Awaited<ReturnType<typeof listPurchaseBills>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPurchaseBills>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPurchaseBillsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a purchase bill
+ */
+export const getCreatePurchaseBillUrl = () => {
+  return `/api/purchase-bills`;
+};
+
+export const createPurchaseBill = async (
+  createPurchaseBillBody: CreatePurchaseBillBody,
+  options?: RequestInit,
+): Promise<PurchaseBill> => {
+  return customFetch<PurchaseBill>(getCreatePurchaseBillUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createPurchaseBillBody),
+  });
+};
+
+export const getCreatePurchaseBillMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPurchaseBill>>,
+    TError,
+    { data: BodyType<CreatePurchaseBillBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPurchaseBill>>,
+  TError,
+  { data: BodyType<CreatePurchaseBillBody> },
+  TContext
+> => {
+  const mutationKey = ["createPurchaseBill"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPurchaseBill>>,
+    { data: BodyType<CreatePurchaseBillBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createPurchaseBill(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePurchaseBillMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPurchaseBill>>
+>;
+export type CreatePurchaseBillMutationBody = BodyType<CreatePurchaseBillBody>;
+export type CreatePurchaseBillMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a purchase bill
+ */
+export const useCreatePurchaseBill = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPurchaseBill>>,
+    TError,
+    { data: BodyType<CreatePurchaseBillBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createPurchaseBill>>,
+  TError,
+  { data: BodyType<CreatePurchaseBillBody> },
+  TContext
+> => {
+  return useMutation(getCreatePurchaseBillMutationOptions(options));
+};
+
+/**
+ * @summary Get a purchase bill with items
+ */
+export const getGetPurchaseBillUrl = (id: number) => {
+  return `/api/purchase-bills/${id}`;
+};
+
+export const getPurchaseBill = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PurchaseBillWithItems> => {
+  return customFetch<PurchaseBillWithItems>(getGetPurchaseBillUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPurchaseBillQueryKey = (id: number) => {
+  return [`/api/purchase-bills/${id}`] as const;
+};
+
+export const getGetPurchaseBillQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPurchaseBill>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPurchaseBill>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPurchaseBillQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPurchaseBill>>> = ({
+    signal,
+  }) => getPurchaseBill(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPurchaseBill>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPurchaseBillQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPurchaseBill>>
+>;
+export type GetPurchaseBillQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get a purchase bill with items
+ */
+
+export function useGetPurchaseBill<
+  TData = Awaited<ReturnType<typeof getPurchaseBill>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPurchaseBill>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPurchaseBillQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Delete a draft purchase bill
+ */
+export const getDeletePurchaseBillUrl = (id: number) => {
+  return `/api/purchase-bills/${id}`;
+};
+
+export const deletePurchaseBill = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeletePurchaseBillUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeletePurchaseBillMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePurchaseBill>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deletePurchaseBill>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deletePurchaseBill"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deletePurchaseBill>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deletePurchaseBill(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeletePurchaseBillMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deletePurchaseBill>>
+>;
+
+export type DeletePurchaseBillMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a draft purchase bill
+ */
+export const useDeletePurchaseBill = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePurchaseBill>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deletePurchaseBill>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeletePurchaseBillMutationOptions(options));
+};
+
+/**
+ * @summary Confirm a purchase bill and update inventory
+ */
+export const getConfirmPurchaseBillUrl = (id: number) => {
+  return `/api/purchase-bills/${id}/confirm`;
+};
+
+export const confirmPurchaseBill = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PurchaseBillWithItems> => {
+  return customFetch<PurchaseBillWithItems>(getConfirmPurchaseBillUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getConfirmPurchaseBillMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmPurchaseBill>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmPurchaseBill>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["confirmPurchaseBill"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmPurchaseBill>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return confirmPurchaseBill(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmPurchaseBillMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmPurchaseBill>>
+>;
+
+export type ConfirmPurchaseBillMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Confirm a purchase bill and update inventory
+ */
+export const useConfirmPurchaseBill = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmPurchaseBill>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmPurchaseBill>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getConfirmPurchaseBillMutationOptions(options));
 };
 
 /**

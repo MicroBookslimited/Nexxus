@@ -11,6 +11,11 @@ import {
   useSaveProductModifiers,
   useListPurchases,
   useCreatePurchase,
+  useListPurchaseBills,
+  useCreatePurchaseBill,
+  useGetPurchaseBill,
+  useConfirmPurchaseBill,
+  useDeletePurchaseBill,
 } from "@workspace/api-client-react";
 import type { GetProductResponse } from "@workspace/api-zod";
 import { useQueryClient } from "@tanstack/react-query";
@@ -53,13 +58,29 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight } from "lucide-react";
 
 const CATEGORIES = ["Beverages", "Food", "Bakery", "Merchandise", "Other"];
 const LOW_STOCK_THRESHOLD = 10;
 
 type RestockForm = { quantity: string; unitCost: string; notes: string };
 const emptyRestockForm = (): RestockForm => ({ quantity: "", unitCost: "", notes: "" });
+
+type BillLineItem = { tempId: string; productId: string; quantity: string; unitCost: string };
+type BillForm = { billNumber: string; supplier: string; notes: string; items: BillLineItem[] };
+
+function generateBillNumber() {
+  const d = new Date();
+  const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const rand = Math.floor(Math.random() * 900 + 100);
+  return `PO-${dateStr}-${rand}`;
+}
+function emptyLineItem(): BillLineItem {
+  return { tempId: makeId(), productId: "", quantity: "", unitCost: "" };
+}
+function emptyBillForm(): BillForm {
+  return { billNumber: generateBillNumber(), supplier: "", notes: "", items: [emptyLineItem()] };
+}
 
 /* ─── Product form types ─── */
 type ProductForm = {
@@ -404,6 +425,10 @@ export function Products() {
 
   const createPurchase = useCreatePurchase();
   const { data: purchases } = useListPurchases();
+  const { data: bills, refetch: refetchBills } = useListPurchaseBills();
+  const createBill = useCreatePurchaseBill();
+  const confirmBill = useConfirmPurchaseBill();
+  const deleteBill = useDeletePurchaseBill();
 
   const [pageTab, setPageTab] = useState<"products" | "purchases">("products");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -414,6 +439,13 @@ export function Products() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [restockProduct, setRestockProduct] = useState<GetProductResponse | null>(null);
   const [restockForm, setRestockForm] = useState<RestockForm>(emptyRestockForm());
+  const [billView, setBillView] = useState<"list" | "new">("list");
+  const [viewBillId, setViewBillId] = useState<number | null>(null);
+  const [billForm, setBillForm] = useState<BillForm>(emptyBillForm());
+  const { data: viewBillDetail } = useGetPurchaseBill(
+    viewBillId ?? 0,
+    { query: { enabled: !!viewBillId } },
+  );
 
   const filteredProducts = products?.filter((p) =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -453,6 +485,96 @@ export function Products() {
           setRestockProduct(null);
         },
         onError: () => toast({ title: "Restock failed", variant: "destructive" }),
+      },
+    );
+  };
+
+  const billLineTotal = (item: BillLineItem) =>
+    (parseFloat(item.quantity) || 0) * (parseFloat(item.unitCost) || 0);
+
+  const billGrandTotal = billForm.items.reduce((s, item) => s + billLineTotal(item), 0);
+
+  const addLineItem = () =>
+    setBillForm((f) => ({ ...f, items: [...f.items, emptyLineItem()] }));
+
+  const removeLineItem = (tempId: string) =>
+    setBillForm((f) => ({ ...f, items: f.items.filter((i) => i.tempId !== tempId) }));
+
+  const updateLineItem = (tempId: string, patch: Partial<BillLineItem>) =>
+    setBillForm((f) => ({
+      ...f,
+      items: f.items.map((i) => (i.tempId === tempId ? { ...i, ...patch } : i)),
+    }));
+
+  const handleSaveBill = (status: "draft" | "confirmed") => {
+    if (!billForm.billNumber.trim()) {
+      toast({ title: "Bill number is required", variant: "destructive" });
+      return;
+    }
+    const validItems = billForm.items.filter((i) => i.productId && parseInt(i.quantity) > 0);
+    if (!validItems.length) {
+      toast({ title: "Add at least one item with a product and quantity", variant: "destructive" });
+      return;
+    }
+    createBill.mutate(
+      {
+        data: {
+          billNumber: billForm.billNumber.trim(),
+          supplier: billForm.supplier || undefined,
+          notes: billForm.notes || undefined,
+          status,
+          items: validItems.map((i) => ({
+            productId: parseInt(i.productId),
+            quantity: parseInt(i.quantity),
+            unitCost: parseFloat(i.unitCost) || 0,
+          })),
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({
+            title: status === "confirmed"
+              ? "Purchase bill confirmed — inventory updated!"
+              : "Purchase bill saved as draft",
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/purchase-bills"] });
+          setBillView("list");
+          setBillForm(emptyBillForm());
+          refetchBills();
+        },
+        onError: () => toast({ title: "Failed to save bill", variant: "destructive" }),
+      },
+    );
+  };
+
+  const handleConfirmBill = (id: number) => {
+    confirmBill.mutate(
+      { id },
+      {
+        onSuccess: () => {
+          toast({ title: "Bill confirmed — inventory updated!" });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/purchase-bills"] });
+          setViewBillId(null);
+          refetchBills();
+        },
+        onError: () => toast({ title: "Confirm failed", variant: "destructive" }),
+      },
+    );
+  };
+
+  const handleDeleteBill = (id: number) => {
+    deleteBill.mutate(
+      { id },
+      {
+        onSuccess: () => {
+          toast({ title: "Bill deleted" });
+          queryClient.invalidateQueries({ queryKey: ["/api/purchase-bills"] });
+          setViewBillId(null);
+          refetchBills();
+        },
+        onError: () => toast({ title: "Delete failed", variant: "destructive" }),
       },
     );
   };
@@ -788,77 +910,382 @@ export function Products() {
 
       {/* ── PURCHASES TAB ── */}
       {pageTab === "purchases" && (
-        <div className="space-y-4">
-          {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-4">
-            <Card>
-              <CardContent className="pt-4 pb-4">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Total Purchases</p>
-                <p className="text-2xl font-bold mt-1">{purchases?.length ?? 0}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 pb-4">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Total Units Received</p>
-                <p className="text-2xl font-bold mt-1">{purchases?.reduce((s, p) => s + p.quantity, 0) ?? 0}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 pb-4">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Total Cost</p>
-                <p className="text-2xl font-bold mt-1">{formatCurrency(purchases?.reduce((s, p) => s + p.totalCost, 0) ?? 0)}</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Purchases table */}
-          {!purchases?.length ? (
-            <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
-              <ShoppingCart className="h-12 w-12 opacity-30" />
-              <p className="text-lg">No purchase records yet</p>
-              <p className="text-sm">Use the Restock button on any product to record a stock purchase.</p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-border overflow-hidden">
-              <div className="grid grid-cols-[1fr_160px_100px_100px_120px_1fr] gap-4 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                <span>Product</span>
-                <span>Date</span>
-                <span className="text-right">Qty</span>
-                <span className="text-right">Unit Cost</span>
-                <span className="text-right">Total Cost</span>
-                <span>Notes</span>
+        <div className="space-y-5">
+          {billView === "list" ? (
+            <>
+              {/* Stats */}
+              <div className="grid grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Total Bills</p>
+                    <p className="text-2xl font-bold mt-1">{bills?.length ?? 0}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Draft Bills</p>
+                    <p className="text-2xl font-bold mt-1 text-yellow-400">{bills?.filter(b => b.status === "draft").length ?? 0}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Total Items Ordered</p>
+                    <p className="text-2xl font-bold mt-1">{bills?.reduce((s, b) => s + b.itemCount, 0) ?? 0}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Total Cost</p>
+                    <p className="text-2xl font-bold mt-1">{formatCurrency(bills?.reduce((s, b) => s + b.totalCost, 0) ?? 0)}</p>
+                  </CardContent>
+                </Card>
               </div>
-              <AnimatePresence initial={false}>
-                {purchases.map((purchase, i) => (
-                  <motion.div
-                    key={purchase.id}
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ delay: i * 0.02 }}
-                    className="grid grid-cols-[1fr_160px_100px_100px_120px_1fr] gap-4 px-4 py-3 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <PackagePlus className="h-3.5 w-3.5 text-blue-400 shrink-0" />
-                      <p className="text-sm font-semibold truncate">{purchase.productName}</p>
+
+              {/* Header + action */}
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Purchase Bills</h3>
+                <Button className="gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillView("new"); }}>
+                  <Plus className="h-4 w-4" />New Purchase Bill
+                </Button>
+              </div>
+
+              {/* Bills table */}
+              {!bills?.length ? (
+                <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
+                  <Truck className="h-12 w-12 opacity-30" />
+                  <p className="text-lg">No purchase bills yet</p>
+                  <p className="text-sm">Create a purchase bill to record deliveries and update inventory for multiple products at once.</p>
+                  <Button variant="outline" className="mt-2 gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillView("new"); }}>
+                    <Plus className="h-4 w-4" />New Purchase Bill
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <div className="grid grid-cols-[1fr_160px_80px_100px_120px_120px_100px] gap-3 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    <span>Bill #</span>
+                    <span>Supplier</span>
+                    <span className="text-center">Items</span>
+                    <span className="text-right">Total</span>
+                    <span>Status</span>
+                    <span>Date</span>
+                    <span className="text-right">Actions</span>
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {bills.map((bill, i) => (
+                      <motion.div
+                        key={bill.id}
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ delay: i * 0.02 }}
+                        className="grid grid-cols-[1fr_160px_80px_100px_120px_120px_100px] gap-3 px-4 py-3 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors group"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
+                          <p className="text-sm font-semibold font-mono truncate">{bill.billNumber}</p>
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">{bill.supplier ?? "—"}</p>
+                        <p className="text-sm font-bold text-center">{bill.itemCount}</p>
+                        <p className="text-sm font-bold font-mono text-right">{formatCurrency(bill.totalCost)}</p>
+                        <div>
+                          {bill.status === "draft" ? (
+                            <Badge className="text-[10px] bg-yellow-500/20 text-yellow-400 border-yellow-500/40 hover:bg-yellow-500/30 gap-0.5">
+                              <Clock className="h-2.5 w-2.5" />Draft
+                            </Badge>
+                          ) : (
+                            <Badge className="text-[10px] bg-green-500/20 text-green-400 border-green-500/40 hover:bg-green-500/30 gap-0.5">
+                              <CheckCircle2 className="h-2.5 w-2.5" />Received
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(bill.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        </p>
+                        <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button size="icon" variant="outline" className="h-7 w-7" title="View" onClick={() => setViewBillId(bill.id)}>
+                            <Eye className="h-3 w-3" />
+                          </Button>
+                          {bill.status === "draft" && (
+                            <>
+                              <Button size="icon" variant="outline" className="h-7 w-7 text-green-400 border-green-500/40 hover:bg-green-500/10" title="Confirm & Receive" onClick={() => handleConfirmBill(bill.id)}>
+                                <CheckCircle2 className="h-3 w-3" />
+                              </Button>
+                              <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" title="Delete" onClick={() => handleDeleteBill(bill.id)}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+            </>
+          ) : (
+            /* ── NEW BILL FORM ── */
+            <div className="space-y-5">
+              {/* Form header */}
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => setBillView("list")}>
+                  <ArrowLeft className="h-3.5 w-3.5" />Bills
+                </Button>
+                <span className="text-muted-foreground">/</span>
+                <h3 className="text-lg font-semibold">New Purchase Bill</h3>
+              </div>
+
+              {/* Bill Info */}
+              <Card>
+                <CardContent className="pt-4 pb-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">Bill Number *</Label>
+                      <Input
+                        value={billForm.billNumber}
+                        onChange={(e) => setBillForm((f) => ({ ...f, billNumber: e.target.value }))}
+                        placeholder="PO-20260404-001"
+                        className="font-mono"
+                      />
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3 shrink-0" />
-                      {new Date(purchase.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                      {" "}
-                      {new Date(purchase.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">Supplier</Label>
+                      <Input
+                        value={billForm.supplier}
+                        onChange={(e) => setBillForm((f) => ({ ...f, supplier: e.target.value }))}
+                        placeholder="Supplier name"
+                      />
                     </div>
-                    <p className="text-sm font-bold font-mono text-right text-green-400">+{purchase.quantity}</p>
-                    <p className="text-sm font-mono text-right">{purchase.unitCost > 0 ? formatCurrency(purchase.unitCost) : "—"}</p>
-                    <p className="text-sm font-bold font-mono text-right">{purchase.totalCost > 0 ? formatCurrency(purchase.totalCost) : "—"}</p>
-                    <p className="text-xs text-muted-foreground truncate">{purchase.notes ?? "—"}</p>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">Notes</Label>
+                      <Input
+                        value={billForm.notes}
+                        onChange={(e) => setBillForm((f) => ({ ...f, notes: e.target.value }))}
+                        placeholder="Optional notes"
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Line Items */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">Line Items</h4>
+                  <span className="text-xs text-muted-foreground">{billForm.items.length} item{billForm.items.length !== 1 ? "s" : ""}</span>
+                </div>
+
+                <div className="rounded-xl border border-border overflow-hidden">
+                  {/* Header row */}
+                  <div className="grid grid-cols-[2fr_100px_130px_120px_40px] gap-3 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    <span>Product</span>
+                    <span className="text-right">Qty</span>
+                    <span className="text-right">Unit Cost</span>
+                    <span className="text-right">Line Total</span>
+                    <span />
+                  </div>
+
+                  {/* Item rows */}
+                  {billForm.items.map((item, idx) => (
+                    <div
+                      key={item.tempId}
+                      className="grid grid-cols-[2fr_100px_130px_120px_40px] gap-3 px-4 py-2 items-center border-b border-border/40 last:border-0"
+                    >
+                      {/* Product select */}
+                      <Select
+                        value={item.productId}
+                        onValueChange={(v) => updateLineItem(item.tempId, { productId: v })}
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="Select product…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {products?.map((p) => (
+                            <SelectItem key={p.id} value={String(p.id)}>
+                              <span className="flex items-center gap-2">
+                                {p.name}
+                                <span className="text-muted-foreground text-xs">({p.stockCount} in stock)</span>
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {/* Qty */}
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="0"
+                        value={item.quantity}
+                        onChange={(e) => updateLineItem(item.tempId, { quantity: e.target.value })}
+                        className="h-8 text-sm text-right"
+                      />
+
+                      {/* Unit cost */}
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          value={item.unitCost}
+                          onChange={(e) => updateLineItem(item.tempId, { unitCost: e.target.value })}
+                          className="h-8 text-sm pl-6 text-right"
+                        />
+                      </div>
+
+                      {/* Line total */}
+                      <p className="text-sm font-bold font-mono text-right text-primary">
+                        {billLineTotal(item) > 0 ? formatCurrency(billLineTotal(item)) : "—"}
+                      </p>
+
+                      {/* Delete row */}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                        onClick={() => removeLineItem(item.tempId)}
+                        disabled={billForm.items.length === 1}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+
+                  {/* Add item row */}
+                  <div className="px-4 py-2.5 border-t border-border/40 bg-secondary/20">
+                    <Button size="sm" variant="ghost" className="gap-1.5 text-sm text-primary hover:text-primary" onClick={addLineItem}>
+                      <Plus className="h-3.5 w-3.5" />Add Item
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Grand total row */}
+                <div className="flex items-center justify-end gap-4 px-4 py-2">
+                  <span className="text-sm text-muted-foreground">
+                    {billForm.items.filter((i) => i.productId && parseInt(i.quantity) > 0).length} valid items
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Grand Total:</span>
+                    <span className="text-xl font-bold font-mono text-primary">{formatCurrency(billGrandTotal)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-3 justify-end pt-2 border-t border-border">
+                <Button variant="outline" onClick={() => setBillView("list")}>Cancel</Button>
+                <Button
+                  variant="outline"
+                  className="gap-2 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
+                  onClick={() => handleSaveBill("draft")}
+                  disabled={createBill.isPending}
+                >
+                  <Clock className="h-4 w-4" />Save as Draft
+                </Button>
+                <Button
+                  className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+                  onClick={() => handleSaveBill("confirmed")}
+                  disabled={createBill.isPending}
+                >
+                  <CheckCircle2 className="h-4 w-4" />Confirm & Receive Inventory
+                </Button>
+              </div>
             </div>
           )}
         </div>
       )}
+
+      {/* Bill Detail dialog */}
+      <Dialog open={!!viewBillId} onOpenChange={(o) => !o && setViewBillId(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              Purchase Bill: {viewBillDetail?.billNumber}
+              {viewBillDetail && (
+                <span className="ml-2">
+                  {viewBillDetail.status === "draft" ? (
+                    <Badge className="text-[10px] bg-yellow-500/20 text-yellow-400 border-yellow-500/40 gap-0.5">
+                      <Clock className="h-2.5 w-2.5" />Draft
+                    </Badge>
+                  ) : (
+                    <Badge className="text-[10px] bg-green-500/20 text-green-400 border-green-500/40 gap-0.5">
+                      <CheckCircle2 className="h-2.5 w-2.5" />Received
+                    </Badge>
+                  )}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {viewBillDetail && (
+            <div className="flex-1 overflow-y-auto space-y-4 py-2">
+              {/* Bill info */}
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-0.5">Supplier</p>
+                  <p className="font-medium">{viewBillDetail.supplier ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-0.5">Date</p>
+                  <p className="font-medium">{new Date(viewBillDetail.createdAt).toLocaleDateString("en-US", { dateStyle: "medium" })}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-0.5">Notes</p>
+                  <p className="font-medium">{viewBillDetail.notes ?? "—"}</p>
+                </div>
+              </div>
+
+              {/* Items table */}
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="grid grid-cols-[2fr_80px_100px_100px] gap-3 px-4 py-2 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <span>Product</span>
+                  <span className="text-right">Qty</span>
+                  <span className="text-right">Unit Cost</span>
+                  <span className="text-right">Total</span>
+                </div>
+                {viewBillDetail.items.map((item, i) => (
+                  <div key={item.id} className={`grid grid-cols-[2fr_80px_100px_100px] gap-3 px-4 py-2.5 items-center ${i < viewBillDetail.items.length - 1 ? "border-b border-border/50" : ""}`}>
+                    <div className="flex items-center gap-2">
+                      <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <p className="text-sm font-semibold">{item.productName}</p>
+                    </div>
+                    <p className="text-sm font-bold font-mono text-right text-green-400">+{item.quantity}</p>
+                    <p className="text-sm font-mono text-right">{item.unitCost > 0 ? formatCurrency(item.unitCost) : "—"}</p>
+                    <p className="text-sm font-bold font-mono text-right">{item.totalCost > 0 ? formatCurrency(item.totalCost) : "—"}</p>
+                  </div>
+                ))}
+                <div className="grid grid-cols-[2fr_80px_100px_100px] gap-3 px-4 py-2.5 border-t border-border bg-secondary/20">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase col-span-3 text-right">Grand Total</span>
+                  <p className="text-base font-bold font-mono text-right text-primary">{formatCurrency(viewBillDetail.totalCost)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewBillId(null)}>Close</Button>
+            {viewBillDetail?.status === "draft" && (
+              <>
+                <Button
+                  variant="outline"
+                  className="text-destructive hover:bg-destructive/10 border-destructive/40"
+                  onClick={() => handleDeleteBill(viewBillDetail.id)}
+                  disabled={deleteBill.isPending}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />Delete Draft
+                </Button>
+                <Button
+                  className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+                  onClick={() => handleConfirmBill(viewBillDetail.id)}
+                  disabled={confirmBill.isPending}
+                >
+                  <CheckCircle2 className="h-4 w-4" />Confirm & Receive Inventory
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Restock dialog */}
       <Dialog open={!!restockProduct} onOpenChange={(o) => !o && setRestockProduct(null)}>
