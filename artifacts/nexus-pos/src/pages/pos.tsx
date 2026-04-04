@@ -630,7 +630,7 @@ export function POS() {
           </div>
 
           <ScrollArea className="flex-1">
-            <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-6 gap-2 p-3">
+            <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-5 gap-2 p-3">
               {loadingProducts
                 ? Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="aspect-square rounded-xl bg-secondary/30 animate-pulse" />
@@ -668,7 +668,7 @@ export function POS() {
         </div>
 
         {/* ── MIDDLE: Order controls ── */}
-        <div className="w-[300px] shrink-0 border-l border-border flex flex-col bg-card">
+        <div className="w-[360px] shrink-0 border-l border-border flex flex-col bg-card">
           {/* Order mode selector */}
           <div className="grid grid-cols-3 gap-1 p-2 border-b border-border shrink-0">
             {([
@@ -764,9 +764,10 @@ export function POS() {
               </AnimatePresence>
               <div ref={cartBottomRef} />
             </div>
+          </ScrollArea>
 
-            {/* Order options */}
-            <div className="px-2 pb-3 space-y-2 border-t border-border pt-2">
+          {/* Order options — static, not scrollable */}
+          <div className="px-3 py-2 space-y-2 border-t border-border shrink-0">
               {/* Discount */}
               <div className="flex gap-1.5">
                 <Button size="sm" variant={discountType === "percent" ? "default" : "outline"} className="flex-1 h-7 text-xs" onClick={() => setDiscountType(discountType === "percent" ? null : "percent")}>
@@ -849,12 +850,11 @@ export function POS() {
 
               {/* Notes */}
               <Textarea className="text-xs resize-none h-12" placeholder="Order notes…" value={notes} onChange={(e) => setNotes(e.target.value)} />
-            </div>
-          </ScrollArea>
+          </div>
         </div>
 
         {/* ── RIGHT: Bill preview + keypad ── */}
-        <div className="w-[280px] shrink-0 border-l border-border flex flex-col bg-card">
+        <div className="w-[320px] shrink-0 border-l border-border flex flex-col bg-card">
           {/* Bill summary */}
           <div className="p-3 border-b border-border shrink-0">
             <div className="flex items-center gap-1.5 mb-2">
