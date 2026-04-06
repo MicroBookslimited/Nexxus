@@ -9,6 +9,7 @@ import {
   useGetProductCustomization,
   useListCustomers,
   useListTables,
+  useGetCurrentCashSession,
 } from "@workspace/api-client-react";
 import { PinPad } from "@/components/PinPad";
 import type { GetOrderResponse } from "@workspace/api-zod";
@@ -306,6 +307,10 @@ export function POS() {
 
   const [locked, setLocked] = useState(true);
   const [sessionStaff, setSessionStaff] = useState<{ id: number; name: string; role: string } | null>(null);
+
+  const { data: cashSession, isError: noOpenShift, isLoading: checkingShift } = useGetCurrentCashSession({
+    query: { retry: false, enabled: !locked },
+  });
 
   const handlePinSuccess = (staff: { id: number; name: string; role: string }) => {
     setSessionStaff(staff);
@@ -636,6 +641,54 @@ export function POS() {
             Powered by MicroBooks
           </p>
         </div>
+      </div>
+    );
+  }
+
+  if (checkingShift) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground animate-pulse">Checking shift status…</p>
+      </div>
+    );
+  }
+
+  if (noOpenShift || !cashSession) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background gap-6">
+        <div className="flex flex-col items-center gap-4 text-center max-w-sm px-6">
+          <div className="h-16 w-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-amber-400">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 8v4m0 4h.01" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-xl font-bold mb-1">No Open Shift</h2>
+            <p className="text-sm text-muted-foreground">
+              A cash drawer shift must be opened before you can process sales.
+              {sessionStaff && <><br /><span className="text-foreground/70">Logged in as <strong>{sessionStaff.name}</strong></span></>}
+            </p>
+          </div>
+          <div className="flex gap-3 mt-2">
+            <a
+              href="/cash"
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90 transition-colors"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+                <path d="M12 2a5 5 0 1 1 0 10A5 5 0 0 1 12 2zm0 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Open Shift in Cash Management
+            </a>
+            <button
+              onClick={() => { setLocked(true); setSessionStaff(null); }}
+              className="rounded-md border border-border px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground absolute bottom-4">Powered by MicroBooks</p>
       </div>
     );
   }
