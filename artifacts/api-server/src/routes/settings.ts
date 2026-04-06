@@ -12,6 +12,9 @@ const DEFAULTS: Record<string, string> = {
   business_phone: "",
   tax_rate: "0.08",
   receipt_footer: "Thank you for your business!",
+  base_currency: "JMD",
+  secondary_currency: "",
+  currency_rate: "0",
 };
 
 async function getSetting(key: string): Promise<string> {

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle,
+  Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +75,9 @@ export function AdminSettings() {
   const [businessPhone, setBusinessPhone] = useState("");
   const [taxRate, setTaxRate] = useState("");
   const [receiptFooter, setReceiptFooter] = useState("");
+  const [baseCurrency, setBaseCurrency] = useState("JMD");
+  const [secondaryCurrency, setSecondaryCurrency] = useState("");
+  const [currencyRate, setCurrencyRate] = useState("");
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -85,6 +88,9 @@ export function AdminSettings() {
     setBusinessPhone(settings.business_phone ?? "");
     setTaxRate(settings.tax_rate ?? "0.08");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
+    setBaseCurrency(settings.base_currency ?? "JMD");
+    setSecondaryCurrency(settings.secondary_currency ?? "");
+    setCurrencyRate(settings.currency_rate ?? "");
     setDirty(false);
   }, [settings]);
 
@@ -102,6 +108,9 @@ export function AdminSettings() {
           business_phone: businessPhone,
           tax_rate: taxRate,
           receipt_footer: receiptFooter,
+          base_currency: baseCurrency.toUpperCase().trim() || "JMD",
+          secondary_currency: secondaryCurrency.toUpperCase().trim(),
+          currency_rate: currencyRate,
         },
       },
       {
@@ -225,6 +234,72 @@ export function AdminSettings() {
               placeholder="Thank you for your business!"
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Currency Settings */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <DollarSign className="h-4 w-4 text-primary" />
+            Currency Settings
+          </CardTitle>
+          <CardDescription>Set your base currency and an optional secondary display currency</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="base-currency">Base Currency</Label>
+              <Input
+                id="base-currency"
+                value={baseCurrency}
+                onChange={(e) => { setBaseCurrency(e.target.value.toUpperCase().slice(0, 3)); markDirty(); }}
+                placeholder="JMD"
+                maxLength={3}
+                className="font-mono uppercase"
+              />
+              <p className="text-xs text-muted-foreground">Default: JMD (Jamaican Dollar)</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="secondary-currency">Secondary Currency <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                id="secondary-currency"
+                value={secondaryCurrency}
+                onChange={(e) => { setSecondaryCurrency(e.target.value.toUpperCase().slice(0, 3)); markDirty(); }}
+                placeholder="USD"
+                maxLength={3}
+                className="font-mono uppercase"
+              />
+              <p className="text-xs text-muted-foreground">Shown as a converted total on receipts</p>
+            </div>
+          </div>
+          {secondaryCurrency && (
+            <div className="space-y-1.5">
+              <Label htmlFor="currency-rate">Exchange Rate</Label>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground shrink-0">1 {baseCurrency || "JMD"} =</span>
+                <Input
+                  id="currency-rate"
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={currencyRate}
+                  onChange={(e) => { setCurrencyRate(e.target.value); markDirty(); }}
+                  placeholder="0.0065"
+                  className="w-36 font-mono"
+                />
+                <span className="text-sm text-muted-foreground shrink-0">{secondaryCurrency}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                e.g., if 1 JMD = 0.0065 USD, enter 0.0065. Auto-conversion will show on POS checkout and receipts.
+              </p>
+            </div>
+          )}
+          {!secondaryCurrency && (
+            <div className="rounded-lg bg-muted/30 border border-border p-3 text-xs text-muted-foreground">
+              Add a secondary currency above to show auto-converted totals on checkout screens and printed receipts.
+            </div>
+          )}
         </CardContent>
       </Card>
 

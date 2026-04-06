@@ -11,6 +11,7 @@ import {
   useListTables,
   useGetCurrentCashSession,
   useSendReceiptEmail,
+  useGetSettings,
 } from "@workspace/api-client-react";
 import { PinPad } from "@/components/PinPad";
 import type { GetOrderResponse } from "@workspace/api-zod";
@@ -59,8 +60,12 @@ function makeCartKey(productId: number, variantChoices: ChoiceItem[], modifierCh
   return `${productId}:${vSig}:${mSig}`;
 }
 
-function formatCurrency(val: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(val);
+function formatCurrency(val: number, currency = "JMD") {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(val);
+  } catch {
+    return `${currency} ${val.toFixed(2)}`;
+  }
 }
 
 function choiceLabel(choices: ChoiceItem[]) {
@@ -295,8 +300,11 @@ function CustomizeDialog({
 }
 
 /* ─── 80mm Receipt Print Helper ─── */
-function printReceiptWindow(order: GetOrderResponse) {
-  const fmt = (n: number) => `$${Math.abs(n).toFixed(2)}`;
+function printReceiptWindow(order: GetOrderResponse, baseCurrency = "JMD", secondaryCurrency = "", exchangeRate = 0) {
+  const fmt = (n: number, cur = baseCurrency) => {
+    try { return new Intl.NumberFormat("en-US", { style: "currency", currency: cur }).format(Math.abs(n)); }
+    catch { return `${cur} ${Math.abs(n).toFixed(2)}`; }
+  };
   const W = 42;
   const center = (s: string) => {
     const pad = Math.max(0, Math.floor((W - s.length) / 2));
@@ -338,6 +346,7 @@ function printReceiptWindow(order: GetOrderResponse) {
     row("Tax:", fmt(order.tax)),
     dblDivider,
     row("TOTAL:", fmt(order.total)),
+    ...(secondaryCurrency && exchangeRate > 0 ? [row(`  ≈ ${secondaryCurrency}:`, fmt(order.total * exchangeRate, secondaryCurrency))] : []),
     dblDivider,
     ...paymentLines,
     ...(order.notes ? [divider, `Note: ${order.notes}`] : []),
@@ -366,6 +375,10 @@ function printReceiptWindow(order: GetOrderResponse) {
 export function POS() {
   const { data: products, isLoading: loadingProducts } = useListProducts();
   const createOrder = useCreateOrder();
+  const { data: settings } = useGetSettings();
+  const baseCurrency = settings?.base_currency || "JMD";
+  const secondaryCurrency = settings?.secondary_currency || "";
+  const exchangeRate = parseFloat(settings?.currency_rate || "0");
 
   const { data: heldOrders } = useListHeldOrders();
   const createHeldOrder = useCreateHeldOrder();
@@ -1069,8 +1082,14 @@ export function POS() {
                     <span>Tax (10%)</span><span className="font-mono">{formatCurrency(tax)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-sm pt-1 border-t border-border">
-                    <span>Total</span><span className="font-mono text-primary">{formatCurrency(total)}</span>
+                    <span>Total</span><span className="font-mono text-primary">{formatCurrency(total, baseCurrency)}</span>
                   </div>
+                  {secondaryCurrency && exchangeRate > 0 && (
+                    <div className="flex justify-between text-xs text-muted-foreground italic">
+                      <span>≈ {secondaryCurrency}</span>
+                      <span className="font-mono">{formatCurrency(total * exchangeRate, secondaryCurrency)}</span>
+                    </div>
+                  )}
                   {paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0 && (
                     <>
                       <div className="flex justify-between text-muted-foreground">
@@ -1091,7 +1110,7 @@ export function POS() {
           <div className="p-2 border-b border-border shrink-0">
             <div className="font-mono text-base font-bold text-center bg-secondary/50 rounded-md py-1.5 mb-2 tracking-wider">
               {paymentMethod === "cash"
-                ? (numpadValue ? `$${numpadValue}` : "— Cash —")
+                ? (numpadValue ? `${baseCurrency} ${numpadValue}` : "— Cash —")
                 : <span className="text-muted-foreground text-xs font-normal">Select Cash to use keypad</span>}
             </div>
             <div className="grid grid-cols-3 gap-1">
@@ -1161,7 +1180,7 @@ export function POS() {
               </div>
             )}
             {paymentMethod === "split" && !isSplitValid && (
-              <p className="text-amber-500 text-[10px] font-medium">Must equal {formatCurrency(total)}</p>
+              <p className="text-amber-500 text-[10px] font-medium">Must equal {formatCurrency(total, baseCurrency)}</p>
             )}
 
             {orderMode === "dine-in" && (
@@ -1172,7 +1191,7 @@ export function POS() {
             )}
             <Button className="w-full h-12 text-base shadow-lg shadow-primary/20" size="lg" onClick={handleCharge}
               disabled={cart.length === 0 || createOrder.isPending || (paymentMethod === "split" && !isSplitValid)}>
-              {createOrder.isPending ? "Processing…" : `Charge ${formatCurrency(total)}`}
+              {createOrder.isPending ? "Processing…" : `Charge ${formatCurrency(total, baseCurrency)}`}
             </Button>
           </div>
         </div>
@@ -1241,8 +1260,14 @@ export function POS() {
                 </div>
                 <div className="flex justify-between font-bold text-base pt-1 border-t border-border">
                   <span>Total</span>
-                  <span className="font-mono text-primary">{formatCurrency(receiptOrder.total)}</span>
+                  <span className="font-mono text-primary">{formatCurrency(receiptOrder.total, baseCurrency)}</span>
                 </div>
+                {secondaryCurrency && exchangeRate > 0 && (
+                  <div className="flex justify-between text-xs text-muted-foreground italic pt-0.5">
+                    <span>≈ {secondaryCurrency}</span>
+                    <span className="font-mono">{formatCurrency(receiptOrder.total * exchangeRate, secondaryCurrency)}</span>
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-border pt-2 space-y-1">
@@ -1311,7 +1336,7 @@ export function POS() {
           )}
 
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => receiptOrder && printReceiptWindow(receiptOrder)} className="gap-2 flex-1">
+            <Button variant="outline" onClick={() => receiptOrder && printReceiptWindow(receiptOrder, baseCurrency, secondaryCurrency, exchangeRate)} className="gap-2 flex-1">
               <Printer className="h-4 w-4" />Print
             </Button>
             <Button

@@ -293,12 +293,13 @@ function BankAccountForm({ account, onSave, onCancel }: { account?: BankAccount;
     accountHolder: account?.accountHolder ?? "", bankName: account?.bankName ?? "",
     accountNumber: account?.accountNumber ?? "", routingNumber: account?.routingNumber ?? "",
     iban: account?.iban ?? "", swiftCode: account?.swiftCode ?? "",
-    currency: account?.currency ?? "USD", instructions: account?.instructions ?? "",
+    currency: account?.currency ?? "JMD", instructions: account?.instructions ?? "",
     isActive: account?.isActive ?? true, sortOrder: account?.sortOrder ?? 0,
   });
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
-  const set = (k: string, v: string | boolean | number) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k: string, v: string | boolean | number) => { setFormError(""); setForm(f => ({ ...f, [k]: v })); };
 
   return (
     <div className="grid grid-cols-2 gap-4 p-4 bg-[#0f1729] rounded-xl border border-[#2a3a55]">
@@ -350,11 +351,19 @@ function BankAccountForm({ account, onSave, onCancel }: { account?: BankAccount;
           className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none text-sm resize-none"
           placeholder="Include your business name as reference on the transfer." />
       </div>
+      {formError && (
+        <div className="col-span-2 text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+          {formError}
+        </div>
+      )}
       <div className="col-span-2 flex gap-3">
         <button type="button" onClick={onCancel} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2 rounded-lg text-sm transition-colors">Cancel</button>
         <button type="button" disabled={saving} onClick={async () => {
+          if ((form.accountHolder ?? "").trim().length < 2) { setFormError("Account Holder is required (min 2 characters)."); return; }
+          if ((form.bankName ?? "").trim().length < 2) { setFormError("Bank Name is required (min 2 characters)."); return; }
+          if ((form.accountNumber ?? "").trim().length < 2) { setFormError("Account Number is required (min 2 characters)."); return; }
           setSaving(true);
-          try { await onSave(form); } finally { setSaving(false); }
+          try { await onSave(form); } catch (e) { setFormError(String(e)); } finally { setSaving(false); }
         }} className="flex-1 bg-[#3b82f6] hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
           {saving ? "Saving…" : "Save Account"}
         </button>
