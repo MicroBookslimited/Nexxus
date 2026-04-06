@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Edit2, Trash2, UtensilsCrossed, Users } from "lucide-react";
+import { Plus, Edit2, Trash2, UtensilsCrossed, Users, Unlock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const TABLE_COLORS = [
@@ -23,8 +23,9 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   reserved: { label: "Reserved", className: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
 };
 
-function TableCard({ table, onEdit, onDelete }: { table: DiningTable; onEdit: (t: DiningTable) => void; onDelete: (id: number) => void }) {
+function TableCard({ table, onEdit, onDelete, onFree }: { table: DiningTable; onEdit: (t: DiningTable) => void; onDelete: (id: number) => void; onFree: (id: number) => void }) {
   const statusMeta = STATUS_LABELS[table.status] ?? STATUS_LABELS.available;
+  const isOccupied = table.status !== "available";
   return (
     <div
       className="relative rounded-xl border border-border bg-card p-4 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow"
@@ -45,6 +46,15 @@ function TableCard({ table, onEdit, onDelete }: { table: DiningTable; onEdit: (t
         <p className="text-xs text-muted-foreground font-mono">
           Order {table.currentOrderNumber ?? `#${table.currentOrderId}`}
         </p>
+      )}
+      {isOccupied && (
+        <Button
+          size="sm"
+          className="h-8 text-xs w-full bg-emerald-600 hover:bg-emerald-500 text-white"
+          onClick={() => onFree(table.id)}
+        >
+          <Unlock className="h-3 w-3 mr-1" /> Free Table
+        </Button>
       )}
       <div className="flex gap-2 mt-auto pt-2 border-t border-border">
         <Button size="sm" variant="ghost" className="flex-1 h-8 text-xs" onClick={() => onEdit(table)}>
@@ -198,6 +208,16 @@ export function Tables() {
     );
   };
 
+  const handleFreeTable = (id: number) => {
+    updateTable.mutate(
+      { id, data: { status: "available", currentOrderId: null } },
+      {
+        onSuccess: () => { toast({ title: "Table freed", description: "Table is now available." }); invalidate(); },
+        onError: () => toast({ title: "Error", description: "Could not free table", variant: "destructive" }),
+      },
+    );
+  };
+
   const available = tables?.filter((t) => t.status === "available").length ?? 0;
   const occupied = tables?.filter((t) => t.status === "occupied").length ?? 0;
   const reserved = tables?.filter((t) => t.status === "reserved").length ?? 0;
@@ -249,6 +269,7 @@ export function Tables() {
                 table={table}
                 onEdit={(t) => { setEditingTable(t); setDialogOpen(true); }}
                 onDelete={handleDelete}
+                onFree={handleFreeTable}
               />
             ))}
           </div>
