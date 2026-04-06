@@ -249,7 +249,7 @@ export function Onboarding() {
               </button>
               <p className="text-center text-sm text-[#475569] mt-4">
                 Already have an account?{" "}
-                <button onClick={() => navigate("/saas-login")} className="text-[#3b82f6] hover:text-blue-400">Sign in</button>
+                <button onClick={() => navigate("/login")} className="text-[#3b82f6] hover:text-blue-400">Sign in</button>
               </p>
             </div>
           )}
