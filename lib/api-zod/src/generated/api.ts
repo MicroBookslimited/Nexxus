@@ -1611,3 +1611,29 @@ export const CloseCashSessionResponse = zod.object({
   actualOther: zod.number().optional(),
   closingNotes: zod.string().optional(),
 });
+
+/**
+ * @summary Send order receipt by email
+ */
+export const SendReceiptEmailBody = zod.object({
+  orderId: zod.number(),
+  to: zod.string().email(),
+});
+
+export const SendReceiptEmailResponse = zod.object({
+  success: zod.boolean(),
+  messageId: zod.string().optional(),
+});
+
+/**
+ * @summary Send end-of-day report by email
+ */
+export const SendEodReportEmailBody = zod.object({
+  sessionId: zod.number(),
+  to: zod.string().email(),
+});
+
+export const SendEodReportEmailResponse = zod.object({
+  success: zod.boolean(),
+  messageId: zod.string().optional(),
+});

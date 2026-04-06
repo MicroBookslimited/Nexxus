@@ -38,6 +38,7 @@ import type {
   DailySales,
   DashboardSummary,
   DiningTable,
+  EmailSentResponse,
   ExportOrdersParams,
   GetDailySalesParams,
   GetHourlySalesParams,
@@ -66,6 +67,8 @@ import type {
   ReportSummary,
   SaveModifiersBody,
   SaveVariantsBody,
+  SendEodReportEmailBody,
+  SendReceiptEmailBody,
   StaffMember,
   TopProduct,
   UpdateKdsScreenBody,
@@ -5727,4 +5730,176 @@ export const useCloseCashSession = <
   TContext
 > => {
   return useMutation(getCloseCashSessionMutationOptions(options));
+};
+
+/**
+ * @summary Send order receipt by email
+ */
+export const getSendReceiptEmailUrl = () => {
+  return `/api/email/receipt`;
+};
+
+export const sendReceiptEmail = async (
+  sendReceiptEmailBody: SendReceiptEmailBody,
+  options?: RequestInit,
+): Promise<EmailSentResponse> => {
+  return customFetch<EmailSentResponse>(getSendReceiptEmailUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sendReceiptEmailBody),
+  });
+};
+
+export const getSendReceiptEmailMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendReceiptEmail>>,
+    TError,
+    { data: BodyType<SendReceiptEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendReceiptEmail>>,
+  TError,
+  { data: BodyType<SendReceiptEmailBody> },
+  TContext
+> => {
+  const mutationKey = ["sendReceiptEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendReceiptEmail>>,
+    { data: BodyType<SendReceiptEmailBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return sendReceiptEmail(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendReceiptEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendReceiptEmail>>
+>;
+export type SendReceiptEmailMutationBody = BodyType<SendReceiptEmailBody>;
+export type SendReceiptEmailMutationError = ErrorType<void>;
+
+/**
+ * @summary Send order receipt by email
+ */
+export const useSendReceiptEmail = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendReceiptEmail>>,
+    TError,
+    { data: BodyType<SendReceiptEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendReceiptEmail>>,
+  TError,
+  { data: BodyType<SendReceiptEmailBody> },
+  TContext
+> => {
+  return useMutation(getSendReceiptEmailMutationOptions(options));
+};
+
+/**
+ * @summary Send end-of-day report by email
+ */
+export const getSendEodReportEmailUrl = () => {
+  return `/api/email/eod-report`;
+};
+
+export const sendEodReportEmail = async (
+  sendEodReportEmailBody: SendEodReportEmailBody,
+  options?: RequestInit,
+): Promise<EmailSentResponse> => {
+  return customFetch<EmailSentResponse>(getSendEodReportEmailUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sendEodReportEmailBody),
+  });
+};
+
+export const getSendEodReportEmailMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendEodReportEmail>>,
+    TError,
+    { data: BodyType<SendEodReportEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendEodReportEmail>>,
+  TError,
+  { data: BodyType<SendEodReportEmailBody> },
+  TContext
+> => {
+  const mutationKey = ["sendEodReportEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendEodReportEmail>>,
+    { data: BodyType<SendEodReportEmailBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return sendEodReportEmail(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendEodReportEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendEodReportEmail>>
+>;
+export type SendEodReportEmailMutationBody = BodyType<SendEodReportEmailBody>;
+export type SendEodReportEmailMutationError = ErrorType<void>;
+
+/**
+ * @summary Send end-of-day report by email
+ */
+export const useSendEodReportEmail = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendEodReportEmail>>,
+    TError,
+    { data: BodyType<SendEodReportEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendEodReportEmail>>,
+  TError,
+  { data: BodyType<SendEodReportEmailBody> },
+  TContext
+> => {
+  return useMutation(getSendEodReportEmailMutationOptions(options));
 };

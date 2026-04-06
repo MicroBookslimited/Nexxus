@@ -13,6 +13,7 @@ import staffRouter from "./staff";
 import purchasesRouter from "./purchases";
 import purchaseBillsRouter from "./purchase-bills";
 import cashRouter from "./cash";
+import emailRouter from "./email";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(staffRouter);
 router.use(purchasesRouter);
 router.use(purchaseBillsRouter);
 router.use(cashRouter);
+router.use(emailRouter);
 
 export default router;

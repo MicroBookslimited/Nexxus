@@ -688,6 +688,21 @@ export interface CloseCashSessionBody {
   closingNotes?: string;
 }
 
+export interface SendReceiptEmailBody {
+  orderId: number;
+  to: string;
+}
+
+export interface SendEodReportEmailBody {
+  sessionId: number;
+  to: string;
+}
+
+export interface EmailSentResponse {
+  success: boolean;
+  messageId?: string;
+}
+
 export type ListProductsParams = {
   category?: string;
   search?: string;

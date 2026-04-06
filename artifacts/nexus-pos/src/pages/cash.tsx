@@ -6,6 +6,7 @@ import {
   useCloseCashSession,
   useListCashSessions,
   useGetCashSession,
+  useSendEodReportEmail,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,7 @@ import { PinPad } from "@/components/PinPad";
 import {
   Coins, DollarSign, TrendingUp, TrendingDown, CreditCard, Banknote,
   SplitSquareHorizontal, Plus, CheckCircle2, History,
-  ArrowDownLeft, UserCheck, ArrowLeft,
+  ArrowDownLeft, UserCheck, ArrowLeft, Mail,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -388,12 +389,17 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
 }
 
 function printEodReport(d: SessionDetail, withDetail: boolean) {
-  const w = window.open("", "_blank", "width=420,height=700");
+  const w = window.open("", "_blank", "width=420,height=760");
   if (!w) return;
   w.document.write(`<!DOCTYPE html><html><head><title>End of Day Report</title>
-    <style>body{margin:20px}@media print{body{margin:0;padding:10px}}</style>
+    <style>
+      @page { size: 80mm auto; margin: 4mm; }
+      body { margin: 0; padding: 8px; font-family: 'Courier New', Courier, monospace; font-size: 11px; line-height: 1.4; }
+      table { width: 100%; border-collapse: collapse; font-size: 10px; }
+      th, td { padding: 1px 2px; }
+    </style>
   </head><body>${buildReportHtml(d, withDetail)}
-    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}</script>
+    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script>
   </body></html>`);
   w.document.close();
 }
@@ -402,6 +408,10 @@ function printEodReport(d: SessionDetail, withDetail: boolean) {
 function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: () => void }) {
   const { data, isLoading, isError } = useGetCashSession(sessionId);
   const [expanded, setExpanded] = useState(false);
+  const [eodEmailOpen, setEodEmailOpen] = useState(false);
+  const [eodEmailAddr, setEodEmailAddr] = useState("");
+  const sendEodEmail = useSendEodReportEmail();
+  const { toast } = useToast();
 
   if (isLoading) {
     return (
@@ -550,6 +560,41 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
           )}
         </div>
 
+        {eodEmailOpen && (
+          <div className="border border-border rounded-lg p-3 bg-muted/40 space-y-2 mt-2">
+            <p className="text-xs font-medium text-muted-foreground">Email report to:</p>
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                placeholder="manager@business.com"
+                value={eodEmailAddr}
+                onChange={(e) => setEodEmailAddr(e.target.value)}
+                className="h-8 text-sm"
+              />
+              <Button
+                size="sm"
+                disabled={!eodEmailAddr || sendEodEmail.isPending}
+                onClick={() => {
+                  sendEodEmail.mutate(
+                    { data: { sessionId, to: eodEmailAddr } },
+                    {
+                      onSuccess: () => {
+                        toast({ title: "Report sent!", description: `Sent to ${eodEmailAddr}` });
+                        setEodEmailOpen(false);
+                        setEodEmailAddr("");
+                      },
+                      onError: () => toast({ title: "Failed to send", description: "Check that email is configured.", variant: "destructive" }),
+                    }
+                  );
+                }}
+              >
+                {sendEodEmail.isPending ? "Sending…" : "Send"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setEodEmailOpen(false)}>✕</Button>
+            </div>
+          </div>
+        )}
+
         <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-border mt-2">
           <Button variant="outline" size="sm" onClick={() => printEodReport(detail, false)} className="flex-1 sm:flex-none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5 mr-1.5"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z"/></svg>
@@ -558,6 +603,14 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
           <Button variant="outline" size="sm" onClick={() => printEodReport(detail, true)} className="flex-1 sm:flex-none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5 mr-1.5"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z"/></svg>
             Print with Sales Detail
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { setEodEmailOpen(true); setEodEmailAddr(""); }}
+            className="flex-1 sm:flex-none gap-1.5"
+          >
+            <Mail className="h-3.5 w-3.5" />Email Report
           </Button>
           <Button size="sm" onClick={onClose} className="flex-1 sm:flex-none">Done</Button>
         </DialogFooter>

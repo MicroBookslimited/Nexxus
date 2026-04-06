@@ -10,6 +10,7 @@ import {
   useListCustomers,
   useListTables,
   useGetCurrentCashSession,
+  useSendReceiptEmail,
 } from "@workspace/api-client-react";
 import { PinPad } from "@/components/PinPad";
 import type { GetOrderResponse } from "@workspace/api-zod";
@@ -22,7 +23,7 @@ import {
   Search, CreditCard, Banknote, Trash2, ShoppingCart, ScanBarcode,
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
-  UtensilsCrossed, ShoppingBag, Truck,
+  UtensilsCrossed, ShoppingBag, Truck, Mail,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -293,6 +294,74 @@ function CustomizeDialog({
   );
 }
 
+/* ─── 80mm Receipt Print Helper ─── */
+function printReceiptWindow(order: GetOrderResponse) {
+  const fmt = (n: number) => `$${Math.abs(n).toFixed(2)}`;
+  const W = 42;
+  const center = (s: string) => {
+    const pad = Math.max(0, Math.floor((W - s.length) / 2));
+    return " ".repeat(pad) + s;
+  };
+  const row = (left: string, right: string) => {
+    const space = Math.max(1, W - left.length - right.length);
+    return left + " ".repeat(space) + right;
+  };
+  const divider = "-".repeat(W);
+  const dblDivider = "=".repeat(W);
+
+  const itemLines = order.items.flatMap((item) => {
+    const label = `${item.quantity} x ${item.productName}`;
+    const lines = [row(label, fmt(item.lineTotal))];
+    for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
+      lines.push(`  + ${v.optionName}`);
+    }
+    for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
+      lines.push(`  + ${m.optionName}`);
+    }
+    return lines;
+  });
+
+  const paymentLines = order.paymentMethod === "split"
+    ? [row("  Card:", fmt(order.splitCardAmount ?? 0)), row("  Cash:", fmt(order.splitCashAmount ?? 0))]
+    : [row("Payment:", (order.paymentMethod ?? "—").toUpperCase())];
+
+  const textLines = [
+    center("NEXUS POS"),
+    center("Your Business, Connected."),
+    dblDivider,
+    row(`Order: ${order.orderNumber}`, format(new Date(order.createdAt), "MMM d h:mm a")),
+    divider,
+    ...itemLines,
+    divider,
+    row("Subtotal:", fmt(order.subtotal)),
+    ...((order.discountValue ?? 0) > 0 ? [row("Discount:", `-${fmt(order.discountValue ?? 0)}`)] : []),
+    row("Tax:", fmt(order.tax)),
+    dblDivider,
+    row("TOTAL:", fmt(order.total)),
+    dblDivider,
+    ...paymentLines,
+    ...(order.notes ? [divider, `Note: ${order.notes}`] : []),
+    divider,
+    center("Thank you for your business!"),
+    center("Powered by MicroBooks"),
+    dblDivider,
+  ];
+
+  const pre = textLines.join("\n");
+  const w = window.open("", "_blank", "width=400,height=700");
+  if (!w) return;
+  w.document.write(`<!DOCTYPE html><html><head><title>Receipt</title>
+    <style>
+      @page { size: 80mm auto; margin: 4mm; }
+      body { margin: 0; padding: 8px; font-family: 'Courier New', Courier, monospace; font-size: 11px; line-height: 1.4; }
+      pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+    </style>
+  </head><body><pre>${pre}</pre>
+    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script>
+  </body></html>`);
+  w.document.close();
+}
+
 /* ─── Main POS component ─── */
 export function POS() {
   const { data: products, isLoading: loadingProducts } = useListProducts();
@@ -304,6 +373,7 @@ export function POS() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const sendReceiptEmail = useSendReceiptEmail();
 
   const [locked, setLocked] = useState(true);
   const [sessionStaff, setSessionStaff] = useState<{ id: number; name: string; role: string } | null>(null);
@@ -338,6 +408,8 @@ export function POS() {
   const [splitCardAmount, setSplitCardAmount] = useState<number>(0);
   const [splitCashAmount, setSplitCashAmount] = useState<number>(0);
   const [receiptOrder, setReceiptOrder] = useState<GetOrderResponse | null>(null);
+  const [receiptEmailOpen, setReceiptEmailOpen] = useState(false);
+  const [receiptEmailAddr, setReceiptEmailAddr] = useState("");
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState<number>(0);
@@ -1202,11 +1274,54 @@ export function POS() {
             </div>
           )}
 
+          {receiptEmailOpen && receiptOrder && (
+            <div className="border border-border rounded-lg p-3 bg-muted/40 space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Email receipt to:</p>
+              <div className="flex gap-2">
+                <Input
+                  type="email"
+                  placeholder="customer@email.com"
+                  value={receiptEmailAddr}
+                  onChange={(e) => setReceiptEmailAddr(e.target.value)}
+                  className="h-8 text-sm"
+                />
+                <Button
+                  size="sm"
+                  disabled={!receiptEmailAddr || sendReceiptEmail.isPending}
+                  onClick={() => {
+                    if (!receiptOrder) return;
+                    sendReceiptEmail.mutate(
+                      { data: { orderId: receiptOrder.id, to: receiptEmailAddr } },
+                      {
+                        onSuccess: () => {
+                          toast({ title: "Receipt sent!", description: `Sent to ${receiptEmailAddr}` });
+                          setReceiptEmailOpen(false);
+                          setReceiptEmailAddr("");
+                        },
+                        onError: () => toast({ title: "Failed to send", description: "Check that email is configured.", variant: "destructive" }),
+                      }
+                    );
+                  }}
+                >
+                  {sendReceiptEmail.isPending ? "Sending…" : "Send"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setReceiptEmailOpen(false)}>✕</Button>
+              </div>
+            </div>
+          )}
+
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => window.print()} className="gap-2 flex-1">
+            <Button variant="outline" onClick={() => receiptOrder && printReceiptWindow(receiptOrder)} className="gap-2 flex-1">
               <Printer className="h-4 w-4" />Print
             </Button>
-            <Button onClick={() => setReceiptOrder(null)} className="flex-1">New Sale</Button>
+            <Button
+              variant="outline"
+              onClick={() => { setReceiptEmailOpen(true); setReceiptEmailAddr(""); }}
+              className="gap-2 flex-1"
+            >
+              <Mail className="h-4 w-4" />Email
+            </Button>
+            <Button onClick={() => { setReceiptOrder(null); setReceiptEmailOpen(false); setReceiptEmailAddr(""); }} className="flex-1">New Sale</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

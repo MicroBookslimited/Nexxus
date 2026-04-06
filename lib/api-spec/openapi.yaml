@@ -1318,6 +1318,50 @@ paths:
         "404":
           description: Session not found
 
+  /email/receipt:
+    post:
+      summary: Send order receipt by email
+      operationId: sendReceiptEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendReceiptEmailBody"
+      responses:
+        "200":
+          description: Email sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailSentResponse"
+        "404":
+          description: Order not found
+        "503":
+          description: Email service not configured
+
+  /email/eod-report:
+    post:
+      summary: Send end-of-day report by email
+      operationId: sendEodReportEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendEodReportEmailBody"
+      responses:
+        "200":
+          description: Email sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailSentResponse"
+        "404":
+          description: Session not found
+        "503":
+          description: Email service not configured
+
 components:
   schemas:
     HealthStatus:
@@ -2672,3 +2716,37 @@ components:
       required:
         - actualCash
         - actualCard
+
+    SendReceiptEmailBody:
+      type: object
+      properties:
+        orderId:
+          type: integer
+        to:
+          type: string
+          format: email
+      required:
+        - orderId
+        - to
+
+    SendEodReportEmailBody:
+      type: object
+      properties:
+        sessionId:
+          type: integer
+        to:
+          type: string
+          format: email
+      required:
+        - sessionId
+        - to
+
+    EmailSentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        messageId:
+          type: string
+      required:
+        - success
