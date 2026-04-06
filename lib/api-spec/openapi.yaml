@@ -1318,6 +1318,34 @@ paths:
         "404":
           description: Session not found
 
+  /settings:
+    get:
+      summary: Get all app settings
+      operationId: getSettings
+      responses:
+        "200":
+          description: All settings as key-value map
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+    patch:
+      summary: Update app settings
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppSettings"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+
   /email/receipt:
     post:
       summary: Send order receipt by email
@@ -2716,6 +2744,12 @@ components:
       required:
         - actualCash
         - actualCard
+
+    AppSettings:
+      type: object
+      additionalProperties:
+        type: string
+      description: Key-value map of application settings
 
     SendReceiptEmailBody:
       type: object

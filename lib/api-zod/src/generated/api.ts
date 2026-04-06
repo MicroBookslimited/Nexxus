@@ -1613,6 +1613,24 @@ export const CloseCashSessionResponse = zod.object({
 });
 
 /**
+ * @summary Get all app settings
+ */
+export const GetSettingsResponse = zod
+  .record(zod.string(), zod.string())
+  .describe("Key-value map of application settings");
+
+/**
+ * @summary Update app settings
+ */
+export const UpdateSettingsBody = zod
+  .record(zod.string(), zod.string())
+  .describe("Key-value map of application settings");
+
+export const UpdateSettingsResponse = zod
+  .record(zod.string(), zod.string())
+  .describe("Key-value map of application settings");
+
+/**
  * @summary Send order receipt by email
  */
 export const SendReceiptEmailBody = zod.object({

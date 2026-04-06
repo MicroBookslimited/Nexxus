@@ -15,6 +15,7 @@ import { Tables } from "@/pages/tables";
 import { Kitchen } from "@/pages/kitchen";
 import { Staff } from "@/pages/staff";
 import { CashManagement } from "@/pages/cash";
+import { AdminSettings } from "@/pages/settings";
 import { Layout } from "@/components/layout";
 
 const queryClient = new QueryClient();
@@ -51,6 +52,7 @@ function Router() {
       <Route path="/kitchen"><ProtectedRoute component={Kitchen} /></Route>
       <Route path="/staff"><ProtectedRoute component={Staff} /></Route>
       <Route path="/cash"><ProtectedRoute component={CashManagement} /></Route>
+      <Route path="/settings"><ProtectedRoute component={AdminSettings} /></Route>
       <Route component={NotFound} />
     </Switch>
   );

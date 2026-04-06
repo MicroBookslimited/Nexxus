@@ -14,6 +14,7 @@ import purchasesRouter from "./purchases";
 import purchaseBillsRouter from "./purchase-bills";
 import cashRouter from "./cash";
 import emailRouter from "./email";
+import settingsRouter from "./settings";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(purchasesRouter);
 router.use(purchaseBillsRouter);
 router.use(cashRouter);
 router.use(emailRouter);
+router.use(settingsRouter);
 
 export default router;

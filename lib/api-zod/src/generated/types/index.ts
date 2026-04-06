@@ -7,6 +7,7 @@
  */
 
 export * from "./addCashPayoutBody";
+export * from "./appSettings";
 export * from "./authenticateStaffBody";
 export * from "./cashOrderSummary";
 export * from "./cashPayout";

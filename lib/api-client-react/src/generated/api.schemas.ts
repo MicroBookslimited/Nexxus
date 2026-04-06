@@ -688,6 +688,13 @@ export interface CloseCashSessionBody {
   closingNotes?: string;
 }
 
+/**
+ * Key-value map of application settings
+ */
+export interface AppSettings {
+  [key: string]: string;
+}
+
 export interface SendReceiptEmailBody {
   orderId: number;
   to: string;
