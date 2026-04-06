@@ -431,7 +431,7 @@ export function Products() {
   const deleteBill = useDeletePurchaseBill();
 
   const [pageTab, setPageTab] = useState<"products" | "purchases">("products");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState("details");
   const [editingProduct, setEditingProduct] = useState<GetProductResponse | null>(null);

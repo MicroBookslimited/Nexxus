@@ -16,10 +16,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { PinPad } from "@/components/PinPad";
 import {
   Coins, DollarSign, TrendingUp, TrendingDown, CreditCard, Banknote,
-  SplitSquareHorizontal, Plus, Clock, CheckCircle2, AlertTriangle, History,
-  ChevronRight, ArrowDownLeft,
+  SplitSquareHorizontal, Plus, CheckCircle2, History,
+  ArrowDownLeft, UserCheck, ArrowLeft,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -40,14 +41,19 @@ function VarianceBadge({ variance }: { variance: number }) {
 
 /* ─── Open Shift Panel ─── */
 function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staffName: string) => void }) {
+  const [step, setStep] = useState<"pin" | "cash">("pin");
+  const [staff, setStaff] = useState<{ id: number; name: string; role: string } | null>(null);
   const [cash, setCash] = useState("");
-  const [name, setName] = useState("");
+
+  const handlePinSuccess = (s: { id: number; name: string; role: string }) => {
+    setStaff(s);
+    setStep("cash");
+  };
 
   const handleSubmit = () => {
     const amount = parseFloat(cash);
-    if (isNaN(amount) || amount < 0) return;
-    if (!name.trim()) return;
-    onOpen(amount, name.trim());
+    if (isNaN(amount) || amount < 0 || !staff) return;
+    onOpen(amount, staff.name);
   };
 
   return (
@@ -58,44 +64,60 @@ function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staffName: s
             <Coins className="h-7 w-7 text-primary" />
           </div>
           <CardTitle className="text-xl">Open Cash Drawer</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">Count and record the opening cash balance to begin your shift.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {step === "pin" ? "Enter your PIN to identify yourself and begin your shift." : "Count and record the opening cash balance."}
+          </p>
         </CardHeader>
-        <CardContent className="space-y-4 pt-4">
-          <div className="space-y-1.5">
-            <Label>Your Name</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Jane Smith"
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Opening Cash on Hand</Label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                className="pl-8 text-lg font-mono"
-                value={cash}
-                onChange={(e) => setCash(e.target.value)}
-                placeholder="0.00"
-                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              />
+        <CardContent className="pt-2">
+          {step === "pin" ? (
+            <PinPad onSuccess={handlePinSuccess} title="" />
+          ) : (
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+                <UserCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-emerald-300">{staff?.name}</p>
+                  <p className="text-xs text-emerald-400/70 capitalize">{staff?.role}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => { setStep("pin"); setStaff(null); setCash(""); }}
+                >
+                  <ArrowLeft className="h-3 w-3 mr-1" />
+                  Change
+                </Button>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Opening Cash on Hand</Label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    autoFocus
+                    className="pl-8 text-lg font-mono"
+                    value={cash}
+                    onChange={(e) => setCash(e.target.value)}
+                    placeholder="0.00"
+                    onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">Count bills and coins in the drawer before any sales.</p>
+              </div>
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={handleSubmit}
+                disabled={!cash || isNaN(parseFloat(cash))}
+              >
+                <Coins className="h-4 w-4 mr-2" />
+                Open Shift
+              </Button>
             </div>
-            <p className="text-xs text-muted-foreground">Count bills and coins in the drawer before any sales.</p>
-          </div>
-          <Button
-            className="w-full"
-            size="lg"
-            onClick={handleSubmit}
-            disabled={!cash || isNaN(parseFloat(cash)) || !name.trim()}
-          >
-            <Coins className="h-4 w-4 mr-2" />
-            Open Shift
-          </Button>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -477,13 +499,11 @@ export function CashManagement() {
   const openSession = useOpenCashSession();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [staffName, setStaffName] = useState("");
 
   const hasOpenSession = !!current?.session;
   const closedSessions = (sessions ?? []).filter((s) => s.status === "closed").slice(0, 10);
 
   const handleOpenShift = (openingCash: number, name: string) => {
-    setStaffName(name);
     openSession.mutate(
       { data: { staffName: name, openingCash } },
       {
@@ -531,7 +551,7 @@ export function CashManagement() {
           {loadingCurrent && !noSession ? (
             <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
           ) : hasOpenSession ? (
-            <ActiveSessionPanel staffName={staffName || current!.session.staffName} />
+            <ActiveSessionPanel staffName={current!.session.staffName} />
           ) : (
             <OpenShiftPanel onOpen={handleOpenShift} />
           )}
