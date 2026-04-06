@@ -1,5 +1,3 @@
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
 export const TENANT_TOKEN_KEY = "nexus_tenant_token";
 export const SUPERADMIN_TOKEN_KEY = "nexus_superadmin_token";
 
@@ -14,7 +12,7 @@ function superadminAuthHeaders(): Record<string, string> {
 }
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const resp = await fetch(`${BASE}/api${path}`, {
+  const resp = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
   });
