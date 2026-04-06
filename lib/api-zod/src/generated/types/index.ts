@@ -8,6 +8,7 @@
 
 export * from "./addCashPayoutBody";
 export * from "./authenticateStaffBody";
+export * from "./cashOrderSummary";
 export * from "./cashPayout";
 export * from "./cashSalesSummary";
 export * from "./cashSession";

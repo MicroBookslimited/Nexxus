@@ -5,6 +5,7 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CashOrderSummary } from "./cashOrderSummary";
 import type { CashPayout } from "./cashPayout";
 import type { CashSalesSummary } from "./cashSalesSummary";
 import type { CashSession } from "./cashSession";
@@ -12,6 +13,7 @@ import type { CashSession } from "./cashSession";
 export interface CashSessionDetail {
   session: CashSession;
   payouts: CashPayout[];
+  orders: CashOrderSummary[];
   salesSummary: CashSalesSummary;
   expectedCash: number;
   totalPayouts: number;

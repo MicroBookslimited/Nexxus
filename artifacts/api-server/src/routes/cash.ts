@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, gte, lte, sum, sql } from "drizzle-orm";
+import { eq, and, gte, lte, isNotNull, sum, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { cashSessionsTable, cashPayoutsTable, ordersTable } from "@workspace/db";
 import { z } from "zod";
@@ -24,6 +24,20 @@ const CloseSessionBody = z.object({
   actualOther: z.number().min(0).optional(),
   closingNotes: z.string().optional(),
 });
+
+/** Build sales summary and order list from a set of orders */
+function computeSales(orders: { paymentMethod: string | null; total: number | null }[]) {
+  const cashSales = orders
+    .filter((r) => r.paymentMethod === "cash")
+    .reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const cardSales = orders
+    .filter((r) => r.paymentMethod === "card")
+    .reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const splitSales = orders
+    .filter((r) => r.paymentMethod === "split")
+    .reduce((s, r) => s + Number(r.total ?? 0), 0);
+  return { cashSales, cardSales, splitSales, totalSales: cashSales + cardSales + splitSales };
+}
 
 router.get("/cash/sessions", async (_req, res): Promise<void> => {
   const sessions = await db
@@ -52,42 +66,34 @@ router.get("/cash/sessions/current", async (_req, res): Promise<void> => {
     .where(eq(cashPayoutsTable.sessionId, session.id))
     .orderBy(cashPayoutsTable.createdAt);
 
-  const orderTotals = await db
+  // Count any paid order (has a paymentMethod), regardless of kitchen status
+  const orderRows = await db
     .select({
+      id: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      total: ordersTable.total,
       paymentMethod: ordersTable.paymentMethod,
-      total: sum(ordersTable.total),
+      status: ordersTable.status,
+      createdAt: ordersTable.createdAt,
     })
     .from(ordersTable)
     .where(
       and(
         gte(ordersTable.createdAt, session.openedAt),
-        eq(ordersTable.status, "completed")
+        isNotNull(ordersTable.paymentMethod)
       )
     )
-    .groupBy(ordersTable.paymentMethod);
+    .orderBy(ordersTable.createdAt);
 
-  const cashSales = orderTotals
-    .filter((r) => r.paymentMethod === "cash")
-    .reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const cardSales = orderTotals
-    .filter((r) => r.paymentMethod === "card")
-    .reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const splitSales = orderTotals
-    .filter((r) => r.paymentMethod === "split")
-    .reduce((s, r) => s + Number(r.total ?? 0), 0);
-
+  const salesSummary = computeSales(orderRows);
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
-  const expectedCash = session.openingCash + cashSales - totalPayouts;
+  const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts;
 
   res.json({
     session,
     payouts,
-    salesSummary: {
-      cashSales,
-      cardSales,
-      splitSales,
-      totalSales: cashSales + cardSales + splitSales,
-    },
+    orders: orderRows,
+    salesSummary,
     expectedCash,
     totalPayouts,
   });
@@ -118,43 +124,34 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
 
   const closedAt = session.closedAt ?? new Date();
 
-  const orderTotals = await db
+  const orderRows = await db
     .select({
+      id: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      total: ordersTable.total,
       paymentMethod: ordersTable.paymentMethod,
-      total: sum(ordersTable.total),
+      status: ordersTable.status,
+      createdAt: ordersTable.createdAt,
     })
     .from(ordersTable)
     .where(
       and(
         gte(ordersTable.createdAt, session.openedAt),
         lte(ordersTable.createdAt, closedAt),
-        eq(ordersTable.status, "completed")
+        isNotNull(ordersTable.paymentMethod)
       )
     )
-    .groupBy(ordersTable.paymentMethod);
+    .orderBy(ordersTable.createdAt);
 
-  const cashSales = orderTotals
-    .filter((r) => r.paymentMethod === "cash")
-    .reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const cardSales = orderTotals
-    .filter((r) => r.paymentMethod === "card")
-    .reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const splitSales = orderTotals
-    .filter((r) => r.paymentMethod === "split")
-    .reduce((s, r) => s + Number(r.total ?? 0), 0);
-
+  const salesSummary = computeSales(orderRows);
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
-  const expectedCash = session.openingCash + cashSales - totalPayouts;
+  const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts;
 
   res.json({
     session,
     payouts,
-    salesSummary: {
-      cashSales,
-      cardSales,
-      splitSales,
-      totalSales: cashSales + cardSales + splitSales,
-    },
+    orders: orderRows,
+    salesSummary,
     expectedCash,
     totalPayouts,
   });

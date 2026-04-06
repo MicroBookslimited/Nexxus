@@ -208,7 +208,7 @@ function CloseShiftDialog({
   expectedCash: number;
   salesSummary: { cashSales: number; cardSales: number; splitSales: number; totalSales: number };
   onClose: () => void;
-  onClosed: () => void;
+  onClosed: (closedSessionId: number) => void;
 }) {
   const [actualCash, setActualCash] = useState("");
   const [actualCard, setActualCard] = useState("");
@@ -234,7 +234,7 @@ function CloseShiftDialog({
           setActualCash("");
           setActualCard("");
           setNotes("");
-          onClosed();
+          onClosed(sessionId);
         },
         onError: () => toast({ title: "Error", description: "Could not close session", variant: "destructive" }),
       },
@@ -247,11 +247,11 @@ function CloseShiftDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-            End of Shift Report
+            Close Shift
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-1">
-          <p className="text-xs text-muted-foreground">Count your drawer and enter the actual amounts collected. Discrepancies will be recorded for your records.</p>
+          <p className="text-xs text-muted-foreground">Count your drawer and enter the actual amounts collected. Discrepancies will be recorded.</p>
 
           {/* Expected amounts summary */}
           <div className="rounded-lg bg-muted/30 border border-border p-3 space-y-2 text-sm">
@@ -314,8 +314,260 @@ function CloseShiftDialog({
   );
 }
 
+/* ─── Print helpers ─── */
+type SessionDetail = {
+  session: { staffName: string; openedAt: string; closedAt?: string | null; openingCash: number; actualCash?: number | null; actualCard?: number | null; closingNotes?: string | null };
+  payouts: { reason: string; amount: number; staffName: string; createdAt: string }[];
+  orders: { orderNumber: string; total: number; paymentMethod: string; createdAt: string }[];
+  salesSummary: { cashSales: number; cardSales: number; splitSales: number; totalSales: number };
+  expectedCash: number;
+  totalPayouts: number;
+};
+
+function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
+  const fmt = (n: number) => `$${Math.abs(n).toFixed(2)}`;
+  const variance = (d.session.actualCash ?? 0) - d.expectedCash;
+  const openedAt = new Date(d.session.openedAt).toLocaleString();
+  const closedAt = d.session.closedAt ? new Date(d.session.closedAt).toLocaleString() : "—";
+
+  const orderRows = withDetail
+    ? d.orders.map((o) => `
+        <tr>
+          <td>${new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</td>
+          <td>${o.orderNumber}</td>
+          <td style="text-transform:capitalize">${o.paymentMethod}</td>
+          <td style="text-align:right">${fmt(o.total)}</td>
+        </tr>`).join("")
+    : "";
+
+  return `
+    <div style="max-width:340px;margin:0 auto;font-family:monospace;font-size:12px;line-height:1.6">
+      <h2 style="text-align:center;font-size:15px;margin:0 0 2px">Nexus POS</h2>
+      <p style="text-align:center;font-size:11px;margin:0 0 10px;color:#555">End of Day Report</p>
+      <div style="border-top:1px dashed #000;margin:6px 0"></div>
+      <div style="display:flex;justify-content:space-between"><span>Cashier:</span><span>${d.session.staffName}</span></div>
+      <div style="display:flex;justify-content:space-between"><span>Opened:</span><span>${openedAt}</span></div>
+      <div style="display:flex;justify-content:space-between"><span>Closed:</span><span>${closedAt}</span></div>
+      <div style="border-top:1px dashed #000;margin:8px 0"></div>
+      <b>Sales Summary</b>
+      <div style="display:flex;justify-content:space-between"><span>Cash sales:</span><span>${fmt(d.salesSummary.cashSales)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span>Card sales:</span><span>${fmt(d.salesSummary.cardSales)}</span></div>
+      ${d.salesSummary.splitSales > 0 ? `<div style="display:flex;justify-content:space-between"><span>Split sales:</span><span>${fmt(d.salesSummary.splitSales)}</span></div>` : ""}
+      <div style="display:flex;justify-content:space-between;font-weight:bold"><span>Total sales:</span><span>${fmt(d.salesSummary.totalSales)}</span></div>
+      <div style="border-top:1px dashed #000;margin:8px 0"></div>
+      <b>Cash Reconciliation</b>
+      <div style="display:flex;justify-content:space-between"><span>Opening cash:</span><span>${fmt(d.session.openingCash)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span>+ Cash sales:</span><span>${fmt(d.salesSummary.cashSales)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span>- Payouts:</span><span>-${fmt(d.totalPayouts)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:bold"><span>Expected cash:</span><span>${fmt(d.expectedCash)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span>Actual cash counted:</span><span>${fmt(d.session.actualCash ?? 0)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:bold"><span>Variance:</span><span>${variance >= 0 ? "+" : ""}${fmt(variance)}</span></div>
+      ${d.session.actualCard != null ? `<div style="display:flex;justify-content:space-between"><span>Actual card total:</span><span>${fmt(d.session.actualCard)}</span></div>` : ""}
+      ${d.payouts.length > 0 ? `
+      <div style="border-top:1px dashed #000;margin:8px 0"></div>
+      <b>Payouts (${d.payouts.length})</b>
+      ${d.payouts.map((p) => `<div style="display:flex;justify-content:space-between"><span>${p.reason}</span><span>-${fmt(p.amount)}</span></div>`).join("")}
+      ` : ""}
+      ${d.session.closingNotes ? `<div style="margin-top:6px;font-size:11px;color:#444">Notes: ${d.session.closingNotes}</div>` : ""}
+      ${withDetail && d.orders.length > 0 ? `
+      <div style="border-top:1px dashed #000;margin:8px 0"></div>
+      <b>Transactions (${d.orders.length})</b>
+      <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:11px">
+        <thead><tr style="border-bottom:1px solid #000">
+          <th style="text-align:left">Time</th>
+          <th style="text-align:left">Order</th>
+          <th style="text-align:left">Method</th>
+          <th style="text-align:right">Total</th>
+        </tr></thead>
+        <tbody>${orderRows}</tbody>
+      </table>` : ""}
+      <div style="border-top:1px dashed #000;margin:10px 0"></div>
+      <p style="text-align:center;font-size:10px;color:#888">Powered by MicroBooks</p>
+    </div>
+  `;
+}
+
+function printEodReport(d: SessionDetail, withDetail: boolean) {
+  const w = window.open("", "_blank", "width=420,height=700");
+  if (!w) return;
+  w.document.write(`<!DOCTYPE html><html><head><title>End of Day Report</title>
+    <style>body{margin:20px}@media print{body{margin:0;padding:10px}}</style>
+  </head><body>${buildReportHtml(d, withDetail)}
+    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}</script>
+  </body></html>`);
+  w.document.close();
+}
+
+/* ─── EOD Report Modal ─── */
+function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: () => void }) {
+  const { data, isLoading, isError } = useGetCashSession(sessionId);
+  const [expanded, setExpanded] = useState(false);
+
+  if (isLoading) {
+    return (
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-2xl">
+          <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading report…</div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-2xl">
+          <div className="flex flex-col items-center justify-center py-12 gap-3">
+            <p className="text-sm text-muted-foreground">Could not load report. Please check Shift History.</p>
+            <Button size="sm" onClick={onClose}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  const { session, payouts, orders, salesSummary, expectedCash, totalPayouts } = data;
+  const cashVariance = (session.actualCash ?? 0) - expectedCash;
+  const cardVariance = (session.actualCard ?? 0) - salesSummary.cardSales;
+
+  const detail: SessionDetail = { session, payouts, orders, salesSummary, expectedCash, totalPayouts };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            End of Day Report
+            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs ml-1">Shift Closed</Badge>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+          {/* Header info */}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-1">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Cashier</p>
+              <p className="font-medium">{session.staffName}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-1">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Shift Duration</p>
+              <p className="font-medium text-xs">{format(new Date(session.openedAt), "h:mm a")} → {session.closedAt ? format(new Date(session.closedAt), "h:mm a") : "—"}</p>
+            </div>
+          </div>
+
+          {/* Sales summary */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2 text-sm">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sales Summary ({orders.length} transactions)</p>
+            <div className="flex justify-between"><span className="flex items-center gap-1.5 text-muted-foreground"><Banknote className="h-3.5 w-3.5 text-emerald-400" />Cash</span><span className="font-mono font-medium">{formatCurrency(salesSummary.cashSales)}</span></div>
+            <div className="flex justify-between"><span className="flex items-center gap-1.5 text-muted-foreground"><CreditCard className="h-3.5 w-3.5 text-blue-400" />Card</span><span className="font-mono font-medium">{formatCurrency(salesSummary.cardSales)}</span></div>
+            {salesSummary.splitSales > 0 && <div className="flex justify-between"><span className="flex items-center gap-1.5 text-muted-foreground"><SplitSquareHorizontal className="h-3.5 w-3.5 text-purple-400" />Split</span><span className="font-mono font-medium">{formatCurrency(salesSummary.splitSales)}</span></div>}
+            <Separator />
+            <div className="flex justify-between font-bold"><span>Total Sales</span><span className="font-mono text-primary">{formatCurrency(salesSummary.totalSales)}</span></div>
+          </div>
+
+          {/* Cash reconciliation */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2 text-sm">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Cash Reconciliation</p>
+            <div className="flex justify-between"><span className="text-muted-foreground">Opening cash</span><span className="font-mono">{formatCurrency(session.openingCash)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">+ Cash sales</span><span className="font-mono">{formatCurrency(salesSummary.cashSales)}</span></div>
+            {totalPayouts > 0 && <div className="flex justify-between"><span className="text-muted-foreground">− Payouts</span><span className="font-mono text-amber-400">−{formatCurrency(totalPayouts)}</span></div>}
+            <Separator />
+            <div className="flex justify-between font-semibold"><span>Expected cash</span><span className="font-mono">{formatCurrency(expectedCash)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Actual cash counted</span><span className="font-mono">{formatCurrency(session.actualCash ?? 0)}</span></div>
+            <div className="flex justify-between font-bold">
+              <span>Cash variance</span>
+              <span className={cn("font-mono", cashVariance === 0 ? "text-emerald-400" : cashVariance > 0 ? "text-blue-400" : "text-red-400")}>
+                {cashVariance >= 0 ? "+" : ""}{formatCurrency(cashVariance)} {cashVariance === 0 ? "✓" : cashVariance > 0 ? "over" : "short"}
+              </span>
+            </div>
+            {session.actualCard != null && (
+              <>
+                <Separator />
+                <div className="flex justify-between"><span className="text-muted-foreground">Card sales (system)</span><span className="font-mono">{formatCurrency(salesSummary.cardSales)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Actual card total</span><span className="font-mono">{formatCurrency(session.actualCard)}</span></div>
+                <div className="flex justify-between font-bold">
+                  <span>Card variance</span>
+                  <span className={cn("font-mono", cardVariance === 0 ? "text-emerald-400" : cardVariance > 0 ? "text-blue-400" : "text-red-400")}>
+                    {cardVariance >= 0 ? "+" : ""}{formatCurrency(cardVariance)}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Payouts */}
+          {payouts.length > 0 && (
+            <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2 text-sm">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Payouts ({payouts.length})</p>
+              {payouts.map((p, i) => (
+                <div key={i} className="flex justify-between">
+                  <span className="text-muted-foreground">{p.reason}</span>
+                  <span className="font-mono text-amber-400">−{formatCurrency(p.amount)}</span>
+                </div>
+              ))}
+              <Separator />
+              <div className="flex justify-between font-semibold"><span>Total payouts</span><span className="font-mono text-amber-400">−{formatCurrency(totalPayouts)}</span></div>
+            </div>
+          )}
+
+          {/* Transaction detail (expandable) */}
+          {orders.length > 0 && (
+            <div className="rounded-lg border border-border bg-muted/20">
+              <button
+                className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold hover:bg-secondary/30 transition-colors rounded-lg"
+                onClick={() => setExpanded((e) => !e)}
+              >
+                <span className="flex items-center gap-2">
+                  <History className="h-3.5 w-3.5 text-muted-foreground" />
+                  Sales Detail ({orders.length} transactions)
+                </span>
+                <span className="text-xs text-muted-foreground">{expanded ? "▲ collapse" : "▼ expand"}</span>
+              </button>
+              {expanded && (
+                <div className="border-t border-border">
+                  <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 px-3 py-1.5 bg-secondary/30 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    <span>Time</span><span>Order</span><span>Method</span><span className="text-right">Total</span>
+                  </div>
+                  {orders.map((o) => (
+                    <div key={o.id} className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 px-3 py-2 text-sm border-t border-border/40">
+                      <span className="text-muted-foreground text-xs">{format(new Date(o.createdAt), "h:mm a")}</span>
+                      <span className="font-mono text-xs">{o.orderNumber}</span>
+                      <span className="capitalize text-xs text-muted-foreground">{o.paymentMethod}</span>
+                      <span className="font-mono text-right text-xs">{formatCurrency(o.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {session.closingNotes && (
+            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm">
+              <p className="text-xs font-semibold text-amber-400 mb-1">Notes</p>
+              <p className="text-muted-foreground">{session.closingNotes}</p>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-border mt-2">
+          <Button variant="outline" size="sm" onClick={() => printEodReport(detail, false)} className="flex-1 sm:flex-none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5 mr-1.5"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z"/></svg>
+            Print Summary
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => printEodReport(detail, true)} className="flex-1 sm:flex-none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5 mr-1.5"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z"/></svg>
+            Print with Sales Detail
+          </Button>
+          <Button size="sm" onClick={onClose} className="flex-1 sm:flex-none">Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ─── Active Session Panel ─── */
-function ActiveSessionPanel({ staffName }: { staffName: string }) {
+function ActiveSessionPanel({ staffName, onShiftClosed }: { staffName: string; onShiftClosed: (id: number) => void }) {
   const { data, isLoading, isError } = useGetCurrentCashSession({ query: { refetchInterval: 15000, retry: false } });
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
@@ -458,7 +710,7 @@ function ActiveSessionPanel({ staffName }: { staffName: string }) {
         expectedCash={expectedCash}
         salesSummary={salesSummary}
         onClose={() => setCloseOpen(false)}
-        onClosed={() => setCloseOpen(false)}
+        onClosed={(id) => { setCloseOpen(false); onShiftClosed(id); }}
       />
     </div>
   );
@@ -466,7 +718,7 @@ function ActiveSessionPanel({ staffName }: { staffName: string }) {
 
 /* ─── Session History Row ─── */
 function SessionHistoryItem({ sessionId }: { sessionId: number }) {
-  const { data } = useGetCashSession({ id: sessionId });
+  const { data } = useGetCashSession(sessionId);
   if (!data) return null;
   const { session, salesSummary, expectedCash } = data;
   const cashVariance = (session.actualCash ?? 0) - expectedCash;
@@ -499,6 +751,7 @@ export function CashManagement() {
   const openSession = useOpenCashSession();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [eodSessionId, setEodSessionId] = useState<number | null>(null);
 
   const hasOpenSession = !!current?.session;
   const closedSessions = (sessions ?? []).filter((s) => s.status === "closed").slice(0, 10);
@@ -551,7 +804,7 @@ export function CashManagement() {
           {loadingCurrent && !noSession ? (
             <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
           ) : hasOpenSession ? (
-            <ActiveSessionPanel staffName={current!.session.staffName} />
+            <ActiveSessionPanel staffName={current!.session.staffName} onShiftClosed={(id) => setEodSessionId(id)} />
           ) : (
             <OpenShiftPanel onOpen={handleOpenShift} />
           )}
@@ -574,6 +827,10 @@ export function CashManagement() {
           </div>
         )}
       </div>
+
+      {eodSessionId !== null && (
+        <EodReportModal sessionId={eodSessionId} onClose={() => setEodSessionId(null)} />
+      )}
     </div>
   );
 }

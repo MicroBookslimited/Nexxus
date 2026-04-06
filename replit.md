@@ -43,7 +43,7 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `/products` — Full product CRUD (add/edit/delete, search, category filter, variants, modifiers)
   - `/customers` — Customer management with loyalty points, order history, search
   - `/staff` — Staff Management (add/edit/deactivate, roles: admin/manager/cashier/kitchen, PIN-based auth)
-  - `/cash` — Cash Management (open shift with opening cash, record mid-shift payouts, close shift with end-of-day reconciliation, variance reporting, shift history sidebar)
+  - `/cash` — Cash Management (open shift with opening cash, record mid-shift payouts, close shift with end-of-day reconciliation, variance reporting, shift history sidebar, EOD report modal with Print Summary / Print with Sales Detail)
   - `/reports` — Business reports with date range presets, hourly chart, KPIs, CSV export
 
 ### API Server (`artifacts/api-server`)

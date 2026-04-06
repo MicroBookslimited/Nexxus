@@ -651,9 +651,19 @@ export interface CashSalesSummary {
   totalSales: number;
 }
 
+export interface CashOrderSummary {
+  id: number;
+  orderNumber: string;
+  total: number;
+  paymentMethod: string;
+  status: string;
+  createdAt: string;
+}
+
 export interface CashSessionDetail {
   session: CashSession;
   payouts: CashPayout[];
+  orders: CashOrderSummary[];
   salesSummary: CashSalesSummary;
   expectedCash: number;
   totalPayouts: number;

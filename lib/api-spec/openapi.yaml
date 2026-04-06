@@ -2580,6 +2580,30 @@ components:
         - splitSales
         - totalSales
 
+    CashOrderSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        orderNumber:
+          type: string
+        total:
+          type: number
+        paymentMethod:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - orderNumber
+        - total
+        - paymentMethod
+        - status
+        - createdAt
+
     CashSessionDetail:
       type: object
       properties:
@@ -2589,6 +2613,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CashPayout"
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/CashOrderSummary"
         salesSummary:
           $ref: "#/components/schemas/CashSalesSummary"
         expectedCash:
@@ -2598,6 +2626,7 @@ components:
       required:
         - session
         - payouts
+        - orders
         - salesSummary
         - expectedCash
         - totalPayouts

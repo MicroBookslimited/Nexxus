@@ -1500,6 +1500,16 @@ export const GetCurrentCashSessionResponse = zod.object({
       createdAt: zod.coerce.date(),
     }),
   ),
+  orders: zod.array(
+    zod.object({
+      id: zod.number(),
+      orderNumber: zod.string(),
+      total: zod.number(),
+      paymentMethod: zod.string(),
+      status: zod.string(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
   salesSummary: zod.object({
     cashSales: zod.number(),
     cardSales: zod.number(),
@@ -1538,6 +1548,16 @@ export const GetCashSessionResponse = zod.object({
       amount: zod.number(),
       reason: zod.string(),
       staffName: zod.string(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+  orders: zod.array(
+    zod.object({
+      id: zod.number(),
+      orderNumber: zod.string(),
+      total: zod.number(),
+      paymentMethod: zod.string(),
+      status: zod.string(),
       createdAt: zod.coerce.date(),
     }),
   ),
