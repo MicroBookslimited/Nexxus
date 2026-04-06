@@ -1,15 +1,17 @@
 import { Router, type IRouter } from "express";
-import { Resend } from "resend";
+import { SendMailClient } from "zeptomail";
 import { db, ordersTable, orderItemsTable, cashSessionsTable, cashPayoutsTable } from "@workspace/db";
 import { eq, and, gte, lte, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
 
-function getResend(): Resend | null {
-  const key = process.env["RESEND_API_KEY"];
-  if (!key) return null;
-  return new Resend(key);
+const ZEPTOMAIL_API_URL = "api.zeptomail.com/";
+
+function getZepto(): SendMailClient | null {
+  const token = process.env["ZEPTOMAIL_TOKEN"];
+  if (!token) return null;
+  return new SendMailClient({ url: ZEPTOMAIL_API_URL, token });
 }
 
 function fmt(n: number) {
@@ -247,9 +249,9 @@ const SendEodReportBody = z.object({
 });
 
 router.post("/email/receipt", async (req, res): Promise<void> => {
-  const resend = getResend();
-  if (!resend) {
-    res.status(503).json({ error: "Email service not configured. Please set RESEND_API_KEY." });
+  const zepto = getZepto();
+  if (!zepto) {
+    res.status(503).json({ error: "Email service not configured. Please set ZEPTOMAIL_TOKEN." });
     return;
   }
 
@@ -289,25 +291,23 @@ router.post("/email/receipt", async (req, res): Promise<void> => {
 
   const html = buildReceiptEmailHtml(orderData);
 
-  const { data, error } = await resend.emails.send({
-    from: "Nexus POS <receipts@resend.dev>",
-    to: [parsed.data.to],
-    subject: `Receipt — ${order.orderNumber}`,
-    html,
-  });
-
-  if (error) {
-    res.status(500).json({ error: "Failed to send email", details: error });
-    return;
+  try {
+    const response = await zepto.sendMail({
+      from: { address: "noreply@nexuspos.com", name: "Nexus POS" },
+      to: [{ email_address: { address: parsed.data.to } }],
+      subject: `Receipt — ${order.orderNumber}`,
+      htmlbody: html,
+    });
+    res.json({ success: true, messageId: (response as { data?: { message_id?: string } })?.data?.message_id });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to send email", details: String(err) });
   }
-
-  res.json({ success: true, messageId: data?.id });
 });
 
 router.post("/email/eod-report", async (req, res): Promise<void> => {
-  const resend = getResend();
-  if (!resend) {
-    res.status(503).json({ error: "Email service not configured. Please set RESEND_API_KEY." });
+  const zepto = getZepto();
+  if (!zepto) {
+    res.status(503).json({ error: "Email service not configured. Please set ZEPTOMAIL_TOKEN." });
     return;
   }
 
@@ -372,19 +372,17 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
 
   const dateLabel = new Date(session.openedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
-  const { data, error } = await resend.emails.send({
-    from: "Nexus POS <reports@resend.dev>",
-    to: [parsed.data.to],
-    subject: `End of Day Report — ${dateLabel} (${session.staffName})`,
-    html,
-  });
-
-  if (error) {
-    res.status(500).json({ error: "Failed to send email", details: error });
-    return;
+  try {
+    const response = await zepto.sendMail({
+      from: { address: "noreply@nexuspos.com", name: "Nexus POS" },
+      to: [{ email_address: { address: parsed.data.to } }],
+      subject: `End of Day Report — ${dateLabel} (${session.staffName})`,
+      htmlbody: html,
+    });
+    res.json({ success: true, messageId: (response as { data?: { message_id?: string } })?.data?.message_id });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to send email", details: String(err) });
   }
-
-  res.json({ success: true, messageId: data?.id });
 });
 
 export default router;
