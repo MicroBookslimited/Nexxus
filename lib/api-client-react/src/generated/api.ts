@@ -17,8 +17,13 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AddCashPayoutBody,
   AuthenticateStaffBody,
+  CashPayout,
+  CashSession,
+  CashSessionDetail,
   CategorySales,
+  CloseCashSessionBody,
   CompleteOrderBody,
   CreateCustomerBody,
   CreateHeldOrderBody,
@@ -50,6 +55,7 @@ import type {
   ListProductsParams,
   ListPurchasesParams,
   ModifierGroup,
+  OpenCashSessionBody,
   Order,
   PaymentMethodSales,
   Product,
@@ -5224,4 +5230,501 @@ export const useDeletePurchase = <
   TContext
 > => {
   return useMutation(getDeletePurchaseMutationOptions(options));
+};
+
+/**
+ * @summary List all cash sessions
+ */
+export const getListCashSessionsUrl = () => {
+  return `/api/cash/sessions`;
+};
+
+export const listCashSessions = async (
+  options?: RequestInit,
+): Promise<CashSession[]> => {
+  return customFetch<CashSession[]>(getListCashSessionsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCashSessionsQueryKey = () => {
+  return [`/api/cash/sessions`] as const;
+};
+
+export const getListCashSessionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCashSessions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCashSessions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListCashSessionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCashSessions>>
+  > = ({ signal }) => listCashSessions({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCashSessions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCashSessionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCashSessions>>
+>;
+export type ListCashSessionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all cash sessions
+ */
+
+export function useListCashSessions<
+  TData = Awaited<ReturnType<typeof listCashSessions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCashSessions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCashSessionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Open a new cash session (start shift)
+ */
+export const getOpenCashSessionUrl = () => {
+  return `/api/cash/sessions`;
+};
+
+export const openCashSession = async (
+  openCashSessionBody: OpenCashSessionBody,
+  options?: RequestInit,
+): Promise<CashSession> => {
+  return customFetch<CashSession>(getOpenCashSessionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(openCashSessionBody),
+  });
+};
+
+export const getOpenCashSessionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof openCashSession>>,
+    TError,
+    { data: BodyType<OpenCashSessionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof openCashSession>>,
+  TError,
+  { data: BodyType<OpenCashSessionBody> },
+  TContext
+> => {
+  const mutationKey = ["openCashSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof openCashSession>>,
+    { data: BodyType<OpenCashSessionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return openCashSession(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type OpenCashSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof openCashSession>>
+>;
+export type OpenCashSessionMutationBody = BodyType<OpenCashSessionBody>;
+export type OpenCashSessionMutationError = ErrorType<void>;
+
+/**
+ * @summary Open a new cash session (start shift)
+ */
+export const useOpenCashSession = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof openCashSession>>,
+    TError,
+    { data: BodyType<OpenCashSessionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof openCashSession>>,
+  TError,
+  { data: BodyType<OpenCashSessionBody> },
+  TContext
+> => {
+  return useMutation(getOpenCashSessionMutationOptions(options));
+};
+
+/**
+ * @summary Get the current open cash session with summary
+ */
+export const getGetCurrentCashSessionUrl = () => {
+  return `/api/cash/sessions/current`;
+};
+
+export const getCurrentCashSession = async (
+  options?: RequestInit,
+): Promise<CashSessionDetail> => {
+  return customFetch<CashSessionDetail>(getGetCurrentCashSessionUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCurrentCashSessionQueryKey = () => {
+  return [`/api/cash/sessions/current`] as const;
+};
+
+export const getGetCurrentCashSessionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCurrentCashSession>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentCashSession>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCurrentCashSessionQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCurrentCashSession>>
+  > = ({ signal }) => getCurrentCashSession({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentCashSession>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCurrentCashSessionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCurrentCashSession>>
+>;
+export type GetCurrentCashSessionQueryError = ErrorType<void>;
+
+/**
+ * @summary Get the current open cash session with summary
+ */
+
+export function useGetCurrentCashSession<
+  TData = Awaited<ReturnType<typeof getCurrentCashSession>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentCashSession>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCurrentCashSessionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get a cash session by ID with summary
+ */
+export const getGetCashSessionUrl = (id: number) => {
+  return `/api/cash/sessions/${id}`;
+};
+
+export const getCashSession = async (
+  id: number,
+  options?: RequestInit,
+): Promise<CashSessionDetail> => {
+  return customFetch<CashSessionDetail>(getGetCashSessionUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCashSessionQueryKey = (id: number) => {
+  return [`/api/cash/sessions/${id}`] as const;
+};
+
+export const getGetCashSessionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCashSession>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCashSession>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCashSessionQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCashSession>>> = ({
+    signal,
+  }) => getCashSession(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCashSession>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCashSessionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCashSession>>
+>;
+export type GetCashSessionQueryError = ErrorType<void>;
+
+/**
+ * @summary Get a cash session by ID with summary
+ */
+
+export function useGetCashSession<
+  TData = Awaited<ReturnType<typeof getCashSession>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCashSession>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCashSessionQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a payout to an open session
+ */
+export const getAddCashPayoutUrl = (id: number) => {
+  return `/api/cash/sessions/${id}/payouts`;
+};
+
+export const addCashPayout = async (
+  id: number,
+  addCashPayoutBody: AddCashPayoutBody,
+  options?: RequestInit,
+): Promise<CashPayout> => {
+  return customFetch<CashPayout>(getAddCashPayoutUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(addCashPayoutBody),
+  });
+};
+
+export const getAddCashPayoutMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addCashPayout>>,
+    TError,
+    { id: number; data: BodyType<AddCashPayoutBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addCashPayout>>,
+  TError,
+  { id: number; data: BodyType<AddCashPayoutBody> },
+  TContext
+> => {
+  const mutationKey = ["addCashPayout"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addCashPayout>>,
+    { id: number; data: BodyType<AddCashPayoutBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return addCashPayout(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddCashPayoutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addCashPayout>>
+>;
+export type AddCashPayoutMutationBody = BodyType<AddCashPayoutBody>;
+export type AddCashPayoutMutationError = ErrorType<void>;
+
+/**
+ * @summary Add a payout to an open session
+ */
+export const useAddCashPayout = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addCashPayout>>,
+    TError,
+    { id: number; data: BodyType<AddCashPayoutBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addCashPayout>>,
+  TError,
+  { id: number; data: BodyType<AddCashPayoutBody> },
+  TContext
+> => {
+  return useMutation(getAddCashPayoutMutationOptions(options));
+};
+
+/**
+ * @summary Close the session (end shift)
+ */
+export const getCloseCashSessionUrl = (id: number) => {
+  return `/api/cash/sessions/${id}/close`;
+};
+
+export const closeCashSession = async (
+  id: number,
+  closeCashSessionBody: CloseCashSessionBody,
+  options?: RequestInit,
+): Promise<CashSession> => {
+  return customFetch<CashSession>(getCloseCashSessionUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(closeCashSessionBody),
+  });
+};
+
+export const getCloseCashSessionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof closeCashSession>>,
+    TError,
+    { id: number; data: BodyType<CloseCashSessionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof closeCashSession>>,
+  TError,
+  { id: number; data: BodyType<CloseCashSessionBody> },
+  TContext
+> => {
+  const mutationKey = ["closeCashSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof closeCashSession>>,
+    { id: number; data: BodyType<CloseCashSessionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return closeCashSession(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CloseCashSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof closeCashSession>>
+>;
+export type CloseCashSessionMutationBody = BodyType<CloseCashSessionBody>;
+export type CloseCashSessionMutationError = ErrorType<void>;
+
+/**
+ * @summary Close the session (end shift)
+ */
+export const useCloseCashSession = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof closeCashSession>>,
+    TError,
+    { id: number; data: BodyType<CloseCashSessionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof closeCashSession>>,
+  TError,
+  { id: number; data: BodyType<CloseCashSessionBody> },
+  TContext
+> => {
+  return useMutation(getCloseCashSessionMutationOptions(options));
 };

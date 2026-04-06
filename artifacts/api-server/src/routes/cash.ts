@@ -9,19 +9,19 @@ const router: IRouter = Router();
 const OpenSessionBody = z.object({
   staffName: z.string().min(1),
   staffId: z.number().int().optional(),
-  openingCash: z.number().int().min(0),
+  openingCash: z.number().min(0),
 });
 
 const AddPayoutBody = z.object({
-  amount: z.number().int().min(1),
+  amount: z.number().min(0.01),
   reason: z.string().min(1),
   staffName: z.string().min(1),
 });
 
 const CloseSessionBody = z.object({
-  actualCash: z.number().int().min(0),
-  actualCard: z.number().int().min(0),
-  actualOther: z.number().int().min(0).optional(),
+  actualCash: z.number().min(0),
+  actualCard: z.number().min(0),
+  actualOther: z.number().min(0).optional(),
   closingNotes: z.string().optional(),
 });
 

@@ -34,6 +34,8 @@ tags:
     description: Multi-product purchase bill management
   - name: staff
     description: Staff accounts and roles
+  - name: cash
+    description: Cash drawer and shift management
 paths:
   /healthz:
     get:
@@ -1191,6 +1193,130 @@ paths:
       responses:
         "204":
           description: Deleted
+
+  /cash/sessions:
+    get:
+      operationId: listCashSessions
+      tags: [cash]
+      summary: List all cash sessions
+      responses:
+        "200":
+          description: List of cash sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CashSession"
+    post:
+      operationId: openCashSession
+      tags: [cash]
+      summary: Open a new cash session (start shift)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenCashSessionBody"
+      responses:
+        "201":
+          description: Session opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CashSession"
+        "409":
+          description: Session already open
+
+  /cash/sessions/current:
+    get:
+      operationId: getCurrentCashSession
+      tags: [cash]
+      summary: Get the current open cash session with summary
+      responses:
+        "200":
+          description: Current session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CashSessionDetail"
+        "404":
+          description: No open session
+
+  /cash/sessions/{id}:
+    get:
+      operationId: getCashSession
+      tags: [cash]
+      summary: Get a cash session by ID with summary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CashSessionDetail"
+        "404":
+          description: Not found
+
+  /cash/sessions/{id}/payouts:
+    post:
+      operationId: addCashPayout
+      tags: [cash]
+      summary: Add a payout to an open session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddCashPayoutBody"
+      responses:
+        "201":
+          description: Payout recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CashPayout"
+        "404":
+          description: Session not found
+
+  /cash/sessions/{id}/close:
+    post:
+      operationId: closeCashSession
+      tags: [cash]
+      summary: Close the session (end shift)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloseCashSessionBody"
+      responses:
+        "200":
+          description: Session closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CashSession"
+        "404":
+          description: Session not found
 
 components:
   schemas:
@@ -2377,3 +2503,143 @@ components:
       required:
         - billNumber
         - items
+
+    CashSession:
+      type: object
+      properties:
+        id:
+          type: integer
+        staffId:
+          type: integer
+        staffName:
+          type: string
+        openingCash:
+          type: number
+        status:
+          type: string
+          enum: [open, closed]
+        openedAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+        actualCash:
+          type: number
+        actualCard:
+          type: number
+        actualOther:
+          type: number
+        closingNotes:
+          type: string
+      required:
+        - id
+        - staffName
+        - openingCash
+        - status
+        - openedAt
+
+    CashPayout:
+      type: object
+      properties:
+        id:
+          type: integer
+        sessionId:
+          type: integer
+        amount:
+          type: number
+        reason:
+          type: string
+        staffName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - sessionId
+        - amount
+        - reason
+        - staffName
+        - createdAt
+
+    CashSalesSummary:
+      type: object
+      properties:
+        cashSales:
+          type: number
+        cardSales:
+          type: number
+        splitSales:
+          type: number
+        totalSales:
+          type: number
+      required:
+        - cashSales
+        - cardSales
+        - splitSales
+        - totalSales
+
+    CashSessionDetail:
+      type: object
+      properties:
+        session:
+          $ref: "#/components/schemas/CashSession"
+        payouts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CashPayout"
+        salesSummary:
+          $ref: "#/components/schemas/CashSalesSummary"
+        expectedCash:
+          type: number
+        totalPayouts:
+          type: number
+      required:
+        - session
+        - payouts
+        - salesSummary
+        - expectedCash
+        - totalPayouts
+
+    OpenCashSessionBody:
+      type: object
+      properties:
+        staffName:
+          type: string
+        staffId:
+          type: integer
+        openingCash:
+          type: number
+      required:
+        - staffName
+        - openingCash
+
+    AddCashPayoutBody:
+      type: object
+      properties:
+        amount:
+          type: number
+        reason:
+          type: string
+        staffName:
+          type: string
+      required:
+        - amount
+        - reason
+        - staffName
+
+    CloseCashSessionBody:
+      type: object
+      properties:
+        actualCash:
+          type: number
+        actualCard:
+          type: number
+        actualOther:
+          type: number
+        closingNotes:
+          type: string
+      required:
+        - actualCash
+        - actualCard

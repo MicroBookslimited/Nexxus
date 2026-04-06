@@ -613,6 +613,71 @@ export interface CreatePurchaseBillBody {
   items: CreatePurchaseBillItemBody[];
 }
 
+export type CashSessionStatus =
+  (typeof CashSessionStatus)[keyof typeof CashSessionStatus];
+
+export const CashSessionStatus = {
+  open: "open",
+  closed: "closed",
+} as const;
+
+export interface CashSession {
+  id: number;
+  staffId?: number;
+  staffName: string;
+  openingCash: number;
+  status: CashSessionStatus;
+  openedAt: string;
+  closedAt?: string;
+  actualCash?: number;
+  actualCard?: number;
+  actualOther?: number;
+  closingNotes?: string;
+}
+
+export interface CashPayout {
+  id: number;
+  sessionId: number;
+  amount: number;
+  reason: string;
+  staffName: string;
+  createdAt: string;
+}
+
+export interface CashSalesSummary {
+  cashSales: number;
+  cardSales: number;
+  splitSales: number;
+  totalSales: number;
+}
+
+export interface CashSessionDetail {
+  session: CashSession;
+  payouts: CashPayout[];
+  salesSummary: CashSalesSummary;
+  expectedCash: number;
+  totalPayouts: number;
+}
+
+export interface OpenCashSessionBody {
+  staffName: string;
+  staffId?: number;
+  openingCash: number;
+}
+
+export interface AddCashPayoutBody {
+  amount: number;
+  reason: string;
+  staffName: string;
+}
+
+export interface CloseCashSessionBody {
+  actualCash: number;
+  actualCard: number;
+  actualOther?: number;
+  closingNotes?: string;
+}
+
 export type ListProductsParams = {
   category?: string;
   search?: string;

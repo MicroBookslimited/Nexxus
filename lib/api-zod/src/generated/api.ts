@@ -1445,3 +1445,149 @@ export const CreatePurchaseBody = zod.object({
 export const DeletePurchaseParams = zod.object({
   id: zod.coerce.number(),
 });
+
+/**
+ * @summary List all cash sessions
+ */
+export const ListCashSessionsResponseItem = zod.object({
+  id: zod.number(),
+  staffId: zod.number().optional(),
+  staffName: zod.string(),
+  openingCash: zod.number(),
+  status: zod.enum(["open", "closed"]),
+  openedAt: zod.coerce.date(),
+  closedAt: zod.coerce.date().optional(),
+  actualCash: zod.number().optional(),
+  actualCard: zod.number().optional(),
+  actualOther: zod.number().optional(),
+  closingNotes: zod.string().optional(),
+});
+export const ListCashSessionsResponse = zod.array(ListCashSessionsResponseItem);
+
+/**
+ * @summary Open a new cash session (start shift)
+ */
+export const OpenCashSessionBody = zod.object({
+  staffName: zod.string(),
+  staffId: zod.number().optional(),
+  openingCash: zod.number(),
+});
+
+/**
+ * @summary Get the current open cash session with summary
+ */
+export const GetCurrentCashSessionResponse = zod.object({
+  session: zod.object({
+    id: zod.number(),
+    staffId: zod.number().optional(),
+    staffName: zod.string(),
+    openingCash: zod.number(),
+    status: zod.enum(["open", "closed"]),
+    openedAt: zod.coerce.date(),
+    closedAt: zod.coerce.date().optional(),
+    actualCash: zod.number().optional(),
+    actualCard: zod.number().optional(),
+    actualOther: zod.number().optional(),
+    closingNotes: zod.string().optional(),
+  }),
+  payouts: zod.array(
+    zod.object({
+      id: zod.number(),
+      sessionId: zod.number(),
+      amount: zod.number(),
+      reason: zod.string(),
+      staffName: zod.string(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+  salesSummary: zod.object({
+    cashSales: zod.number(),
+    cardSales: zod.number(),
+    splitSales: zod.number(),
+    totalSales: zod.number(),
+  }),
+  expectedCash: zod.number(),
+  totalPayouts: zod.number(),
+});
+
+/**
+ * @summary Get a cash session by ID with summary
+ */
+export const GetCashSessionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCashSessionResponse = zod.object({
+  session: zod.object({
+    id: zod.number(),
+    staffId: zod.number().optional(),
+    staffName: zod.string(),
+    openingCash: zod.number(),
+    status: zod.enum(["open", "closed"]),
+    openedAt: zod.coerce.date(),
+    closedAt: zod.coerce.date().optional(),
+    actualCash: zod.number().optional(),
+    actualCard: zod.number().optional(),
+    actualOther: zod.number().optional(),
+    closingNotes: zod.string().optional(),
+  }),
+  payouts: zod.array(
+    zod.object({
+      id: zod.number(),
+      sessionId: zod.number(),
+      amount: zod.number(),
+      reason: zod.string(),
+      staffName: zod.string(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+  salesSummary: zod.object({
+    cashSales: zod.number(),
+    cardSales: zod.number(),
+    splitSales: zod.number(),
+    totalSales: zod.number(),
+  }),
+  expectedCash: zod.number(),
+  totalPayouts: zod.number(),
+});
+
+/**
+ * @summary Add a payout to an open session
+ */
+export const AddCashPayoutParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AddCashPayoutBody = zod.object({
+  amount: zod.number(),
+  reason: zod.string(),
+  staffName: zod.string(),
+});
+
+/**
+ * @summary Close the session (end shift)
+ */
+export const CloseCashSessionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CloseCashSessionBody = zod.object({
+  actualCash: zod.number(),
+  actualCard: zod.number(),
+  actualOther: zod.number().optional(),
+  closingNotes: zod.string().optional(),
+});
+
+export const CloseCashSessionResponse = zod.object({
+  id: zod.number(),
+  staffId: zod.number().optional(),
+  staffName: zod.string(),
+  openingCash: zod.number(),
+  status: zod.enum(["open", "closed"]),
+  openedAt: zod.coerce.date(),
+  closedAt: zod.coerce.date().optional(),
+  actualCash: zod.number().optional(),
+  actualCard: zod.number().optional(),
+  actualOther: zod.number().optional(),
+  closingNotes: zod.string().optional(),
+});

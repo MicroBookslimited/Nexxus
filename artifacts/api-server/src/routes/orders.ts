@@ -188,7 +188,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     .insert(ordersTable)
     .values({
       orderNumber,
-      status: isOpenOrder ? "open" : "completed",
+      status: isOpenOrder ? "open" : "pending",
       subtotal,
       discountType: parsed.data.discountType,
       discountAmount: parsed.data.discountAmount,
@@ -205,7 +205,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       orderType: parsed.data.orderType ?? "counter",
       loyaltyPointsRedeemed: pointsToRedeem > 0 ? pointsToRedeem : undefined,
       loyaltyDiscount: loyaltyDiscount > 0 ? loyaltyDiscount : undefined,
-      completedAt: isOpenOrder ? undefined : new Date(),
+      completedAt: undefined,
     })
     .returning();
 
@@ -340,19 +340,22 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Order not found" });
     return;
   }
-  if (existing.status !== "open") {
-    res.status(400).json({ error: "Order is not in open status" });
+  if (existing.paymentMethod) {
+    res.status(400).json({ error: "Order is already paid" });
+    return;
+  }
+  if (!["open", "pending", "preparing", "ready"].includes(existing.status)) {
+    res.status(400).json({ error: "Order cannot be charged in its current status" });
     return;
   }
 
   const [order] = await db
     .update(ordersTable)
     .set({
-      status: "completed",
+      status: "pending",
       paymentMethod: parsed.data.paymentMethod,
       splitCardAmount: parsed.data.splitCardAmount,
       splitCashAmount: parsed.data.splitCashAmount,
-      completedAt: new Date(),
     })
     .where(eq(ordersTable.id, params.data.id))
     .returning();

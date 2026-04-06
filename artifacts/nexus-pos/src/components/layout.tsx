@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2, Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2, Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/tables", label: "Tables", icon: UtensilsCrossed },
   { href: "/kitchen", label: "Kitchen", icon: ChefHat },
   { href: "/orders", label: "Orders", icon: ListOrdered },
+  { href: "/cash", label: "Cash", icon: Coins },
   { href: "/products", label: "Products", icon: Package },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/staff", label: "Staff", icon: UserCog },
