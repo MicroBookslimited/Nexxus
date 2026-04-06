@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { diningTablesTable } from "@workspace/db";
+import { diningTablesTable, ordersTable } from "@workspace/db";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -26,14 +26,28 @@ const UpdateTableBody = z.object({
 });
 
 router.get("/tables", async (req, res): Promise<void> => {
-  const tables = await db
-    .select()
+  const rows = await db
+    .select({
+      id: diningTablesTable.id,
+      name: diningTablesTable.name,
+      capacity: diningTablesTable.capacity,
+      color: diningTablesTable.color,
+      status: diningTablesTable.status,
+      currentOrderId: diningTablesTable.currentOrderId,
+      currentOrderNumber: ordersTable.orderNumber,
+      positionX: diningTablesTable.positionX,
+      positionY: diningTablesTable.positionY,
+      isActive: diningTablesTable.isActive,
+      createdAt: diningTablesTable.createdAt,
+    })
     .from(diningTablesTable)
+    .leftJoin(ordersTable, eq(diningTablesTable.currentOrderId, ordersTable.id))
     .orderBy(diningTablesTable.name);
 
-  res.json(tables.map(t => ({
+  res.json(rows.map(t => ({
     ...t,
     currentOrderId: t.currentOrderId ?? undefined,
+    currentOrderNumber: t.currentOrderNumber ?? undefined,
   })));
 });
 

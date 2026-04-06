@@ -393,6 +393,7 @@ export interface DiningTable {
   capacity: number;
   status: DiningTableStatus;
   currentOrderId?: number;
+  currentOrderNumber?: string;
   color: string;
   positionX: number;
   positionY: number;

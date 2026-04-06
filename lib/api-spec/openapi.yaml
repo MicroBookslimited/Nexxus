@@ -1987,6 +1987,8 @@ components:
           enum: [available, occupied, reserved]
         currentOrderId:
           type: integer
+        currentOrderNumber:
+          type: string
         color:
           type: string
         positionX:

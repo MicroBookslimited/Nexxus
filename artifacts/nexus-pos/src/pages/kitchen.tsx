@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useListKitchenOrders,
   useUpdateKitchenOrderStatus,
@@ -20,6 +20,26 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+
+const TARGET_MINUTES = 15;
+
+function useCountdown(createdAt: string) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const startMs = new Date(createdAt).getTime();
+  const targetMs = startMs + TARGET_MINUTES * 60 * 1000;
+  const remainingMs = targetMs - now;
+  const isOverdue = remainingMs < 0;
+  const absMs = Math.abs(remainingMs);
+  const mins = Math.floor(absMs / 60000);
+  const secs = Math.floor((absMs % 60000) / 1000);
+  const display = `${isOverdue ? "+" : ""}${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  const isWarning = !isOverdue && remainingMs < 5 * 60 * 1000;
+  return { display, isOverdue, isWarning };
+}
 
 const STATUS_CONFIG: Record<string, { label: string; next: string; nextLabel: string; color: string; headerColor: string }> = {
   pending: {
@@ -55,10 +75,9 @@ function KitchenCard({
   filteredItems?: KitchenOrder["items"];
 }) {
   const config = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending;
-  const age = formatDistanceToNow(new Date(order.createdAt), { addSuffix: false });
-  const ageMinutes = Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000);
-  const isUrgent = ageMinutes >= 10;
+  const { display: countdown, isOverdue, isWarning } = useCountdown(order.createdAt);
   const items = filteredItems ?? order.items;
+  const isCompleted = order.status === "ready";
 
   return (
     <div className={cn("rounded-xl bg-card border border-border flex flex-col shadow-sm transition-all", config.headerColor)}>
@@ -83,10 +102,22 @@ function KitchenCard({
               )}
             </div>
           </div>
-          <div className={cn("flex items-center gap-1 text-xs font-mono", isUrgent ? "text-red-400" : "text-muted-foreground")}>
-            {isUrgent ? <AlertCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
-            {age}
-          </div>
+          {!isCompleted && (
+            <div className={cn(
+              "flex flex-col items-end gap-0.5",
+            )}>
+              <div className={cn(
+                "flex items-center gap-1 text-sm font-mono font-bold tabular-nums",
+                isOverdue ? "text-red-400" : isWarning ? "text-amber-400" : "text-emerald-400",
+              )}>
+                {isOverdue ? <AlertCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                {countdown}
+              </div>
+              <p className="text-[10px] text-muted-foreground/60">
+                {isOverdue ? "overdue" : "remaining"}
+              </p>
+            </div>
+          )}
         </div>
         {order.notes && (
           <p className="mt-2 text-xs bg-amber-500/10 text-amber-400 rounded px-2 py-1 border border-amber-500/20">

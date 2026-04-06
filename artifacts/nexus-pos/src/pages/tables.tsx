@@ -41,8 +41,10 @@ function TableCard({ table, onEdit, onDelete }: { table: DiningTable; onEdit: (t
           {statusMeta.label}
         </Badge>
       </div>
-      {table.currentOrderId && (
-        <p className="text-xs text-muted-foreground font-mono">Order #{table.currentOrderId}</p>
+      {(table.currentOrderNumber || table.currentOrderId) && (
+        <p className="text-xs text-muted-foreground font-mono">
+          Order {table.currentOrderNumber ?? `#${table.currentOrderId}`}
+        </p>
       )}
       <div className="flex gap-2 mt-auto pt-2 border-t border-border">
         <Button size="sm" variant="ghost" className="flex-1 h-8 text-xs" onClick={() => onEdit(table)}>
