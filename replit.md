@@ -45,6 +45,10 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `/staff` — Staff Management (add/edit/deactivate, roles: admin/manager/cashier/kitchen, PIN-based auth)
   - `/cash` — Cash Management (open shift with opening cash, record mid-shift payouts, close shift with end-of-day reconciliation, variance reporting, shift history sidebar, EOD report modal with Print Summary / Print with Sales Detail)
   - `/reports` — Business reports with date range presets, hourly chart, KPIs, CSV export
+  - `/settings` — Admin Settings (Business Info, Receipt Settings, Email Provider selection)
+  - `/subscription` — Subscription management page (plan cards, PayPal + PowerTranz payment)
+  - `/signup` — 5-step SaaS onboarding wizard (Account → Business → Plan → Payment → Launch)
+  - `/superadmin` — Super Admin Panel (separate login, tenant management, stats, plan override)
 
 ### API Server (`artifacts/api-server`)
 - **Type**: Express 5 REST API
@@ -78,6 +82,26 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `GET /api/purchases?productId=X` — List purchase records (optionally filtered by product)
   - `POST /api/purchases` — Record a stock purchase (auto-increments product stockCount, sets inStock=true)
   - `DELETE /api/purchases/:id` — Delete a purchase record
+
+## SaaS Layer
+
+### Authentication
+- Tenant auth uses JWT (signed with `SESSION_SECRET`). Token stored in `localStorage` as `nexus_tenant_token`.
+- Superadmin auth uses JWT with `type: "superadmin"`. Token stored as `nexus_superadmin_token`.
+- Default superadmin creds: `SUPERADMIN_EMAIL` (default: admin@nexuspos.com) / `SUPERADMIN_PASSWORD` (default: NexusAdmin2024!)
+
+### Payment Providers
+- **PayPal**: Backend uses PayPal Orders API v2. Frontend uses `@paypal/paypal-js` Smart Buttons.
+  - Requires: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (server), `VITE_PAYPAL_CLIENT_ID` (frontend)
+  - Set `PAYPAL_ENV=production` for live mode (default: sandbox)
+- **PowerTranz**: Direct REST API card payment (popular in Caribbean).
+  - Requires: `POWERTRANZ_SPID`, `POWERTRANZ_SPPASSWORD`
+  - Set `POWERTRANZ_ENV=production` for live endpoint (default: staging)
+
+### Subscription Plans (seeded automatically)
+- **Starter** $29/mo | $290/yr — 5 staff, 100 products, 1 location
+- **Professional** $79/mo | $790/yr — 15 staff, 500 products, 3 locations
+- **Enterprise** $199/mo | $1990/yr — unlimited
 
 ## Database Schema
 

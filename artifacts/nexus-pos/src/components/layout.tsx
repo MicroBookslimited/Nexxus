@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2, Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2, Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings, CreditCard } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: "/staff", label: "Staff", icon: UserCog },
   { href: "/reports", label: "Reports", icon: BarChart2 },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/subscription", label: "Plan", icon: CreditCard },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {

@@ -15,6 +15,10 @@ import purchaseBillsRouter from "./purchase-bills";
 import cashRouter from "./cash";
 import emailRouter from "./email";
 import settingsRouter from "./settings";
+import saasAuthRouter from "./saas-auth";
+import plansRouter from "./plans";
+import billingRouter from "./billing";
+import superadminRouter from "./superadmin";
 
 const router: IRouter = Router();
 
@@ -34,5 +38,9 @@ router.use(purchaseBillsRouter);
 router.use(cashRouter);
 router.use(emailRouter);
 router.use(settingsRouter);
+router.use(saasAuthRouter);
+router.use(plansRouter);
+router.use(billingRouter);
+router.use(superadminRouter);
 
 export default router;
