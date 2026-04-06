@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/landing/"
+previewPath = "/"
 title = "Nexus POS — Landing Page"
 version = "1.0.0"
 id = "artifacts/nexus-landing"
@@ -11,7 +11,7 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/landing/" ]
+paths = [ "/" ]
 localPort = 21189
 
 [services.development]
@@ -28,4 +28,4 @@ to = "/index.html"
 
 [services.env]
 PORT = "21189"
-BASE_PATH = "/landing/"
+BASE_PATH = "/"

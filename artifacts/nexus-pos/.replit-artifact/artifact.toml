@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/"
+previewPath = "/app/"
 title = "Nexus POS"
 version = "1.0.0"
 id = "artifacts/nexus-pos"
@@ -11,7 +11,7 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/" ]
+paths = [ "/app/" ]
 localPort = 23661
 
 [services.development]
@@ -28,4 +28,4 @@ to = "/index.html"
 
 [services.env]
 PORT = "23661"
-BASE_PATH = "/"
+BASE_PATH = "/app/"

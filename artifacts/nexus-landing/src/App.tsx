@@ -3,7 +3,7 @@ import "./index.css";
 
 const BASE_URL = import.meta.env.BASE_URL;
 
-const POS_URL = "/";
+const POS_URL = "/app/";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 function Icon({ name, cls = "", style }: { name: string; cls?: string; style?: React.CSSProperties }) {
@@ -173,7 +173,7 @@ function Navbar() {
           >
             Sign In
           </a>
-          <a href={`${POS_URL}onboarding`}
+          <a href={`${POS_URL}signup`}
             className="text-sm font-semibold px-5 py-2 rounded-lg text-white gradient-blue transition-all hover:opacity-90 hover:shadow-lg"
           >
             Start Free Trial
@@ -194,7 +194,7 @@ function Navbar() {
               {l.label}
             </a>
           ))}
-          <a href={`${POS_URL}onboarding`}
+          <a href={`${POS_URL}signup`}
             className="text-sm font-semibold px-5 py-2.5 rounded-lg text-white text-center gradient-blue"
             onClick={() => setOpen(false)}
           >
@@ -239,7 +239,7 @@ function Hero() {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-          <a href={`${POS_URL}onboarding`}
+          <a href={`${POS_URL}signup`}
             className="flex items-center gap-2 px-8 py-4 rounded-xl font-semibold text-white gradient-blue text-base hover:opacity-90 transition-all"
             style={{ boxShadow: "0 0 40px rgba(59,130,246,0.3)" }}
           >
@@ -486,7 +486,7 @@ function HowItWorks() {
           ))}
         </div>
         <div className="text-center mt-12">
-          <a href={`${POS_URL}onboarding`}
+          <a href={`${POS_URL}signup`}
             className="inline-flex items-center gap-2 px-8 py-4 rounded-xl font-semibold text-white gradient-blue text-base hover:opacity-90 transition-all"
           >
             Get Started Now
@@ -612,7 +612,7 @@ function Pricing() {
                 </div>
                 <p className="text-sm" style={{ color: "#64748b" }}>{p.desc}</p>
               </div>
-              <a href={`${POS_URL}onboarding`}
+              <a href={`${POS_URL}signup`}
                 className="block w-full py-3 rounded-xl text-center text-sm font-semibold mb-6 transition-all hover:opacity-90"
                 style={p.highlight
                   ? { background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", color: "#fff" }
@@ -777,7 +777,7 @@ function CTA() {
               Join thousands of businesses already running on Nexus POS. Start your free 14-day trial today — no credit card, no commitment.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a href={`${POS_URL}onboarding`}
+              <a href={`${POS_URL}signup`}
                 className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-semibold text-white gradient-blue text-base hover:opacity-90 transition-all"
               >
                 Start Free Trial
