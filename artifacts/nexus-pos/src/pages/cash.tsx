@@ -212,7 +212,7 @@ function CloseShiftDialog({
   onClosed: (closedSessionId: number) => void;
 }) {
   const [actualCash, setActualCash] = useState("");
-  const [actualCard, setActualCard] = useState("");
+  const [actualCard, setActualCard] = useState(() => salesSummary.cardSales.toFixed(2));
   const [notes, setNotes] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -224,7 +224,7 @@ function CloseShiftDialog({
   const cardVariance = parsedCard - salesSummary.cardSales;
 
   const handleClose = () => {
-    if (actualCash === "" || actualCard === "") return;
+    if (actualCash === "") return;
     closeSession.mutate(
       { id: sessionId, data: { actualCash: parsedCash, actualCard: parsedCard, closingNotes: notes || undefined } },
       {
@@ -303,7 +303,7 @@ function CloseShiftDialog({
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             onClick={handleClose}
-            disabled={actualCash === "" || actualCard === "" || closeSession.isPending}
+            disabled={actualCash === "" || closeSession.isPending}
             className="bg-emerald-600 hover:bg-emerald-700 text-white"
           >
             <CheckCircle2 className="h-4 w-4 mr-2" />
