@@ -1,14 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import {
   Check, CreditCard, Zap, Calendar, AlertTriangle,
-  ArrowUpRight, RefreshCw, ChevronDown,
+  ArrowUpRight, RefreshCw, Upload, Banknote, X, FileCheck, Clock,
 } from "lucide-react";
 import {
   TENANT_TOKEN_KEY, saasMe, getPlans, createPayPalOrder, capturePayPalOrder,
-  initiatePowerTranz, type Plan, type Tenant, type Subscription,
+  initiatePowerTranz, getBankAccounts, submitBankTransferProof, getMyBankTransferProofs,
+  type Plan, type Tenant, type Subscription, type BankAccount, type BankTransferProofRow,
 } from "@/lib/saas-api";
 import { loadScript } from "@paypal/paypal-js";
+
+type PayMethod = "paypal" | "powertranz" | "bank_transfer";
 
 export function SubscriptionPage() {
   const [, navigate] = useLocation();
@@ -20,26 +23,42 @@ export function SubscriptionPage() {
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [showPayment, setShowPayment] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"paypal" | "powertranz">("paypal");
+  const [paymentMethod, setPaymentMethod] = useState<PayMethod>("paypal");
   const [card, setCard] = useState({ number: "", expiry: "", cvv: "", name: "" });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [paypalRendered, setPaypalRendered] = useState(false);
 
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [myProofs, setMyProofs] = useState<BankTransferProofRow[]>([]);
+  const [selectedBank, setSelectedBank] = useState<number | null>(null);
+  const [transferRef, setTransferRef] = useState("");
+  const [transferNotes, setTransferNotes] = useState("");
+  const [proofFile, setProofFile] = useState<{ name: string; type: string; data: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function reload() {
+    const me = await saasMe();
+    setTenant(me.tenant);
+    setSubscription(me.subscription ?? null);
+    setCurrentPlan(me.plan ?? null);
+  }
+
   useEffect(() => {
     const token = localStorage.getItem(TENANT_TOKEN_KEY);
     if (!token) { navigate("/signup"); return; }
 
-    Promise.all([saasMe(), getPlans()])
-      .then(([me, p]) => {
+    Promise.all([saasMe(), getPlans(), getBankAccounts(), getMyBankTransferProofs()])
+      .then(([me, p, ba, proofs]) => {
         setTenant(me.tenant);
         setSubscription(me.subscription ?? null);
         setCurrentPlan(me.plan ?? null);
         setPlans(p);
-        if (me.subscription?.billingCycle) {
-          setBillingCycle(me.subscription.billingCycle as "monthly" | "annual");
-        }
+        setBankAccounts(ba);
+        setMyProofs(proofs);
+        if (me.subscription?.billingCycle) setBillingCycle(me.subscription.billingCycle as "monthly" | "annual");
+        if (ba.length > 0 && ba[0]) setSelectedBank(ba[0].id);
       })
       .catch(() => navigate("/signup"))
       .finally(() => setLoading(false));
@@ -61,8 +80,7 @@ export function SubscriptionPage() {
             await capturePayPalOrder(data.orderID, selectedPlan.slug, billingCycle);
             setSuccess(`Successfully subscribed to ${selectedPlan.name}!`);
             setShowPayment(false);
-            const me = await saasMe();
-            setTenant(me.tenant); setSubscription(me.subscription); setCurrentPlan(me.plan ?? null);
+            await reload();
           } catch (e) { setError(String(e)); }
           finally { setIsProcessing(false); }
         },
@@ -77,17 +95,11 @@ export function SubscriptionPage() {
     if (!card.number || !card.expiry || !card.cvv || !card.name) { setError("Please fill in all card details."); return; }
     setError(""); setIsProcessing(true);
     try {
-      const res = await initiatePowerTranz({
-        planSlug: selectedPlan.slug, billingCycle,
-        cardNumber: card.number, cardExpiry: card.expiry,
-        cardCvv: card.cvv, cardholderName: card.name,
-        returnUrl: window.location.href,
-      });
+      const res = await initiatePowerTranz({ planSlug: selectedPlan.slug, billingCycle, cardNumber: card.number, cardExpiry: card.expiry, cardCvv: card.cvv, cardholderName: card.name, returnUrl: window.location.href });
       if (res.approved) {
         setSuccess(`Successfully subscribed to ${selectedPlan.name}!`);
         setShowPayment(false);
-        const me = await saasMe();
-        setTenant(me.tenant); setSubscription(me.subscription); setCurrentPlan(me.plan ?? null);
+        await reload();
       } else {
         setError(`Payment declined (code: ${res.responseCode ?? "unknown"}).`);
       }
@@ -95,34 +107,55 @@ export function SubscriptionPage() {
     finally { setIsProcessing(false); }
   }
 
-  const statusColor: Record<string, string> = {
-    active: "text-green-400",
-    trial: "text-blue-400",
-    cancelled: "text-[#475569]",
-    past_due: "text-amber-400",
-  };
-  const planColors: Record<string, string> = {
-    starter: "border-[#3b82f6]/40 hover:border-[#3b82f6]",
-    professional: "border-purple-500/40 hover:border-purple-500",
-    enterprise: "border-amber-500/40 hover:border-amber-500",
-  };
-  const planAccents: Record<string, string> = {
-    starter: "bg-[#3b82f6]/10 text-[#3b82f6]",
-    professional: "bg-purple-500/10 text-purple-400",
-    enterprise: "bg-amber-500/10 text-amber-400",
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0f1729] flex items-center justify-center">
-        <RefreshCw size={24} className="animate-spin text-[#3b82f6]" />
-      </div>
-    );
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) { setError("File must be under 8 MB."); return; }
+    const allowedTypes = ["application/pdf", "image/jpeg", "image/jpg"];
+    if (!allowedTypes.includes(file.type)) { setError("Only PDF and JPG files are allowed."); return; }
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(",")[1] ?? "";
+      setProofFile({ name: file.name, type: file.type.includes("pdf") ? "pdf" : "jpg", data: base64 });
+    };
+    reader.readAsDataURL(file);
   }
+
+  async function handleBankTransferSubmit() {
+    if (!selectedPlan || !selectedBank) { setError("Please select a plan and bank account."); return; }
+    if (!proofFile) { setError("Please upload proof of payment."); return; }
+    setError(""); setIsProcessing(true);
+    try {
+      await submitBankTransferProof({
+        planSlug: selectedPlan.slug,
+        billingCycle,
+        bankAccountId: selectedBank,
+        referenceNumber: transferRef || undefined,
+        notes: transferNotes || undefined,
+        proofFileName: proofFile.name,
+        proofFileType: proofFile.type,
+        proofFileData: proofFile.data,
+      });
+      setSuccess("Payment proof submitted! Our team will review it and activate your subscription shortly.");
+      setShowPayment(false);
+      const proofs = await getMyBankTransferProofs();
+      setMyProofs(proofs);
+    } catch (e) { setError(String(e)); }
+    finally { setIsProcessing(false); }
+  }
+
+  const statusColor: Record<string, string> = { active: "text-green-400", trial: "text-blue-400", cancelled: "text-[#475569]", past_due: "text-amber-400" };
+  const planColors: Record<string, string> = { starter: "border-[#3b82f6]/40 hover:border-[#3b82f6]", professional: "border-purple-500/40 hover:border-purple-500", enterprise: "border-amber-500/40 hover:border-amber-500" };
+  const planAccents: Record<string, string> = { starter: "bg-[#3b82f6]/10 text-[#3b82f6]", professional: "bg-purple-500/10 text-purple-400", enterprise: "bg-amber-500/10 text-amber-400" };
+
+  if (loading) return <div className="min-h-screen bg-[#0f1729] flex items-center justify-center"><RefreshCw size={24} className="animate-spin text-[#3b82f6]" /></div>;
 
   const trialEnd = subscription?.trialEndsAt ? new Date(subscription.trialEndsAt) : null;
   const periodEnd = subscription?.currentPeriodEnd ? new Date(subscription.currentPeriodEnd) : null;
   const daysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / 86400000)) : null;
+  const pendingProof = myProofs.find(p => p.status === "pending");
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -136,8 +169,14 @@ export function SubscriptionPage() {
           <Check size={16} /> {success}
         </div>
       )}
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm mb-6">{error}</div>
+      {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm mb-6">{error}</div>}
+
+      {/* Pending bank transfer notice */}
+      {pendingProof && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 text-amber-400 text-sm mb-6 flex items-center gap-2">
+          <Clock size={16} />
+          <span>Your bank transfer for <strong>{pendingProof.planName}</strong> is pending review. You'll be notified once activated.</span>
+        </div>
       )}
 
       {/* Current Status */}
@@ -154,9 +193,7 @@ export function SubscriptionPage() {
           </div>
           {currentPlan && (
             <div className="text-right">
-              <div className="text-2xl font-bold text-white">
-                ${subscription?.billingCycle === "annual" ? currentPlan.priceAnnual : currentPlan.priceMonthly}
-              </div>
+              <div className="text-2xl font-bold text-white">${subscription?.billingCycle === "annual" ? currentPlan.priceAnnual : currentPlan.priceMonthly}</div>
               <div className="text-sm text-[#94a3b8]">/{subscription?.billingCycle === "annual" ? "year" : "month"}</div>
             </div>
           )}
@@ -178,18 +215,16 @@ export function SubscriptionPage() {
 
         {currentPlan && (
           <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-            <div className="bg-[#0f1729] rounded-lg p-3 text-center">
-              <div className="text-white font-semibold">{currentPlan.maxStaff === 9999 ? "∞" : currentPlan.maxStaff}</div>
-              <div className="text-[#475569] text-xs">Staff</div>
-            </div>
-            <div className="bg-[#0f1729] rounded-lg p-3 text-center">
-              <div className="text-white font-semibold">{currentPlan.maxProducts === 9999 ? "∞" : currentPlan.maxProducts}</div>
-              <div className="text-[#475569] text-xs">Products</div>
-            </div>
-            <div className="bg-[#0f1729] rounded-lg p-3 text-center">
-              <div className="text-white font-semibold">{currentPlan.maxLocations === 9999 ? "∞" : currentPlan.maxLocations}</div>
-              <div className="text-[#475569] text-xs">Locations</div>
-            </div>
+            {[
+              { label: "Staff", value: currentPlan.maxStaff === 9999 ? "∞" : String(currentPlan.maxStaff) },
+              { label: "Products", value: currentPlan.maxProducts === 9999 ? "∞" : String(currentPlan.maxProducts) },
+              { label: "Locations", value: currentPlan.maxLocations === 9999 ? "∞" : String(currentPlan.maxLocations) },
+            ].map(c => (
+              <div key={c.label} className="bg-[#0f1729] rounded-lg p-3 text-center">
+                <div className="text-white font-semibold">{c.value}</div>
+                <div className="text-[#475569] text-xs">{c.label}</div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -198,9 +233,7 @@ export function SubscriptionPage() {
       {!showPayment && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">
-              {subscription?.status === "active" ? "Change Plan" : "Choose a Plan"}
-            </h2>
+            <h2 className="text-lg font-semibold text-white">{subscription?.status === "active" ? "Change Plan" : "Choose a Plan"}</h2>
             <div className="flex items-center gap-2 bg-[#0f1729] rounded-lg p-1">
               <button onClick={() => setBillingCycle("monthly")}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${billingCycle === "monthly" ? "bg-[#3b82f6] text-white" : "text-[#94a3b8] hover:text-white"}`}>
@@ -227,13 +260,9 @@ export function SubscriptionPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${planAccents[plan.slug] ?? "bg-[#3b82f6]/10 text-[#3b82f6]"}`}>
-                          {plan.name}
-                        </span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${planAccents[plan.slug] ?? "bg-[#3b82f6]/10 text-[#3b82f6]"}`}>{plan.name}</span>
                         {isCurrent && <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full">Current Plan</span>}
-                        {plan.slug === "professional" && !isCurrent && (
-                          <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full">Most Popular</span>
-                        )}
+                        {plan.slug === "professional" && !isCurrent && <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full">Most Popular</span>}
                       </div>
                       <p className="text-[#94a3b8] text-xs mb-2">{plan.description}</p>
                       <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -243,27 +272,19 @@ export function SubscriptionPage() {
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <div className="text-2xl font-bold text-white">
-                        ${billingCycle === "annual" ? Math.round(plan.priceAnnual / 12) : plan.priceMonthly}
-                      </div>
+                      <div className="text-2xl font-bold text-white">${billingCycle === "annual" ? Math.round(plan.priceAnnual / 12) : plan.priceMonthly}</div>
                       <div className="text-xs text-[#475569]">/month</div>
-                      {billingCycle === "annual" && (
-                        <div className="text-xs text-green-400">${plan.priceAnnual}/yr</div>
-                      )}
+                      {billingCycle === "annual" && <div className="text-xs text-green-400">${plan.priceAnnual}/yr</div>}
                     </div>
                   </div>
-                  {isSelected && !isCurrent && (
-                    <div className="flex items-center gap-1 mt-3 text-[#3b82f6] text-xs font-medium">
-                      <Check size={12} /> Selected
-                    </div>
-                  )}
+                  {isSelected && !isCurrent && <div className="flex items-center gap-1 mt-3 text-[#3b82f6] text-xs font-medium"><Check size={12} /> Selected</div>}
                 </button>
               );
             })}
           </div>
 
           {selectedPlan && (
-            <button onClick={() => { setShowPayment(true); setPaypalRendered(false); setError(""); }}
+            <button onClick={() => { setShowPayment(true); setPaypalRendered(false); setError(""); setProofFile(null); setTransferRef(""); setTransferNotes(""); }}
               className="w-full bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors">
               Subscribe to {selectedPlan.name} — ${billingCycle === "annual" ? selectedPlan.priceAnnual : selectedPlan.priceMonthly}/{billingCycle === "annual" ? "yr" : "mo"}
               <ArrowUpRight size={16} />
@@ -272,7 +293,7 @@ export function SubscriptionPage() {
         </div>
       )}
 
-      {/* Payment Modal */}
+      {/* Payment Panel */}
       {showPayment && selectedPlan && (
         <div className="bg-[#1a2332] border border-[#2a3a55] rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
@@ -285,24 +306,28 @@ export function SubscriptionPage() {
             <span className="text-white font-semibold">${billingCycle === "annual" ? selectedPlan.priceAnnual : selectedPlan.priceMonthly}</span>
           </div>
 
-          <div className="flex gap-2 mb-6">
-            {(["paypal", "powertranz"] as const).map((m) => (
-              <button key={m} onClick={() => { setPaymentMethod(m); setPaypalRendered(false); }}
-                className={`flex-1 border rounded-lg py-2.5 text-sm font-medium transition-all ${paymentMethod === m ? "border-[#3b82f6] bg-[#3b82f6]/10 text-white" : "border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/50"}`}>
-                {m === "paypal" ? (
-                  <span><span className="text-blue-400 font-bold">Pay</span><span className="text-blue-200 font-bold">Pal</span></span>
-                ) : (
-                  <span className="flex items-center justify-center gap-1"><CreditCard size={14} /> Card</span>
-                )}
+          {/* Payment Method Tabs */}
+          <div className="flex gap-2 mb-6 flex-wrap">
+            {([
+              { id: "paypal" as PayMethod, label: "PayPal" },
+              { id: "powertranz" as PayMethod, label: "Card" },
+              { id: "bank_transfer" as PayMethod, label: "Bank Transfer" },
+            ]).map((m) => (
+              <button key={m.id} onClick={() => { setPaymentMethod(m.id); setPaypalRendered(false); setError(""); }}
+                className={`flex-1 min-w-[100px] border rounded-lg py-2.5 text-sm font-medium transition-all ${paymentMethod === m.id ? "border-[#3b82f6] bg-[#3b82f6]/10 text-white" : "border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/50"}`}>
+                {m.id === "paypal" ? <span><span className="text-blue-400 font-bold">Pay</span><span className="text-blue-200 font-bold">Pal</span></span> :
+                 m.id === "powertranz" ? <span className="flex items-center justify-center gap-1"><CreditCard size={14} /> Card</span> :
+                 <span className="flex items-center justify-center gap-1"><Banknote size={14} /> Bank Transfer</span>}
               </button>
             ))}
           </div>
 
+          {/* PayPal */}
           {paymentMethod === "paypal" && (
             <div>
               {!import.meta.env["VITE_PAYPAL_CLIENT_ID"] ? (
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 text-amber-400 text-sm text-center">
-                  PayPal is not yet configured.<br/>
+                  PayPal is not yet configured.<br />
                   <span className="text-xs text-[#94a3b8]">Add VITE_PAYPAL_CLIENT_ID to enable PayPal payments.</span>
                 </div>
               ) : (
@@ -313,6 +338,7 @@ export function SubscriptionPage() {
             </div>
           )}
 
+          {/* Card */}
           {paymentMethod === "powertranz" && (
             <div className="space-y-4">
               {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm">{error}</div>}
@@ -346,6 +372,112 @@ export function SubscriptionPage() {
               <p className="text-xs text-center text-[#475569]">Secured by PowerTranz</p>
             </div>
           )}
+
+          {/* Bank Transfer */}
+          {paymentMethod === "bank_transfer" && (
+            <div className="space-y-5">
+              {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm">{error}</div>}
+
+              {bankAccounts.length === 0 ? (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 text-amber-400 text-sm text-center">
+                  Bank transfer is not yet configured.<br />
+                  <span className="text-xs text-[#94a3b8]">Please contact support for payment instructions.</span>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#94a3b8] mb-3 uppercase tracking-wide">Bank Account Details</h3>
+                    <div className="space-y-3">
+                      {bankAccounts.map(acct => (
+                        <button key={acct.id} onClick={() => setSelectedBank(acct.id)}
+                          className={`w-full text-left border rounded-xl p-4 transition-all ${selectedBank === acct.id ? "border-[#3b82f6] bg-[#3b82f6]/10" : "border-[#2a3a55] hover:border-[#3b82f6]/50"}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-white">{acct.bankName}</span>
+                            <span className="text-xs text-[#94a3b8] border border-[#2a3a55] px-2 py-0.5 rounded-full">{acct.currency}</span>
+                          </div>
+                          <div className="text-sm text-[#94a3b8] space-y-0.5">
+                            <div className="flex justify-between"><span>Account Holder</span><span className="text-white">{acct.accountHolder}</span></div>
+                            <div className="flex justify-between"><span>Account Number</span><span className="text-white font-mono">{acct.accountNumber}</span></div>
+                            {acct.routingNumber && <div className="flex justify-between"><span>Routing</span><span className="text-white font-mono">{acct.routingNumber}</span></div>}
+                            {acct.iban && <div className="flex justify-between"><span>IBAN</span><span className="text-white font-mono">{acct.iban}</span></div>}
+                            {acct.swiftCode && <div className="flex justify-between"><span>SWIFT</span><span className="text-white font-mono">{acct.swiftCode}</span></div>}
+                          </div>
+                          {acct.instructions && <p className="mt-2 text-xs text-amber-400/80 border-t border-[#2a3a55] pt-2">{acct.instructions}</p>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-[#94a3b8] mb-1">Transaction / Reference Number</label>
+                    <input value={transferRef} onChange={e => setTransferRef(e.target.value)}
+                      className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono"
+                      placeholder="e.g. TXN-20240401-001" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-[#94a3b8] mb-1">Notes (optional)</label>
+                    <textarea value={transferNotes} onChange={e => setTransferNotes(e.target.value)} rows={2}
+                      className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none resize-none text-sm"
+                      placeholder="Any additional information about the transfer…" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-[#94a3b8] mb-2">Proof of Payment *</label>
+                    <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg" className="hidden" onChange={handleFileChange} />
+                    {proofFile ? (
+                      <div className="flex items-center justify-between bg-[#0f1729] border border-[#3b82f6]/40 rounded-lg px-4 py-3">
+                        <div className="flex items-center gap-2 text-sm">
+                          <FileCheck size={16} className="text-green-400" />
+                          <span className="text-white">{proofFile.name}</span>
+                        </div>
+                        <button onClick={() => { setProofFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                          className="text-[#475569] hover:text-red-400 transition-colors"><X size={14} /></button>
+                      </div>
+                    ) : (
+                      <button onClick={() => fileInputRef.current?.click()}
+                        className="w-full flex flex-col items-center justify-center gap-2 border-2 border-dashed border-[#2a3a55] hover:border-[#3b82f6] text-[#475569] hover:text-[#94a3b8] py-8 rounded-xl transition-colors">
+                        <Upload size={24} />
+                        <span className="text-sm font-medium">Upload proof of payment</span>
+                        <span className="text-xs">PDF or JPG, max 8 MB</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <button onClick={handleBankTransferSubmit} disabled={isProcessing || !proofFile}
+                    className="w-full bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
+                    {isProcessing ? "Submitting…" : <><Banknote size={16} /> Submit Payment Proof</>}
+                  </button>
+                  <p className="text-xs text-center text-[#475569]">Your subscription will be activated within 24 hours after verification.</p>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Past proofs */}
+      {myProofs.length > 0 && !showPayment && (
+        <div className="mt-6">
+          <h2 className="text-base font-semibold text-white mb-3">Bank Transfer History</h2>
+          <div className="space-y-2">
+            {myProofs.map(p => (
+              <div key={p.id} className="bg-[#1a2332] border border-[#2a3a55] rounded-lg px-4 py-3 flex items-center justify-between text-sm">
+                <div>
+                  <span className="text-white font-medium">{p.planName}</span>
+                  <span className="text-[#475569] ml-2">({p.billingCycle})</span>
+                  <span className="text-[#94a3b8] ml-3">${p.amount.toFixed(2)}</span>
+                  {p.referenceNumber && <span className="text-[#475569] ml-3 font-mono text-xs">{p.referenceNumber}</span>}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[#475569] text-xs">{new Date(p.createdAt).toLocaleDateString()}</span>
+                  {p.status === "pending" && <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs px-2 py-0.5 rounded-full flex items-center gap-1"><Clock size={9} /> Pending</span>}
+                  {p.status === "approved" && <span className="bg-green-500/10 text-green-400 border border-green-500/20 text-xs px-2 py-0.5 rounded-full flex items-center gap-1"><Check size={9} /> Approved</span>}
+                  {p.status === "rejected" && <span className="bg-red-500/10 text-red-400 border border-red-500/20 text-xs px-2 py-0.5 rounded-full flex items-center gap-1"><X size={9} /> Rejected{p.reviewNotes ? ` — ${p.reviewNotes}` : ""}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
