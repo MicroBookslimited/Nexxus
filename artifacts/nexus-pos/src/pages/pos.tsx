@@ -24,8 +24,10 @@ import {
   Search, CreditCard, Banknote, Trash2, ShoppingCart, ScanBarcode,
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
-  UtensilsCrossed, ShoppingBag, Truck, Mail,
+  UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle,
 } from "lucide-react";
+import { saasMe } from "@/lib/saas-api";
+import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -388,17 +390,59 @@ export function POS() {
   const { toast } = useToast();
   const sendReceiptEmail = useSendReceiptEmail();
 
+  const [, navigate] = useLocation();
   const [locked, setLocked] = useState(true);
   const [sessionStaff, setSessionStaff] = useState<{ id: number; name: string; role: string } | null>(null);
+
+  const [expiryPopupOpen, setExpiryPopupOpen] = useState(false);
+  const [expiryTarget, setExpiryTarget] = useState<Date | null>(null);
+  const [expiryCountdown, setExpiryCountdown] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null);
+
+  useEffect(() => {
+    if (!expiryTarget) { setExpiryCountdown(null); return; }
+    const tick = () => {
+      const diff = expiryTarget.getTime() - Date.now();
+      if (diff <= 0) { setExpiryCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0 }); return; }
+      setExpiryCountdown({
+        days: Math.floor(diff / 86400000),
+        hours: Math.floor((diff % 86400000) / 3600000),
+        minutes: Math.floor((diff % 3600000) / 60000),
+        seconds: Math.floor((diff % 60000) / 1000),
+      });
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [expiryTarget]);
 
   const { data: cashSession, isError: noOpenShift, isLoading: checkingShift } = useGetCurrentCashSession({
     query: { retry: false, enabled: !locked },
   });
 
+  const MANAGEMENT_ROLES = ["admin", "manager", "supervisor"];
+
   const handlePinSuccess = (staff: { id: number; name: string; role: string }) => {
     setSessionStaff(staff);
     setLocked(false);
     toast({ title: `Welcome, ${staff.name}!`, description: `Logged in as ${staff.role}` });
+
+    const roleLower = staff.role.toLowerCase();
+    if (MANAGEMENT_ROLES.some(r => roleLower.includes(r))) {
+      saasMe().then((me) => {
+        const sub = me.subscription;
+        if (!sub) return;
+        let expiry: Date | null = null;
+        if (sub.status === "trial" && sub.trialEndsAt) expiry = new Date(sub.trialEndsAt);
+        else if (sub.status === "active" && sub.currentPeriodEnd) expiry = new Date(sub.currentPeriodEnd);
+        if (expiry) {
+          const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / 86400000);
+          if (daysLeft <= 30 && daysLeft > 0) {
+            setExpiryTarget(expiry);
+            setExpiryPopupOpen(true);
+          }
+        }
+      }).catch(() => {});
+    }
   };
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -1351,6 +1395,67 @@ export function POS() {
               <Mail className="h-4 w-4" />Email
             </Button>
             <Button onClick={() => { setReceiptOrder(null); setReceiptEmailOpen(false); setReceiptEmailAddr(""); }} className="flex-1">New Sale</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscription expiry popup — fires on management role PIN login */}
+      <Dialog open={expiryPopupOpen} onOpenChange={setExpiryPopupOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-400">
+              <AlertTriangle className="h-5 w-5" />
+              Plan Expiring Soon
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-3 space-y-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Your Nexus POS subscription is expiring. Renew now to avoid any interruption to your business.
+            </p>
+
+            {expiryCountdown && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+                <p className="text-xs text-amber-400/70 text-center mb-2 uppercase tracking-widest">Time remaining</p>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {[
+                    { label: "Days", value: expiryCountdown.days },
+                    { label: "Hours", value: expiryCountdown.hours },
+                    { label: "Mins", value: expiryCountdown.minutes },
+                    { label: "Secs", value: expiryCountdown.seconds },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-black/30 rounded-lg py-2">
+                      <div className={`text-2xl font-bold font-mono tabular-nums ${value <= 0 && label === "Days" ? "text-red-400" : "text-amber-300"}`}>
+                        {String(value).padStart(2, "0")}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {expiryCountdown && expiryCountdown.days <= 3 && (
+              <p className="text-xs text-red-400 text-center font-medium">
+                ⚠ Critical: Less than 3 days remaining. Renew immediately to avoid service disruption.
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 flex-col sm:flex-row">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setExpiryPopupOpen(false)}
+            >
+              Remind Me Later
+            </Button>
+            <Button
+              className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-semibold"
+              onClick={() => { setExpiryPopupOpen(false); navigate("/subscription"); }}
+            >
+              Renew Now →
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

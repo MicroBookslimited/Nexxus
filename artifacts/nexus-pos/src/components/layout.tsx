@@ -1,9 +1,9 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2, Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings, CreditCard, LogOut, ChevronDown } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2, Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings, CreditCard, LogOut, ChevronDown, AlertTriangle, Clock } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { TENANT_TOKEN_KEY, saasMe } from "@/lib/saas-api";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -20,11 +20,56 @@ const NAV_ITEMS = [
   { href: "/subscription", label: "Plan", icon: CreditCard },
 ];
 
+function useCountdown(targetDate: Date | null) {
+  const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null);
+
+  useEffect(() => {
+    if (!targetDate) { setTimeLeft(null); return; }
+
+    const tick = () => {
+      const diff = targetDate.getTime() - Date.now();
+      if (diff <= 0) { setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 }); return; }
+      setTimeLeft({
+        days: Math.floor(diff / 86400000),
+        hours: Math.floor((diff % 86400000) / 3600000),
+        minutes: Math.floor((diff % 3600000) / 60000),
+        seconds: Math.floor((diff % 60000) / 1000),
+      });
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [targetDate]);
+
+  return timeLeft;
+}
+
 export function Layout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+
+  const [expiryDate, setExpiryDate] = useState<Date | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const timeLeft = useCountdown(expiryDate);
+
+  useEffect(() => {
+    const token = localStorage.getItem(TENANT_TOKEN_KEY);
+    if (!token) return;
+    saasMe().then((me) => {
+      const sub = me.subscription;
+      if (!sub) return;
+      let expiry: Date | null = null;
+      if (sub.status === "trial" && sub.trialEndsAt) expiry = new Date(sub.trialEndsAt);
+      else if (sub.status === "active" && sub.currentPeriodEnd) expiry = new Date(sub.currentPeriodEnd);
+      if (expiry) {
+        const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / 86400000);
+        if (daysLeft <= 30 && daysLeft > 0) setExpiryDate(expiry);
+      }
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -55,6 +100,13 @@ export function Layout({ children }: { children: ReactNode }) {
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
+
+  const showBanner = !bannerDismissed && timeLeft !== null && expiryDate !== null;
+  const daysLeft = timeLeft ? timeLeft.days : 0;
+  const isUrgent = daysLeft <= 3;
+  const isWarning = daysLeft <= 7;
+
+  const pad = (n: number) => String(n).padStart(2, "0");
 
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground overflow-hidden">
@@ -131,6 +183,62 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+
+      {/* Subscription expiry banner */}
+      {showBanner && timeLeft && (
+        <div className={cn(
+          "shrink-0 flex items-center justify-between px-5 py-2 text-sm border-b",
+          isUrgent
+            ? "bg-red-500/15 border-red-500/30 text-red-300"
+            : isWarning
+            ? "bg-orange-500/15 border-orange-500/30 text-orange-300"
+            : "bg-amber-500/10 border-amber-500/20 text-amber-300"
+        )}>
+          <div className="flex items-center gap-3 flex-wrap">
+            {isUrgent ? <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" /> : <Clock className="h-4 w-4 shrink-0" />}
+            <span className="font-medium">
+              {isUrgent ? "⚠ Plan expiring very soon!" : "Your plan expires in:"}
+            </span>
+            <div className="flex items-center gap-1 font-mono font-bold tracking-wider text-white">
+              <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>
+                {pad(timeLeft.days)}d
+              </span>
+              <span className="text-muted-foreground text-xs">:</span>
+              <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>
+                {pad(timeLeft.hours)}h
+              </span>
+              <span className="text-muted-foreground text-xs">:</span>
+              <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>
+                {pad(timeLeft.minutes)}m
+              </span>
+              <span className="text-muted-foreground text-xs">:</span>
+              <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>
+                {pad(timeLeft.seconds)}s
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 ml-4">
+            <Link
+              href="/subscription"
+              className={cn(
+                "px-3 py-1 rounded-md text-xs font-semibold transition-colors",
+                isUrgent
+                  ? "bg-red-500 hover:bg-red-400 text-white"
+                  : "bg-amber-500 hover:bg-amber-400 text-black"
+              )}
+            >
+              Renew Now
+            </Link>
+            <button
+              onClick={() => setBannerDismissed(true)}
+              className="text-muted-foreground hover:text-foreground text-xs px-1"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 overflow-auto">{children}</main>
 
