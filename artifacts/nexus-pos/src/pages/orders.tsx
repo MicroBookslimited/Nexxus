@@ -32,10 +32,31 @@ function formatCurrency(val: number) {
 
 const todayStr = () => format(new Date(), "yyyy-MM-dd");
 
+function getPreset(preset: string): { from: string; to: string } {
+  const now = new Date();
+  const fmt = (d: Date) => format(d, "yyyy-MM-dd");
+  const today = fmt(now);
+  if (preset === "today") return { from: today, to: today };
+  if (preset === "yesterday") {
+    const y = new Date(now); y.setDate(y.getDate() - 1);
+    const ys = fmt(y); return { from: ys, to: ys };
+  }
+  if (preset === "week") {
+    const start = new Date(now); start.setDate(now.getDate() - 6);
+    return { from: fmt(start), to: today };
+  }
+  if (preset === "month") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { from: fmt(start), to: today };
+  }
+  return { from: "", to: "" };
+}
+
 export function Orders() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState<string>(todayStr());
+  const [fromDate, setFromDate] = useState<string>(todayStr());
+  const [toDate, setToDate] = useState<string>(todayStr());
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
   
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
@@ -55,9 +76,28 @@ export function Orders() {
   const [chargeSplitCard, setChargeSplitCard] = useState(0);
   const [chargeSplitCash, setChargeSplitCash] = useState(0);
 
+  const applyPreset = (preset: string) => {
+    const { from, to } = getPreset(preset);
+    setFromDate(from); setToDate(to);
+  };
+
+  const activePreset = (() => {
+    const today = todayStr();
+    const { from: yFrom, to: yTo } = getPreset("yesterday");
+    const { from: wFrom } = getPreset("week");
+    const { from: mFrom } = getPreset("month");
+    if (fromDate === today && toDate === today) return "today";
+    if (fromDate === yFrom && toDate === yTo) return "yesterday";
+    if (fromDate === wFrom && toDate === today) return "week";
+    if (fromDate === mFrom && toDate === today) return "month";
+    if (!fromDate && !toDate) return "all";
+    return "custom";
+  })();
+
   const listParams: Record<string, any> = {};
   if (statusFilter !== "all") listParams.status = statusFilter;
-  if (dateFilter) listParams.date = dateFilter;
+  if (fromDate) listParams.from = fromDate;
+  if (toDate) listParams.to = toDate;
 
   const { data: orders, isLoading } = useListOrders(listParams);
   
@@ -264,8 +304,8 @@ export function Orders() {
           <p className="text-muted-foreground mt-1">View and manage all transactions.</p>
         </div>
         
-        <div className="flex gap-3 items-center flex-wrap">
-          <div className="relative w-56">
+        <div className="flex gap-2 items-center flex-wrap">
+          <div className="relative w-52">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
               placeholder="Search order number..." 
@@ -275,36 +315,45 @@ export function Orders() {
             />
           </div>
 
-          {/* Date filter */}
-          <div className="relative flex items-center">
-            <CalendarDays className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
+          {/* Preset shortcut pills */}
+          {(["today", "yesterday", "week", "month"] as const).map((p) => (
+            <Button
+              key={p}
+              size="sm"
+              variant={activePreset === p ? "default" : "outline"}
+              className="h-9 text-xs capitalize"
+              onClick={() => applyPreset(p)}
+            >
+              {p === "week" ? "Last 7 Days" : p === "month" ? "This Month" : p.charAt(0).toUpperCase() + p.slice(1)}
+            </Button>
+          ))}
+
+          {/* From / To date inputs */}
+          <div className="flex items-center gap-1.5 bg-muted/40 border border-border rounded-md px-2 py-1">
+            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <input
               type="date"
-              value={dateFilter}
-              onChange={e => setDateFilter(e.target.value)}
-              className="pl-9 pr-8 w-44"
+              value={fromDate}
+              onChange={e => setFromDate(e.target.value)}
+              className="bg-transparent text-sm text-foreground outline-none w-32"
             />
-            {dateFilter && (
-              <button
-                onClick={() => setDateFilter("")}
-                title="Show all dates"
-                className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
-              >
+            <span className="text-muted-foreground text-xs">–</span>
+            <input
+              type="date"
+              value={toDate}
+              min={fromDate}
+              onChange={e => setToDate(e.target.value)}
+              className="bg-transparent text-sm text-foreground outline-none w-32"
+            />
+            {(fromDate || toDate) && (
+              <button onClick={() => { setFromDate(""); setToDate(""); }} title="Clear dates" className="ml-1 text-muted-foreground hover:text-foreground">
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
 
-          {/* Today shortcut */}
-          {dateFilter !== todayStr() && (
-            <Button variant="outline" size="sm" onClick={() => setDateFilter(todayStr())} className="h-9 text-xs gap-1.5">
-              <CalendarDays className="h-3.5 w-3.5" />
-              Today
-            </Button>
-          )}
-
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>

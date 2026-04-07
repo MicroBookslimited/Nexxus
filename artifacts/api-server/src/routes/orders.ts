@@ -78,11 +78,14 @@ router.get("/orders", async (req, res): Promise<void> => {
 
   const conditions = [];
   if (query.data.status) conditions.push(eq(ordersTable.status, query.data.status));
-  if (query.data.date) {
-    const dayStart = new Date(`${query.data.date}T00:00:00.000Z`);
-    const dayEnd   = new Date(`${query.data.date}T23:59:59.999Z`);
-    conditions.push(gte(ordersTable.createdAt, dayStart));
-    conditions.push(lt(ordersTable.createdAt, new Date(dayEnd.getTime() + 1)));
+  if (query.data.from) {
+    conditions.push(gte(ordersTable.createdAt, new Date(`${query.data.from}T00:00:00.000Z`)));
+  }
+  if (query.data.to) {
+    // Include the full end day by going to the next midnight
+    const nextDay = new Date(`${query.data.to}T00:00:00.000Z`);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    conditions.push(lt(ordersTable.createdAt, nextDay));
   }
 
   const orders = await db
