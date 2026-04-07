@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2, Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings, CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2, Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings, CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { TENANT_TOKEN_KEY, saasMe } from "@/lib/saas-api";
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/staff", label: "Staff", icon: UserCog },
   { href: "/locations", label: "Locations", icon: MapPin },
+  { href: "/accounting", label: "Accounting", icon: Calculator },
   { href: "/reports", label: "Reports", icon: BarChart2 },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/subscription", label: "Plan", icon: CreditCard },

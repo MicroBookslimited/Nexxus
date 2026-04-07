@@ -21,6 +21,7 @@ import billingRouter from "./billing";
 import superadminRouter from "./superadmin";
 import rolesRouter from "./roles";
 import locationsRouter from "./locations";
+import accountingRouter from "./accounting";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use(billingRouter);
 router.use(superadminRouter);
 router.use(rolesRouter);
 router.use(locationsRouter);
+router.use(accountingRouter);
 
 export default router;
