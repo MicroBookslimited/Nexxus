@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, sql, and, gte, lte, desc, isNotNull, isNull, asc } from "drizzle-orm";
 import {
   db, ordersTable, orderItemsTable, customersTable, staffTable,
-  productsTable, cashSessionsTable, cashPayoutsTable,
+  productsTable, cashSessionsTable, cashPayoutsTable, appSettingsTable,
 } from "@workspace/db";
 import { diningTablesTable, purchasesTable } from "@workspace/db";
 import {
@@ -648,13 +648,9 @@ router.get("/reports/export", async (req, res): Promise<void> => {
 // ── GCT Tax Report ─────────────────────────────────────────────────────────
 router.get("/reports/tax", async (req, res): Promise<void> => {
   const { from, to } = rangeParams(req.query as Record<string, string>);
-  const tenantId = (req as any).tenantId as number;
-
   // Fetch current GCT rate from settings
-  const { appSettingsTable } = await import("@workspace/db");
-  const settingsRows = await db.select().from(appSettingsTable).where(eq(appSettingsTable.tenantId, tenantId));
-  const settings = Object.fromEntries(settingsRows.map(r => [r.key, r.value]));
-  const gctRate = parseFloat(settings["tax_rate"] ?? "15");
+  const [taxRateSetting] = await db.select().from(appSettingsTable).where(eq(appSettingsTable.key, "tax_rate"));
+  const gctRate = parseFloat(taxRateSetting?.value ?? "15");
 
   // Day-by-day breakdown
   const daily = await db.select({

@@ -8,6 +8,7 @@ import {
   useDeleteHeldOrder,
   useGetProductCustomization,
   useListCustomers,
+  useCreateCustomer,
   useListTables,
   useGetCurrentCashSession,
   useSendReceiptEmail,
@@ -24,7 +25,7 @@ import {
   Search, CreditCard, Banknote, Trash2, ShoppingCart, ScanBarcode,
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
-  UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle,
+  UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X,
 } from "lucide-react";
 import { saasMe } from "@/lib/saas-api";
 import { useLocation } from "wouter";
@@ -471,6 +472,10 @@ export function POS() {
   const [receiptEmailAddr, setReceiptEmailAddr] = useState("");
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+  const [addingCustomer, setAddingCustomer] = useState(false);
+  const [newCustName,  setNewCustName]  = useState("");
+  const [newCustPhone, setNewCustPhone] = useState("");
+  const [newCustEmail, setNewCustEmail] = useState("");
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState<number>(0);
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
@@ -481,7 +486,24 @@ export function POS() {
   const [deliveryDirections, setDeliveryDirections] = useState("");
 
   const { data: customers } = useListCustomers();
+  const createCustomer = useCreateCustomer();
   const { data: tables } = useListTables();
+
+  const handleAddCustomer = async () => {
+    if (!newCustName.trim()) return;
+    try {
+      const created = await createCustomer.mutateAsync({
+        data: { name: newCustName.trim(), phone: newCustPhone.trim() || undefined, email: newCustEmail.trim() || undefined },
+      });
+      setSelectedCustomerId(created.id);
+      setAddingCustomer(false);
+      setNewCustName(""); setNewCustPhone(""); setNewCustEmail("");
+      setCustomerSearch("");
+      toast({ title: "Customer added", description: `${created.name} added and selected.` });
+    } catch {
+      toast({ title: "Error", description: "Could not create customer.", variant: "destructive" });
+    }
+  };
 
   // Customization dialog state
   const [customizingProductId, setCustomizingProductId] = useState<number | null>(null);
@@ -597,6 +619,8 @@ export function POS() {
     setSplitCardAmount(0);
     setSplitCashAmount(0);
     setSelectedCustomerId(null);
+    setAddingCustomer(false);
+    setNewCustName(""); setNewCustPhone(""); setNewCustEmail("");
     setLoyaltyPointsToRedeem(0);
     setSelectedTableId(null);
     setCustomerSearch("");
@@ -1029,22 +1053,79 @@ export function POS() {
                 <div className="flex items-center justify-between bg-primary/10 rounded-md px-2 py-1.5 border border-primary/20">
                   <div>
                     <p className="text-xs font-medium text-primary">{selectedCustomer.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{selectedCustomer.loyaltyPoints} pts</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {selectedCustomer.loyaltyPoints} pts
+                      {selectedCustomer.phone && <> · {selectedCustomer.phone}</>}
+                    </p>
                   </div>
-                  <Button size="sm" variant="ghost" className="h-5 text-xs p-1 text-muted-foreground" onClick={() => { setSelectedCustomerId(null); setLoyaltyPointsToRedeem(0); }}>✕</Button>
+                  <Button size="sm" variant="ghost" className="h-5 text-xs p-1 text-muted-foreground"
+                    onClick={() => { setSelectedCustomerId(null); setLoyaltyPointsToRedeem(0); }}>✕</Button>
+                </div>
+              ) : addingCustomer ? (
+                /* ── Inline quick-add form ── */
+                <div className="rounded-md border border-blue-500/30 bg-blue-500/5 p-2 space-y-1.5">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wide">New Customer</p>
+                    <button onClick={() => { setAddingCustomer(false); setNewCustName(""); setNewCustPhone(""); setNewCustEmail(""); }}
+                      className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+                  </div>
+                  <Input
+                    autoFocus
+                    className="text-xs h-7"
+                    placeholder="Full name *"
+                    value={newCustName}
+                    onChange={e => setNewCustName(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") handleAddCustomer(); }}
+                  />
+                  <Input
+                    className="text-xs h-7"
+                    placeholder="Phone (optional)"
+                    value={newCustPhone}
+                    onChange={e => setNewCustPhone(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") handleAddCustomer(); }}
+                  />
+                  <Input
+                    className="text-xs h-7"
+                    placeholder="Email (optional)"
+                    value={newCustEmail}
+                    onChange={e => setNewCustEmail(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") handleAddCustomer(); }}
+                  />
+                  <Button size="sm" className="w-full h-7 text-xs" onClick={handleAddCustomer}
+                    disabled={!newCustName.trim() || createCustomer.isPending}>
+                    {createCustomer.isPending ? "Saving…" : "Add & Select"}
+                  </Button>
                 </div>
               ) : (
+                /* ── Search + Add button ── */
                 <div className="relative">
-                  <Input className="text-xs h-7" placeholder="Search customer…" value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} />
+                  <div className="flex gap-1">
+                    <Input className="text-xs h-7 flex-1" placeholder="Search customer…" value={customerSearch}
+                      onChange={e => setCustomerSearch(e.target.value)} />
+                    <Button size="sm" variant="outline" className="h-7 w-7 p-0 shrink-0" title="Add new customer"
+                      onClick={() => { setAddingCustomer(true); setNewCustName(customerSearch); setCustomerSearch(""); }}>
+                      <UserPlus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                   {customerSearch && customers && (
-                    <div className="absolute z-10 w-full mt-0.5 bg-card border border-border rounded-md shadow-lg max-h-32 overflow-auto">
-                      {customers.filter((c) => c.name.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 4).map((c) => (
-                        <button key={c.id} className="w-full text-left px-2 py-1.5 text-xs hover:bg-secondary/50 flex justify-between"
-                          onClick={() => { setSelectedCustomerId(c.id); setCustomerSearch(""); setLoyaltyPointsToRedeem(0); }}>
-                          <span>{c.name}</span>
-                          <span className="text-muted-foreground">{c.loyaltyPoints} pts</span>
+                    <div className="absolute z-10 w-full mt-0.5 bg-card border border-border rounded-md shadow-lg max-h-36 overflow-auto">
+                      {customers
+                        .filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+                          (c.phone ?? "").includes(customerSearch))
+                        .slice(0, 5)
+                        .map(c => (
+                          <button key={c.id} className="w-full text-left px-2 py-1.5 text-xs hover:bg-secondary/50 flex justify-between"
+                            onClick={() => { setSelectedCustomerId(c.id); setCustomerSearch(""); setLoyaltyPointsToRedeem(0); }}>
+                            <span>{c.name}{c.phone ? <span className="text-muted-foreground ml-1">· {c.phone}</span> : null}</span>
+                            <span className="text-muted-foreground">{c.loyaltyPoints} pts</span>
+                          </button>
+                        ))}
+                      {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || (c.phone ?? "").includes(customerSearch)).length === 0 && (
+                        <button className="w-full text-left px-2 py-1.5 text-xs text-blue-400 hover:bg-secondary/50 flex items-center gap-1.5"
+                          onClick={() => { setAddingCustomer(true); setNewCustName(customerSearch); setCustomerSearch(""); }}>
+                          <UserPlus className="h-3 w-3" /> Add "{customerSearch}" as new customer
                         </button>
-                      ))}
+                      )}
                     </div>
                   )}
                 </div>
