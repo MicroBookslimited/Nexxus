@@ -833,22 +833,26 @@ export function POS() {
                       <motion.div key={product.id} whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.02 }}>
                         <div
                           onClick={() => !product.inStock ? undefined : handleProductTap(product)}
-                          className={`relative cursor-pointer rounded-xl border ${palette.bg} ${palette.accent} aspect-square p-2 flex flex-col justify-between transition-all duration-150 ${!product.inStock ? "opacity-40 cursor-not-allowed" : "hover:brightness-110 hover:shadow-lg hover:shadow-black/30 active:scale-95"}`}
+                          className={`relative cursor-pointer rounded-xl border ${palette.bg} ${palette.accent} aspect-square p-2 flex flex-col justify-between transition-all duration-150 ${!product.inStock ? "opacity-40 grayscale cursor-not-allowed" : "hover:brightness-110 hover:shadow-lg hover:shadow-black/30 active:scale-95"}`}
                         >
                           <div className={`absolute top-2 right-2 h-1.5 w-1.5 rounded-full ${palette.dot} opacity-70`} />
                           <div className="pr-3">
                             <p className="text-xs font-bold leading-snug line-clamp-2 text-white">{product.name}</p>
                             <p className="text-[9px] text-white/50 mt-0.5">{product.category}</p>
                           </div>
-                          <div className="flex items-end justify-between">
-                            <p className="text-sm font-bold font-mono text-white">{formatCurrency(product.price)}</p>
-                            <div className="flex items-center gap-0.5">
+                          <div className="flex items-end justify-between gap-1">
+                            <p className="text-sm font-bold font-mono text-white leading-none">{formatCurrency(product.price)}</p>
+                            <div className="flex flex-col items-end gap-0.5">
                               {(product.hasVariants || product.hasModifiers) && (
                                 <Settings2 className="h-3 w-3 text-white/60" />
                               )}
-                              {!product.inStock && (
-                                <span className="text-[9px] font-semibold bg-red-500/30 text-red-300 px-1 py-0.5 rounded">Out</span>
-                              )}
+                              {!product.inStock ? (
+                                <span className="text-[9px] font-semibold bg-red-500/40 text-red-200 px-1 py-0.5 rounded leading-none">Out of stock</span>
+                              ) : product.stockCount > 0 ? (
+                                <span className={`text-[9px] font-semibold px-1 py-0.5 rounded leading-none ${product.stockCount <= 5 ? "bg-amber-500/40 text-amber-100" : "bg-black/30 text-white/70"}`}>
+                                  {product.stockCount} left
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                         </div>
