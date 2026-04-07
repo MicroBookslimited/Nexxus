@@ -345,7 +345,7 @@ function printReceiptWindow(order: GetOrderResponse, baseCurrency = "JMD", secon
     divider,
     row("Subtotal:", fmt(order.subtotal)),
     ...((order.discountValue ?? 0) > 0 ? [row("Discount:", `-${fmt(order.discountValue ?? 0)}`)] : []),
-    row("Tax:", fmt(order.tax)),
+    row("GCT:", fmt(order.tax)),
     dblDivider,
     row("TOTAL:", fmt(order.total)),
     ...(secondaryCurrency && exchangeRate > 0 ? [row(`  ≈ ${secondaryCurrency}:`, fmt(order.total * exchangeRate, secondaryCurrency))] : []),
@@ -381,6 +381,8 @@ export function POS() {
   const baseCurrency = settings?.base_currency || "JMD";
   const secondaryCurrency = settings?.secondary_currency || "";
   const exchangeRate = parseFloat(settings?.currency_rate || "0");
+  const taxRate = parseFloat(settings?.tax_rate || "0");
+  const taxPct = Math.round(taxRate * 100);
 
   const { data: heldOrders } = useListHeldOrders();
   const createHeldOrder = useCreateHeldOrder();
@@ -436,7 +438,7 @@ export function POS() {
         else if (sub.status === "active" && sub.currentPeriodEnd) expiry = new Date(sub.currentPeriodEnd);
         if (expiry) {
           const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / 86400000);
-          if (daysLeft <= 30 && daysLeft > 0) {
+          if (daysLeft <= 15 && daysLeft > 0) {
             setExpiryTarget(expiry);
             setExpiryPopupOpen(true);
           }
@@ -575,7 +577,7 @@ export function POS() {
   const loyaltyDiscountValue = clampedPoints > 0 ? clampedPoints / 100 : 0;
 
   const discountedSubtotal = Math.max(0, subtotal - cartDiscountValue - loyaltyDiscountValue);
-  const tax = discountedSubtotal * 0.1;
+  const tax = discountedSubtotal * taxRate;
   const total = discountedSubtotal + tax;
 
   const handleSplitClick = () => {
@@ -1127,7 +1129,7 @@ export function POS() {
                     </div>
                   )}
                   <div className="flex justify-between text-muted-foreground">
-                    <span>Tax (10%)</span><span className="font-mono">{formatCurrency(tax)}</span>
+                    <span>GCT {taxPct > 0 ? `(${taxPct}%)` : ""}</span><span className="font-mono">{formatCurrency(tax)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-sm pt-1 border-t border-border">
                     <span>Total</span><span className="font-mono text-primary">{formatCurrency(total, baseCurrency)}</span>

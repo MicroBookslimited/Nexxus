@@ -66,7 +66,7 @@ export function Layout({ children }: { children: ReactNode }) {
       else if (sub.status === "active" && sub.currentPeriodEnd) expiry = new Date(sub.currentPeriodEnd);
       if (expiry) {
         const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / 86400000);
-        if (daysLeft <= 30 && daysLeft > 0) setExpiryDate(expiry);
+        if (daysLeft <= 15 && daysLeft > 0) setExpiryDate(expiry);
       }
     }).catch(() => {});
   }, []);

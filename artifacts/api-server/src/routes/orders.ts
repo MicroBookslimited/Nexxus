@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, appSettingsTable } from "@workspace/db";
 import {
   CreateOrderBody,
   GetOrderParams,
@@ -178,7 +178,10 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   const subtotal = Math.round(rawSubtotal * 100) / 100;
   const discountedSubtotal = Math.max(0, rawSubtotal - discountValue - loyaltyDiscount);
-  const tax = Math.round(discountedSubtotal * 0.1 * 100) / 100;
+
+  const [taxRateSetting] = await db.select().from(appSettingsTable).where(eq(appSettingsTable.key, "tax_rate"));
+  const taxRate = parseFloat(taxRateSetting?.value ?? "0.08");
+  const tax = Math.round(discountedSubtotal * taxRate * 100) / 100;
   const total = Math.round((discountedSubtotal + tax) * 100) / 100;
 
   const isOpenOrder = parsed.data.orderType === "dine-in" && !parsed.data.paymentMethod;
