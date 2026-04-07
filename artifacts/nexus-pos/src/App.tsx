@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -66,7 +66,75 @@ function Router() {
   );
 }
 
+function useAutoFullscreen() {
+  useEffect(() => {
+    const requestFs = () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    };
+
+    const onFirstInteraction = () => {
+      requestFs();
+      document.removeEventListener("click", onFirstInteraction);
+      document.removeEventListener("keydown", onFirstInteraction);
+      document.removeEventListener("touchstart", onFirstInteraction);
+    };
+
+    document.addEventListener("click", onFirstInteraction);
+    document.addEventListener("keydown", onFirstInteraction);
+    document.addEventListener("touchstart", onFirstInteraction);
+
+    return () => {
+      document.removeEventListener("click", onFirstInteraction);
+      document.removeEventListener("keydown", onFirstInteraction);
+      document.removeEventListener("touchstart", onFirstInteraction);
+    };
+  }, []);
+}
+
+function FullscreenFab() {
+  const [isFs, setIsFs] = useState(!!document.fullscreenElement);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  if (isFs) return null;
+
+  return (
+    <button
+      title="Enter Fullscreen"
+      onClick={() => document.documentElement.requestFullscreen().catch(() => {})}
+      style={{
+        position: "fixed",
+        bottom: "12px",
+        right: "12px",
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        padding: "6px 12px",
+        background: "rgba(59,130,246,0.85)",
+        color: "#fff",
+        border: "none",
+        borderRadius: "8px",
+        fontSize: "12px",
+        fontWeight: 600,
+        cursor: "pointer",
+        backdropFilter: "blur(4px)",
+      }}
+    >
+      ⛶ Fullscreen
+    </button>
+  );
+}
+
 function App() {
+  useAutoFullscreen();
+
   // Force dark mode
   useEffect(() => {
     document.documentElement.classList.add("dark");
@@ -79,6 +147,7 @@ function App() {
           <Router />
         </WouterRouter>
         <Toaster />
+        <FullscreenFab />
       </TooltipProvider>
     </QueryClientProvider>
   );
