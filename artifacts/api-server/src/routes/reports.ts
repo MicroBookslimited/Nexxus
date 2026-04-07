@@ -21,10 +21,16 @@ function parseDate(str: string | undefined, fallback: Date): Date {
   return isNaN(d.getTime()) ? fallback : d;
 }
 
+function endOfDay(d: Date): Date {
+  // Push to 23:59:59.999 UTC so the full day is included in lte comparisons
+  d.setUTCHours(23, 59, 59, 999);
+  return d;
+}
+
 function rangeParams(q: Record<string, string | string[] | undefined>) {
-  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0, 0, 0, 0);
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setUTCHours(0, 0, 0, 0);
   const from = parseDate(q["from"] as string | undefined, weekAgo);
-  const to   = parseDate(q["to"]   as string | undefined, new Date());
+  const to   = endOfDay(parseDate(q["to"] as string | undefined, new Date()));
   return { from, to };
 }
 
@@ -33,9 +39,9 @@ router.get("/reports/summary", async (req, res): Promise<void> => {
   const query = GetReportSummaryQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
-  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0, 0, 0, 0);
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setUTCHours(0, 0, 0, 0);
   const from = parseDate(query.data.from, weekAgo);
-  const to   = parseDate(query.data.to, new Date());
+  const to   = endOfDay(parseDate(query.data.to, new Date()));
 
   const completedOrders = await db.select().from(ordersTable)
     .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
