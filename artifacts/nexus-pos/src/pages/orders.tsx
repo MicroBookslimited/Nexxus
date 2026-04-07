@@ -10,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, ChevronUp, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert, RotateCcw, Printer } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert, RotateCcw, Printer, CalendarDays, X } from "lucide-react";
 import { PinPad } from "@/components/PinPad";
 import { 
   AlertDialog,
@@ -30,9 +30,12 @@ function formatCurrency(val: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(val);
 }
 
+const todayStr = () => format(new Date(), "yyyy-MM-dd");
+
 export function Orders() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateFilter, setDateFilter] = useState<string>(todayStr());
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
   
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
@@ -52,9 +55,11 @@ export function Orders() {
   const [chargeSplitCard, setChargeSplitCard] = useState(0);
   const [chargeSplitCash, setChargeSplitCash] = useState(0);
 
-  const { data: orders, isLoading } = useListOrders(
-    statusFilter !== "all" ? { status: statusFilter as any } : {}
-  );
+  const listParams: Record<string, any> = {};
+  if (statusFilter !== "all") listParams.status = statusFilter;
+  if (dateFilter) listParams.date = dateFilter;
+
+  const { data: orders, isLoading } = useListOrders(listParams);
   
   const updateStatus = useUpdateOrderStatus();
   const chargeOrder = useChargeOrder();
@@ -259,8 +264,8 @@ export function Orders() {
           <p className="text-muted-foreground mt-1">View and manage all transactions.</p>
         </div>
         
-        <div className="flex gap-4 items-center">
-          <div className="relative w-64">
+        <div className="flex gap-3 items-center flex-wrap">
+          <div className="relative w-56">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
               placeholder="Search order number..." 
@@ -269,12 +274,41 @@ export function Orders() {
               className="pl-8"
             />
           </div>
+
+          {/* Date filter */}
+          <div className="relative flex items-center">
+            <CalendarDays className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              type="date"
+              value={dateFilter}
+              onChange={e => setDateFilter(e.target.value)}
+              className="pl-9 pr-8 w-44"
+            />
+            {dateFilter && (
+              <button
+                onClick={() => setDateFilter("")}
+                title="Show all dates"
+                className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Today shortcut */}
+          {dateFilter !== todayStr() && (
+            <Button variant="outline" size="sm" onClick={() => setDateFilter(todayStr())} className="h-9 text-xs gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Today
+            </Button>
+          )}
+
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Orders</SelectItem>
+              <SelectItem value="all">All Statuses</SelectItem>
               <SelectItem value="open">Open (Unpaid)</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="completed">Completed</SelectItem>

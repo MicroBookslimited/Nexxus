@@ -311,6 +311,7 @@ export const ListOrdersQueryParams = zod.object({
     .enum(["open", "pending", "completed", "cancelled", "refunded", "voided"])
     .optional(),
   limit: zod.coerce.number().optional(),
+  date: zod.string().optional(),
 });
 
 export const ListOrdersResponseItem = zod.object({

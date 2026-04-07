@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, appSettingsTable } from "@workspace/db";
 import {
   CreateOrderBody,
@@ -76,9 +76,20 @@ router.get("/orders", async (req, res): Promise<void> => {
     return;
   }
 
-  const orders = query.data.status
-    ? await db.select().from(ordersTable).where(eq(ordersTable.status, query.data.status))
-    : await db.select().from(ordersTable);
+  const conditions = [];
+  if (query.data.status) conditions.push(eq(ordersTable.status, query.data.status));
+  if (query.data.date) {
+    const dayStart = new Date(`${query.data.date}T00:00:00.000Z`);
+    const dayEnd   = new Date(`${query.data.date}T23:59:59.999Z`);
+    conditions.push(gte(ordersTable.createdAt, dayStart));
+    conditions.push(lt(ordersTable.createdAt, new Date(dayEnd.getTime() + 1)));
+  }
+
+  const orders = await db
+    .select()
+    .from(ordersTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(ordersTable.createdAt);
 
   const ordersWithItems = await Promise.all(
     orders.map(async (order) => {
