@@ -87,19 +87,23 @@ export function Layout({ children }: { children: ReactNode }) {
     setLocation("/login");
   }, [setLocation]);
 
+  const fsSupported = typeof document.documentElement.requestFullscreen === "function";
+
   const toggleFullscreen = useCallback(() => {
+    if (!fsSupported) return;
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
     } else {
       document.exitFullscreen().catch(() => {});
     }
-  }, []);
+  }, [fsSupported]);
 
   useEffect(() => {
+    if (!fsSupported) return;
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
-  }, []);
+  }, [fsSupported]);
 
   const showBanner = !bannerDismissed && timeLeft !== null && expiryDate !== null;
   const daysLeft = timeLeft ? timeLeft.days : 0;
@@ -143,15 +147,17 @@ export function Layout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            onClick={toggleFullscreen}
-            title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-          >
-            {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-          </Button>
+          {fsSupported && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            >
+              {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+            </Button>
+          )}
 
           {/* Profile dropdown */}
           <div className="relative" ref={profileRef}>

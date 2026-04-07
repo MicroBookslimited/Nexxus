@@ -66,8 +66,11 @@ function Router() {
   );
 }
 
+const fsSupported = typeof document.documentElement.requestFullscreen === "function";
+
 function useAutoFullscreen() {
   useEffect(() => {
+    if (!fsSupported) return;
     const requestFs = () => {
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(() => {});
@@ -97,12 +100,13 @@ function FullscreenFab() {
   const [isFs, setIsFs] = useState(!!document.fullscreenElement);
 
   useEffect(() => {
+    if (!fsSupported) return;
     const onFsChange = () => setIsFs(!!document.fullscreenElement);
     document.addEventListener("fullscreenchange", onFsChange);
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
 
-  if (isFs) return null;
+  if (!fsSupported || isFs) return null;
 
   return (
     <button
