@@ -3,7 +3,7 @@ import {
   db, tenantsTable, subscriptionsTable, subscriptionPlansTable,
   bankAccountSettingsTable, bankTransferProofsTable,
 } from "@workspace/db";
-import { eq, desc, count, sql } from "drizzle-orm";
+import { eq, desc, count, sql, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
 import bcryptjs from "bcryptjs";
@@ -16,6 +16,10 @@ function getJwtSecret(): string {
 
 function signSuperAdminToken() {
   return jwt.sign({ type: "superadmin" }, getJwtSecret(), { expiresIn: "8h" });
+}
+
+function signTenantToken(tenantId: number, email: string) {
+  return jwt.sign({ tenantId, email, type: "tenant" }, getJwtSecret(), { expiresIn: "7d" });
 }
 
 function verifySuperAdminToken(token: string): boolean {
@@ -420,6 +424,80 @@ router.patch("/superadmin/bank-transfer-proofs/:id", async (req, res): Promise<v
   }
 
   res.json({ success: true });
+});
+
+/* ─── Impersonate Tenant (Login As) ─── */
+router.post("/superadmin/tenants/:id/impersonate", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const id = parseInt(req.params["id"] ?? "");
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.id, id));
+  if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
+  if (tenant.status === "suspended") { res.status(403).json({ error: "Account is suspended" }); return; }
+
+  const token = signTenantToken(tenant.id, tenant.email);
+  res.json({ token, tenant: { id: tenant.id, email: tenant.email, businessName: tenant.businessName } });
+});
+
+/* ─── Reset Tenant Password ─── */
+const ResetPasswordBody = z.object({ newPassword: z.string().min(6) });
+
+router.post("/superadmin/tenants/:id/reset-password", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const id = parseInt(req.params["id"] ?? "");
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = ResetPasswordBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Password must be at least 6 characters" }); return; }
+
+  const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.id, id));
+  if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
+
+  const passwordHash = await bcryptjs.hash(parsed.data.newPassword, 12);
+  await db.update(tenantsTable).set({ passwordHash, updatedAt: new Date() }).where(eq(tenantsTable.id, id));
+
+  res.json({ success: true });
+});
+
+/* ─── All Users (Tenants) with full search ─── */
+router.get("/superadmin/users", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const q = (req.query["q"] as string | undefined) ?? "";
+
+  const users = await db
+    .select({
+      id: tenantsTable.id,
+      businessName: tenantsTable.businessName,
+      ownerName: tenantsTable.ownerName,
+      email: tenantsTable.email,
+      phone: tenantsTable.phone,
+      country: tenantsTable.country,
+      status: tenantsTable.status,
+      onboardingComplete: tenantsTable.onboardingComplete,
+      createdAt: tenantsTable.createdAt,
+      subscriptionStatus: subscriptionsTable.status,
+      planName: subscriptionPlansTable.name,
+      billingCycle: subscriptionsTable.billingCycle,
+    })
+    .from(tenantsTable)
+    .leftJoin(subscriptionsTable, eq(subscriptionsTable.tenantId, tenantsTable.id))
+    .leftJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
+    .where(
+      q
+        ? or(
+            ilike(tenantsTable.email, `%${q}%`),
+            ilike(tenantsTable.businessName, `%${q}%`),
+            ilike(tenantsTable.ownerName, `%${q}%`)
+          )
+        : undefined
+    )
+    .orderBy(desc(tenantsTable.createdAt));
+
+  res.json(users);
 });
 
 export default router;

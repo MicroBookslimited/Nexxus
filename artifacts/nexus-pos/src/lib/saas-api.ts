@@ -112,6 +112,19 @@ export const superadminReviewTransferProof = (id: number, status: "approved" | "
     method: "PATCH", body: JSON.stringify({ status, reviewNotes }), headers: superadminAuthHeaders(),
   });
 
+export const superadminGetUsers = (q?: string) =>
+  api<UserRow[]>(`/superadmin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`, { headers: superadminAuthHeaders() });
+
+export const superadminImpersonate = (tenantId: number) =>
+  api<{ token: string; tenant: { id: number; email: string; businessName: string } }>(`/superadmin/tenants/${tenantId}/impersonate`, {
+    method: "POST", headers: superadminAuthHeaders(),
+  });
+
+export const superadminResetPassword = (tenantId: number, newPassword: string) =>
+  api<{ success: boolean }>(`/superadmin/tenants/${tenantId}/reset-password`, {
+    method: "POST", body: JSON.stringify({ newPassword }), headers: superadminAuthHeaders(),
+  });
+
 /* ─── Types ─── */
 export interface Tenant {
   id: number; businessName: string; ownerName: string; email: string; phone?: string;
@@ -152,4 +165,11 @@ export interface TransferProofRow {
   status: string; reviewNotes?: string; reviewedAt?: string; createdAt: string;
   businessName?: string; ownerName?: string; email?: string; planName?: string;
   bankName?: string; accountHolder?: string;
+}
+
+export interface UserRow {
+  id: number; businessName: string; ownerName: string; email: string;
+  phone?: string; country?: string; status: string;
+  onboardingComplete: boolean; createdAt: string;
+  subscriptionStatus?: string; planName?: string; billingCycle?: string;
 }

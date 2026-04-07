@@ -4,14 +4,17 @@ import {
   RefreshCw, LogOut, Zap, Shield, CheckCircle, XCircle, Clock,
   Eye, X, AlertTriangle, Plus, Building2, Banknote, FileCheck,
   LayoutDashboard, Settings, Pencil, Trash2, Download, ChevronRight,
+  LogIn, KeyRound, Check,
 } from "lucide-react";
 import {
-  SUPERADMIN_TOKEN_KEY, superadminLogin, superadminStats, superadminTenants,
+  SUPERADMIN_TOKEN_KEY, TENANT_TOKEN_KEY,
+  superadminLogin, superadminStats, superadminTenants,
   superadminUpdateTenant, superadminCreateTenant, superadminGetBankAccounts,
   superadminCreateBankAccount, superadminUpdateBankAccount, superadminDeleteBankAccount,
   superadminGetTransferProofs, superadminReviewTransferProof,
+  superadminGetUsers, superadminImpersonate, superadminResetPassword,
   getPlans,
-  type TenantRow, type BankAccount, type TransferProofRow, type Plan,
+  type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow,
 } from "@/lib/saas-api";
 
 type Stats = {
@@ -20,7 +23,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "tenants" | "payments" | "settings";
+type Tab = "overview" | "users" | "tenants" | "payments" | "settings";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -471,6 +474,82 @@ function ProofModal({ proof, onClose, onReview }: { proof: TransferProofRow; onC
   );
 }
 
+/* ─── Reset Password Modal ─── */
+function ResetPasswordModal({ user, onClose }: { user: UserRow; onClose: () => void }) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleReset() {
+    if (newPassword.length < 6) { setError("Password must be at least 6 characters."); return; }
+    if (newPassword !== confirm) { setError("Passwords do not match."); return; }
+    setLoading(true); setError("");
+    try {
+      await superadminResetPassword(user.id, newPassword);
+      setSuccess(true);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to reset password");
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[#1a2332] border border-[#2a3a55] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-[#2a3a55]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-amber-500/20 rounded-lg flex items-center justify-center"><KeyRound size={16} className="text-amber-400" /></div>
+            <div>
+              <div className="font-semibold text-white">Reset Password</div>
+              <div className="text-xs text-[#475569]">{user.email}</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors"><X size={16} /></button>
+        </div>
+
+        <div className="p-5">
+          {success ? (
+            <div className="text-center py-4">
+              <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-3"><Check size={24} className="text-green-400" /></div>
+              <div className="font-semibold text-white mb-1">Password Reset!</div>
+              <div className="text-sm text-[#94a3b8]">The password for <strong>{user.ownerName}</strong> has been updated.</div>
+              <button onClick={onClose} className="mt-4 px-4 py-2 bg-[#3b82f6] hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors">Done</button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-[#94a3b8] mb-4">Set a new password for <strong className="text-white">{user.ownerName}</strong> ({user.businessName}).</p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-[#94a3b8] mb-1.5 font-medium">New Password</label>
+                  <input type="password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setError(""); }}
+                    placeholder="Min. 6 characters"
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2.5 text-white text-sm focus:border-[#3b82f6] outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs text-[#94a3b8] mb-1.5 font-medium">Confirm Password</label>
+                  <input type="password" value={confirm} onChange={e => { setConfirm(e.target.value); setError(""); }}
+                    placeholder="Repeat password"
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2.5 text-white text-sm focus:border-[#3b82f6] outline-none"
+                    onKeyDown={e => e.key === "Enter" && handleReset()} />
+                </div>
+                {error && <p className="text-sm text-red-400 flex items-center gap-1.5"><AlertTriangle size={13} />{error}</p>}
+              </div>
+              <div className="flex gap-3 mt-5">
+                <button onClick={onClose} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2.5 rounded-lg text-sm font-medium transition-colors">Cancel</button>
+                <button onClick={handleReset} disabled={loading || !newPassword}
+                  className="flex-1 bg-amber-500 hover:bg-amber-400 text-white py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
+                  {loading ? "Resetting…" : "Reset Password"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Dashboard ─── */
 function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [tab, setTab] = useState<Tab>("overview");
@@ -493,6 +572,12 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [proofFilter, setProofFilter] = useState("all");
   const [selectedProof, setSelectedProof] = useState<TransferProofRow | null>(null);
   const [proofsLoading, setProofsLoading] = useState(false);
+
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [userSearch, setUserSearch] = useState("");
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
+  const [impersonating, setImpersonating] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -520,9 +605,17 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     finally { setProofsLoading(false); }
   }, []);
 
+  const loadUsers = useCallback(async (q?: string) => {
+    setUsersLoading(true);
+    try { setUsers(await superadminGetUsers(q)); }
+    catch (e) { console.error(e); }
+    finally { setUsersLoading(false); }
+  }, []);
+
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { if (tab === "settings") loadBankAccounts(); }, [tab, loadBankAccounts]);
   useEffect(() => { if (tab === "payments") loadProofs(); }, [tab, loadProofs]);
+  useEffect(() => { if (tab === "users") loadUsers(); }, [tab, loadUsers]);
 
   useEffect(() => {
     let list = tenants;
@@ -538,7 +631,8 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
 
   const tabs: { id: Tab; label: string; icon: React.ElementType; badge?: number }[] = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
-    { id: "tenants", label: "Businesses", icon: Building2, badge: stats?.totalTenants },
+    { id: "users", label: "Users", icon: Users, badge: stats?.totalTenants },
+    { id: "tenants", label: "Businesses", icon: Building2 },
     { id: "payments", label: "Payments", icon: Banknote, badge: stats?.pendingProofs || undefined },
     { id: "settings", label: "Settings", icon: Settings },
   ];
@@ -548,6 +642,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
       {selectedTenant && <TenantModal tenant={selectedTenant} plans={planMap} onClose={() => setSelectedTenant(null)} onUpdate={loadData} />}
       {showCreateTenant && <CreateTenantModal plans={plans} onClose={() => setShowCreateTenant(false)} onCreated={loadData} />}
       {selectedProof && <ProofModal proof={selectedProof} onClose={() => setSelectedProof(null)} onReview={() => { loadProofs(); loadData(); }} />}
+      {resetTarget && <ResetPasswordModal user={resetTarget} onClose={() => setResetTarget(null)} />}
 
       {/* Top bar */}
       <header className="bg-[#1a2332] border-b border-[#2a3a55] px-6 py-4 flex items-center justify-between">
@@ -645,6 +740,100 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                 <div className="font-semibold text-white group-hover:text-purple-400 transition-colors">Bank Accounts</div>
                 <div className="text-sm text-[#475569]">Configure payment destinations</div>
               </button>
+            </div>
+          </>
+        )}
+
+        {/* ── USERS ── */}
+        {tab === "users" && (
+          <>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-2xl font-bold text-white">Users</h1>
+                <p className="text-[#94a3b8] text-sm">All registered tenant accounts — login as or reset passwords</p>
+              </div>
+              <button onClick={() => loadUsers(userSearch)} className="flex items-center gap-2 text-sm text-[#475569] hover:text-white border border-[#2a3a55] px-3 py-2 rounded-lg transition-colors">
+                <RefreshCw size={14} className={usersLoading ? "animate-spin" : ""} /> Refresh
+              </button>
+            </div>
+
+            <div className="bg-[#1a2332] border border-[#2a3a55] rounded-xl overflow-hidden">
+              <div className="p-4 border-b border-[#2a3a55]">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#475569]" />
+                  <input
+                    value={userSearch}
+                    onChange={e => { setUserSearch(e.target.value); loadUsers(e.target.value); }}
+                    placeholder="Search by name, email, or business…"
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg pl-9 pr-4 py-2 text-white text-sm focus:border-[#3b82f6] outline-none" />
+                </div>
+              </div>
+
+              {usersLoading ? (
+                <div className="p-12 text-center text-[#475569]"><RefreshCw size={24} className="animate-spin mx-auto mb-2" />Loading users…</div>
+              ) : users.length === 0 ? (
+                <div className="p-12 text-center text-[#475569]"><Users size={32} className="mx-auto mb-2 opacity-40" />No users found</div>
+              ) : (
+                <div className="divide-y divide-[#2a3a55]/50">
+                  {users.map(u => (
+                    <div key={u.id} className="flex items-center gap-4 px-5 py-4 hover:bg-[#2a3a55]/20 transition-colors">
+                      {/* Avatar */}
+                      <div className="w-9 h-9 rounded-full bg-[#3b82f6]/20 flex items-center justify-center shrink-0">
+                        <span className="text-[#3b82f6] text-sm font-bold">{u.ownerName.charAt(0).toUpperCase()}</span>
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-white text-sm">{u.ownerName}</span>
+                          <span className="text-[#475569] text-xs">·</span>
+                          <span className="text-[#94a3b8] text-xs">{u.businessName}</span>
+                          <StatusBadge status={u.subscriptionStatus ?? "trial"} />
+                          {!u.onboardingComplete && (
+                            <span className="text-[9px] font-bold uppercase tracking-wide bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded-full">Setup Incomplete</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-[#475569] mt-0.5 flex items-center gap-3">
+                          <span>{u.email}</span>
+                          {u.phone && <span>{u.phone}</span>}
+                          {u.planName && <span>Plan: <span className="text-[#94a3b8]">{u.planName}</span></span>}
+                          <span>Joined {new Date(u.createdAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          disabled={impersonating === u.id}
+                          onClick={async () => {
+                            setImpersonating(u.id);
+                            try {
+                              const { token } = await superadminImpersonate(u.id);
+                              localStorage.setItem(TENANT_TOKEN_KEY, token);
+                              window.location.href = "/app/";
+                            } catch (e: unknown) {
+                              alert(e instanceof Error ? e.message : "Failed to impersonate");
+                              setImpersonating(null);
+                            }
+                          }}
+                          title="Login as this user"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3b82f6]/10 border border-[#3b82f6]/30 hover:bg-[#3b82f6] text-[#3b82f6] hover:text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
+                          {impersonating === u.id ? <RefreshCw size={12} className="animate-spin" /> : <LogIn size={12} />}
+                          Login As
+                        </button>
+                        <button
+                          onClick={() => setResetTarget(u)}
+                          title="Reset password"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500 text-amber-400 hover:text-white rounded-lg text-xs font-medium transition-colors">
+                          <KeyRound size={12} /> Reset Password
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="px-5 py-3 border-t border-[#2a3a55] text-xs text-[#475569]">{users.length} user{users.length !== 1 ? "s" : ""}</div>
             </div>
           </>
         )}
