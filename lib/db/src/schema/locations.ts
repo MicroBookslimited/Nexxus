@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, integer, timestamp, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, integer, timestamp, unique, real } from "drizzle-orm/pg-core";
 import { staffTable } from "./staff";
 import { productsTable } from "./products";
 
@@ -36,7 +36,17 @@ export const stockTransfersTable = pgTable("stock_transfers", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const productLocationsTable = pgTable("product_locations", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  locationId: integer("location_id").notNull().references(() => locationsTable.id, { onDelete: "cascade" }),
+  isAvailable: boolean("is_available").notNull().default(true),
+  priceOverride: real("price_override"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique("uq_product_location_avail").on(t.productId, t.locationId)]);
+
 export type Location = typeof locationsTable.$inferSelect;
 export type StaffLocation = typeof staffLocationsTable.$inferSelect;
 export type LocationInventory = typeof locationInventoryTable.$inferSelect;
 export type StockTransfer = typeof stockTransfersTable.$inferSelect;
+export type ProductLocation = typeof productLocationsTable.$inferSelect;

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, like, and, type SQL, count } from "drizzle-orm";
-import { db, productsTable, variantGroupsTable, modifierGroupsTable } from "@workspace/db";
+import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable } from "@workspace/db";
 import {
   CreateProductBody,
   UpdateProductBody,
@@ -160,6 +160,61 @@ router.delete("/products/:id", async (req, res): Promise<void> => {
   }
 
   res.sendStatus(204);
+});
+
+/* ── Product location availability & pricing ── */
+
+router.get("/products/:id/locations", async (req, res): Promise<void> => {
+  const productId = parseInt(req.params.id as string, 10);
+  if (isNaN(productId)) { res.status(400).json({ error: "Invalid product id" }); return; }
+
+  const locations = await db.select().from(locationsTable).where(eq(locationsTable.isActive, true));
+  const overrides = await db.select().from(productLocationsTable).where(eq(productLocationsTable.productId, productId));
+
+  const result = locations.map((loc) => {
+    const override = overrides.find((o) => o.locationId === loc.id);
+    return {
+      locationId: loc.id,
+      locationName: loc.name,
+      isAvailable: override ? override.isAvailable : true,
+      priceOverride: override?.priceOverride ?? null,
+    };
+  });
+
+  res.json(result);
+});
+
+router.put("/products/:id/locations", async (req, res): Promise<void> => {
+  const productId = parseInt(req.params.id as string, 10);
+  if (isNaN(productId)) { res.status(400).json({ error: "Invalid product id" }); return; }
+
+  const { locations } = req.body as {
+    locations: Array<{ locationId: number; isAvailable: boolean; priceOverride: number | null }>;
+  };
+
+  if (!Array.isArray(locations)) { res.status(400).json({ error: "locations must be an array" }); return; }
+
+  for (const loc of locations) {
+    await db
+      .insert(productLocationsTable)
+      .values({
+        productId,
+        locationId: loc.locationId,
+        isAvailable: loc.isAvailable,
+        priceOverride: loc.priceOverride ?? null,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [productLocationsTable.productId, productLocationsTable.locationId],
+        set: {
+          isAvailable: loc.isAvailable,
+          priceOverride: loc.priceOverride ?? null,
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  res.json({ success: true, updated: locations.length });
 });
 
 export default router;
