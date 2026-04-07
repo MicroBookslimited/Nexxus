@@ -29,7 +29,7 @@ import {
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
 } from "lucide-react";
 import { saasMe } from "@/lib/saas-api";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -851,15 +851,15 @@ export function POS() {
             </p>
           </div>
           <div className="flex gap-3 mt-2">
-            <a
-              href="/cash"
+            <Link
+              to="/cash"
               className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90 transition-colors"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
                 <path d="M12 2a5 5 0 1 1 0 10A5 5 0 0 1 12 2zm0 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               Open Shift in Cash Management
-            </a>
+            </Link>
             <button
               onClick={() => { setLocked(true); setSessionStaff(null); }}
               className="rounded-md border border-border px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
