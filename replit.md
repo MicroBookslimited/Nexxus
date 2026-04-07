@@ -42,7 +42,8 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `/orders` — Order history with status filtering, void/refund support
   - `/products` — Full product CRUD (add/edit/delete, search, category filter, variants, modifiers)
   - `/customers` — Customer management with loyalty points, order history, search
-  - `/staff` — Staff Management (add/edit/deactivate, roles: admin/manager/cashier/kitchen, PIN-based auth)
+  - `/staff` — Staff Management (add/edit/deactivate, roles: admin/manager/cashier/kitchen, PIN-based auth, branch assignment per staff member)
+  - `/locations` — Multi-Location / Branch Management (create/edit/deactivate branches, per-branch inventory, stock transfer between branches, transfer history)
   - `/cash` — Cash Management (open shift with opening cash, record mid-shift payouts, close shift with end-of-day reconciliation, variance reporting, shift history sidebar, EOD report modal with Print Summary / Print with Sales Detail)
   - `/reports` — Business reports with date range presets, hourly chart, KPIs, CSV export
   - `/settings` — Admin Settings (Business Info, Receipt Settings, Email Provider selection)
@@ -79,6 +80,15 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `GET/POST /api/staff` — Staff accounts CRUD
   - `PATCH/DELETE /api/staff/:id` — Update/deactivate staff
   - `POST /api/staff/verify-pin` — PIN authentication
+  - `GET /api/staff/:id/locations` — Get branch assignments for a staff member
+  - `PUT /api/staff/:id/locations` — Set branch assignments (with primaryLocationId)
+  - `GET/POST /api/locations` — Branch CRUD
+  - `PATCH/DELETE /api/locations/:id` — Update/deactivate branch
+  - `GET/PUT /api/locations/:id/inventory` — Per-branch inventory management
+  - `POST /api/locations/:id/inventory/init` — Seed all products into branch inventory
+  - `GET /api/locations/:id/staff` — Staff assigned to a branch
+  - `GET /api/stock-transfers` — Transfer history
+  - `POST /api/stock-transfers` — Create stock transfer (deducts from source, adds to destination)
   - `GET /api/purchases?productId=X` — List purchase records (optionally filtered by product)
   - `POST /api/purchases` — Record a stock purchase (auto-increments product stockCount, sets inStock=true)
   - `DELETE /api/purchases/:id` — Delete a purchase record

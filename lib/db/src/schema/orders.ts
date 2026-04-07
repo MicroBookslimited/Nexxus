@@ -24,6 +24,7 @@ export const ordersTable = pgTable("orders", {
   loyaltyPointsRedeemed: integer("loyalty_points_redeemed").default(0),
   loyaltyDiscount: real("loyalty_discount").default(0),
   staffId: integer("staff_id"),
+  locationId: integer("location_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });

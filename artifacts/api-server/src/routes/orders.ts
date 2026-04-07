@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq, gte, lt, sql } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, appSettingsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, appSettingsTable, locationInventoryTable } from "@workspace/db";
 import {
   CreateOrderBody,
   GetOrderParams,
@@ -219,6 +219,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       customerId: parsed.data.customerId,
       tableId: parsed.data.tableId,
       staffId: parsed.data.staffId,
+      locationId: parsed.data.locationId,
       orderType: parsed.data.orderType ?? "counter",
       loyaltyPointsRedeemed: pointsToRedeem > 0 ? pointsToRedeem : undefined,
       loyaltyDiscount: loyaltyDiscount > 0 ? loyaltyDiscount : undefined,
@@ -251,6 +252,19 @@ router.post("/orders", async (req, res): Promise<void> => {
         inStock: sql`CASE WHEN ${productsTable.stockCount} - ${item.quantity} <= 0 THEN false ELSE ${productsTable.inStock} END`,
       })
       .where(eq(productsTable.id, item.productId));
+
+    // Deduct from location inventory if a locationId was provided
+    if (parsed.data.locationId) {
+      await db
+        .update(locationInventoryTable)
+        .set({ stockCount: sql`GREATEST(0, ${locationInventoryTable.stockCount} - ${item.quantity})`, updatedAt: new Date() })
+        .where(
+          and(
+            eq(locationInventoryTable.locationId, parsed.data.locationId),
+            eq(locationInventoryTable.productId, item.productId),
+          )
+        );
+    }
   }
 
   // Update customer stats only on completed orders (not open/deferred payment)

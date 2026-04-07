@@ -20,6 +20,7 @@ import { Onboarding } from "@/pages/onboarding";
 import { Superadmin } from "@/pages/superadmin";
 import { SubscriptionPage } from "@/pages/subscription";
 import { ResetPassword } from "@/pages/reset-password";
+import { Locations } from "@/pages/locations";
 import { Layout } from "@/components/layout";
 
 const queryClient = new QueryClient();
@@ -55,6 +56,7 @@ function Router() {
       <Route path="/tables"><ProtectedRoute component={Tables} /></Route>
       <Route path="/kitchen"><ProtectedRoute component={Kitchen} /></Route>
       <Route path="/staff"><ProtectedRoute component={Staff} /></Route>
+      <Route path="/locations"><ProtectedRoute component={Locations} /></Route>
       <Route path="/cash"><ProtectedRoute component={CashManagement} /></Route>
       <Route path="/settings"><ProtectedRoute component={AdminSettings} /></Route>
       <Route path="/subscription"><ProtectedRoute component={SubscriptionPage} /></Route>

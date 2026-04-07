@@ -26,7 +26,7 @@ import {
   Search, CreditCard, Banknote, Trash2, ShoppingCart, ScanBarcode,
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
-  UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X,
+  UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
 } from "lucide-react";
 import { saasMe } from "@/lib/saas-api";
 import { useLocation } from "wouter";
@@ -397,6 +397,16 @@ export function POS() {
   const [, navigate] = useLocation();
   const [locked, setLocked] = useState(true);
   const [sessionStaff, setSessionStaff] = useState<{ id: number; name: string; role: string } | null>(null);
+  const [sessionLocationId, setSessionLocationId] = useState<number | null>(null);
+  const [posLocations, setPosLocations] = useState<{ id: number; name: string }[]>([]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("nexus_tenant_token");
+    fetch("/api/locations", { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => r.ok ? r.json() : [])
+      .then((locs: { id: number; name: string; isActive: boolean }[]) => setPosLocations(locs.filter(l => l.isActive)))
+      .catch(() => {});
+  }, []);
 
   const [expiryPopupOpen, setExpiryPopupOpen] = useState(false);
   const [expiryTarget, setExpiryTarget] = useState<Date | null>(null);
@@ -685,6 +695,7 @@ export function POS() {
           loyaltyPointsToRedeem: clampedPoints > 0 ? clampedPoints : undefined,
           tableId: orderMode === "dine-in" ? (selectedTableId ?? undefined) : undefined,
           orderType: orderMode,
+          locationId: sessionLocationId ?? undefined,
         },
       },
       {
@@ -719,6 +730,7 @@ export function POS() {
           loyaltyPointsToRedeem: clampedPoints > 0 ? clampedPoints : undefined,
           tableId: selectedTableId ?? undefined,
           orderType: "dine-in",
+          locationId: sessionLocationId ?? undefined,
         },
       },
       {
@@ -866,12 +878,25 @@ export function POS() {
       {/* Staff session badge */}
       {sessionStaff && (
         <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
+          {posLocations.length > 0 && (
+            <div className="flex items-center gap-1 bg-muted/60 border border-border/50 rounded-md px-2 py-1">
+              <MapPin className="h-3 w-3 text-primary shrink-0" />
+              <select
+                value={sessionLocationId ?? ""}
+                onChange={e => setSessionLocationId(e.target.value ? Number(e.target.value) : null)}
+                className="text-xs bg-transparent border-none outline-none text-foreground cursor-pointer max-w-[120px]"
+              >
+                <option value="">All Branches</option>
+                {posLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+          )}
           <span className="text-xs text-muted-foreground">
             Logged in: <span className="font-semibold text-foreground">{sessionStaff.name}</span>
           </span>
           <button
             className="text-xs text-muted-foreground hover:text-destructive underline-offset-2 hover:underline transition-colors"
-            onClick={() => { setLocked(true); setSessionStaff(null); }}
+            onClick={() => { setLocked(true); setSessionStaff(null); setSessionLocationId(null); }}
           >
             Lock
           </button>

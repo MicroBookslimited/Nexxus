@@ -8,3 +8,4 @@ export * from "./cash";
 export * from "./settings";
 export * from "./saas";
 export * from "./roles";
+export * from "./locations";

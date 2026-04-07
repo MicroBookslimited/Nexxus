@@ -10,22 +10,129 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Edit2, Trash2, UserCog, KeyRound } from "lucide-react";
+import { Plus, Edit2, Trash2, UserCog, KeyRound, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { getRoles, type RoleRow } from "@/lib/saas-api";
+import { getRoles, type RoleRow, TENANT_TOKEN_KEY } from "@/lib/saas-api";
+
+interface Location { id: number; name: string; address: string | null; isActive: boolean; }
+interface StaffLocationRow { id: number; locationId: number; isPrimary: boolean; locationName: string | null; }
+
+function staffAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TENANT_TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+}
+
+async function staffApi<T>(path: string, options?: RequestInit): Promise<T> {
+  const resp = await fetch(`/api${path}`, { headers: staffAuthHeaders(), ...options });
+  if (!resp.ok) { const err = await resp.json().catch(() => ({ error: resp.statusText })) as { error?: string }; throw new Error(err.error ?? resp.statusText); }
+  return resp.json() as Promise<T>;
+}
+
+function LocationAssignModal({ member, onClose }: { member: StaffMember; onClose: () => void }) {
+  const { toast } = useToast();
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [primaryId, setPrimaryId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      staffApi<Location[]>("/locations"),
+      staffApi<StaffLocationRow[]>(`/staff/${member.id}/locations`),
+    ]).then(([locs, asgn]) => {
+      setLocations(locs.filter(l => l.isActive));
+      setSelected(new Set(asgn.map(a => a.locationId)));
+      const primary = asgn.find(a => a.isPrimary);
+      setPrimaryId(primary?.locationId ?? null);
+    }).catch(() => {});
+  }, [member.id]);
+
+  const toggle = (id: number) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) { next.delete(id); if (primaryId === id) setPrimaryId(null); }
+    else next.add(id);
+    return next;
+  });
+
+  async function save() {
+    setSaving(true);
+    try {
+      await staffApi(`/staff/${member.id}/locations`, {
+        method: "PUT",
+        body: JSON.stringify({ locationIds: [...selected], primaryLocationId: primaryId ?? undefined }),
+      });
+      toast({ title: "Branch assignment saved" });
+      onClose();
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-primary" />
+            Branch Access — {member.name}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="py-2">
+          {locations.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No branches found. Create branches in the Locations page first.</p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground mb-3">Select which branches this staff member can access. Leave all unchecked for "all branches".</p>
+              {locations.map(loc => {
+                const isSelected = selected.has(loc.id);
+                const isPrimary = primaryId === loc.id;
+                return (
+                  <div key={loc.id} className={cn("flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors", isSelected ? "border-primary/50 bg-primary/5" : "border-border/50 hover:border-border")} onClick={() => toggle(loc.id)}>
+                    <div className={cn("h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors", isSelected ? "border-primary bg-primary" : "border-muted-foreground/40")}>
+                      {isSelected && <div className="h-2 w-2 bg-white rounded-sm" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{loc.name}</p>
+                      {loc.address && <p className="text-xs text-muted-foreground truncate">{loc.address}</p>}
+                    </div>
+                    {isSelected && (
+                      <button
+                        className={cn("text-xs px-2 py-0.5 rounded-full border transition-colors shrink-0", isPrimary ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/50")}
+                        onClick={e => { e.stopPropagation(); setPrimaryId(isPrimary ? null : loc.id); }}
+                      >
+                        {isPrimary ? "Primary" : "Set Primary"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={saving || locations.length === 0}>{saving ? "Saving…" : "Save"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function roleStyle(color: string): string {
   return `border text-white/90`;
 }
 
 function StaffCard({
-  member, roles, onEdit, onDeactivate,
+  member, roles, onEdit, onDeactivate, onAssignBranches,
 }: {
   member: StaffMember;
   roles: RoleRow[];
   onEdit: (m: StaffMember) => void;
   onDeactivate: (id: number) => void;
+  onAssignBranches: (m: StaffMember) => void;
 }) {
   const matchedRole = roles.find(r => r.name.toLowerCase() === member.role.toLowerCase());
   const roleColor = matchedRole?.color ?? "#64748b";
@@ -56,9 +163,12 @@ function StaffCard({
         <Button size="sm" variant="ghost" className="flex-1 h-8 text-xs" onClick={() => onEdit(member)}>
           <Edit2 className="h-3 w-3 mr-1" /> Edit
         </Button>
+        <Button size="sm" variant="ghost" className="flex-1 h-8 text-xs text-primary hover:text-primary" onClick={() => onAssignBranches(member)} title="Assign Branches">
+          <MapPin className="h-3 w-3 mr-1" /> Branches
+        </Button>
         {member.isActive && (
-          <Button size="sm" variant="ghost" className="flex-1 h-8 text-xs text-destructive hover:text-destructive" onClick={() => onDeactivate(member.id)}>
-            <Trash2 className="h-3 w-3 mr-1" /> Deactivate
+          <Button size="sm" variant="ghost" className="h-8 text-xs text-destructive hover:text-destructive px-2" onClick={() => onDeactivate(member.id)}>
+            <Trash2 className="h-3 w-3" />
           </Button>
         )}
       </div>
@@ -194,6 +304,7 @@ export function Staff() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
   const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [locationAssignMember, setLocationAssignMember] = useState<StaffMember | null>(null);
 
   useEffect(() => {
     getRoles().then(data => setRoles(data.roles)).catch(() => {});
@@ -288,6 +399,7 @@ export function Staff() {
                       roles={roles}
                       onEdit={(mem) => { setEditingMember(mem); setDialogOpen(true); }}
                       onDeactivate={handleDeactivate}
+                      onAssignBranches={setLocationAssignMember}
                     />
                   ))}
                 </div>
@@ -304,6 +416,7 @@ export function Staff() {
                       roles={roles}
                       onEdit={(mem) => { setEditingMember(mem); setDialogOpen(true); }}
                       onDeactivate={handleDeactivate}
+                      onAssignBranches={setLocationAssignMember}
                     />
                   ))}
                 </div>
@@ -320,6 +433,12 @@ export function Staff() {
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
       />
+      {locationAssignMember && (
+        <LocationAssignModal
+          member={locationAssignMember}
+          onClose={() => setLocationAssignMember(null)}
+        />
+      )}
     </div>
   );
 }
