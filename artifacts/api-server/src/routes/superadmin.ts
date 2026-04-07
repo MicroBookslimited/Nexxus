@@ -469,19 +469,22 @@ router.get("/superadmin/plans", async (req, res): Promise<void> => {
   res.json(plans.map((p) => ({ ...p, features: JSON.parse(p.features), modules: JSON.parse(p.modules) })));
 });
 
+const coerceInt = z.union([z.number().int(), z.string().regex(/^\d+$/).transform(Number)]);
+const coerceNum = z.union([z.number(), z.string().regex(/^\d+(\.\d+)?$/).transform(Number)]);
+
 const PlanBody = z.object({
   name: z.string().min(1),
   slug: z.string().min(1),
   description: z.string().default(""),
-  priceMonthly: z.number().min(0),
-  priceAnnual: z.number().min(0),
-  maxStaff: z.number().int().min(0),
-  maxProducts: z.number().int().min(0),
-  maxLocations: z.number().int().min(0),
-  maxInvoices: z.number().int().min(0).default(9999),
+  priceMonthly: coerceNum.pipe(z.number().min(0)),
+  priceAnnual: coerceNum.pipe(z.number().min(0)),
+  maxStaff: coerceInt.pipe(z.number().int().min(0)),
+  maxProducts: coerceInt.pipe(z.number().int().min(0)),
+  maxLocations: coerceInt.pipe(z.number().int().min(0)),
+  maxInvoices: coerceInt.pipe(z.number().int().min(0)).default(9999),
   modules: z.array(z.string()).default([]),
   features: z.array(z.string()).default([]),
-  isActive: z.boolean().default(true),
+  isActive: z.union([z.boolean(), z.enum(["true", "false"]).transform(v => v === "true")]).default(true),
 });
 
 router.post("/superadmin/plans", async (req, res): Promise<void> => {
@@ -500,13 +503,18 @@ router.post("/superadmin/plans", async (req, res): Promise<void> => {
 router.put("/superadmin/plans/:id", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;
   const id = parseInt(req.params["id"] ?? "0", 10);
-  const parsed = PlanBody.partial().safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const parsed = PlanBody.safeParse(req.body);
+  if (!parsed.success) {
+    console.error("Plan PUT validation failed:", JSON.stringify(req.body, null, 2), "\nErrors:", JSON.stringify(parsed.error.issues, null, 2));
+    res.status(400).json({ error: parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ") });
+    return;
+  }
   const { modules, features, ...rest } = parsed.data;
-  const updates: Record<string, unknown> = { ...rest };
-  if (modules !== undefined) updates["modules"] = JSON.stringify(modules);
-  if (features !== undefined) updates["features"] = JSON.stringify(features);
-  const [plan] = await db.update(subscriptionPlansTable).set(updates).where(eq(subscriptionPlansTable.id, id)).returning();
+  const [plan] = await db.update(subscriptionPlansTable).set({
+    ...rest,
+    modules: JSON.stringify(modules),
+    features: JSON.stringify(features),
+  }).where(eq(subscriptionPlansTable.id, id)).returning();
   if (!plan) { res.status(404).json({ error: "Plan not found" }); return; }
   res.json({ ...plan, features: JSON.parse(plan.features), modules: JSON.parse(plan.modules) });
 });
