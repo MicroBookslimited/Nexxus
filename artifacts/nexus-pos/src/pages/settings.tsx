@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign,
+  Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign, Bell, Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +78,11 @@ export function AdminSettings() {
   const [baseCurrency, setBaseCurrency] = useState("JMD");
   const [secondaryCurrency, setSecondaryCurrency] = useState("");
   const [currencyRate, setCurrencyRate] = useState("");
+  const [digestEnabled, setDigestEnabled] = useState(false);
+  const [digestEmail, setDigestEmail] = useState("");
+  const [digestHour, setDigestHour] = useState("7");
+  const [lowStockThreshold, setLowStockThreshold] = useState("5");
+  const [sendingTest, setSendingTest] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -91,6 +96,10 @@ export function AdminSettings() {
     setBaseCurrency(settings.base_currency ?? "JMD");
     setSecondaryCurrency(settings.secondary_currency ?? "");
     setCurrencyRate(settings.currency_rate ?? "");
+    setDigestEnabled(settings.daily_digest_enabled === "true");
+    setDigestEmail(settings.daily_digest_email ?? "");
+    setDigestHour(settings.daily_digest_hour ?? "7");
+    setLowStockThreshold(settings.low_stock_threshold ?? "5");
     setDirty(false);
   }, [settings]);
 
@@ -111,6 +120,10 @@ export function AdminSettings() {
           base_currency: baseCurrency.toUpperCase().trim() || "JMD",
           secondary_currency: secondaryCurrency.toUpperCase().trim(),
           currency_rate: currencyRate,
+          daily_digest_enabled: digestEnabled ? "true" : "false",
+          daily_digest_email: digestEmail.trim(),
+          daily_digest_hour: digestHour,
+          low_stock_threshold: lowStockThreshold,
         },
       },
       {
@@ -121,6 +134,23 @@ export function AdminSettings() {
         onError: () => toast({ title: "Save failed", description: "Could not save settings.", variant: "destructive" }),
       }
     );
+  }
+
+  async function handleSendTestDigest() {
+    setSendingTest(true);
+    try {
+      const res = await fetch("/api/email/daily-digest", { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      toast({ title: "Test digest sent!", description: `Email delivered to ${digestEmail}` });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to send digest";
+      toast({ title: "Send failed", description: msg, variant: "destructive" });
+    } finally {
+      setSendingTest(false);
+    }
   }
 
   const resendConfigured = !!import.meta.env.VITE_RESEND_CONFIGURED || true;
@@ -342,6 +372,118 @@ export function AdminSettings() {
               <AlertCircle className="h-3 w-3 text-amber-500 shrink-0" />
               <span><strong>ZeptoMail:</strong> Set <code className="bg-muted px-1 rounded">ZEPTOMAIL_TOKEN</code> in Secrets to enable</span>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Daily Digest */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Bell className="h-4 w-4 text-primary" />
+            Daily Email Digest
+          </CardTitle>
+          <CardDescription>
+            Automatically receive a morning summary with yesterday's sales, your top-selling products, and any stock alerts
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Enable / Disable toggle */}
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Enable daily digest</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Sends an email every morning at your chosen time</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={digestEnabled}
+              onClick={() => { setDigestEnabled(!digestEnabled); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                digestEnabled ? "bg-primary" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                digestEnabled ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+
+          {digestEnabled && (
+            <div className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="digest-email">Recipient Email</Label>
+                  <Input
+                    id="digest-email"
+                    type="email"
+                    value={digestEmail}
+                    onChange={(e) => { setDigestEmail(e.target.value); markDirty(); }}
+                    placeholder="owner@example.com"
+                  />
+                  <p className="text-xs text-muted-foreground">Where the digest will be sent</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="digest-hour">Delivery Time</Label>
+                  <select
+                    id="digest-hour"
+                    value={digestHour}
+                    onChange={(e) => { setDigestHour(e.target.value); markDirty(); }}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    {Array.from({ length: 24 }, (_, h) => {
+                      const label = h === 0 ? "12:00 AM" : h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM" : `${h - 12}:00 PM`;
+                      return <option key={h} value={String(h)}>{label}</option>;
+                    })}
+                  </select>
+                  <p className="text-xs text-muted-foreground">Server local time</p>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="low-stock-threshold">Low Stock Alert Threshold</Label>
+                <div className="flex items-center gap-3">
+                  <Input
+                    id="low-stock-threshold"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={lowStockThreshold}
+                    onChange={(e) => { setLowStockThreshold(e.target.value); markDirty(); }}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">units or fewer = flagged as low stock</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSendTestDigest}
+                  disabled={sendingTest || !digestEmail}
+                  className="gap-2"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  {sendingTest ? "Sending…" : "Send Test Email Now"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  {digestEmail ? `Sends immediately to ${digestEmail}` : "Enter a recipient email first"}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-lg bg-muted/30 border border-border p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground">What's included in the digest</p>
+            <ul className="space-y-0.5 ml-2">
+              <li>• Yesterday's revenue, order count, average order value, and tax collected</li>
+              <li>• Top 10 best-selling products from the last 7 days</li>
+              <li>• Items that are out of stock or running low</li>
+            </ul>
           </div>
         </CardContent>
       </Card>

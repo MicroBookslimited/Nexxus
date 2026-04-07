@@ -1,10 +1,10 @@
 import { Router, type IRouter } from "express";
 import { Resend } from "resend";
 import { SendMailClient } from "zeptomail";
-import { db, ordersTable, orderItemsTable, cashSessionsTable, cashPayoutsTable } from "@workspace/db";
-import { eq, and, gte, lte, isNotNull } from "drizzle-orm";
+import { db, ordersTable, orderItemsTable, cashSessionsTable, cashPayoutsTable, productsTable } from "@workspace/db";
+import { eq, and, gte, lte, isNotNull, desc, sql, asc } from "drizzle-orm";
 import { z } from "zod";
-import { getSetting } from "./settings";
+import { getSetting, getAllSettings } from "./settings";
 
 const router: IRouter = Router();
 
@@ -268,6 +268,215 @@ function buildEodEmailHtml(data: {
 </body></html>`;
 }
 
+/* ───── Daily Digest HTML ───── */
+
+function buildDailyDigestHtml(data: {
+  businessName: string;
+  date: string;
+  currency: string;
+  yesterday: { revenue: number; orders: number; avgOrder: number; tax: number };
+  bestSellers: { productName: string; quantity: number; revenue: number; rank: number }[];
+  lowStock: { name: string; category: string; stockCount: number; status: string }[];
+  outOfStock: { name: string; category: string }[];
+}) {
+  const { businessName, date, currency, yesterday, bestSellers, lowStock, outOfStock } = data;
+
+  const fmtCurr = (n: number) => {
+    try { return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n); }
+    catch { return `${currency} ${n.toFixed(2)}`; }
+  };
+
+  const statusDot = (s: string) => s === "out" ? "#ef4444" : "#f59e0b";
+
+  const bestSellerRows = bestSellers.slice(0, 10).map((p, i) => `
+    <tr style="border-bottom:1px solid #f1f5f9;">
+      <td style="padding:7px 8px;font-size:12px;color:#64748b;font-weight:bold;">${i + 1}</td>
+      <td style="padding:7px 8px;font-size:12px;font-weight:600;color:#1e293b;">${p.productName}</td>
+      <td style="padding:7px 8px;font-size:12px;text-align:center;color:#1e293b;">${p.quantity} units</td>
+      <td style="padding:7px 8px;font-size:12px;text-align:right;font-weight:bold;color:#1d4ed8;">${fmtCurr(p.revenue)}</td>
+    </tr>
+  `).join("");
+
+  const lowStockRows = [...lowStock, ...outOfStock.map(p => ({ ...p, stockCount: 0, status: "out" }))].map(p => `
+    <tr style="border-bottom:1px solid #f1f5f9;">
+      <td style="padding:7px 8px;">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusDot(p.status)};margin-right:6px;"></span>
+        <span style="font-size:12px;font-weight:600;color:#1e293b;">${p.name}</span>
+      </td>
+      <td style="padding:7px 8px;font-size:11px;color:#64748b;">${p.category}</td>
+      <td style="padding:7px 8px;font-size:12px;font-weight:bold;color:${statusDot(p.status)};text-align:right;">
+        ${p.stockCount === 0 ? "Out of stock" : `${p.stockCount} remaining`}
+      </td>
+    </tr>
+  `).join("");
+
+  const hasAlerts = lowStock.length > 0 || outOfStock.length > 0;
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Daily Digest — ${date}</title></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<div style="max-width:560px;margin:24px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08);">
+
+  <!-- Header -->
+  <div style="background:linear-gradient(135deg,#0f1729 0%,#1e3a6e 100%);padding:28px 32px;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:3px;color:#60a5fa;text-transform:uppercase;margin-bottom:4px;">Nexus POS</div>
+    <div style="font-size:22px;font-weight:800;color:#fff;margin-bottom:4px;">Daily Business Digest</div>
+    <div style="font-size:13px;color:#94a3b8;">${businessName} &nbsp;·&nbsp; ${date}</div>
+  </div>
+
+  <!-- Yesterday's Performance -->
+  <div style="padding:24px 32px 0;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#94a3b8;text-transform:uppercase;margin-bottom:14px;">Yesterday's Performance</div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
+      ${[
+        { label: "Revenue",    value: fmtCurr(yesterday.revenue),             color: "#1d4ed8" },
+        { label: "Orders",     value: yesterday.orders.toString(),             color: "#1e293b" },
+        { label: "Avg Order",  value: fmtCurr(yesterday.avgOrder),             color: "#1e293b" },
+        { label: "Tax Collected", value: fmtCurr(yesterday.tax),              color: "#6b7280" },
+      ].map(s => `
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:14px 16px;">
+          <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">${s.label}</div>
+          <div style="font-size:20px;font-weight:800;color:${s.color};">${s.value}</div>
+        </div>
+      `).join("")}
+    </div>
+    ${yesterday.orders === 0 ? `<div style="margin-top:12px;padding:10px 14px;background:#fef9c3;border-radius:6px;font-size:12px;color:#92400e;">No orders were recorded yesterday.</div>` : ""}
+  </div>
+
+  <!-- Best Sellers -->
+  ${bestSellers.length > 0 ? `
+  <div style="padding:24px 32px 0;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#94a3b8;text-transform:uppercase;margin-bottom:10px;">🏆 Best Sellers — Last 7 Days</div>
+    <table style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:6px;overflow:hidden;border:1px solid #e2e8f0;">
+      <thead>
+        <tr style="background:#f1f5f9;">
+          <th style="padding:8px;font-size:10px;color:#94a3b8;text-align:left;font-weight:600;">#</th>
+          <th style="padding:8px;font-size:10px;color:#94a3b8;text-align:left;font-weight:600;">Product</th>
+          <th style="padding:8px;font-size:10px;color:#94a3b8;text-align:center;font-weight:600;">Sold</th>
+          <th style="padding:8px;font-size:10px;color:#94a3b8;text-align:right;font-weight:600;">Revenue</th>
+        </tr>
+      </thead>
+      <tbody>${bestSellerRows}</tbody>
+    </table>
+  </div>` : ""}
+
+  <!-- Stock Alerts -->
+  ${hasAlerts ? `
+  <div style="padding:24px 32px 0;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#94a3b8;text-transform:uppercase;margin-bottom:10px;">⚠️ Stock Alerts</div>
+    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;overflow:hidden;">
+      <div style="padding:10px 14px;background:#fff3e0;border-bottom:1px solid #fed7aa;font-size:11px;color:#92400e;font-weight:600;">
+        ${outOfStock.length} out of stock &nbsp;·&nbsp; ${lowStock.length} low stock
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#fef3e2;">
+            <th style="padding:7px 8px;font-size:10px;color:#92400e;text-align:left;font-weight:600;">Product</th>
+            <th style="padding:7px 8px;font-size:10px;color:#92400e;text-align:left;font-weight:600;">Category</th>
+            <th style="padding:7px 8px;font-size:10px;color:#92400e;text-align:right;font-weight:600;">Status</th>
+          </tr>
+        </thead>
+        <tbody>${lowStockRows}</tbody>
+      </table>
+    </div>
+  </div>` : `
+  <div style="padding:24px 32px 0;">
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:12px 16px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:18px;">✅</span>
+      <div>
+        <div style="font-size:12px;font-weight:600;color:#166534;">All stock levels look healthy!</div>
+        <div style="font-size:11px;color:#4ade80;">No items are low or out of stock.</div>
+      </div>
+    </div>
+  </div>`}
+
+  <!-- Footer -->
+  <div style="padding:24px 32px;margin-top:24px;border-top:1px solid #f1f5f9;text-align:center;">
+    <p style="font-size:11px;color:#94a3b8;margin:0;">This report is automatically generated every day by <strong>Nexus POS</strong>.</p>
+    <p style="font-size:11px;color:#cbd5e1;margin:4px 0 0;">Powered by MicroBooks</p>
+  </div>
+
+</div>
+</body></html>`;
+}
+
+/* ───── Core digest function — exported for cron ───── */
+
+export async function sendDailyDigest(): Promise<{ sent: boolean; to?: string; error?: string }> {
+  try {
+    const settings = await getAllSettings();
+
+    const enabled = settings["daily_digest_enabled"] === "true";
+    if (!enabled) return { sent: false };
+
+    const recipientEmail = settings["daily_digest_email"] ?? "";
+    if (!recipientEmail) return { sent: false };
+
+    const threshold     = parseInt(settings["low_stock_threshold"] ?? "5", 10);
+    const businessName  = settings["business_name"]  ?? "Nexus POS";
+    const currency      = settings["base_currency"]  ?? "JMD";
+
+    // Yesterday
+    const now       = new Date();
+    const yStart    = new Date(now); yStart.setDate(yStart.getDate() - 1); yStart.setHours(0, 0, 0, 0);
+    const yEnd      = new Date(now); yEnd.setDate(yEnd.getDate() - 1);     yEnd.setHours(23, 59, 59, 999);
+
+    // Yesterday sales
+    const yOrders = await db.select({
+      revenue: sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
+      orders:  sql<number>`COUNT(*)`,
+      tax:     sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
+    }).from(ordersTable)
+      .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, yStart), lte(ordersTable.createdAt, yEnd)));
+
+    const rev = Number(yOrders[0]?.revenue ?? 0);
+    const ord = Number(yOrders[0]?.orders  ?? 0);
+    const tax = Number(yOrders[0]?.tax     ?? 0);
+
+    // Best sellers — last 7 days
+    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0, 0, 0, 0);
+    const bsRows = await db.select({
+      productName: orderItemsTable.productName,
+      quantity:    sql<number>`SUM(${orderItemsTable.quantity})`,
+      revenue:     sql<number>`SUM(${orderItemsTable.lineTotal})`,
+    }).from(orderItemsTable)
+      .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+      .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, weekAgo)))
+      .groupBy(orderItemsTable.productName)
+      .orderBy(desc(sql`SUM(${orderItemsTable.quantity})`))
+      .limit(10);
+
+    // Low stock
+    const allProducts = await db.select().from(productsTable).orderBy(asc(productsTable.stockCount));
+    const lowStock   = allProducts.filter(p => p.inStock && p.stockCount > 0 && p.stockCount <= threshold);
+    const outOfStock = allProducts.filter(p => !p.inStock || p.stockCount === 0);
+
+    const dateLabel = yStart.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+
+    const html = buildDailyDigestHtml({
+      businessName,
+      date: dateLabel,
+      currency,
+      yesterday: { revenue: Math.round(rev * 100) / 100, orders: ord, avgOrder: ord > 0 ? Math.round((rev / ord) * 100) / 100 : 0, tax: Math.round(tax * 100) / 100 },
+      bestSellers: bsRows.map((p, i) => ({ productName: p.productName, quantity: Number(p.quantity), revenue: Math.round(Number(p.revenue) * 100) / 100, rank: i + 1 })),
+      lowStock:   lowStock.map(p => ({ name: p.name, category: p.category, stockCount: p.stockCount, status: "low" })),
+      outOfStock: outOfStock.map(p => ({ name: p.name, category: p.category })),
+    });
+
+    await sendEmail({
+      to: recipientEmail,
+      subject: `📊 Daily Digest — ${dateLabel} | ${businessName}`,
+      html,
+      fromName:    "Nexus POS",
+      fromAddress: "noreply@nexuspos.com",
+    });
+
+    return { sent: true, to: recipientEmail };
+  } catch (err) {
+    return { sent: false, error: String(err) };
+  }
+}
+
 /* ───── Routes ───── */
 
 const SendReceiptBody = z.object({
@@ -329,6 +538,19 @@ router.post("/email/receipt", async (req, res): Promise<void> => {
   } catch (err) {
     res.status(500).json({ error: "Failed to send email", details: String(err) });
   }
+});
+
+router.post("/email/daily-digest", async (_req, res): Promise<void> => {
+  const result = await sendDailyDigest();
+  if (result.error) {
+    res.status(500).json({ error: result.error });
+    return;
+  }
+  if (!result.sent) {
+    res.status(400).json({ error: "Daily digest is disabled or no recipient email is configured." });
+    return;
+  }
+  res.json({ success: true, to: result.to });
 });
 
 router.post("/email/eod-report", async (req, res): Promise<void> => {

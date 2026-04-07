@@ -15,6 +15,10 @@ const DEFAULTS: Record<string, string> = {
   base_currency: "JMD",
   secondary_currency: "",
   currency_rate: "0",
+  daily_digest_enabled: "false",
+  daily_digest_email: "",
+  daily_digest_hour: "7",
+  low_stock_threshold: "5",
 };
 
 async function getSetting(key: string): Promise<string> {
