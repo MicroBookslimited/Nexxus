@@ -7,6 +7,8 @@ const router: IRouter = Router();
 
 const DEFAULTS: Record<string, string> = {
   email_provider: "resend",
+  from_email: "onboarding@resend.dev",
+  from_name: "Nexus POS",
   business_name: "Nexus POS",
   business_address: "",
   business_phone: "",

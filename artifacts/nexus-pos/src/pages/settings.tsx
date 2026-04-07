@@ -70,6 +70,8 @@ export function AdminSettings() {
   const { toast } = useToast();
 
   const [emailProvider, setEmailProvider] = useState<"resend" | "zeptomail">("resend");
+  const [fromEmail, setFromEmail] = useState("onboarding@resend.dev");
+  const [fromName, setFromName] = useState("Nexus POS");
   const [businessName, setBusinessName] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
   const [businessPhone, setBusinessPhone] = useState("");
@@ -88,6 +90,8 @@ export function AdminSettings() {
   useEffect(() => {
     if (!settings) return;
     setEmailProvider((settings.email_provider as "resend" | "zeptomail") ?? "resend");
+    setFromEmail(settings.from_email ?? "onboarding@resend.dev");
+    setFromName(settings.from_name ?? "Nexus POS");
     setBusinessName(settings.business_name ?? "Nexus POS");
     setBusinessAddress(settings.business_address ?? "");
     setBusinessPhone(settings.business_phone ?? "");
@@ -112,6 +116,8 @@ export function AdminSettings() {
       {
         data: {
           email_provider: emailProvider,
+          from_email: fromEmail.trim(),
+          from_name: fromName.trim() || "Nexus POS",
           business_name: businessName,
           business_address: businessAddress,
           business_phone: businessPhone,
@@ -372,6 +378,48 @@ export function AdminSettings() {
               <AlertCircle className="h-3 w-3 text-amber-500 shrink-0" />
               <span><strong>ZeptoMail:</strong> Set <code className="bg-muted px-1 rounded">ZEPTOMAIL_TOKEN</code> in Secrets to enable</span>
             </div>
+          </div>
+
+          {/* Sender address */}
+          <div className="space-y-3 pt-1">
+            <div>
+              <p className="text-sm font-medium mb-0.5">Sender Details</p>
+              <p className="text-xs text-muted-foreground">
+                The name and address your customers see when they receive emails.
+                Use <code className="bg-muted px-1 rounded text-[11px]">onboarding@resend.dev</code> for testing,
+                or set a verified domain address for production.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="from-name">From Name</Label>
+                <Input
+                  id="from-name"
+                  value={fromName}
+                  onChange={(e) => { setFromName(e.target.value); markDirty(); }}
+                  placeholder="Nexus POS"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="from-email">From Email</Label>
+                <Input
+                  id="from-email"
+                  type="email"
+                  value={fromEmail}
+                  onChange={(e) => { setFromEmail(e.target.value); markDirty(); }}
+                  placeholder="onboarding@resend.dev"
+                />
+              </div>
+            </div>
+            {fromEmail && !fromEmail.endsWith("@resend.dev") && (
+              <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-600 dark:text-amber-400">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>
+                  Custom domains must be verified in your Resend dashboard before emails will deliver.
+                  If emails aren't sending, switch to <strong>onboarding@resend.dev</strong> for testing.
+                </span>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

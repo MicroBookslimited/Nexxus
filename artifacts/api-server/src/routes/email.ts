@@ -17,6 +17,17 @@ async function getActiveProvider(): Promise<EmailProvider> {
   return pref === "zeptomail" ? "zeptomail" : "resend";
 }
 
+async function getFromDetails(): Promise<{ fromAddress: string; fromName: string }> {
+  const [fromAddress, fromName] = await Promise.all([
+    getSetting("from_email"),
+    getSetting("from_name"),
+  ]);
+  return {
+    fromAddress: fromAddress || "onboarding@resend.dev",
+    fromName: fromName || "Nexus POS",
+  };
+}
+
 async function sendEmail(opts: { to: string; subject: string; html: string; fromName: string; fromAddress: string }): Promise<{ messageId?: string }> {
   const provider = await getActiveProvider();
 
@@ -463,12 +474,13 @@ export async function sendDailyDigest(): Promise<{ sent: boolean; to?: string; e
       outOfStock: outOfStock.map(p => ({ name: p.name, category: p.category })),
     });
 
+    const { fromAddress: digestFrom, fromName: digestFromName } = await getFromDetails();
     await sendEmail({
       to: recipientEmail,
       subject: `📊 Daily Digest — ${dateLabel} | ${businessName}`,
       html,
-      fromName:    "Nexus POS",
-      fromAddress: "noreply@nexuspos.com",
+      fromName:    digestFromName,
+      fromAddress: digestFrom,
     });
 
     return { sent: true, to: recipientEmail };
@@ -525,14 +537,15 @@ router.post("/email/receipt", async (req, res): Promise<void> => {
   };
 
   const html = buildReceiptEmailHtml(orderData);
+  const { fromAddress, fromName } = await getFromDetails();
 
   try {
     const result = await sendEmail({
       to: parsed.data.to,
       subject: `Receipt — ${order.orderNumber}`,
       html,
-      fromName: "Nexus POS",
-      fromAddress: "noreply@nexuspos.com",
+      fromName,
+      fromAddress,
     });
     res.json({ success: true, messageId: result.messageId });
   } catch (err) {
@@ -615,13 +628,15 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
 
   const dateLabel = new Date(session.openedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
+  const { fromAddress: eodFrom, fromName: eodFromName } = await getFromDetails();
+
   try {
     const result = await sendEmail({
       to: parsed.data.to,
       subject: `End of Day Report — ${dateLabel} (${session.staffName})`,
       html,
-      fromName: "Nexus POS",
-      fromAddress: "noreply@nexuspos.com",
+      fromName: eodFromName,
+      fromAddress: eodFrom,
     });
     res.json({ success: true, messageId: result.messageId });
   } catch (err) {
