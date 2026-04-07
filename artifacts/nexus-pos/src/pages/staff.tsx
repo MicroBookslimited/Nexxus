@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useListStaff, useCreateStaff, useUpdateStaff, useDeleteStaff } from "@workspace/api-client-react";
 import type { StaffMember } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
@@ -10,37 +10,43 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Edit2, Trash2, UserCog, ShieldCheck, User, KeyRound, ChefHat, BarChart2 } from "lucide-react";
+import { Plus, Edit2, Trash2, UserCog, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { getRoles, type RoleRow } from "@/lib/saas-api";
 
-const ROLE_CONFIG: Record<string, { label: string; icon: React.ComponentType<{ className?: string }>; color: string }> = {
-  admin: { label: "Admin", icon: ShieldCheck, color: "bg-red-500/20 text-red-400 border-red-500/30" },
-  manager: { label: "Manager", icon: BarChart2, color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
-  cashier: { label: "Cashier", icon: User, color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-  kitchen: { label: "Kitchen", icon: ChefHat, color: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
-};
+function roleStyle(color: string): string {
+  return `border text-white/90`;
+}
 
-function StaffCard({ member, onEdit, onDeactivate }: { member: StaffMember; onEdit: (m: StaffMember) => void; onDeactivate: (id: number) => void }) {
-  const roleConfig = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.cashier;
-  const RoleIcon = roleConfig.icon;
+function StaffCard({
+  member, roles, onEdit, onDeactivate,
+}: {
+  member: StaffMember;
+  roles: RoleRow[];
+  onEdit: (m: StaffMember) => void;
+  onDeactivate: (id: number) => void;
+}) {
+  const matchedRole = roles.find(r => r.name.toLowerCase() === member.role.toLowerCase());
+  const roleColor = matchedRole?.color ?? "#64748b";
+  const roleLabel = matchedRole?.name ?? member.role;
+
   return (
     <div className={cn("rounded-xl border border-border bg-card p-4 flex flex-col gap-3 shadow-sm", !member.isActive && "opacity-50")}>
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="h-10 w-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
             <span className="text-base font-bold text-primary">{member.name.charAt(0).toUpperCase()}</span>
           </div>
-          <div>
-            <p className="font-semibold text-sm">{member.name}</p>
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">{member.name}</p>
             <p className="text-xs text-muted-foreground mt-0.5">
               Since {format(new Date(member.createdAt), "MMM yyyy")}
             </p>
           </div>
         </div>
-        <Badge variant="outline" className={cn("text-xs", roleConfig.color)}>
-          <RoleIcon className="h-2.5 w-2.5 mr-1" />
-          {roleConfig.label}
+        <Badge variant="outline" className={cn("text-xs shrink-0", roleStyle(roleColor))} style={{ borderColor: roleColor + "55", backgroundColor: roleColor + "22", color: roleColor }}>
+          {roleLabel}
         </Badge>
       </div>
       {!member.isActive && (
@@ -70,20 +76,32 @@ interface StaffForm {
 function StaffDialog({
   open,
   member,
+  roles,
   onClose,
   onSave,
 }: {
   open: boolean;
   member: StaffMember | null;
+  roles: RoleRow[];
   onClose: () => void;
   onSave: (data: StaffForm) => void;
 }) {
+  const defaultRole = roles[0]?.name ?? "Cashier";
   const [form, setForm] = useState<StaffForm>(() => ({
     name: member?.name ?? "",
     pin: "",
-    role: member?.role ?? "cashier",
+    role: member?.role ?? defaultRole,
     isActive: member?.isActive ?? true,
   }));
+
+  useEffect(() => {
+    setForm({
+      name: member?.name ?? "",
+      pin: "",
+      role: member?.role ?? (roles[0]?.name ?? "Cashier"),
+      isActive: member?.isActive ?? true,
+    });
+  }, [member, roles]);
 
   const isEditing = !!member;
 
@@ -117,21 +135,29 @@ function StaffDialog({
           </div>
           <div className="space-y-1">
             <Label>Role</Label>
-            <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(ROLE_CONFIG).map(([value, { label, icon: Icon }]) => (
-                  <SelectItem key={value} value={value}>
-                    <span className="flex items-center gap-2">
-                      <Icon className="h-3.5 w-3.5" />
-                      {label}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {roles.length > 0 ? (
+              <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map(r => (
+                    <SelectItem key={r.id} value={r.name}>
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: r.color }} />
+                        {r.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                value={form.role}
+                onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                placeholder="Role name"
+              />
+            )}
           </div>
           {isEditing && (
             <div className="flex items-center justify-between">
@@ -167,6 +193,11 @@ export function Staff() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+
+  useEffect(() => {
+    getRoles().then(data => setRoles(data.roles)).catch(() => {});
+  }, []);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
 
@@ -254,6 +285,7 @@ export function Staff() {
                     <StaffCard
                       key={m.id}
                       member={m}
+                      roles={roles}
                       onEdit={(mem) => { setEditingMember(mem); setDialogOpen(true); }}
                       onDeactivate={handleDeactivate}
                     />
@@ -269,6 +301,7 @@ export function Staff() {
                     <StaffCard
                       key={m.id}
                       member={m}
+                      roles={roles}
                       onEdit={(mem) => { setEditingMember(mem); setDialogOpen(true); }}
                       onDeactivate={handleDeactivate}
                     />
@@ -283,6 +316,7 @@ export function Staff() {
       <StaffDialog
         open={dialogOpen}
         member={editingMember}
+        roles={roles}
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
       />

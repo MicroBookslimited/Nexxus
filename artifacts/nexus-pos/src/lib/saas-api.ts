@@ -112,6 +112,26 @@ export const superadminReviewTransferProof = (id: number, status: "approved" | "
     method: "PATCH", body: JSON.stringify({ status, reviewNotes }), headers: superadminAuthHeaders(),
   });
 
+/* ─── Password Reset ─── */
+export const saasForgotPassword = (email: string) =>
+  api<{ success: boolean }>("/saas/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+
+export const saasResetPassword = (token: string, newPassword: string) =>
+  api<{ success: boolean }>("/saas/reset-password", { method: "POST", body: JSON.stringify({ token, newPassword }) });
+
+/* ─── Roles ─── */
+export const getRoles = () =>
+  api<{ roles: RoleRow[]; permissions: PermissionDef[] }>("/roles", { headers: tenantAuthHeaders() });
+
+export const createRole = (data: { name: string; color?: string; permissions: string[] }) =>
+  api<RoleRow>("/roles", { method: "POST", body: JSON.stringify(data), headers: tenantAuthHeaders() });
+
+export const updateRole = (id: number, data: { name?: string; color?: string; permissions?: string[] }) =>
+  api<RoleRow>(`/roles/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: tenantAuthHeaders() });
+
+export const deleteRole = (id: number) =>
+  api<{ success: boolean }>(`/roles/${id}`, { method: "DELETE", headers: tenantAuthHeaders() });
+
 export const superadminGetUsers = (q?: string) =>
   api<UserRow[]>(`/superadmin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`, { headers: superadminAuthHeaders() });
 
@@ -172,4 +192,13 @@ export interface UserRow {
   phone?: string; country?: string; status: string;
   onboardingComplete: boolean; createdAt: string;
   subscriptionStatus?: string; planName?: string; billingCycle?: string;
+}
+
+export interface RoleRow {
+  id: number; tenantId: number; name: string; color: string;
+  permissions: string[]; isSystem: boolean; createdAt: string; updatedAt: string;
+}
+
+export interface PermissionDef {
+  key: string; label: string; category: string;
 }

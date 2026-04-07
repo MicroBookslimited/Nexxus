@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { Resend } from "resend";
 
 const router: IRouter = Router();
 
@@ -153,6 +154,84 @@ router.get("/saas/me", async (req, res): Promise<void> => {
   }
 
   res.json({ tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, ownerName: tenant.ownerName, phone: tenant.phone, country: tenant.country, onboardingStep: tenant.onboardingStep, onboardingComplete: tenant.onboardingComplete, status: tenant.status }, subscription, plan });
+});
+
+/* ─── Forgot Password ─── */
+const ForgotPasswordBody = z.object({ email: z.string().email() });
+
+router.post("/saas/forgot-password", async (req, res): Promise<void> => {
+  const parsed = ForgotPasswordBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid email address" }); return; }
+
+  const [tenant] = await db.select({ id: tenantsTable.id, email: tenantsTable.email, businessName: tenantsTable.businessName })
+    .from(tenantsTable).where(eq(tenantsTable.email, parsed.data.email));
+
+  if (!tenant) {
+    res.json({ success: true });
+    return;
+  }
+
+  const resetToken = jwt.sign(
+    { tenantId: tenant.id, email: tenant.email, type: "password_reset" },
+    getJwtSecret(),
+    { expiresIn: "1h" }
+  );
+
+  const appBase = process.env["APP_BASE_URL"] ?? "";
+  const resetLink = `${appBase}/app/reset-password?token=${resetToken}`;
+
+  try {
+    const resend = new Resend(process.env["RESEND_API_KEY"]);
+    await resend.emails.send({
+      from: "Nexus POS <onboarding@resend.dev>",
+      to: tenant.email,
+      subject: "Reset your Nexus POS password",
+      html: `
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#0f1729;padding:32px;border-radius:12px;color:#f1f5f9">
+          <h1 style="font-size:22px;margin:0 0 8px">Reset your password</h1>
+          <p style="color:#94a3b8;margin:0 0 24px">We received a request to reset the password for your Nexus POS account (${tenant.email}).</p>
+          <a href="${resetLink}" style="display:inline-block;background:#3b82f6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px">Reset Password</a>
+          <p style="color:#475569;font-size:13px;margin:24px 0 0">This link expires in 1 hour. If you did not request a password reset, you can safely ignore this email.</p>
+          <hr style="border:none;border-top:1px solid #1e293b;margin:24px 0"/>
+          <p style="color:#334155;font-size:12px;margin:0">Powered by MicroBooks · Nexus POS</p>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error("Failed to send password reset email:", err);
+  }
+
+  res.json({ success: true });
+});
+
+/* ─── Reset Password ─── */
+const ResetPasswordBody = z.object({
+  token: z.string(),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+router.post("/saas/reset-password", async (req, res): Promise<void> => {
+  const parsed = ResetPasswordBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }); return; }
+
+  let payload: { tenantId: number; email: string; type: string };
+  try {
+    payload = jwt.verify(parsed.data.token, getJwtSecret()) as typeof payload;
+  } catch {
+    res.status(400).json({ error: "Reset link is invalid or has expired. Please request a new one." }); return;
+  }
+
+  if (payload.type !== "password_reset") {
+    res.status(400).json({ error: "Invalid reset token" }); return;
+  }
+
+  const [tenant] = await db.select({ id: tenantsTable.id }).from(tenantsTable).where(eq(tenantsTable.id, payload.tenantId));
+  if (!tenant) { res.status(404).json({ error: "Account not found" }); return; }
+
+  const passwordHash = await bcryptjs.hash(parsed.data.newPassword, 12);
+  await db.update(tenantsTable).set({ passwordHash, updatedAt: new Date() }).where(eq(tenantsTable.id, tenant.id));
+
+  res.json({ success: true });
 });
 
 router.patch("/saas/onboarding", async (req, res): Promise<void> => {

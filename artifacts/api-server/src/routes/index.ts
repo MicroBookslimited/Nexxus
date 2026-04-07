@@ -19,6 +19,7 @@ import saasAuthRouter from "./saas-auth";
 import plansRouter from "./plans";
 import billingRouter from "./billing";
 import superadminRouter from "./superadmin";
+import rolesRouter from "./roles";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(saasAuthRouter);
 router.use(plansRouter);
 router.use(billingRouter);
 router.use(superadminRouter);
+router.use(rolesRouter);
 
 export default router;

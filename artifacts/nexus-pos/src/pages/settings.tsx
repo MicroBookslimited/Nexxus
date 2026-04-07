@@ -7,8 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import {
   Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign, Bell, Send,
+  ShieldCheck, Plus, Trash2, ChevronDown, ChevronRight, Edit2, Check, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef } from "@/lib/saas-api";
 
 function ProviderCard({
   id,
@@ -545,6 +547,335 @@ export function AdminSettings() {
           {updateSettings.isPending ? "Saving…" : "Save Changes"}
         </Button>
       </div>
+
+      <RolesSettings />
     </div>
+  );
+}
+
+/* ─── Roles & Permissions ─── */
+const ROLE_COLORS = ["#3b82f6","#ef4444","#a855f7","#f59e0b","#10b981","#f97316","#06b6d4","#ec4899","#64748b"];
+
+function PermissionMatrix({
+  permissions,
+  selected,
+  onChange,
+}: {
+  permissions: PermissionDef[];
+  selected: string[];
+  onChange: (keys: string[]) => void;
+}) {
+  const categories = Array.from(new Set(permissions.map(p => p.category)));
+
+  const toggle = (key: string) => {
+    onChange(selected.includes(key) ? selected.filter(k => k !== key) : [...selected, key]);
+  };
+
+  const toggleCategory = (cat: string) => {
+    const catKeys = permissions.filter(p => p.category === cat).map(p => p.key);
+    const allOn = catKeys.every(k => selected.includes(k));
+    if (allOn) onChange(selected.filter(k => !catKeys.includes(k)));
+    else onChange([...new Set([...selected, ...catKeys])]);
+  };
+
+  return (
+    <div className="space-y-3">
+      {categories.map(cat => {
+        const catPerms = permissions.filter(p => p.category === cat);
+        const allOn = catPerms.every(p => selected.includes(p.key));
+        const someOn = catPerms.some(p => selected.includes(p.key));
+        return (
+          <div key={cat} className="rounded-lg border border-border/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleCategory(cat)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-muted/30 hover:bg-muted/50 transition-colors"
+            >
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{cat}</span>
+              <div className={cn(
+                "h-4 w-4 rounded border flex items-center justify-center text-white transition-colors",
+                allOn ? "bg-primary border-primary" : someOn ? "bg-primary/50 border-primary/50" : "border-border bg-transparent"
+              )}>
+                {(allOn || someOn) && <Check className="h-2.5 w-2.5" />}
+              </div>
+            </button>
+            <div className="grid grid-cols-2 gap-0 divide-y divide-border/30">
+              {catPerms.map(p => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => toggle(p.key)}
+                  className="flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/20 transition-colors"
+                >
+                  <div className={cn(
+                    "h-4 w-4 rounded border flex items-center justify-center text-white shrink-0 transition-colors",
+                    selected.includes(p.key) ? "bg-primary border-primary" : "border-border"
+                  )}>
+                    {selected.includes(p.key) && <Check className="h-2.5 w-2.5" />}
+                  </div>
+                  <span className="text-xs text-foreground">{p.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RoleCard({
+  role,
+  permissions,
+  onUpdated,
+  onDeleted,
+}: {
+  role: RoleRow;
+  permissions: PermissionDef[];
+  onUpdated: (r: RoleRow) => void;
+  onDeleted: (id: number) => void;
+}) {
+  const { toast } = useToast();
+  const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(role.name);
+  const [editColor, setEditColor] = useState(role.color);
+  const [editPerms, setEditPerms] = useState<string[]>(role.permissions);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const updated = await updateRole(role.id, { name: editName, color: editColor, permissions: editPerms });
+      onUpdated(updated);
+      setEditing(false);
+      toast({ title: "Role updated" });
+    } catch (e: unknown) {
+      toast({ title: "Failed to update role", description: e instanceof Error ? e.message : "Error", variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete role "${role.name}"? Staff assigned to this role will need to be updated.`)) return;
+    try {
+      await deleteRole(role.id);
+      onDeleted(role.id);
+      toast({ title: "Role deleted" });
+    } catch (e: unknown) {
+      toast({ title: "Cannot delete role", description: e instanceof Error ? e.message : "Error", variant: "destructive" });
+    }
+  };
+
+  const grantedCount = role.permissions.length;
+  const totalCount = permissions.length;
+
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: role.color }} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sm">{role.name}</span>
+            {role.isSystem && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary uppercase tracking-wide">System</span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">{grantedCount} of {totalCount} permissions</p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => { setEditing(!editing); setExpanded(true); setEditName(role.name); setEditColor(role.color); setEditPerms(role.permissions); }}
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Edit role"
+          >
+            <Edit2 className="h-3.5 w-3.5" />
+          </button>
+          {!role.isSystem && (
+            <button
+              onClick={handleDelete}
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+              title="Delete role"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-border px-4 py-4">
+          {editing ? (
+            <>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-1 space-y-1.5">
+                  <Label>Role Name</Label>
+                  <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Color</Label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {ROLE_COLORS.map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setEditColor(c)}
+                        className="w-6 h-6 rounded-full transition-transform hover:scale-110"
+                        style={{ backgroundColor: c, outline: editColor === c ? `2px solid white` : "none", outlineOffset: "2px" }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <PermissionMatrix permissions={permissions} selected={editPerms} onChange={setEditPerms} />
+              <div className="flex gap-2 mt-4">
+                <Button size="sm" variant="outline" onClick={() => setEditing(false)} className="gap-1.5">
+                  <X className="h-3.5 w-3.5" /> Cancel
+                </Button>
+                <Button size="sm" onClick={handleSave} disabled={saving || !editName.trim()} className="gap-1.5">
+                  <Check className="h-3.5 w-3.5" /> {saving ? "Saving…" : "Save Changes"}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {permissions.map(p => (
+                <span
+                  key={p.key}
+                  className={cn(
+                    "text-xs px-2 py-0.5 rounded-full border",
+                    role.permissions.includes(p.key)
+                      ? "bg-primary/10 text-primary border-primary/20"
+                      : "text-muted-foreground/40 border-border/30"
+                  )}
+                >
+                  {p.label}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CreateRoleForm({ permissions, onCreated, onCancel }: { permissions: PermissionDef[]; onCreated: (r: RoleRow) => void; onCancel: () => void }) {
+  const { toast } = useToast();
+  const [name, setName] = useState("");
+  const [color, setColor] = useState(ROLE_COLORS[0]!);
+  const [selectedPerms, setSelectedPerms] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const handleCreate = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      const role = await createRole({ name: name.trim(), color, permissions: selectedPerms });
+      onCreated(role);
+      toast({ title: "Role created", description: `"${role.name}" has been added.` });
+    } catch (e: unknown) {
+      toast({ title: "Failed to create role", description: e instanceof Error ? e.message : "Error", variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-4">
+      <h4 className="font-semibold text-sm">New Custom Role</h4>
+      <div className="flex items-center gap-3">
+        <div className="flex-1 space-y-1.5">
+          <Label>Role Name</Label>
+          <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Supervisor" className="h-8 text-sm" />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Color</Label>
+          <div className="flex gap-1.5 flex-wrap">
+            {ROLE_COLORS.map(c => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setColor(c)}
+                className="w-6 h-6 rounded-full transition-transform hover:scale-110"
+                style={{ backgroundColor: c, outline: color === c ? `2px solid white` : "none", outlineOffset: "2px" }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div>
+        <Label className="mb-2 block">Permissions</Label>
+        <PermissionMatrix permissions={permissions} selected={selectedPerms} onChange={setSelectedPerms} />
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={onCancel} className="gap-1.5"><X className="h-3.5 w-3.5" /> Cancel</Button>
+        <Button size="sm" onClick={handleCreate} disabled={saving || !name.trim()} className="gap-1.5">
+          <Check className="h-3.5 w-3.5" /> {saving ? "Creating…" : "Create Role"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function RolesSettings() {
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [permissions, setPermissions] = useState<PermissionDef[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+
+  useEffect(() => {
+    getRoles().then(data => {
+      setRoles(data.roles);
+      setPermissions(data.permissions);
+    }).catch(console.error).finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="h-5 w-5 text-primary mt-0.5" />
+            <div>
+              <CardTitle>Staff Roles & Permissions</CardTitle>
+              <CardDescription>Define what each role can access. System roles can be edited but not deleted.</CardDescription>
+            </div>
+          </div>
+          {!showCreate && (
+            <Button size="sm" variant="outline" onClick={() => setShowCreate(true)} className="gap-1.5 shrink-0">
+              <Plus className="h-3.5 w-3.5" /> Add Role
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading ? (
+          <p className="text-sm text-muted-foreground text-center py-6">Loading roles…</p>
+        ) : (
+          <>
+            {roles.map(role => (
+              <RoleCard
+                key={role.id}
+                role={role}
+                permissions={permissions}
+                onUpdated={updated => setRoles(prev => prev.map(r => r.id === updated.id ? updated : r))}
+                onDeleted={id => setRoles(prev => prev.filter(r => r.id !== id))}
+              />
+            ))}
+            {showCreate && (
+              <CreateRoleForm
+                permissions={permissions}
+                onCreated={role => { setRoles(prev => [...prev, role]); setShowCreate(false); }}
+                onCancel={() => setShowCreate(false)}
+              />
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

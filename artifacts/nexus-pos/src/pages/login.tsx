@@ -1,19 +1,113 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { motion } from "framer-motion";
-import { Store, ArrowRight, AlertCircle } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Store, ArrowRight, AlertCircle, Mail, CheckCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { saasLogin, TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { saasLogin, saasForgotPassword, TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
+/* ─── Forgot Password Modal ─── */
+function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      await saasForgotPassword(email);
+      setSent(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
+        className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl p-6"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Mail className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-sm">Forgot Password</h2>
+              <p className="text-xs text-muted-foreground">We'll send a reset link</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {sent ? (
+          <div className="text-center py-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/20 mx-auto mb-3">
+              <CheckCircle className="h-6 w-6 text-green-500" />
+            </div>
+            <h3 className="font-semibold mb-1">Check your email</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              If <strong>{email}</strong> is registered, you'll receive a password reset link shortly.
+            </p>
+            <Button variant="outline" className="w-full" onClick={onClose}>Close</Button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <p className="text-sm text-muted-foreground">Enter your account email address and we'll send you a link to reset your password.</p>
+            <div className="space-y-1.5">
+              <Label htmlFor="reset-email">Email Address</Label>
+              <Input
+                id="reset-email"
+                type="email"
+                placeholder="you@yourbusiness.com"
+                required
+                value={email}
+                onChange={e => { setEmail(e.target.value); setError(""); }}
+                className="bg-background/50"
+                autoFocus
+              />
+            </div>
+            {error && (
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {error}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+              <Button type="submit" className="flex-1" disabled={loading || !email}>
+                {loading ? "Sending…" : "Send Reset Link"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
+/* ─── Login Page ─── */
 export function Login() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showForgot, setShowForgot] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem(TENANT_TOKEN_KEY);
@@ -28,8 +122,8 @@ export function Login() {
       const { token } = await saasLogin(email, password);
       localStorage.setItem(TENANT_TOKEN_KEY, token);
       setLocation("/dashboard");
-    } catch (err: any) {
-      setError(err.message ?? "Invalid email or password");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Invalid email or password");
     } finally {
       setIsLoading(false);
     }
@@ -38,6 +132,10 @@ export function Login() {
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/20 via-background to-background pointer-events-none" />
+
+      <AnimatePresence>
+        {showForgot && <ForgotPasswordModal onClose={() => setShowForgot(false)} />}
+      </AnimatePresence>
 
       <main className="flex-1 flex items-center justify-center p-6 relative z-10">
         <motion.div
@@ -70,7 +168,16 @@ export function Login() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Password</Label>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgot(true)}
+                      className="text-xs text-muted-foreground hover:text-primary transition-colors font-medium"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                   <Input
                     id="password"
                     type="password"

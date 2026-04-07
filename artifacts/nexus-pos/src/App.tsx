@@ -19,6 +19,7 @@ import { AdminSettings } from "@/pages/settings";
 import { Onboarding } from "@/pages/onboarding";
 import { Superadmin } from "@/pages/superadmin";
 import { SubscriptionPage } from "@/pages/subscription";
+import { ResetPassword } from "@/pages/reset-password";
 import { Layout } from "@/components/layout";
 
 const queryClient = new QueryClient();
@@ -58,6 +59,7 @@ function Router() {
       <Route path="/settings"><ProtectedRoute component={AdminSettings} /></Route>
       <Route path="/subscription"><ProtectedRoute component={SubscriptionPage} /></Route>
       <Route path="/signup" component={Onboarding} />
+      <Route path="/reset-password" component={ResetPassword} />
       <Route path="/superadmin" component={Superadmin} />
       <Route component={NotFound} />
     </Switch>
