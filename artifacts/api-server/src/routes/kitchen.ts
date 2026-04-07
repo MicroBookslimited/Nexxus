@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, inArray } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable, productsTable, kdsScreensTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, kdsScreensTable, diningTablesTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -10,6 +10,10 @@ router.get("/kitchen", async (req, res): Promise<void> => {
     .from(ordersTable)
     .where(inArray(ordersTable.status, ["open", "pending", "preparing", "ready"]))
     .orderBy(ordersTable.createdAt);
+
+  // Pre-fetch all tables so we can resolve names without N+1 queries
+  const allTables = await db.select().from(diningTablesTable);
+  const tableNameMap = new Map(allTables.map((t) => [t.id, t.name]));
 
   const ordersWithItems = await Promise.all(
     activeOrders.map(async (order) => {
@@ -31,6 +35,7 @@ router.get("/kitchen", async (req, res): Promise<void> => {
         orderNumber: order.orderNumber,
         status: order.status === "open" ? "pending" : order.status,
         tableId: order.tableId ?? undefined,
+        tableName: order.tableId ? (tableNameMap.get(order.tableId) ?? undefined) : undefined,
         orderType: order.orderType ?? "counter",
         notes: order.notes ?? undefined,
         createdAt: order.createdAt,

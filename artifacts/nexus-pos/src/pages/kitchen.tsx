@@ -92,7 +92,7 @@ function KitchenCard({
               {order.tableId && (
                 <Badge variant="outline" className="text-xs text-muted-foreground">
                   <UtensilsCrossed className="h-2.5 w-2.5 mr-1" />
-                  Table #{order.tableId}
+                  {order.tableName ?? `Table #${order.tableId}`}
                 </Badge>
               )}
               {order.orderType && order.orderType !== "counter" && (

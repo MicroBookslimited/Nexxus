@@ -1147,6 +1147,7 @@ export const ListKitchenOrdersResponseItem = zod.object({
   orderNumber: zod.string(),
   status: zod.string(),
   tableId: zod.number().optional(),
+  tableName: zod.string().optional(),
   orderType: zod.string(),
   notes: zod.string().optional(),
   createdAt: zod.coerce.date(),
