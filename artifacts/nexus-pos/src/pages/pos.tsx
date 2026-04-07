@@ -9,6 +9,7 @@ import {
   useGetProductCustomization,
   useListCustomers,
   useCreateCustomer,
+  getListCustomersQueryKey,
   useListTables,
   useGetCurrentCashSession,
   useSendReceiptEmail,
@@ -472,6 +473,7 @@ export function POS() {
   const [receiptEmailAddr, setReceiptEmailAddr] = useState("");
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+  const [selectedCustomerOverride, setSelectedCustomerOverride] = useState<{ id: number; name: string; phone?: string | null; email?: string | null; loyaltyPoints: number } | null>(null);
   const [addingCustomer, setAddingCustomer] = useState(false);
   const [newCustName,  setNewCustName]  = useState("");
   const [newCustPhone, setNewCustPhone] = useState("");
@@ -494,6 +496,14 @@ export function POS() {
     try {
       const created = await createCustomer.mutateAsync({
         data: { name: newCustName.trim(), phone: newCustPhone.trim() || undefined, email: newCustEmail.trim() || undefined },
+      });
+      await queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
+      setSelectedCustomerOverride({
+        id: created.id,
+        name: created.name,
+        phone: created.phone ?? null,
+        email: created.email ?? null,
+        loyaltyPoints: created.loyaltyPoints ?? 0,
       });
       setSelectedCustomerId(created.id);
       setAddingCustomer(false);
@@ -593,7 +603,9 @@ export function POS() {
   else if (discountType === "fixed") cartDiscountValue = discountAmount || 0;
   cartDiscountValue = Math.min(cartDiscountValue, subtotal);
 
-  const selectedCustomer = customers?.find((c) => c.id === selectedCustomerId) ?? null;
+  const selectedCustomer = (selectedCustomerId != null
+    ? (customers?.find((c) => c.id === selectedCustomerId) ?? selectedCustomerOverride)
+    : null);
   const maxRedeemable = selectedCustomer ? Math.min(selectedCustomer.loyaltyPoints, Math.floor((subtotal - cartDiscountValue) * 100)) : 0;
   const clampedPoints = Math.min(loyaltyPointsToRedeem, maxRedeemable);
   const loyaltyDiscountValue = clampedPoints > 0 ? clampedPoints / 100 : 0;
@@ -619,6 +631,7 @@ export function POS() {
     setSplitCardAmount(0);
     setSplitCashAmount(0);
     setSelectedCustomerId(null);
+    setSelectedCustomerOverride(null);
     setAddingCustomer(false);
     setNewCustName(""); setNewCustPhone(""); setNewCustEmail("");
     setLoyaltyPointsToRedeem(0);
@@ -1059,7 +1072,7 @@ export function POS() {
                     </p>
                   </div>
                   <Button size="sm" variant="ghost" className="h-5 text-xs p-1 text-muted-foreground"
-                    onClick={() => { setSelectedCustomerId(null); setLoyaltyPointsToRedeem(0); }}>✕</Button>
+                    onClick={() => { setSelectedCustomerId(null); setSelectedCustomerOverride(null); setLoyaltyPointsToRedeem(0); }}>✕</Button>
                 </div>
               ) : addingCustomer ? (
                 /* ── Inline quick-add form ── */
@@ -1115,7 +1128,7 @@ export function POS() {
                         .slice(0, 5)
                         .map(c => (
                           <button key={c.id} className="w-full text-left px-2 py-1.5 text-xs hover:bg-secondary/50 flex justify-between"
-                            onClick={() => { setSelectedCustomerId(c.id); setCustomerSearch(""); setLoyaltyPointsToRedeem(0); }}>
+                            onClick={() => { setSelectedCustomerId(c.id); setSelectedCustomerOverride(null); setCustomerSearch(""); setLoyaltyPointsToRedeem(0); }}>
                             <span>{c.name}{c.phone ? <span className="text-muted-foreground ml-1">· {c.phone}</span> : null}</span>
                             <span className="text-muted-foreground">{c.loyaltyPoints} pts</span>
                           </button>
