@@ -161,7 +161,7 @@ export function SubscriptionPage() {
     <div className="p-6 max-w-4xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Subscription</h1>
-        <p className="text-[#94a3b8] text-sm">Manage your Nexus POS plan and billing</p>
+        <p className="text-[#94a3b8] text-sm">Manage your NEXXUS POS plan and billing</p>
       </div>
 
       {success && (

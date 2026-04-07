@@ -73,7 +73,7 @@ export function AdminSettings() {
 
   const [emailProvider, setEmailProvider] = useState<"resend" | "zeptomail">("resend");
   const [fromEmail, setFromEmail] = useState("onboarding@resend.dev");
-  const [fromName, setFromName] = useState("Nexus POS");
+  const [fromName, setFromName] = useState("NEXXUS POS");
   const [businessName, setBusinessName] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
   const [businessPhone, setBusinessPhone] = useState("");
@@ -93,8 +93,8 @@ export function AdminSettings() {
     if (!settings) return;
     setEmailProvider((settings.email_provider as "resend" | "zeptomail") ?? "resend");
     setFromEmail(settings.from_email ?? "onboarding@resend.dev");
-    setFromName(settings.from_name ?? "Nexus POS");
-    setBusinessName(settings.business_name ?? "Nexus POS");
+    setFromName(settings.from_name ?? "NEXXUS POS");
+    setBusinessName(settings.business_name ?? "NEXXUS POS");
     setBusinessAddress(settings.business_address ?? "");
     setBusinessPhone(settings.business_phone ?? "");
     setTaxRate(settings.tax_rate ?? "15");
@@ -119,7 +119,7 @@ export function AdminSettings() {
         data: {
           email_provider: emailProvider,
           from_email: fromEmail.trim(),
-          from_name: fromName.trim() || "Nexus POS",
+          from_name: fromName.trim() || "NEXXUS POS",
           business_name: businessName,
           business_address: businessAddress,
           business_phone: businessPhone,
@@ -208,7 +208,7 @@ export function AdminSettings() {
                 id="biz-name"
                 value={businessName}
                 onChange={(e) => { setBusinessName(e.target.value); markDirty(); }}
-                placeholder="Nexus POS"
+                placeholder="NEXXUS POS"
               />
             </div>
             <div className="space-y-1.5">
@@ -397,7 +397,7 @@ export function AdminSettings() {
                   id="from-name"
                   value={fromName}
                   onChange={(e) => { setFromName(e.target.value); markDirty(); }}
-                  placeholder="Nexus POS"
+                  placeholder="NEXXUS POS"
                 />
               </div>
               <div className="space-y-1.5">

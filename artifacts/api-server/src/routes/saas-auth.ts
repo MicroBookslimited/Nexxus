@@ -183,17 +183,17 @@ router.post("/saas/forgot-password", async (req, res): Promise<void> => {
   try {
     const resend = new Resend(process.env["RESEND_API_KEY"]);
     await resend.emails.send({
-      from: "Nexus POS <onboarding@resend.dev>",
+      from: "NEXXUS POS <onboarding@resend.dev>",
       to: tenant.email,
-      subject: "Reset your Nexus POS password",
+      subject: "Reset your NEXXUS POS password",
       html: `
         <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#0f1729;padding:32px;border-radius:12px;color:#f1f5f9">
           <h1 style="font-size:22px;margin:0 0 8px">Reset your password</h1>
-          <p style="color:#94a3b8;margin:0 0 24px">We received a request to reset the password for your Nexus POS account (${tenant.email}).</p>
+          <p style="color:#94a3b8;margin:0 0 24px">We received a request to reset the password for your NEXXUS POS account (${tenant.email}).</p>
           <a href="${resetLink}" style="display:inline-block;background:#3b82f6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px">Reset Password</a>
           <p style="color:#475569;font-size:13px;margin:24px 0 0">This link expires in 1 hour. If you did not request a password reset, you can safely ignore this email.</p>
           <hr style="border:none;border-top:1px solid #1e293b;margin:24px 0"/>
-          <p style="color:#334155;font-size:12px;margin:0">Powered by MicroBooks · Nexus POS</p>
+          <p style="color:#334155;font-size:12px;margin:0">Powered by MicroBooks · NEXXUS POS</p>
         </div>
       `,
     });

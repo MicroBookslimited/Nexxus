@@ -175,7 +175,7 @@ export function Onboarding() {
             <div className="w-8 h-8 bg-[#3b82f6] rounded-lg flex items-center justify-center">
               <Zap size={18} className="text-white" />
             </div>
-            <span className="text-xl font-bold text-white">Nexus POS</span>
+            <span className="text-xl font-bold text-white">NEXXUS POS</span>
           </div>
           <p className="text-[#94a3b8] text-sm">Your Business, Connected.</p>
         </div>
@@ -258,7 +258,7 @@ export function Onboarding() {
           {step === 2 && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-1">Business details</h2>
-              <p className="text-[#94a3b8] text-sm mb-6">Help us personalise your Nexus POS experience.</p>
+              <p className="text-[#94a3b8] text-sm mb-6">Help us personalise your NEXXUS POS experience.</p>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm text-[#94a3b8] mb-1">Phone Number</label>
@@ -450,7 +450,7 @@ export function Onboarding() {
                 <Check size={32} className="text-green-400" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">You're all set!</h2>
-              <p className="text-[#94a3b8] mb-2">Welcome to Nexus POS, <strong className="text-white">{form.businessName || "your business"}</strong>.</p>
+              <p className="text-[#94a3b8] mb-2">Welcome to NEXXUS POS, <strong className="text-white">{form.businessName || "your business"}</strong>.</p>
               <p className="text-sm text-[#475569] mb-8">Your 14-day trial is active. Explore all features and start selling in minutes.</p>
               <button onClick={() => navigate("/dashboard")}
                 className="bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 px-8 rounded-lg flex items-center justify-center gap-2 mx-auto transition-colors">

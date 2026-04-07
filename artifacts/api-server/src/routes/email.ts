@@ -24,7 +24,7 @@ async function getFromDetails(): Promise<{ fromAddress: string; fromName: string
   ]);
   return {
     fromAddress: fromAddress || "onboarding@resend.dev",
-    fromName: fromName || "Nexus POS",
+    fromName: fromName || "NEXXUS POS",
   };
 }
 
@@ -106,7 +106,7 @@ function buildReceiptEmailHtml(order: {
 
   <!-- Header -->
   <div style="background:#0f1729;color:#fff;text-align:center;padding:20px 16px 16px;">
-    <div style="font-size:22px;font-weight:bold;letter-spacing:2px;">NEXUS POS</div>
+    <div style="font-size:22px;font-weight:bold;letter-spacing:2px;">NEXXUS POS</div>
     <div style="font-size:11px;color:#94a3b8;margin-top:4px;">Your Business, Connected.</div>
   </div>
 
@@ -196,7 +196,7 @@ function buildEodEmailHtml(data: {
 
   <!-- Header -->
   <div style="background:#0f1729;color:#fff;text-align:center;padding:20px 16px 16px;">
-    <div style="font-size:22px;font-weight:bold;letter-spacing:2px;">NEXUS POS</div>
+    <div style="font-size:22px;font-weight:bold;letter-spacing:2px;">NEXXUS POS</div>
     <div style="font-size:13px;font-weight:bold;color:#94a3b8;margin-top:4px;">END OF DAY REPORT</div>
     <div style="font-size:11px;color:#64748b;margin-top:4px;">${formatDate(session.openedAt)}</div>
   </div>
@@ -330,7 +330,7 @@ function buildDailyDigestHtml(data: {
 
   <!-- Header -->
   <div style="background:linear-gradient(135deg,#0f1729 0%,#1e3a6e 100%);padding:28px 32px;">
-    <div style="font-size:11px;font-weight:700;letter-spacing:3px;color:#60a5fa;text-transform:uppercase;margin-bottom:4px;">Nexus POS</div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:3px;color:#60a5fa;text-transform:uppercase;margin-bottom:4px;">NEXXUS POS</div>
     <div style="font-size:22px;font-weight:800;color:#fff;margin-bottom:4px;">Daily Business Digest</div>
     <div style="font-size:13px;color:#94a3b8;">${businessName} &nbsp;·&nbsp; ${date}</div>
   </div>
@@ -403,7 +403,7 @@ function buildDailyDigestHtml(data: {
 
   <!-- Footer -->
   <div style="padding:24px 32px;margin-top:24px;border-top:1px solid #f1f5f9;text-align:center;">
-    <p style="font-size:11px;color:#94a3b8;margin:0;">This report is automatically generated every day by <strong>Nexus POS</strong>.</p>
+    <p style="font-size:11px;color:#94a3b8;margin:0;">This report is automatically generated every day by <strong>NEXXUS POS</strong>.</p>
     <p style="font-size:11px;color:#cbd5e1;margin:4px 0 0;">Powered by MicroBooks</p>
   </div>
 
@@ -424,7 +424,7 @@ export async function sendDailyDigest(): Promise<{ sent: boolean; to?: string; e
     if (!recipientEmail) return { sent: false };
 
     const threshold     = parseInt(settings["low_stock_threshold"] ?? "5", 10);
-    const businessName  = settings["business_name"]  ?? "Nexus POS";
+    const businessName  = settings["business_name"]  ?? "NEXXUS POS";
     const currency      = settings["base_currency"]  ?? "JMD";
 
     // Yesterday

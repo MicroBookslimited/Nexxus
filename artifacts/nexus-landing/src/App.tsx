@@ -150,7 +150,7 @@ function Navbar() {
           <span className="w-8 h-8 rounded-lg gradient-blue flex items-center justify-center text-white text-sm font-bold">
             N
           </span>
-          <span className="text-white">Nexus <span style={{ color: "#3b82f6" }}>POS</span></span>
+          <span className="text-white">NEXXUS <span style={{ color: "#3b82f6" }}>POS</span></span>
         </a>
 
         <div className="hidden md:flex items-center gap-8">
@@ -234,7 +234,7 @@ function Hero() {
         </h1>
 
         <p className="text-lg md:text-xl mb-10 max-w-2xl mx-auto leading-relaxed" style={{ color: "#94a3b8" }}>
-          Nexus POS is the all-in-one tablet point-of-sale built for restaurants, retail, and service businesses.
+          NEXXUS POS is the all-in-one tablet point-of-sale built for restaurants, retail, and service businesses.
           Sell faster, manage smarter, grow further — all from one beautiful dashboard.
         </p>
 
@@ -415,7 +415,7 @@ function Features() {
     { icon: "shield", title: "Role-Based Access", desc: "PIN-protected staff logins. Cashier, manager, and kitchen roles with granular permissions per screen and action.", color: "#14b8a6" },
     { icon: "credit_card", title: "Flexible Payments", desc: "Cash, card (PowerTranz), PayPal, and split payments. Manage cash drawers, shifts, and daily float in one place.", color: "#a78bfa" },
     { icon: "printer", title: "80mm Receipt Printing", desc: "One-click thermal receipt printing, kitchen tickets, and end-of-day summary reports — all formatted for 80mm printers.", color: "#fb923c" },
-    { icon: "wifi", title: "Works Offline", desc: "Nexus POS keeps running even when your internet drops. All data syncs automatically when you're back online.", color: "#60a5fa" },
+    { icon: "wifi", title: "Works Offline", desc: "NEXXUS POS keeps running even when your internet drops. All data syncs automatically when you're back online.", color: "#60a5fa" },
   ];
 
   return (
@@ -429,7 +429,7 @@ function Features() {
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-white mb-4">One platform, every tool</h2>
           <p className="text-lg max-w-2xl mx-auto" style={{ color: "#64748b" }}>
-            From your first sale to your thousandth table — Nexus POS has the features ambitious businesses rely on every day.
+            From your first sale to your thousandth table — NEXXUS POS has the features ambitious businesses rely on every day.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -454,7 +454,7 @@ function Features() {
 function HowItWorks() {
   const steps = [
     { num: "01", title: "Create your account", desc: "Sign up in under 2 minutes. Choose your plan, set your business type, and you're ready to go.", icon: "globe" },
-    { num: "02", title: "Configure your menu", desc: "Add products, categories, variants, and modifiers. Import from a spreadsheet or build inside Nexus.", icon: "package" },
+    { num: "02", title: "Configure your menu", desc: "Add products, categories, variants, and modifiers. Import from a spreadsheet or build inside NEXXUS.", icon: "package" },
     { num: "03", title: "Set up your team", desc: "Invite staff with role-based PINs. Assign cashier, manager, or kitchen display permissions in seconds.", icon: "users" },
     { num: "04", title: "Start selling", desc: "Open on any tablet or browser. Process orders, manage tables, fire to kitchen, and accept any payment.", icon: "zap" },
   ];
@@ -504,7 +504,7 @@ function Testimonials() {
     { name: "Marcus Laurent", role: "Owner, Sapphire Bistro", text: "We switched from Square last year and our checkout time dropped by half. The kitchen display alone was worth it — no more lost tickets.", rating: 5 },
     { name: "Priya Ramdeen", role: "Manager, TradeWind Markets", text: "The inventory tracking finally gave us visibility into what's actually selling. We cut overstock waste by 30% in the first quarter.", rating: 5 },
     { name: "David Chen", role: "GM, Harborside Grill", text: "Setup took less than a day. My staff picked it up without any training. The analytics dashboard is something we check every morning.", rating: 5 },
-    { name: "Sasha Morales", role: "Owner, Prism Boutique", text: "Customer profiles and email receipts have helped us build real relationships with our regulars. Nexus feels like it was built for us.", rating: 5 },
+    { name: "Sasha Morales", role: "Owner, Prism Boutique", text: "Customer profiles and email receipts have helped us build real relationships with our regulars. NEXXUS feels like it was built for us.", rating: 5 },
     { name: "James Fitzroy", role: "Operations, Blue Lagoon Bar", text: "Running three tabs per table used to be a nightmare. Now we hold orders, split bills, and charge tables in seconds. Game changer.", rating: 5 },
     { name: "Amara Singh", role: "Owner, The Spice Route", text: "The offline mode saved us during a power outage. We never stopped selling, and everything synced when we came back up. Incredible.", rating: 5 },
   ];
@@ -520,7 +520,7 @@ function Testimonials() {
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-white mb-4">Loved by real businesses</h2>
           <p className="text-lg max-w-xl mx-auto" style={{ color: "#64748b" }}>
-            Don't take our word for it — here's what our customers say after switching to Nexus POS.
+            Don't take our word for it — here's what our customers say after switching to NEXXUS POS.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -666,7 +666,7 @@ function Hardware() {
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-white mb-4">Supported hardware</h2>
           <p className="text-lg max-w-xl mx-auto" style={{ color: "#64748b" }}>
-            Nexus POS is hardware-agnostic. Bring your existing equipment or buy new — we work with the industry standard brands.
+            NEXXUS POS is hardware-agnostic. Bring your existing equipment or buy new — we work with the industry standard brands.
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -707,13 +707,13 @@ function FAQ() {
   const [open, setOpen] = useState<number | null>(null);
 
   const faqs = [
-    { q: "Do I need to buy special hardware?", a: "No — Nexus POS runs in any modern web browser on tablets, touchscreens, or desktops. You can use hardware you already own. We support standard 80mm thermal printers, cash drawers, and card terminals from all major brands." },
-    { q: "Can I use Nexus offline?", a: "Yes. Nexus POS continues to work during internet outages. Orders are queued locally and sync automatically when your connection is restored. You won't lose a single sale." },
+    { q: "Do I need to buy special hardware?", a: "No — NEXXUS POS runs in any modern web browser on tablets, touchscreens, or desktops. You can use hardware you already own. We support standard 80mm thermal printers, cash drawers, and card terminals from all major brands." },
+    { q: "Can I use NEXXUS offline?", a: "Yes. NEXXUS POS continues to work during internet outages. Orders are queued locally and sync automatically when your connection is restored. You won't lose a single sale." },
     { q: "How long does the free trial last?", a: "Every plan includes a 14-day free trial with no credit card required. You get full access to all features on your chosen plan from day one." },
     { q: "How many staff members can I add?", a: "All plans support unlimited staff accounts. Each staff member gets a unique PIN and role (cashier, manager, or kitchen). Permissions are managed at the plan level, not per user." },
     { q: "Can I manage multiple locations?", a: "Yes — the Enterprise plan includes a multi-location dashboard where you can view sales, inventory, and staff across all your sites from a single login." },
-    { q: "What payment methods does Nexus support?", a: "We support cash, card (via PowerTranz integration), PayPal, and split payments. You can also log custom payment types like gift cards or direct transfer." },
-    { q: "Is my data secure?", a: "Yes. Nexus POS uses encrypted connections (TLS), hashed staff PINs, and role-based access controls. Data is hosted in a secure cloud environment with regular backups." },
+    { q: "What payment methods does NEXXUS support?", a: "We support cash, card (via PowerTranz integration), PayPal, and split payments. You can also log custom payment types like gift cards or direct transfer." },
+    { q: "Is my data secure?", a: "Yes. NEXXUS POS uses encrypted connections (TLS), hashed staff PINs, and role-based access controls. Data is hosted in a secure cloud environment with regular backups." },
     { q: "Can I import my existing menu/products?", a: "Yes — you can bulk-import products from a CSV file or add them manually inside the product manager. Variants, modifiers, and categories are all fully supported." },
     { q: "How does billing work?", a: "Billing is monthly, charged to your card or PayPal. You can upgrade, downgrade, or cancel at any time from the subscription page inside your account." },
   ];
@@ -774,7 +774,7 @@ function CTA() {
           <div className="relative">
             <h2 className="text-4xl md:text-5xl font-black text-white mb-4">Ready to power your business?</h2>
             <p className="text-lg mb-8 max-w-xl mx-auto" style={{ color: "#94a3b8" }}>
-              Join thousands of businesses already running on Nexus POS. Start your free 14-day trial today — no credit card, no commitment.
+              Join thousands of businesses already running on NEXXUS POS. Start your free 14-day trial today — no credit card, no commitment.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a href={`${POS_URL}signup`}
@@ -822,7 +822,7 @@ function Footer() {
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2 mb-3">
               <span className="w-8 h-8 rounded-lg gradient-blue flex items-center justify-center text-white text-sm font-bold">N</span>
-              <span className="font-bold text-white">Nexus POS</span>
+              <span className="font-bold text-white">NEXXUS POS</span>
             </div>
             <p className="text-sm leading-relaxed mb-4" style={{ color: "#475569" }}>
               Your Business, Connected. The modern tablet POS built for growing businesses.
@@ -853,7 +853,7 @@ function Footer() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t"
           style={{ borderColor: "rgba(59,130,246,0.1)" }}
         >
-          <p className="text-xs" style={{ color: "#334155" }}>© 2025 Nexus POS by MicroBooks. All rights reserved.</p>
+          <p className="text-xs" style={{ color: "#334155" }}>© 2025 NEXXUS POS by MicroBooks. All rights reserved.</p>
           <div className="flex gap-4 text-xs" style={{ color: "#334155" }}>
             <a href="#" className="hover:text-blue-400 transition-colors">Terms</a>
             <a href="#" className="hover:text-blue-400 transition-colors">Privacy</a>

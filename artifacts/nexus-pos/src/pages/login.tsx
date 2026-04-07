@@ -148,7 +148,7 @@ export function Login() {
             <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
               <Store className="h-8 w-8" />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight">Nexus POS</h1>
+            <h1 className="text-3xl font-bold tracking-tight">NEXXUS POS</h1>
             <p className="mt-2 text-muted-foreground">Your Business, Connected.</p>
           </div>
 

@@ -116,7 +116,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <Store className="h-4.5 w-4.5" />
           </div>
           <div className="leading-tight">
-            <span className="text-base font-bold tracking-tight">Nexus POS</span>
+            <span className="text-base font-bold tracking-tight">NEXXUS POS</span>
             <span className="text-[10px] text-muted-foreground ml-2 hidden sm:inline">Your Business, Connected.</span>
           </div>
         </div>

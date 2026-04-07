@@ -163,7 +163,7 @@ export function Orders() {
         .bold{font-weight:bold}
       </style>
     </head><body>
-      <h2>Nexus POS</h2>
+      <h2>NEXXUS POS</h2>
       <p class="center">Your Business, Connected.</p>
       <div class="sep"></div>
       <div class="row"><span>Order:</span><span>${order.orderNumber}</span></div>
@@ -256,7 +256,7 @@ export function Orders() {
       <html><head><title>Bill – ${order.orderNumber}</title>
       <style>body{font-family:monospace;font-size:13px;padding:16px;} h2{text-align:center} .row{display:flex;justify-content:space-between;} .sep{border-top:1px dashed #333;margin:8px 0;} .bold{font-weight:bold;} .center{text-align:center;}</style>
       </head><body>
-      <h2>Nexus POS</h2>
+      <h2>NEXXUS POS</h2>
       <p class="center">Your Business, Connected.</p>
       <div class="sep"></div>
       <div class="row"><span>Order:</span><span>${order.orderNumber}</span></div>

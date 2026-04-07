@@ -338,7 +338,7 @@ function printReceiptWindow(order: GetOrderResponse, baseCurrency = "JMD", secon
     : [row("Payment:", (order.paymentMethod ?? "—").toUpperCase())];
 
   const textLines = [
-    center("NEXUS POS"),
+    center("NEXXUS POS"),
     center("Your Business, Connected."),
     dblDivider,
     row(`Order: ${order.orderNumber}`, format(new Date(order.createdAt), "MMM d h:mm a")),
@@ -794,7 +794,7 @@ export function POS() {
                 <path d="M19 7H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Zm-9 7H6v-2h4v2Zm8-4H6V9h12v1Z" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">Nexus POS</h1>
+            <h1 className="text-2xl font-bold tracking-tight">NEXXUS POS</h1>
             <p className="text-sm text-muted-foreground">Your Business, Connected.</p>
           </div>
 
@@ -1364,7 +1364,7 @@ export function POS() {
           {receiptOrder && (
             <div className="space-y-4 text-sm" id="receipt-print-area">
               <div className="text-center py-2 border-b border-border">
-                <p className="font-bold text-base">Nexus POS</p>
+                <p className="font-bold text-base">NEXXUS POS</p>
                 <p className="text-xs text-muted-foreground">Your Business, Connected.</p>
                 <p className="text-xs text-muted-foreground mt-1">{format(new Date(receiptOrder.createdAt), "MMM d, yyyy h:mm a")}</p>
                 <p className="font-mono text-xs mt-1">{receiptOrder.orderNumber}</p>
@@ -1507,7 +1507,7 @@ export function POS() {
 
           <div className="py-3 space-y-4">
             <p className="text-sm text-muted-foreground text-center">
-              Your Nexus POS subscription is expiring. Renew now to avoid any interruption to your business.
+              Your NEXXUS POS subscription is expiring. Renew now to avoid any interruption to your business.
             </p>
 
             {expiryCountdown && (

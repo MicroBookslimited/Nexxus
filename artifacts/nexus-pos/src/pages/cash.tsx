@@ -343,7 +343,7 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
 
   return `
     <div style="max-width:340px;margin:0 auto;font-family:monospace;font-size:12px;line-height:1.6">
-      <h2 style="text-align:center;font-size:15px;margin:0 0 2px">Nexus POS</h2>
+      <h2 style="text-align:center;font-size:15px;margin:0 0 2px">NEXXUS POS</h2>
       <p style="text-align:center;font-size:11px;margin:0 0 10px;color:#555">End of Day Report</p>
       <div style="border-top:1px dashed #000;margin:6px 0"></div>
       <div style="display:flex;justify-content:space-between"><span>Cashier:</span><span>${d.session.staffName}</span></div>

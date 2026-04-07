@@ -49,7 +49,7 @@ function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-2">
             <div className="w-8 h-8 bg-[#3b82f6] rounded-lg flex items-center justify-center"><Shield size={16} className="text-white" /></div>
-            <span className="text-xl font-bold text-white">Nexus POS</span>
+            <span className="text-xl font-bold text-white">NEXXUS POS</span>
           </div>
           <p className="text-[#94a3b8] text-sm">Super Admin Panel</p>
         </div>
@@ -310,7 +310,7 @@ function BankAccountForm({ account, onSave, onCancel }: { account?: BankAccount;
         <label className="block text-xs text-[#94a3b8] mb-1">Account Holder *</label>
         <input required value={form.accountHolder} onChange={e => set("accountHolder", e.target.value)}
           className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none text-sm"
-          placeholder="Nexus Solutions Ltd." />
+          placeholder="NEXXUS Solutions Ltd." />
       </div>
       <div>
         <label className="block text-xs text-[#94a3b8] mb-1">Bank Name *</label>
@@ -649,7 +649,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-[#3b82f6] rounded-lg flex items-center justify-center"><Shield size={16} className="text-white" /></div>
           <div>
-            <span className="font-bold text-white">Nexus POS</span>
+            <span className="font-bold text-white">NEXXUS POS</span>
             <span className="ml-2 text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full">Super Admin</span>
           </div>
         </div>

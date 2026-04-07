@@ -72,11 +72,11 @@ router.post("/billing/paypal/create-order", async (req, res): Promise<void> => {
       body: JSON.stringify({
         intent: "CAPTURE",
         purchase_units: [{
-          description: `Nexus POS — ${plan.name} (${parsed.data.billingCycle})`,
+          description: `NEXXUS POS — ${plan.name} (${parsed.data.billingCycle})`,
           amount: { currency_code: "USD", value: amount.toFixed(2) },
           custom_id: `${tenant.tenantId}:${plan.id}:${parsed.data.billingCycle}`,
         }],
-        application_context: { brand_name: "Nexus POS", user_action: "PAY_NOW" },
+        application_context: { brand_name: "NEXXUS POS", user_action: "PAY_NOW" },
       }),
     });
 
