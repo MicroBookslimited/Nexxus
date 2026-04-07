@@ -97,7 +97,7 @@ export function AdminSettings() {
     setBusinessName(settings.business_name ?? "Nexus POS");
     setBusinessAddress(settings.business_address ?? "");
     setBusinessPhone(settings.business_phone ?? "");
-    setTaxRate(settings.tax_rate ?? "0.08");
+    setTaxRate(settings.tax_rate ?? "15");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
     setBaseCurrency(settings.base_currency ?? "JMD");
     setSecondaryCurrency(settings.secondary_currency ?? "");
@@ -251,15 +251,13 @@ export function AdminSettings() {
                   id="tax-rate"
                   type="number"
                   min="0"
-                  max="1"
-                  step="0.001"
+                  max="100"
+                  step="0.01"
                   value={taxRate}
                   onChange={(e) => { setTaxRate(e.target.value); markDirty(); }}
                   className="w-28"
                 />
-                <span className="text-sm text-muted-foreground">
-                  = {(parseFloat(taxRate || "0") * 100).toFixed(1)}%
-                </span>
+                <span className="text-sm text-muted-foreground">%</span>
               </div>
             </div>
           </div>

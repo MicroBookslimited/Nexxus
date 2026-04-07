@@ -180,7 +180,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   const discountedSubtotal = Math.max(0, rawSubtotal - discountValue - loyaltyDiscount);
 
   const [taxRateSetting] = await db.select().from(appSettingsTable).where(eq(appSettingsTable.key, "tax_rate"));
-  const taxRate = parseFloat(taxRateSetting?.value ?? "0.08");
+  const taxRate = parseFloat(taxRateSetting?.value ?? "15") / 100;
   const tax = Math.round(discountedSubtotal * taxRate * 100) / 100;
   const total = Math.round((discountedSubtotal + tax) * 100) / 100;
 

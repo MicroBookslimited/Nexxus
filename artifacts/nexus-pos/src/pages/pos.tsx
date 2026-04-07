@@ -381,7 +381,7 @@ export function POS() {
   const baseCurrency = settings?.base_currency || "JMD";
   const secondaryCurrency = settings?.secondary_currency || "";
   const exchangeRate = parseFloat(settings?.currency_rate || "0");
-  const taxRate = parseFloat(settings?.tax_rate || "0");
+  const taxRate = parseFloat(settings?.tax_rate || "15") / 100;
   const taxPct = Math.round(taxRate * 100);
 
   const { data: heldOrders } = useListHeldOrders();

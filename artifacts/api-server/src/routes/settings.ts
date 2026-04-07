@@ -12,7 +12,7 @@ const DEFAULTS: Record<string, string> = {
   business_name: "Nexus POS",
   business_address: "",
   business_phone: "",
-  tax_rate: "0.08",
+  tax_rate: "15",
   receipt_footer: "Thank you for your business!",
   base_currency: "JMD",
   secondary_currency: "",
