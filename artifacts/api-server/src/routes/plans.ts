@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 
+const ALL_MODULES = ["pos", "reports", "inventory", "customers", "staff", "cash", "tables", "kitchen", "loyalty"];
+
 const SEED_PLANS = [
   {
     name: "Starter",
@@ -14,6 +16,8 @@ const SEED_PLANS = [
     maxStaff: 5,
     maxProducts: 100,
     maxLocations: 1,
+    maxInvoices: 500,
+    modules: JSON.stringify(["pos", "cash", "inventory", "customers", "staff", "reports"]),
     features: JSON.stringify(["POS Terminal", "Cash Management", "Basic Reports", "Email Receipts", "5 Staff Accounts", "Up to 100 Products"]),
     isActive: true,
   },
@@ -26,6 +30,8 @@ const SEED_PLANS = [
     maxStaff: 15,
     maxProducts: 500,
     maxLocations: 3,
+    maxInvoices: 5000,
+    modules: JSON.stringify(["pos", "cash", "inventory", "customers", "staff", "reports", "tables", "kitchen", "loyalty"]),
     features: JSON.stringify(["Everything in Starter", "Kitchen Display", "Table Management", "Advanced Reports", "Customer Loyalty", "15 Staff Accounts", "Up to 500 Products", "3 Locations"]),
     isActive: true,
   },
@@ -38,6 +44,8 @@ const SEED_PLANS = [
     maxStaff: 9999,
     maxProducts: 9999,
     maxLocations: 9999,
+    maxInvoices: 9999,
+    modules: JSON.stringify(ALL_MODULES),
     features: JSON.stringify(["Everything in Professional", "Unlimited Staff", "Unlimited Products", "Unlimited Locations", "Priority Support", "Custom Integrations", "Dedicated Account Manager"]),
     isActive: true,
   },
@@ -52,9 +60,17 @@ async function seedPlans() {
 
 seedPlans().catch(console.error);
 
+function parsePlan(p: typeof subscriptionPlansTable.$inferSelect) {
+  return {
+    ...p,
+    features: JSON.parse(p.features) as string[],
+    modules: JSON.parse(p.modules) as string[],
+  };
+}
+
 router.get("/plans", async (_req, res): Promise<void> => {
   const plans = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.isActive, true));
-  res.json(plans.map((p) => ({ ...p, features: JSON.parse(p.features) })));
+  res.json(plans.map(parsePlan));
 });
 
 export default router;

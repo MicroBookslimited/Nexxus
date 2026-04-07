@@ -92,6 +92,22 @@ export const superadminCreateTenant = (data: {
 export const superadminUpdateTenant = (id: number, data: { status?: string; subscriptionStatus?: string; planId?: number }) =>
   api<{ success: boolean }>(`/superadmin/tenants/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: superadminAuthHeaders() });
 
+/* ─── Superadmin Plan CRUD ─── */
+type PlanInput = {
+  name: string; slug: string; description?: string;
+  priceMonthly: number; priceAnnual: number;
+  maxStaff: number; maxProducts: number; maxLocations: number; maxInvoices: number;
+  modules: string[]; features: string[]; isActive?: boolean;
+};
+export const superadminGetPlans = () =>
+  api<Plan[]>("/superadmin/plans", { headers: superadminAuthHeaders() });
+export const superadminCreatePlan = (data: PlanInput) =>
+  api<Plan>("/superadmin/plans", { method: "POST", body: JSON.stringify(data), headers: superadminAuthHeaders() });
+export const superadminUpdatePlan = (id: number, data: Partial<PlanInput>) =>
+  api<Plan>(`/superadmin/plans/${id}`, { method: "PUT", body: JSON.stringify(data), headers: superadminAuthHeaders() });
+export const superadminDeletePlan = (id: number) =>
+  api<{ success: boolean }>(`/superadmin/plans/${id}`, { method: "DELETE", headers: superadminAuthHeaders() });
+
 export const superadminGetBankAccounts = () =>
   api<BankAccount[]>("/superadmin/bank-accounts", { headers: superadminAuthHeaders() });
 
@@ -158,7 +174,9 @@ export interface Subscription {
 
 export interface Plan {
   id: number; name: string; slug: string; description: string;
-  priceMonthly: number; priceAnnual: number; maxStaff: number; maxProducts: number; maxLocations: number; features: string[];
+  priceMonthly: number; priceAnnual: number;
+  maxStaff: number; maxProducts: number; maxLocations: number; maxInvoices: number;
+  modules: string[]; features: string[]; isActive: boolean;
 }
 
 export interface TenantRow extends Tenant {

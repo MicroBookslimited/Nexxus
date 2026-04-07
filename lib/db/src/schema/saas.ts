@@ -10,6 +10,8 @@ export const subscriptionPlansTable = pgTable("subscription_plans", {
   maxStaff: integer("max_staff").notNull(),
   maxProducts: integer("max_products").notNull(),
   maxLocations: integer("max_locations").notNull(),
+  maxInvoices: integer("max_invoices").notNull().default(9999),
+  modules: text("modules").notNull().default('["pos","reports","inventory","customers","staff","cash","tables","kitchen","loyalty"]'),
   features: text("features").notNull(),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

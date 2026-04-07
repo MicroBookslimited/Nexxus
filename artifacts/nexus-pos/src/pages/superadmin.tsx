@@ -4,7 +4,7 @@ import {
   RefreshCw, LogOut, Zap, Shield, CheckCircle, XCircle, Clock,
   Eye, X, AlertTriangle, Plus, Building2, Banknote, FileCheck,
   LayoutDashboard, Settings, Pencil, Trash2, Download, ChevronRight,
-  LogIn, KeyRound, Check,
+  LogIn, KeyRound, Check, Package, ToggleLeft, ToggleRight,
 } from "lucide-react";
 import {
   SUPERADMIN_TOKEN_KEY, TENANT_TOKEN_KEY,
@@ -13,7 +13,7 @@ import {
   superadminCreateBankAccount, superadminUpdateBankAccount, superadminDeleteBankAccount,
   superadminGetTransferProofs, superadminReviewTransferProof,
   superadminGetUsers, superadminImpersonate, superadminResetPassword,
-  getPlans,
+  superadminGetPlans, superadminCreatePlan, superadminUpdatePlan, superadminDeletePlan,
   type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow,
 } from "@/lib/saas-api";
 
@@ -23,7 +23,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "users" | "tenants" | "payments" | "settings";
+type Tab = "overview" | "users" | "tenants" | "payments" | "plans" | "settings";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -550,6 +550,203 @@ function ResetPasswordModal({ user, onClose }: { user: UserRow; onClose: () => v
   );
 }
 
+/* ─── Plan Form Modal ─── */
+const ALL_MODULES = [
+  { key: "pos", label: "POS Terminal" },
+  { key: "reports", label: "Reports & Analytics" },
+  { key: "inventory", label: "Inventory" },
+  { key: "customers", label: "Customers" },
+  { key: "staff", label: "Staff Management" },
+  { key: "cash", label: "Cash Management" },
+  { key: "tables", label: "Table Management" },
+  { key: "kitchen", label: "Kitchen Display" },
+  { key: "loyalty", label: "Loyalty Points" },
+];
+
+type PlanFormData = {
+  name: string; slug: string; description: string;
+  priceMonthly: number; priceAnnual: number;
+  maxStaff: number; maxProducts: number; maxLocations: number; maxInvoices: number;
+  modules: string[]; features: string[]; isActive: boolean;
+};
+
+function PlanFormModal({
+  plan, onClose, onSave,
+}: {
+  plan: Plan | null;
+  onClose: () => void;
+  onSave: (data: PlanFormData) => Promise<void>;
+}) {
+  const isNew = !plan;
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [form, setForm] = useState<PlanFormData>({
+    name: plan?.name ?? "",
+    slug: plan?.slug ?? "",
+    description: plan?.description ?? "",
+    priceMonthly: plan?.priceMonthly ?? 0,
+    priceAnnual: plan?.priceAnnual ?? 0,
+    maxStaff: plan?.maxStaff ?? 5,
+    maxProducts: plan?.maxProducts ?? 100,
+    maxLocations: plan?.maxLocations ?? 1,
+    maxInvoices: plan?.maxInvoices ?? 500,
+    modules: plan?.modules ?? ALL_MODULES.map(m => m.key),
+    features: plan?.features ?? [],
+    isActive: plan?.isActive ?? true,
+  });
+  const [newFeature, setNewFeature] = useState("");
+
+  function setF<K extends keyof PlanFormData>(key: K, val: PlanFormData[K]) {
+    setForm(prev => ({ ...prev, [key]: val }));
+  }
+
+  function toggleModule(key: string) {
+    setForm(prev => ({
+      ...prev,
+      modules: prev.modules.includes(key) ? prev.modules.filter(m => m !== key) : [...prev.modules, key],
+    }));
+  }
+
+  function autoSlug(name: string) {
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setErr("");
+    try { await onSave(form); }
+    catch (ex) { setErr((ex as Error).message); setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-[#1a2332] border border-[#2a3a55] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b border-[#2a3a55]">
+          <h2 className="text-lg font-bold text-white">{isNew ? "Create Plan" : `Edit: ${plan.name}`}</h2>
+          <button onClick={onClose} className="text-[#475569] hover:text-white"><X size={20} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {err && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg px-4 py-2">{err}</div>}
+
+          {/* Name & Slug */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-[#94a3b8] mb-1 font-medium">Plan Name</label>
+              <input value={form.name} onChange={e => { setF("name", e.target.value); if (isNew) setF("slug", autoSlug(e.target.value)); }}
+                className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#3b82f6]"
+                placeholder="e.g. Professional" required />
+            </div>
+            <div>
+              <label className="block text-xs text-[#94a3b8] mb-1 font-medium">Slug (unique ID)</label>
+              <input value={form.slug} onChange={e => setF("slug", e.target.value)}
+                className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-[#3b82f6]"
+                placeholder="professional" required />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-[#94a3b8] mb-1 font-medium">Description</label>
+            <input value={form.description} onChange={e => setF("description", e.target.value)}
+              className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#3b82f6]"
+              placeholder="Short description shown to customers" />
+          </div>
+
+          {/* Pricing */}
+          <div>
+            <div className="text-xs text-[#94a3b8] mb-2 font-medium uppercase tracking-wide">Pricing</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-[#475569] mb-1">Monthly Price (USD)</label>
+                <input type="number" min="0" step="0.01" value={form.priceMonthly} onChange={e => setF("priceMonthly", parseFloat(e.target.value) || 0)}
+                  className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#3b82f6]" />
+              </div>
+              <div>
+                <label className="block text-xs text-[#475569] mb-1">Annual Price (USD)</label>
+                <input type="number" min="0" step="0.01" value={form.priceAnnual} onChange={e => setF("priceAnnual", parseFloat(e.target.value) || 0)}
+                  className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#3b82f6]" />
+              </div>
+            </div>
+          </div>
+
+          {/* Limits */}
+          <div>
+            <div className="text-xs text-[#94a3b8] mb-2 font-medium uppercase tracking-wide">Limits (9999 = unlimited)</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {([ ["maxStaff","Max Staff"], ["maxProducts","Max Products"], ["maxLocations","Max Locations"], ["maxInvoices","Max Invoices/mo"] ] as [keyof PlanFormData, string][]).map(([k, label]) => (
+                <div key={k}>
+                  <label className="block text-xs text-[#475569] mb-1">{label}</label>
+                  <input type="number" min="0" value={form[k] as number} onChange={e => setF(k, parseInt(e.target.value) || 0)}
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#3b82f6]" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Modules */}
+          <div>
+            <div className="text-xs text-[#94a3b8] mb-2 font-medium uppercase tracking-wide">Enabled Modules</div>
+            <div className="grid grid-cols-3 gap-2">
+              {ALL_MODULES.map(m => {
+                const on = form.modules.includes(m.key);
+                return (
+                  <button key={m.key} type="button" onClick={() => toggleModule(m.key)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors ${on ? "border-[#3b82f6] bg-[#3b82f6]/10 text-[#3b82f6]" : "border-[#2a3a55] text-[#475569] hover:border-[#3b82f6]/50"}`}>
+                    {on ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Features (bullet points) */}
+          <div>
+            <div className="text-xs text-[#94a3b8] mb-2 font-medium uppercase tracking-wide">Feature Bullets (shown on pricing page)</div>
+            <div className="space-y-2 mb-2">
+              {form.features.map((f, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input value={f} onChange={e => setF("features", form.features.map((x, j) => j === i ? e.target.value : x))}
+                    className="flex-1 bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-[#3b82f6]" />
+                  <button type="button" onClick={() => setF("features", form.features.filter((_, j) => j !== i))}
+                    className="text-[#475569] hover:text-red-400 p-1"><X size={14} /></button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input value={newFeature} onChange={e => setNewFeature(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); if (newFeature.trim()) { setF("features", [...form.features, newFeature.trim()]); setNewFeature(""); } } }}
+                className="flex-1 bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-[#3b82f6]"
+                placeholder="Add feature (press Enter)" />
+              <button type="button" onClick={() => { if (newFeature.trim()) { setF("features", [...form.features, newFeature.trim()]); setNewFeature(""); } }}
+                className="px-3 py-1.5 bg-[#2a3a55] hover:bg-[#3a4a65] text-white rounded-lg text-sm"><Plus size={14} /></button>
+            </div>
+          </div>
+
+          {/* Active toggle */}
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setF("isActive", !form.isActive)}
+              className={`relative w-10 h-5 rounded-full transition-colors ${form.isActive ? "bg-[#3b82f6]" : "bg-[#2a3a55]"}`}>
+              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${form.isActive ? "translate-x-5" : "translate-x-0.5"}`} />
+            </button>
+            <span className="text-sm text-[#94a3b8]">Plan is {form.isActive ? "active" : "inactive"}</span>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 px-4 py-2 border border-[#2a3a55] text-[#94a3b8] rounded-lg text-sm hover:border-[#3b82f6] hover:text-white transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving}
+              className="flex-1 px-4 py-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
+              {saving ? "Saving…" : isNew ? "Create Plan" : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Dashboard ─── */
 function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [tab, setTab] = useState<Tab>("overview");
@@ -579,43 +776,74 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
   const [impersonating, setImpersonating] = useState<number | null>(null);
 
+  const [editingPlan, setEditingPlan] = useState<Plan | null | "new">(null);
+  const [plansLoading, setPlansLoading] = useState(false);
+
+  function isAuthError(e: unknown): boolean {
+    return (e instanceof Error) && (
+      e.message.includes("Invalid superadmin token") ||
+      e.message.includes("Unauthorized") ||
+      e.message.includes("401")
+    );
+  }
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, t, p] = await Promise.all([superadminStats(), superadminTenants(), getPlans()]);
+      const [s, t, p] = await Promise.all([superadminStats(), superadminTenants(), superadminGetPlans()]);
       setStats(s);
       setTenants(t);
       setFilteredTenants(t);
       setPlans(p);
-      const uniq = Array.from(new Map(p.map(x => [x.id, { id: x.id, name: x.name, slug: x.slug }])).values());
+      const uniq = Array.from(new Map(p.filter(x => x.isActive).map(x => [x.id, { id: x.id, name: x.name, slug: x.slug }])).values());
       setPlanMap(uniq);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      if (isAuthError(e)) { onLogout(); return; }
+      console.error(e);
+    }
     finally { setLoading(false); }
-  }, []);
+  }, [onLogout]);
 
   const loadBankAccounts = useCallback(async () => {
     setBankLoading(true);
     try { setBankAccounts(await superadminGetBankAccounts()); }
+    catch (e) { if (isAuthError(e)) onLogout(); }
     finally { setBankLoading(false); }
-  }, []);
+  }, [onLogout]);
 
   const loadProofs = useCallback(async () => {
     setProofsLoading(true);
     try { setProofs(await superadminGetTransferProofs()); }
+    catch (e) { if (isAuthError(e)) onLogout(); }
     finally { setProofsLoading(false); }
-  }, []);
+  }, [onLogout]);
 
   const loadUsers = useCallback(async (q?: string) => {
     setUsersLoading(true);
     try { setUsers(await superadminGetUsers(q)); }
-    catch (e) { console.error(e); }
+    catch (e) {
+      if (isAuthError(e)) { onLogout(); return; }
+      console.error(e);
+    }
     finally { setUsersLoading(false); }
-  }, []);
+  }, [onLogout]);
+
+  const loadPlans = useCallback(async () => {
+    setPlansLoading(true);
+    try {
+      const p = await superadminGetPlans();
+      setPlans(p);
+      const uniq = Array.from(new Map(p.filter(x => x.isActive).map(x => [x.id, { id: x.id, name: x.name, slug: x.slug }])).values());
+      setPlanMap(uniq);
+    } catch (e) { if (isAuthError(e)) onLogout(); }
+    finally { setPlansLoading(false); }
+  }, [onLogout]);
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { if (tab === "settings") loadBankAccounts(); }, [tab, loadBankAccounts]);
   useEffect(() => { if (tab === "payments") loadProofs(); }, [tab, loadProofs]);
   useEffect(() => { if (tab === "users") loadUsers(); }, [tab, loadUsers]);
+  useEffect(() => { if (tab === "plans") loadPlans(); }, [tab, loadPlans]);
 
   useEffect(() => {
     let list = tenants;
@@ -634,6 +862,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     { id: "users", label: "Users", icon: Users, badge: stats?.totalTenants },
     { id: "tenants", label: "Businesses", icon: Building2 },
     { id: "payments", label: "Payments", icon: Banknote, badge: stats?.pendingProofs || undefined },
+    { id: "plans", label: "Plans", icon: Package },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
@@ -959,6 +1188,116 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── PLANS ── */}
+        {tab === "plans" && (
+          <>
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-white">Subscription Plans</h1>
+                <p className="text-[#94a3b8] text-sm">Create and manage plans available to tenants</p>
+              </div>
+              <button onClick={() => setEditingPlan("new")}
+                className="flex items-center gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <Plus size={16} /> New Plan
+              </button>
+            </div>
+
+            {editingPlan && (
+              <PlanFormModal
+                plan={editingPlan === "new" ? null : editingPlan}
+                onClose={() => setEditingPlan(null)}
+                onSave={async (data) => {
+                  if (editingPlan === "new") await superadminCreatePlan(data);
+                  else await superadminUpdatePlan(editingPlan.id, data);
+                  await loadPlans();
+                  setEditingPlan(null);
+                }}
+              />
+            )}
+
+            {plansLoading ? (
+              <div className="p-8 text-center text-[#475569]"><RefreshCw size={20} className="animate-spin mx-auto mb-2" />Loading…</div>
+            ) : (
+              <div className="space-y-4">
+                {plans.map(plan => (
+                  <div key={plan.id} className={`bg-[#1a2332] border rounded-xl overflow-hidden transition-opacity ${plan.isActive ? "border-[#2a3a55]" : "border-[#1a2332] opacity-60"}`}>
+                    <div className="p-5">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-[#3b82f6]/10 rounded-lg flex items-center justify-center">
+                            <Package size={18} className="text-[#3b82f6]" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white text-lg">{plan.name}</span>
+                              <span className="text-xs font-mono bg-[#0f1729] text-[#94a3b8] px-2 py-0.5 rounded">{plan.slug}</span>
+                              {!plan.isActive && <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">Inactive</span>}
+                            </div>
+                            <p className="text-sm text-[#94a3b8]">{plan.description}</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditingPlan(plan)}
+                            className="p-1.5 rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors"><Pencil size={14} /></button>
+                          {plan.isActive ? (
+                            <button onClick={async () => { if (confirm(`Deactivate plan "${plan.name}"? Existing tenants won't be affected.`)) { await superadminDeletePlan(plan.id); await loadPlans(); } }}
+                              className="p-1.5 rounded-lg text-[#475569] hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={14} /></button>
+                          ) : (
+                            <button onClick={async () => { await superadminUpdatePlan(plan.id, { isActive: true }); await loadPlans(); }}
+                              className="p-1.5 rounded-lg text-[#475569] hover:text-green-400 hover:bg-green-500/10 transition-colors" title="Reactivate"><CheckCircle size={14} /></button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                        <div className="bg-[#0f1729] rounded-lg p-3 text-center">
+                          <div className="text-lg font-bold text-white">${plan.priceMonthly}<span className="text-xs text-[#475569] font-normal">/mo</span></div>
+                          <div className="text-xs text-[#475569]">${plan.priceAnnual}/yr</div>
+                        </div>
+                        <div className="bg-[#0f1729] rounded-lg p-3 text-center">
+                          <div className="text-lg font-bold text-white">{plan.maxStaff >= 9999 ? "∞" : plan.maxStaff}</div>
+                          <div className="text-xs text-[#475569]">Staff</div>
+                        </div>
+                        <div className="bg-[#0f1729] rounded-lg p-3 text-center">
+                          <div className="text-lg font-bold text-white">{plan.maxProducts >= 9999 ? "∞" : plan.maxProducts}</div>
+                          <div className="text-xs text-[#475569]">Products</div>
+                        </div>
+                        <div className="bg-[#0f1729] rounded-lg p-3 text-center">
+                          <div className="text-lg font-bold text-white">{plan.maxLocations >= 9999 ? "∞" : plan.maxLocations}</div>
+                          <div className="text-xs text-[#475569]">Locations</div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="text-xs text-[#475569] mb-1.5 font-medium uppercase tracking-wide">Modules</div>
+                          <div className="flex flex-wrap gap-1">
+                            {plan.modules.map(m => (
+                              <span key={m} className="text-xs bg-[#3b82f6]/10 text-[#3b82f6] px-2 py-0.5 rounded-full capitalize">{m}</span>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-[#475569] mb-1.5 font-medium uppercase tracking-wide">Limits</div>
+                          <div className="text-xs text-[#94a3b8] space-y-0.5">
+                            <div>Invoices: {plan.maxInvoices >= 9999 ? "Unlimited" : plan.maxInvoices.toLocaleString()}/mo</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {plans.length === 0 && (
+                  <div className="text-center py-12 text-[#475569]">
+                    <Package size={32} className="mx-auto mb-3 opacity-40" />
+                    <p>No plans yet. Create one to get started.</p>
+                  </div>
+                )}
               </div>
             )}
           </>
