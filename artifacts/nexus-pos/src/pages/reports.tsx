@@ -1136,6 +1136,154 @@ function ProfitSnapshotTab({ range }: { range: { from: string; to: string } }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 11. GCT TAX REPORT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function TaxReportTab({ range }: { range: { from: string; to: string } }) {
+  const { data, isLoading } = useReport<any>(
+    ["tax-report", range.from, range.to],
+    `/api/reports/tax?from=${range.from}&to=${range.to}`
+  );
+
+  const summary   = data?.summary;
+  const daily     = (data?.daily  ?? []) as any[];
+  const byMethod  = (data?.byMethod ?? []) as any[];
+  const gctRate   = data?.gctRate ?? 15;
+
+  const handleExport = () => {
+    if (!daily.length) return;
+    downloadCsv(`gct-report-${range.from}-to-${range.to}.csv`,
+      ["Date", "Orders", "Gross Sales (JMD)", "Taxable Subtotal (JMD)", "GCT Collected (JMD)", "Discounts (JMD)"],
+      daily.map(r => [r.date, r.orders, r.total, r.subtotal, r.tax, r.discount])
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Header notice */}
+      <div className="flex items-start gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3">
+        <Receipt className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
+        <div className="text-sm text-blue-300">
+          <span className="font-semibold">GCT Report</span> — Tax rate: <span className="font-mono font-bold">{gctRate}%</span>.
+          This report covers completed orders only. Use the CSV export for your GCT filing.
+        </div>
+      </div>
+
+      <div className="flex justify-end"><ExportBtn onClick={handleExport} /></div>
+
+      {/* Summary cards */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <StatCard title="Gross Sales"        value={summary ? fc(summary.grossSales)      : ""} icon={DollarSign} loading={isLoading} color="text-blue-400" />
+        <StatCard title="Taxable Subtotal"   value={summary ? fc(summary.taxableSubtotal) : ""} icon={Percent}    loading={isLoading} color="text-violet-400"
+          sub="Before GCT" />
+        <StatCard title="GCT Collected"      value={summary ? fc(summary.gctCollected)    : ""} icon={Receipt}    loading={isLoading} color="text-emerald-400"
+          sub={`@ ${gctRate}% rate`} />
+        <StatCard title="Taxable Orders"     value={summary ? summary.orders.toString()   : ""} icon={ShoppingBag} loading={isLoading} />
+      </div>
+
+      {/* Daily GCT bar chart */}
+      {!isLoading && daily.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Daily GCT Collection</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={daily} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
+                <Tooltip content={<CT />} />
+                <Bar dataKey="tax"      name="GCT (JMD)"      fill="#10b981" radius={[3,3,0,0]} />
+                <Bar dataKey="subtotal" name="Subtotal (JMD)"  fill="#3b82f6" radius={[3,3,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Day-by-day table */}
+      {!isLoading && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Day-by-Day GCT Breakdown</CardTitle>
+            <CardDescription className="text-xs">All amounts in JMD. Gross Sales = Subtotal + GCT. Suitable for GCT return filing.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {daily.length === 0 ? <Empty /> : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Orders</TableHead>
+                    <TableHead className="text-right">Gross Sales</TableHead>
+                    <TableHead className="text-right">Taxable Subtotal</TableHead>
+                    <TableHead className="text-right text-emerald-400">GCT ({gctRate}%)</TableHead>
+                    <TableHead className="text-right text-amber-400">Discounts</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {daily.map(r => (
+                    <TableRow key={r.date}>
+                      <TableCell className="font-mono text-sm">{r.date}</TableCell>
+                      <TableCell className="text-right">{r.orders}</TableCell>
+                      <TableCell className="text-right font-mono font-semibold">{fc(r.total)}</TableCell>
+                      <TableCell className="text-right font-mono text-muted-foreground">{fc(r.subtotal)}</TableCell>
+                      <TableCell className="text-right font-mono text-emerald-400 font-semibold">{fc(r.tax)}</TableCell>
+                      <TableCell className="text-right font-mono text-amber-400">{r.discount > 0 ? fc(r.discount) : "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                  {/* Totals row */}
+                  <TableRow className="border-t-2 border-border/60 font-bold bg-muted/20">
+                    <TableCell>Total</TableCell>
+                    <TableCell className="text-right">{summary?.orders ?? 0}</TableCell>
+                    <TableCell className="text-right font-mono">{summary ? fc(summary.grossSales) : ""}</TableCell>
+                    <TableCell className="text-right font-mono text-muted-foreground">{summary ? fc(summary.taxableSubtotal) : ""}</TableCell>
+                    <TableCell className="text-right font-mono text-emerald-400">{summary ? fc(summary.gctCollected) : ""}</TableCell>
+                    <TableCell className="text-right font-mono text-amber-400">{summary && summary.totalDiscount > 0 ? fc(summary.totalDiscount) : "—"}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* By payment method */}
+      {!isLoading && byMethod.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">GCT by Payment Method</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Payment Method</TableHead>
+                  <TableHead className="text-right">Orders</TableHead>
+                  <TableHead className="text-right">Gross Sales</TableHead>
+                  <TableHead className="text-right">Subtotal</TableHead>
+                  <TableHead className="text-right text-emerald-400">GCT</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {byMethod.map(r => (
+                  <TableRow key={r.method}>
+                    <TableCell className="font-medium capitalize">{METHOD_LABELS[r.method] ?? r.method}</TableCell>
+                    <TableCell className="text-right">{r.orders}</TableCell>
+                    <TableCell className="text-right font-mono">{fc(r.total)}</TableCell>
+                    <TableCell className="text-right font-mono text-muted-foreground">{fc(r.subtotal)}</TableCell>
+                    <TableCell className="text-right font-mono text-emerald-400 font-semibold">{fc(r.tax)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {isLoading && <Loading />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN REPORTS PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1150,10 +1298,11 @@ const TABS = [
   { value: "hourly",         label: "Hourly Sales",   icon: Activity,        num: "08" },
   { value: "table-turnover", label: "Table Turnover", icon: UtensilsCrossed, num: "09" },
   { value: "profit",         label: "Profit Snapshot",icon: TrendingUp,      num: "10" },
+  { value: "tax",            label: "GCT / Tax",      icon: Receipt,         num: "11" },
 ];
 
 const TABS_WITH_OWN_DATE = new Set(["hourly"]);
-const TABS_WITH_RANGE    = new Set(["daily-sales","payment","product-sales","inventory","staff","discount-void","category","table-turnover","profit"]);
+const TABS_WITH_RANGE    = new Set(["daily-sales","payment","product-sales","inventory","staff","discount-void","category","table-turnover","profit","tax"]);
 
 export function Reports() {
   const [preset,    setPreset]    = useState<Preset>("today");
@@ -1167,7 +1316,7 @@ export function Reports() {
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-6 space-y-5">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Reports</h2>
-        <p className="text-muted-foreground mt-1">10 comprehensive reports across all areas of your business.</p>
+        <p className="text-muted-foreground mt-1">11 comprehensive reports across all areas of your business.</p>
       </div>
 
       {TABS_WITH_RANGE.has(activeTab) && (
@@ -1196,6 +1345,7 @@ export function Reports() {
           <TabsContent value="hourly">         <HourlySalesTab range={range} preset={preset} /></TabsContent>
           <TabsContent value="table-turnover"> <TableTurnoverTab range={range} /></TabsContent>
           <TabsContent value="profit">         <ProfitSnapshotTab range={range} /></TabsContent>
+          <TabsContent value="tax">            <TaxReportTab range={range} /></TabsContent>
         </div>
       </Tabs>
     </motion.div>

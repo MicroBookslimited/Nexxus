@@ -645,4 +645,73 @@ router.get("/reports/export", async (req, res): Promise<void> => {
   res.send(header + rows);
 });
 
+// ── GCT Tax Report ─────────────────────────────────────────────────────────
+router.get("/reports/tax", async (req, res): Promise<void> => {
+  const { from, to } = rangeParams(req.query as Record<string, string>);
+  const tenantId = (req as any).tenantId as number;
+
+  // Fetch current GCT rate from settings
+  const { appSettingsTable } = await import("@workspace/db");
+  const settingsRows = await db.select().from(appSettingsTable).where(eq(appSettingsTable.tenantId, tenantId));
+  const settings = Object.fromEntries(settingsRows.map(r => [r.key, r.value]));
+  const gctRate = parseFloat(settings["tax_rate"] ?? "15");
+
+  // Day-by-day breakdown
+  const daily = await db.select({
+    date:     sql<string>`DATE(${ordersTable.createdAt})::text`,
+    orders:   sql<number>`COUNT(*)`,
+    subtotal: sql<number>`COALESCE(SUM(${ordersTable.subtotal}), 0)`,
+    tax:      sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
+    total:    sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
+    discount: sql<number>`COALESCE(SUM(${ordersTable.discountValue}), 0)`,
+  }).from(ordersTable)
+    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .groupBy(sql`DATE(${ordersTable.createdAt})`)
+    .orderBy(asc(sql`DATE(${ordersTable.createdAt})`));
+
+  // Payment-method GCT breakdown
+  const byMethod = await db.select({
+    method:   ordersTable.paymentMethod,
+    orders:   sql<number>`COUNT(*)`,
+    subtotal: sql<number>`COALESCE(SUM(${ordersTable.subtotal}), 0)`,
+    tax:      sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
+    total:    sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
+  }).from(ordersTable)
+    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .groupBy(ordersTable.paymentMethod);
+
+  // Totals
+  const totSubtotal = daily.reduce((s, r) => s + Number(r.subtotal), 0);
+  const totTax      = daily.reduce((s, r) => s + Number(r.tax), 0);
+  const totTotal    = daily.reduce((s, r) => s + Number(r.total), 0);
+  const totDiscount = daily.reduce((s, r) => s + Number(r.discount), 0);
+  const totOrders   = daily.reduce((s, r) => s + Number(r.orders), 0);
+
+  res.json({
+    gctRate,
+    summary: {
+      orders:          totOrders,
+      grossSales:      Math.round(totTotal    * 100) / 100,
+      taxableSubtotal: Math.round(totSubtotal * 100) / 100,
+      gctCollected:    Math.round(totTax      * 100) / 100,
+      totalDiscount:   Math.round(totDiscount * 100) / 100,
+    },
+    daily: daily.map(r => ({
+      date:     r.date,
+      orders:   Number(r.orders),
+      subtotal: Math.round(Number(r.subtotal) * 100) / 100,
+      tax:      Math.round(Number(r.tax)      * 100) / 100,
+      total:    Math.round(Number(r.total)    * 100) / 100,
+      discount: Math.round(Number(r.discount) * 100) / 100,
+    })),
+    byMethod: byMethod.map(r => ({
+      method:   r.method ?? "other",
+      orders:   Number(r.orders),
+      subtotal: Math.round(Number(r.subtotal) * 100) / 100,
+      tax:      Math.round(Number(r.tax)      * 100) / 100,
+      total:    Math.round(Number(r.total)    * 100) / 100,
+    })),
+  });
+});
+
 export default router;
