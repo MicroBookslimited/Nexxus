@@ -14,7 +14,8 @@ import {
   TrendingUp, TrendingDown, DollarSign, BookOpen, FileText,
   Plus, Trash2, RefreshCw, Link2, Unlink, CheckCircle2,
   AlertTriangle, BarChart2, ChevronRight, Building2, Calculator,
-  ArrowUpRight, ArrowDownRight, Wallet,
+  ArrowUpRight, ArrowDownRight, Wallet, Package, ClipboardList,
+  ArrowUp, ArrowDown, Search, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfYear } from "date-fns";
 
@@ -50,6 +51,10 @@ interface TrialBalance {
 }
 interface Overview { period: string; from: string; to: string; revenue: number; taxCollected: number; totalRevenue: number; totalExpenses: number; netIncome: number; orderCount: number; journalEntryCount: number; }
 interface QBStatus { configured: boolean; connected: boolean; realmId?: string; connectedAt?: string; tokenExpired?: boolean; lastSyncAt?: string; lastSyncStatus?: string; lastSyncMessage?: string; }
+interface StockProduct { id: number; name: string; category: string; price: number; stockCount: number; inStock: boolean; }
+interface StockAdjustment { id: number; productId: number; productName: string; adjustmentType: string; quantity: number; reason: string; notes: string | null; previousStock: number; newStock: number; createdAt: string; createdBy: string | null; journalEntryId: number | null; }
+interface StockCountItem { id: number; sessionId: number; productId: number; productName: string; productCategory: string | null; systemCount: number; physicalCount: number | null; discrepancy: number | null; isAdjusted: boolean; unitCost: number | null; }
+interface StockCountSession { id: number; name: string; status: string; notes: string | null; startedAt: string; completedAt: string | null; createdBy: string | null; totalItems: number | null; totalDiscrepancies: number | null; items?: StockCountItem[]; }
 
 /* ─── API helpers ─── */
 function authHeaders(): Record<string, string> {
@@ -647,6 +652,473 @@ function QuickBooksPanel() {
   );
 }
 
+/* ─── Stock Adjustment Modal ─── */
+const ADJUSTMENT_REASONS = ["received", "returned", "damaged", "theft", "expired", "manual", "other"] as const;
+
+function StockAdjustmentModal({ products, onClose, onSaved }: { products: StockProduct[]; onClose: () => void; onSaved: () => void }) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({ productId: "", adjustmentType: "increase", quantity: "1", reason: "received", notes: "", createJournalEntry: false });
+  const [saving, setSaving] = useState(false);
+  const selectedProduct = products.find(p => String(p.id) === form.productId);
+
+  async function save() {
+    if (!form.productId) { toast({ title: "Please select a product", variant: "destructive" }); return; }
+    setSaving(true);
+    try {
+      await api("/accounting/stock-adjustments", {
+        method: "POST",
+        body: JSON.stringify({ productId: parseInt(form.productId, 10), adjustmentType: form.adjustmentType, quantity: parseInt(form.quantity, 10), reason: form.reason, notes: form.notes || undefined, createJournalEntry: form.createJournalEntry }),
+      });
+      toast({ title: "Stock adjusted successfully" });
+      onSaved(); onClose();
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    finally { setSaving(false); }
+  }
+
+  const previewStock = selectedProduct ? (form.adjustmentType === "increase" ? selectedProduct.stockCount + (parseInt(form.quantity, 10) || 0) : Math.max(0, selectedProduct.stockCount - (parseInt(form.quantity, 10) || 0))) : null;
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Package className="h-4 w-4" /> New Stock Adjustment</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label>Product *</Label>
+            <Select value={form.productId} onValueChange={v => setForm(p => ({ ...p, productId: v }))}>
+              <SelectTrigger><SelectValue placeholder="Select a product…" /></SelectTrigger>
+              <SelectContent className="max-h-60">
+                {Array.from(new Set(products.map(p => p.category))).sort().map(cat => (
+                  <div key={cat}>
+                    <p className="px-2 py-1 text-xs text-muted-foreground font-semibold uppercase">{cat}</p>
+                    {products.filter(p => p.category === cat).map(p => (
+                      <SelectItem key={p.id} value={String(p.id)} className="text-sm">
+                        <span>{p.name}</span>
+                        <span className="ml-2 text-muted-foreground text-xs">({p.stockCount} in stock)</span>
+                      </SelectItem>
+                    ))}
+                  </div>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {selectedProduct && (
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50 text-sm">
+              <span className="text-muted-foreground">Current stock</span>
+              <span className="font-bold">{selectedProduct.stockCount} units</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Adjustment Type *</Label>
+              <Select value={form.adjustmentType} onValueChange={v => setForm(p => ({ ...p, adjustmentType: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="increase"><span className="flex items-center gap-1.5"><ArrowUp className="h-3 w-3 text-green-400" /> Increase</span></SelectItem>
+                  <SelectItem value="decrease"><span className="flex items-center gap-1.5"><ArrowDown className="h-3 w-3 text-red-400" /> Decrease</span></SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Quantity *</Label>
+              <Input type="number" min={1} value={form.quantity} onChange={e => setForm(p => ({ ...p, quantity: e.target.value }))} />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Reason *</Label>
+            <Select value={form.reason} onValueChange={v => setForm(p => ({ ...p, reason: v }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ADJUSTMENT_REASONS.map(r => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Notes</Label>
+            <Input placeholder="Optional notes…" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
+          </div>
+
+          <label className="flex items-center gap-2.5 cursor-pointer select-none p-3 rounded-lg border border-border/50 hover:bg-muted/20">
+            <input type="checkbox" className="h-4 w-4 accent-blue-500" checked={form.createJournalEntry} onChange={e => setForm(p => ({ ...p, createJournalEntry: e.target.checked }))} />
+            <div>
+              <p className="text-sm font-medium">Create accounting journal entry</p>
+              <p className="text-xs text-muted-foreground">Records this adjustment in the ledger with estimated cost value</p>
+            </div>
+          </label>
+
+          {previewStock !== null && (
+            <div className={cn("flex items-center justify-between p-3 rounded-lg border text-sm font-medium", form.adjustmentType === "increase" ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-red-500/10 border-red-500/30 text-red-400")}>
+              <span>New stock after adjustment</span>
+              <span className="font-bold">{previewStock} units</span>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Apply Adjustment"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─── New Stock Count Session Modal ─── */
+function NewStockCountModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number) => void }) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({ name: `Stock Count — ${format(new Date(), "MMM d, yyyy")}`, notes: "" });
+  const [creating, setCreating] = useState(false);
+
+  async function create() {
+    if (!form.name) { toast({ title: "Name is required", variant: "destructive" }); return; }
+    setCreating(true);
+    try {
+      const session = await api<{ id: number; itemCount: number }>("/accounting/stock-counts", { method: "POST", body: JSON.stringify(form) });
+      toast({ title: `Stock count created with ${session.itemCount} products` });
+      onCreated(session.id);
+      onClose();
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    finally { setCreating(false); }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><ClipboardList className="h-4 w-4" /> New Stock Count</DialogTitle></DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-1.5"><Label>Count Name *</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+          <div className="space-y-1.5"><Label>Notes</Label><Input placeholder="e.g. End of month physical count" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></div>
+          <p className="text-xs text-muted-foreground">This will snapshot the current stock levels for all products. You can then enter physical counts and compare.</p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={create} disabled={creating}>{creating ? "Creating…" : "Start Count"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─── Stock Count Detail View ─── */
+function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number; onBack: () => void; onApplied: () => void }) {
+  const { toast } = useToast();
+  const [session, setSession] = useState<StockCountSession | null>(null);
+  const [items, setItems] = useState<StockCountItem[]>([]);
+  const [counts, setCounts] = useState<Record<number, string>>({});
+  const [searchQ, setSearchQ] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [createJE, setCreateJE] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api<StockCountSession & { items: StockCountItem[] }>(`/accounting/stock-counts/${sessionId}`);
+      setSession(data);
+      setItems(data.items ?? []);
+      const initCounts: Record<number, string> = {};
+      for (const item of data.items ?? []) { if (item.physicalCount !== null) initCounts[item.id] = String(item.physicalCount); }
+      setCounts(initCounts);
+    } catch (e: any) { toast({ title: "Error loading session", description: e.message, variant: "destructive" }); }
+    finally { setLoading(false); }
+  }, [sessionId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function updateCount(itemId: number, value: string) {
+    setCounts(prev => ({ ...prev, [itemId]: value }));
+    const n = parseInt(value, 10);
+    if (isNaN(n) || n < 0) return;
+    try {
+      const updated = await api<StockCountItem>(`/accounting/stock-counts/${sessionId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ physicalCount: n }) });
+      setItems(prev => prev.map(i => i.id === itemId ? updated : i));
+    } catch { /* silent — allow optimistic UI */ }
+  }
+
+  async function applyCount() {
+    setApplying(true);
+    try {
+      const result = await api<{ adjusted: number; discrepancies: number; message: string }>(`/accounting/stock-counts/${sessionId}/apply`, { method: "POST", body: JSON.stringify({ createJournalEntries: createJE }) });
+      toast({ title: "Stock count applied", description: result.message });
+      onApplied();
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    finally { setApplying(false); }
+  }
+
+  const filteredItems = items.filter(i => !searchQ || i.productName.toLowerCase().includes(searchQ.toLowerCase()) || (i.productCategory ?? "").toLowerCase().includes(searchQ.toLowerCase()));
+  const groupedItems = filteredItems.reduce<Record<string, StockCountItem[]>>((acc, item) => {
+    const cat = item.productCategory ?? "Uncategorized";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {});
+
+  const counted = items.filter(i => i.physicalCount !== null).length;
+  const discrepancies = items.filter(i => i.physicalCount !== null && i.discrepancy !== null && i.discrepancy !== 0);
+  const isCompleted = session?.status === "completed";
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs" onClick={onBack}>← Back</Button>
+        <div className="flex-1">
+          <h2 className="font-bold text-base">{session?.name ?? "Loading…"}</h2>
+          <p className="text-xs text-muted-foreground">{session?.startedAt ? format(new Date(session.startedAt), "MMM d, yyyy 'at' h:mm a") : ""}</p>
+        </div>
+        <Badge variant="outline" className={cn("shrink-0", isCompleted ? "border-green-500/40 text-green-400" : session?.status === "voided" ? "border-red-500/40 text-red-400" : "border-yellow-500/40 text-yellow-400")}>
+          {session?.status ?? "…"}
+        </Badge>
+      </div>
+
+      {/* Progress bar */}
+      <div className="rounded-xl border border-border bg-card/50 p-4 space-y-2">
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Counted</span>
+          <span className="font-medium">{counted} / {items.length} products</span>
+        </div>
+        <div className="h-2 bg-muted rounded-full overflow-hidden">
+          <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${items.length > 0 ? (counted / items.length) * 100 : 0}%` }} />
+        </div>
+        <div className="flex gap-4 text-xs text-muted-foreground pt-1">
+          <span className={discrepancies.length > 0 ? "text-red-400" : "text-green-400"}>{discrepancies.length} discrepancies</span>
+          <span>{items.length - counted} remaining</span>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+        <Input className="pl-8 h-8 text-sm" placeholder="Search products…" value={searchQ} onChange={e => setSearchQ(e.target.value)} />
+      </div>
+
+      {/* Product list grouped by category */}
+      {loading ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">Loading products…</div>
+      ) : (
+        <div className="space-y-4">
+          {Object.entries(groupedItems).map(([category, catItems]) => (
+            <div key={category}>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{category}</p>
+              <div className="rounded-xl border border-border overflow-hidden">
+                <div className="grid grid-cols-[1fr_80px_80px_80px] text-xs text-muted-foreground font-medium bg-muted/30 px-4 py-2 border-b border-border">
+                  <span>Product</span><span className="text-right">System</span><span className="text-right">Physical</span><span className="text-right">Diff</span>
+                </div>
+                <div className="divide-y divide-border/30">
+                  {catItems.map(item => {
+                    const phys = counts[item.id];
+                    const physNum = phys !== undefined ? parseInt(phys, 10) : item.physicalCount;
+                    const diff = physNum !== null && physNum !== undefined && !isNaN(physNum) ? physNum - item.systemCount : null;
+                    const hasDiff = diff !== null && diff !== 0;
+                    return (
+                      <div key={item.id} className={cn("grid grid-cols-[1fr_80px_80px_80px] px-4 py-2.5 items-center", item.isAdjusted && "opacity-60 bg-green-500/5")}>
+                        <div>
+                          <p className="text-sm font-medium">{item.productName}</p>
+                          {item.isAdjusted && <p className="text-xs text-green-400">✓ Applied</p>}
+                        </div>
+                        <p className="text-sm text-right text-muted-foreground">{item.systemCount}</p>
+                        <div className="flex justify-end">
+                          {isCompleted ? (
+                            <span className="text-sm">{item.physicalCount ?? "—"}</span>
+                          ) : (
+                            <Input
+                              className="w-16 h-7 text-sm text-right px-2"
+                              type="number"
+                              min={0}
+                              placeholder="—"
+                              value={counts[item.id] ?? ""}
+                              onChange={e => updateCount(item.id, e.target.value)}
+                            />
+                          )}
+                        </div>
+                        <p className={cn("text-sm text-right font-medium", hasDiff ? diff! > 0 ? "text-green-400" : "text-red-400" : diff === 0 ? "text-muted-foreground" : "text-muted-foreground/50")}>
+                          {diff === null ? "—" : diff > 0 ? `+${diff}` : diff === 0 ? "✓" : diff}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Apply section (only for in-progress) */}
+      {!isCompleted && session?.status === "in_progress" && (
+        <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
+          <h3 className="text-sm font-semibold">Apply Stock Count</h3>
+          <p className="text-xs text-muted-foreground">This will update product stock levels to match physical counts for all {discrepancies.length} discrepancy items.</p>
+          <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+            <input type="checkbox" className="h-4 w-4 accent-blue-500" checked={createJE} onChange={e => setCreateJE(e.target.checked)} />
+            <span>Create a journal entry for inventory adjustments</span>
+          </label>
+          <Button className="w-full gap-2" onClick={applyCount} disabled={applying || discrepancies.length === 0}>
+            <CheckCircle2 className="h-4 w-4" />
+            {applying ? "Applying…" : `Apply ${discrepancies.length} Adjustments`}
+          </Button>
+        </div>
+      )}
+
+      {isCompleted && session?.completedAt && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Completed on {format(new Date(session.completedAt), "MMM d, yyyy 'at' h:mm a")} · {session.totalDiscrepancies ?? 0} adjustments applied
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Inventory Tab Panel ─── */
+function InventoryPanel({ products }: { products: StockProduct[] }) {
+  const { toast } = useToast();
+  const [subTab, setSubTab] = useState<"adjustments" | "counts">("adjustments");
+  const [adjustments, setAdjustments] = useState<StockAdjustment[]>([]);
+  const [sessions, setSessions] = useState<StockCountSession[]>([]);
+  const [showAdjModal, setShowAdjModal] = useState(false);
+  const [showNewCountModal, setShowNewCountModal] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const [loadingAdj, setLoadingAdj] = useState(true);
+  const [loadingCounts, setLoadingCounts] = useState(true);
+
+  const loadAdjustments = useCallback(async () => {
+    setLoadingAdj(true);
+    try { setAdjustments(await api<StockAdjustment[]>("/accounting/stock-adjustments?limit=50")); }
+    catch { setAdjustments([]); }
+    finally { setLoadingAdj(false); }
+  }, []);
+
+  const loadSessions = useCallback(async () => {
+    setLoadingCounts(true);
+    try { setSessions(await api<StockCountSession[]>("/accounting/stock-counts")); }
+    catch { setSessions([]); }
+    finally { setLoadingCounts(false); }
+  }, []);
+
+  useEffect(() => { loadAdjustments(); loadSessions(); }, [loadAdjustments, loadSessions]);
+
+  const reasonColors: Record<string, string> = {
+    received: "border-green-500/40 text-green-400",
+    returned: "border-blue-500/40 text-blue-400",
+    damaged: "border-orange-500/40 text-orange-400",
+    theft: "border-red-500/40 text-red-400",
+    expired: "border-yellow-500/40 text-yellow-400",
+    correction: "border-purple-500/40 text-purple-400",
+    manual: "border-muted-foreground/30 text-muted-foreground",
+    other: "border-muted-foreground/30 text-muted-foreground",
+  };
+
+  // If viewing a session
+  if (activeSessionId !== null) {
+    return <StockCountDetail sessionId={activeSessionId} onBack={() => setActiveSessionId(null)} onApplied={() => { setActiveSessionId(null); loadSessions(); }} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 border-b border-border pb-3">
+        <Button size="sm" variant={subTab === "adjustments" ? "default" : "outline"} className="h-8 text-xs gap-1.5" onClick={() => setSubTab("adjustments")}><ArrowUp className="h-3 w-3" /> Stock Adjustments</Button>
+        <Button size="sm" variant={subTab === "counts" ? "default" : "outline"} className="h-8 text-xs gap-1.5" onClick={() => setSubTab("counts")}><ClipboardList className="h-3 w-3" /> Stock Counts</Button>
+        <div className="flex-1" />
+        {subTab === "adjustments" && <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setShowAdjModal(true)}><Plus className="h-3.5 w-3.5" /> New Adjustment</Button>}
+        {subTab === "counts" && <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setShowNewCountModal(true)}><Plus className="h-3.5 w-3.5" /> New Count</Button>}
+      </div>
+
+      {/* Stock Adjustments List */}
+      {subTab === "adjustments" && (
+        <div className="max-w-3xl">
+          {loadingAdj ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">Loading…</div>
+          ) : adjustments.length === 0 ? (
+            <div className="text-center py-16 space-y-2">
+              <Package className="h-10 w-10 mx-auto text-muted-foreground/30" />
+              <p className="text-muted-foreground">No stock adjustments recorded yet</p>
+              <Button size="sm" className="gap-1 mt-2" onClick={() => setShowAdjModal(true)}><Plus className="h-3.5 w-3.5" /> Create First Adjustment</Button>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border overflow-hidden">
+              <div className="grid grid-cols-[1fr_80px_80px_80px_100px_100px] text-xs text-muted-foreground font-medium bg-muted/30 px-4 py-2.5 border-b border-border">
+                <span>Product</span><span className="text-center">Type</span><span className="text-center">Qty</span><span className="text-center">Before</span><span className="text-center">After</span><span className="text-right">Date</span>
+              </div>
+              <div className="divide-y divide-border/30">
+                {adjustments.map(adj => (
+                  <div key={adj.id} className="grid grid-cols-[1fr_80px_80px_80px_100px_100px] px-4 py-3 items-center hover:bg-muted/20">
+                    <div>
+                      <p className="text-sm font-medium">{adj.productName}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <Badge variant="outline" className={cn("text-xs", reasonColors[adj.reason] ?? "border-muted-foreground/30 text-muted-foreground")}>{adj.reason}</Badge>
+                        {adj.notes && <span className="text-xs text-muted-foreground italic truncate max-w-40">{adj.notes}</span>}
+                        {adj.journalEntryId && <Badge variant="outline" className="text-xs border-blue-500/30 text-blue-400">JE #{adj.journalEntryId}</Badge>}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      {adj.adjustmentType === "increase" ? (
+                        <span className="inline-flex items-center gap-0.5 text-xs text-green-400"><ArrowUp className="h-3 w-3" /> Add</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 text-xs text-red-400"><ArrowDown className="h-3 w-3" /> Remove</span>
+                      )}
+                    </div>
+                    <p className={cn("text-sm text-center font-semibold", adj.adjustmentType === "increase" ? "text-green-400" : "text-red-400")}>
+                      {adj.adjustmentType === "increase" ? "+" : "-"}{adj.quantity}
+                    </p>
+                    <p className="text-sm text-center text-muted-foreground">{adj.previousStock}</p>
+                    <p className="text-sm text-center font-medium">{adj.newStock}</p>
+                    <p className="text-xs text-right text-muted-foreground">{format(new Date(adj.createdAt), "MMM d, h:mm a")}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Stock Count Sessions */}
+      {subTab === "counts" && (
+        <div className="max-w-3xl space-y-3">
+          {loadingCounts ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">Loading…</div>
+          ) : sessions.length === 0 ? (
+            <div className="text-center py-16 space-y-2">
+              <ClipboardList className="h-10 w-10 mx-auto text-muted-foreground/30" />
+              <p className="text-muted-foreground">No stock count sessions yet</p>
+              <Button size="sm" className="gap-1 mt-2" onClick={() => setShowNewCountModal(true)}><Plus className="h-3.5 w-3.5" /> Start a Count</Button>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border overflow-hidden">
+              <div className="divide-y divide-border/30">
+                {sessions.map(session => (
+                  <button
+                    key={session.id}
+                    className="w-full grid grid-cols-[1fr_auto_auto] px-4 py-3.5 items-center hover:bg-muted/20 text-left gap-4"
+                    onClick={() => setActiveSessionId(session.id)}
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{session.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(session.startedAt), "MMM d, yyyy 'at' h:mm a")} · {session.totalItems ?? 0} products</p>
+                      {session.notes && <p className="text-xs text-muted-foreground/70 italic mt-0.5">{session.notes}</p>}
+                    </div>
+                    {session.totalDiscrepancies !== null && session.status === "completed" && (
+                      <span className="text-xs text-muted-foreground">{session.totalDiscrepancies} adjusted</span>
+                    )}
+                    <Badge variant="outline" className={cn("shrink-0 text-xs", session.status === "completed" ? "border-green-500/40 text-green-400" : session.status === "voided" ? "border-red-500/40 text-red-400" : "border-yellow-500/40 text-yellow-400")}>
+                      {session.status}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showAdjModal && <StockAdjustmentModal products={products} onClose={() => setShowAdjModal(false)} onSaved={loadAdjustments} />}
+      {showNewCountModal && <NewStockCountModal onClose={() => setShowNewCountModal(false)} onCreated={(id) => { loadSessions(); setActiveSessionId(id); }} />}
+    </div>
+  );
+}
+
 /* ─── Main Page ─── */
 export function Accounting() {
   const { toast } = useToast();
@@ -661,6 +1133,7 @@ export function Accounting() {
   const [showJEModal, setShowJEModal] = useState(false);
   const [reportType, setReportType] = useState("pl");
   const [acctTypeFilter, setAcctTypeFilter] = useState<string>("all");
+  const [products, setProducts] = useState<StockProduct[]>([]);
 
   const loadAccounts = useCallback(async () => {
     try { setAccounts(await api<Account[]>("/accounting/accounts")); }
@@ -677,10 +1150,15 @@ export function Accounting() {
     catch { setOverview(null); }
   }, [overviewPeriod]);
 
+  const loadProducts = useCallback(async () => {
+    try { setProducts(await api<StockProduct[]>("/products")); }
+    catch { setProducts([]); }
+  }, []);
+
   useEffect(() => {
     setLoading(true);
-    Promise.all([loadAccounts(), loadEntries(), loadOverview()]).finally(() => setLoading(false));
-  }, [loadAccounts, loadEntries, loadOverview]);
+    Promise.all([loadAccounts(), loadEntries(), loadOverview(), loadProducts()]).finally(() => setLoading(false));
+  }, [loadAccounts, loadEntries, loadOverview, loadProducts]);
 
   useEffect(() => { loadOverview(); }, [loadOverview]);
 
@@ -738,6 +1216,7 @@ export function Accounting() {
               <TabsTrigger value="accounts" className="text-xs gap-1"><BookOpen className="h-3.5 w-3.5" /> Chart of Accounts</TabsTrigger>
               <TabsTrigger value="journal" className="text-xs gap-1"><FileText className="h-3.5 w-3.5" /> Journal Entries</TabsTrigger>
               <TabsTrigger value="reports" className="text-xs gap-1"><TrendingUp className="h-3.5 w-3.5" /> Reports</TabsTrigger>
+              <TabsTrigger value="inventory" className="text-xs gap-1"><Package className="h-3.5 w-3.5" /> Inventory</TabsTrigger>
               <TabsTrigger value="quickbooks" className="text-xs gap-1"><Link2 className="h-3.5 w-3.5" /> QuickBooks</TabsTrigger>
             </TabsList>
           </div>
@@ -894,6 +1373,11 @@ export function Accounting() {
               {reportType === "bs" && <BalanceSheetView />}
               {reportType === "tb" && <TrialBalanceView />}
             </div>
+          </TabsContent>
+
+          {/* Inventory */}
+          <TabsContent value="inventory" className="flex-1 overflow-y-auto p-6 m-0">
+            <InventoryPanel products={products} />
           </TabsContent>
 
           {/* QuickBooks */}

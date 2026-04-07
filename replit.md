@@ -44,6 +44,13 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `/customers` — Customer management with loyalty points, order history, search
   - `/staff` — Staff Management (add/edit/deactivate, roles: admin/manager/cashier/kitchen, PIN-based auth, branch assignment per staff member)
   - `/locations` — Multi-Location / Branch Management (create/edit/deactivate branches, per-branch inventory, stock transfer between branches, transfer history)
+  - `/accounting` — Full Accounting Module with 6 tabs:
+    - **Overview**: KPI cards (revenue, expenses, net income, tax collected) by week/month/year
+    - **Chart of Accounts**: 22 default accounts, full CRUD, type-filtered (asset/liability/equity/revenue/expense)
+    - **Journal Entries**: Double-entry bookkeeping, create manual entries, void entries, DR/CR line display
+    - **Reports**: P&L Statement, Balance Sheet, Trial Balance with date range pickers and presets
+    - **Inventory**: Stock Adjustments (adjust products up/down with reason tracking, optional journal entry), Stock Count sessions (physical count vs system count, apply discrepancies, optional journal entry)
+    - **QuickBooks**: OAuth 2.0 connection, sync POS orders as QB Sales Receipts, disconnect flow
   - `/cash` — Cash Management (open shift with opening cash, record mid-shift payouts, close shift with end-of-day reconciliation, variance reporting, shift history sidebar, EOD report modal with Print Summary / Print with Sales Detail)
   - `/reports` — Business reports with date range presets, hourly chart, KPIs, CSV export
   - `/settings` — Admin Settings (Business Info, Receipt Settings, Email Provider selection)
@@ -92,6 +99,29 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `GET /api/purchases?productId=X` — List purchase records (optionally filtered by product)
   - `POST /api/purchases` — Record a stock purchase (auto-increments product stockCount, sets inStock=true)
   - `DELETE /api/purchases/:id` — Delete a purchase record
+  - `GET /api/accounting/accounts` — Chart of accounts (seeds 22 defaults on first call)
+  - `POST /api/accounting/accounts` — Create account
+  - `PATCH/DELETE /api/accounting/accounts/:id` — Update/deactivate account
+  - `GET /api/accounting/journal-entries` — List journal entries with lines
+  - `POST /api/accounting/journal-entries` — Create journal entry (double-entry validated)
+  - `DELETE /api/accounting/journal-entries/:id` — Void journal entry
+  - `GET /api/accounting/reports/profit-loss` — P&L report (from/to query params)
+  - `GET /api/accounting/reports/balance-sheet` — Balance sheet (as_of param)
+  - `GET /api/accounting/reports/trial-balance` — Trial balance (as_of param)
+  - `GET /api/accounting/overview` — KPI summary (period=week|month|year)
+  - `GET /api/accounting/quickbooks/status` — QB connection status
+  - `GET /api/accounting/quickbooks/auth` — Start QB OAuth flow (redirect)
+  - `GET /api/accounting/quickbooks/callback` — QB OAuth callback
+  - `POST /api/accounting/quickbooks/disconnect` — Disconnect QB
+  - `POST /api/accounting/quickbooks/sync` — Sync orders to QB (days param)
+  - `GET /api/accounting/stock-adjustments` — List stock adjustments
+  - `POST /api/accounting/stock-adjustments` — Create adjustment (updates product stockCount, optional JE)
+  - `GET /api/accounting/stock-counts` — List stock count sessions
+  - `POST /api/accounting/stock-counts` — Create stock count session (snapshots all products)
+  - `GET /api/accounting/stock-counts/:id` — Get session with all items
+  - `PATCH /api/accounting/stock-counts/:id/items/:itemId` — Update physical count for an item
+  - `POST /api/accounting/stock-counts/:id/apply` — Apply count (updates stock, optional JE)
+  - `DELETE /api/accounting/stock-counts/:id` — Void a session
 
 ## SaaS Layer
 

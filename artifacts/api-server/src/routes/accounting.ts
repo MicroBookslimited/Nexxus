@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, accountingAccountsTable, journalEntriesTable, journalEntryLinesTable, quickbooksConnectionTable, ordersTable, orderItemsTable } from "@workspace/db";
-import { eq, and, gte, lte, sql, ne, inArray } from "drizzle-orm";
+import { db, accountingAccountsTable, journalEntriesTable, journalEntryLinesTable, quickbooksConnectionTable, ordersTable, orderItemsTable, productsTable, stockAdjustmentsTable, stockCountSessionsTable, stockCountItemsTable } from "@workspace/db";
+import { eq, and, gte, lte, sql, ne, inArray, desc } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -648,6 +648,292 @@ router.get("/accounting/overview", async (req, res): Promise<void> => {
     orderCount: revenue?.count ?? 0,
     journalEntryCount: entryCount?.count ?? 0,
   });
+});
+
+/* ═══════════════════════════════════════════
+   STOCK ADJUSTMENTS
+   ═══════════════════════════════════════════ */
+
+const AdjustmentBody = z.object({
+  productId: z.number().int(),
+  adjustmentType: z.enum(["increase", "decrease"]),
+  quantity: z.number().int().positive(),
+  reason: z.enum(["damaged", "theft", "received", "returned", "expired", "manual", "correction", "other"]),
+  notes: z.string().optional(),
+  createJournalEntry: z.boolean().optional().default(false),
+  createdBy: z.string().optional(),
+});
+
+// List stock adjustments
+router.get("/accounting/stock-adjustments", async (req, res): Promise<void> => {
+  const { productId, from, to, limit: lim = "50", offset: off = "0" } = req.query as Record<string, string>;
+  const filters: any[] = [];
+  if (productId) filters.push(eq(stockAdjustmentsTable.productId, parseInt(productId, 10)));
+  if (from) filters.push(gte(stockAdjustmentsTable.createdAt, new Date(from)));
+  if (to) filters.push(lte(stockAdjustmentsTable.createdAt, new Date(to)));
+
+  const adjustments = await db
+    .select()
+    .from(stockAdjustmentsTable)
+    .where(filters.length ? and(...filters) : undefined)
+    .orderBy(desc(stockAdjustmentsTable.createdAt))
+    .limit(parseInt(lim, 10))
+    .offset(parseInt(off, 10));
+
+  res.json(adjustments);
+});
+
+// Create a stock adjustment
+router.post("/accounting/stock-adjustments", async (req, res): Promise<void> => {
+  const parsed = AdjustmentBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { productId, adjustmentType, quantity, reason, notes, createJournalEntry, createdBy } = parsed.data;
+
+  // Fetch product
+  const [product] = await db.select().from(productsTable).where(eq(productsTable.id, productId));
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+
+  const previousStock = product.stockCount;
+  const delta = adjustmentType === "increase" ? quantity : -quantity;
+  const newStock = Math.max(0, previousStock + delta);
+
+  // Update product stock
+  await db.update(productsTable).set({ stockCount: newStock, inStock: newStock > 0 }).where(eq(productsTable.id, productId));
+
+  // Optionally create journal entry
+  let journalEntryId: number | undefined;
+  if (createJournalEntry) {
+    await ensureDefaultAccounts();
+    const [inventoryAccount] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.code, "1200")).limit(1);
+    const [cogsAccount] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.code, "5000")).limit(1);
+    const [adjAccount] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.code, "5500")).limit(1);
+
+    if (inventoryAccount && cogsAccount && adjAccount) {
+      const unitCost = product.price * 0.5; // estimate cost as 50% of price if no cost field
+      const amount = quantity * unitCost;
+
+      const [entry] = await db.insert(journalEntriesTable).values({
+        date: new Date(),
+        description: `Stock ${adjustmentType}: ${product.name} (${reason})`,
+        reference: `ADJ-${productId}`,
+        type: "adjustment",
+        status: "posted",
+      }).returning();
+
+      // Increase: DR Inventory, CR Adjustment Account
+      // Decrease: DR COGS/Loss, CR Inventory
+      const lines = adjustmentType === "increase"
+        ? [
+            { entryId: entry.id, accountId: inventoryAccount.id, description: `Stock received: ${product.name}`, debit: amount, credit: 0 },
+            { entryId: entry.id, accountId: adjAccount.id, description: `Inventory adjustment`, debit: 0, credit: amount },
+          ]
+        : [
+            { entryId: entry.id, accountId: cogsAccount.id, description: `Stock loss: ${product.name} (${reason})`, debit: amount, credit: 0 },
+            { entryId: entry.id, accountId: inventoryAccount.id, description: `Inventory reduction`, debit: 0, credit: amount },
+          ];
+
+      await db.insert(journalEntryLinesTable).values(lines);
+      journalEntryId = entry.id;
+    }
+  }
+
+  // Record adjustment
+  const [adjustment] = await db.insert(stockAdjustmentsTable).values({
+    productId,
+    productName: product.name,
+    adjustmentType,
+    quantity,
+    reason,
+    notes,
+    previousStock,
+    newStock,
+    unitCost: product.price * 0.5,
+    journalEntryId,
+    createdBy,
+  }).returning();
+
+  res.status(201).json({ ...adjustment, product: { id: product.id, name: product.name, newStock } });
+});
+
+/* ═══════════════════════════════════════════
+   STOCK COUNT
+   ═══════════════════════════════════════════ */
+
+// List stock count sessions
+router.get("/accounting/stock-counts", async (_req, res): Promise<void> => {
+  const sessions = await db
+    .select()
+    .from(stockCountSessionsTable)
+    .orderBy(desc(stockCountSessionsTable.startedAt))
+    .limit(20);
+  res.json(sessions);
+});
+
+// Create a new stock count session (snapshots current stock levels)
+router.post("/accounting/stock-counts", async (req, res): Promise<void> => {
+  const { name, notes, createdBy, categoryFilter } = req.body as { name: string; notes?: string; createdBy?: string; categoryFilter?: string };
+  if (!name) { res.status(400).json({ error: "Name is required" }); return; }
+
+  // Fetch all active products
+  let productQuery = db.select().from(productsTable).$dynamic();
+  if (categoryFilter) productQuery = productQuery.where(eq(productsTable.category, categoryFilter));
+  const products = await productQuery.orderBy(productsTable.category, productsTable.name);
+
+  // Create session
+  const [session] = await db.insert(stockCountSessionsTable).values({
+    name,
+    notes,
+    createdBy,
+    status: "in_progress",
+    totalItems: products.length,
+  }).returning();
+
+  // Create items (snapshot of current stock)
+  if (products.length > 0) {
+    await db.insert(stockCountItemsTable).values(products.map(p => ({
+      sessionId: session.id,
+      productId: p.id,
+      productName: p.name,
+      productCategory: p.category,
+      systemCount: p.stockCount,
+      unitCost: p.price * 0.5,
+    })));
+  }
+
+  res.status(201).json({ ...session, itemCount: products.length });
+});
+
+// Get stock count session with all items
+router.get("/accounting/stock-counts/:id", async (req, res): Promise<void> => {
+  const id = parseInt(req.params["id"] ?? "0", 10);
+  const [session] = await db.select().from(stockCountSessionsTable).where(eq(stockCountSessionsTable.id, id));
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+  const items = await db
+    .select()
+    .from(stockCountItemsTable)
+    .where(eq(stockCountItemsTable.sessionId, id))
+    .orderBy(stockCountItemsTable.productCategory, stockCountItemsTable.productName);
+
+  res.json({ ...session, items });
+});
+
+// Update a count item (set physical count)
+router.patch("/accounting/stock-counts/:id/items/:itemId", async (req, res): Promise<void> => {
+  const sessionId = parseInt(req.params["id"] ?? "0", 10);
+  const itemId = parseInt(req.params["itemId"] ?? "0", 10);
+  const { physicalCount } = req.body as { physicalCount: number };
+
+  if (typeof physicalCount !== "number" || physicalCount < 0) {
+    res.status(400).json({ error: "physicalCount must be a non-negative number" });
+    return;
+  }
+
+  const [item] = await db.select().from(stockCountItemsTable).where(
+    and(eq(stockCountItemsTable.id, itemId), eq(stockCountItemsTable.sessionId, sessionId))
+  );
+  if (!item) { res.status(404).json({ error: "Item not found" }); return; }
+
+  const discrepancy = physicalCount - item.systemCount;
+  const [updated] = await db.update(stockCountItemsTable).set({ physicalCount, discrepancy }).where(eq(stockCountItemsTable.id, itemId)).returning();
+
+  res.json(updated);
+});
+
+// Apply a stock count (adjust all products with discrepancies)
+router.post("/accounting/stock-counts/:id/apply", async (req, res): Promise<void> => {
+  const sessionId = parseInt(req.params["id"] ?? "0", 10);
+  const { createJournalEntries = false } = req.body as { createJournalEntries?: boolean };
+
+  const [session] = await db.select().from(stockCountSessionsTable).where(eq(stockCountSessionsTable.id, sessionId));
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+  if (session.status === "completed") { res.status(400).json({ error: "Session already applied" }); return; }
+
+  const items = await db.select().from(stockCountItemsTable).where(eq(stockCountItemsTable.sessionId, sessionId));
+  const discrepancyItems = items.filter(i => i.physicalCount !== null && i.discrepancy !== null && i.discrepancy !== 0);
+
+  let adjustedCount = 0;
+  let journalEntryId: number | undefined;
+
+  // Create one consolidate journal entry for all adjustments if requested
+  if (createJournalEntries && discrepancyItems.length > 0) {
+    await ensureDefaultAccounts();
+    const [inventoryAccount] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.code, "1200")).limit(1);
+    const [adjAccount] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.code, "5500")).limit(1);
+
+    if (inventoryAccount && adjAccount) {
+      const positiveAdjustments = discrepancyItems.filter(i => (i.discrepancy ?? 0) > 0);
+      const negativeAdjustments = discrepancyItems.filter(i => (i.discrepancy ?? 0) < 0);
+      const positiveTotal = positiveAdjustments.reduce((s, i) => s + (i.discrepancy ?? 0) * (i.unitCost ?? 0), 0);
+      const negativeTotal = negativeAdjustments.reduce((s, i) => s + Math.abs(i.discrepancy ?? 0) * (i.unitCost ?? 0), 0);
+      const netChange = positiveTotal - negativeTotal;
+
+      if (Math.abs(netChange) > 0.01) {
+        const [entry] = await db.insert(journalEntriesTable).values({
+          date: new Date(),
+          description: `Stock Count Adjustment: ${session.name}`,
+          reference: `COUNT-${sessionId}`,
+          type: "adjustment",
+          status: "posted",
+        }).returning();
+
+        const lines: any[] = [];
+        if (netChange > 0) {
+          // Net inventory increase
+          lines.push({ entryId: entry.id, accountId: inventoryAccount.id, debit: netChange, credit: 0, description: "Inventory count increase" });
+          lines.push({ entryId: entry.id, accountId: adjAccount.id, debit: 0, credit: netChange, description: "Inventory adjustment offset" });
+        } else {
+          // Net inventory decrease
+          lines.push({ entryId: entry.id, accountId: adjAccount.id, debit: Math.abs(netChange), credit: 0, description: "Inventory count loss" });
+          lines.push({ entryId: entry.id, accountId: inventoryAccount.id, debit: 0, credit: Math.abs(netChange), description: "Inventory count reduction" });
+        }
+        await db.insert(journalEntryLinesTable).values(lines);
+        journalEntryId = entry.id;
+      }
+    }
+  }
+
+  // Apply adjustments to product stock
+  for (const item of discrepancyItems) {
+    if (item.physicalCount === null) continue;
+    await db.update(productsTable).set({ stockCount: item.physicalCount, inStock: item.physicalCount > 0 }).where(eq(productsTable.id, item.productId));
+
+    // Record individual stock adjustment
+    await db.insert(stockAdjustmentsTable).values({
+      productId: item.productId,
+      productName: item.productName,
+      adjustmentType: (item.discrepancy ?? 0) > 0 ? "increase" : "decrease",
+      quantity: Math.abs(item.discrepancy ?? 0),
+      reason: "correction",
+      notes: `Stock count: ${session.name}`,
+      previousStock: item.systemCount,
+      newStock: item.physicalCount,
+      unitCost: item.unitCost,
+      journalEntryId,
+    });
+
+    await db.update(stockCountItemsTable).set({ isAdjusted: true }).where(eq(stockCountItemsTable.id, item.id));
+    adjustedCount++;
+  }
+
+  // Update session status
+  const totalDiscrepancies = items.filter(i => i.physicalCount !== null && i.discrepancy !== 0).length;
+  await db.update(stockCountSessionsTable).set({ status: "completed", completedAt: new Date(), totalDiscrepancies }).where(eq(stockCountSessionsTable.id, sessionId));
+
+  res.json({ adjusted: adjustedCount, discrepancies: discrepancyItems.length, journalEntryId, message: `Applied ${adjustedCount} stock adjustments` });
+});
+
+// Void a stock count session
+router.delete("/accounting/stock-counts/:id", async (req, res): Promise<void> => {
+  const id = parseInt(req.params["id"] ?? "0", 10);
+  await db.update(stockCountSessionsTable).set({ status: "voided" }).where(eq(stockCountSessionsTable.id, id));
+  res.json({ success: true });
+});
+
+// Get available product categories
+router.get("/accounting/stock-counts/categories", async (_req, res): Promise<void> => {
+  const cats = await db.selectDistinct({ category: productsTable.category }).from(productsTable).orderBy(productsTable.category);
+  res.json(cats.map(c => c.category));
 });
 
 export default router;

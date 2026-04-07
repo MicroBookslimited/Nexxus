@@ -1,4 +1,5 @@
 import { pgTable, serial, text, boolean, integer, real, timestamp, unique } from "drizzle-orm/pg-core";
+import { productsTable } from "./products";
 
 export const accountingAccountsTable = pgTable("accounting_accounts", {
   id: serial("id").primaryKey(),
@@ -47,7 +48,54 @@ export const quickbooksConnectionTable = pgTable("quickbooks_connection", {
   lastSyncMessage: text("last_sync_message"),
 });
 
+/* ─── Stock Adjustments ─── */
+export const stockAdjustmentsTable = pgTable("stock_adjustments", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => productsTable.id),
+  productName: text("product_name").notNull(),
+  adjustmentType: text("adjustment_type").notNull(), // "increase" | "decrease"
+  quantity: integer("quantity").notNull(),
+  reason: text("reason").notNull(), // "damaged" | "theft" | "received" | "returned" | "expired" | "manual" | "other"
+  notes: text("notes"),
+  previousStock: integer("previous_stock").notNull(),
+  newStock: integer("new_stock").notNull(),
+  unitCost: real("unit_cost"),
+  journalEntryId: integer("journal_entry_id"),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/* ─── Stock Count Sessions ─── */
+export const stockCountSessionsTable = pgTable("stock_count_sessions", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("draft"), // "draft" | "in_progress" | "completed" | "voided"
+  notes: text("notes"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdBy: text("created_by"),
+  totalItems: integer("total_items"),
+  totalDiscrepancies: integer("total_discrepancies"),
+});
+
+/* ─── Stock Count Items ─── */
+export const stockCountItemsTable = pgTable("stock_count_items", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").notNull().references(() => stockCountSessionsTable.id, { onDelete: "cascade" }),
+  productId: integer("product_id").notNull(),
+  productName: text("product_name").notNull(),
+  productCategory: text("product_category"),
+  systemCount: integer("system_count").notNull(),
+  physicalCount: integer("physical_count"),
+  discrepancy: integer("discrepancy"),
+  unitCost: real("unit_cost"),
+  isAdjusted: boolean("is_adjusted").notNull().default(false),
+});
+
 export type AccountingAccount = typeof accountingAccountsTable.$inferSelect;
 export type JournalEntry = typeof journalEntriesTable.$inferSelect;
 export type JournalEntryLine = typeof journalEntryLinesTable.$inferSelect;
 export type QuickbooksConnection = typeof quickbooksConnectionTable.$inferSelect;
+export type StockAdjustment = typeof stockAdjustmentsTable.$inferSelect;
+export type StockCountSession = typeof stockCountSessionsTable.$inferSelect;
+export type StockCountItem = typeof stockCountItemsTable.$inferSelect;
