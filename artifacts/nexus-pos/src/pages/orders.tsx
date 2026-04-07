@@ -10,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, ChevronUp, Printer, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert, RotateCcw, Printer } from "lucide-react";
 import { PinPad } from "@/components/PinPad";
 import { 
   AlertDialog,
@@ -39,7 +39,12 @@ export function Orders() {
   const [orderToVoid, setOrderToVoid] = useState<number | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [managerPinOpen, setManagerPinOpen] = useState(false);
-  const [pendingVoidId, setPendingVoidId] = useState<number | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ type: "void" | "refund" | "reprint"; orderId: number } | null>(null);
+
+  const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [orderToRefund, setOrderToRefund] = useState<number | null>(null);
+  const [refundReason, setRefundReason] = useState("");
+  const [reprintOrder, setReprintOrder] = useState<NonNullable<typeof orders>[0] | null>(null);
 
   const [chargeDialogOpen, setChargeDialogOpen] = useState(false);
   const [orderToCharge, setOrderToCharge] = useState<{ id: number; orderNumber: string; total: number } | null>(null);
@@ -62,32 +67,104 @@ export function Orders() {
 
   const handleVoidConfirm = () => {
     if (!orderToVoid || !voidReason.trim()) return;
-
-    updateStatus.mutate({
-      id: orderToVoid,
-      data: { status: "voided", voidReason }
-    }, {
-      onSuccess: () => {
-        toast({ title: "Order Voided" });
-        queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
-        setVoidDialogOpen(false);
-        setOrderToVoid(null);
-        setVoidReason("");
+    updateStatus.mutate(
+      { id: orderToVoid, data: { status: "voided", voidReason } },
+      {
+        onSuccess: () => {
+          toast({ title: "Order Voided", description: "Stock has been restored." });
+          queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+          setVoidDialogOpen(false);
+          setOrderToVoid(null);
+          setVoidReason("");
+        },
       }
-    });
+    );
   };
 
-  const openVoidDialog = (id: number) => {
-    setPendingVoidId(id);
+  const handleRefundConfirm = () => {
+    if (!orderToRefund || !refundReason.trim()) return;
+    updateStatus.mutate(
+      { id: orderToRefund, data: { status: "refunded", voidReason: refundReason } },
+      {
+        onSuccess: () => {
+          toast({ title: "Order Refunded", description: "Stock has been restored." });
+          queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+          setRefundDialogOpen(false);
+          setOrderToRefund(null);
+          setRefundReason("");
+        },
+      }
+    );
+  };
+
+  const handleReprintReceipt = (order: NonNullable<typeof orders>[0]) => {
+    const fmt = (n: number) => {
+      try { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n); }
+      catch { return `$${n.toFixed(2)}`; }
+    };
+    const win = window.open("", "_blank", "width=400,height=700");
+    if (!win) return;
+    const pm = order.paymentMethod === "split"
+      ? `Split — Card: ${fmt(order.splitCardAmount ?? 0)}, Cash: ${fmt(order.splitCashAmount ?? 0)}`
+      : (order.paymentMethod ?? "—").toUpperCase();
+    const refundNote = order.status === "refunded" ? `<p class="center" style="color:red;font-weight:bold">*** REFUNDED ***</p>` : "";
+    win.document.write(`<!DOCTYPE html><html><head><title>Receipt – ${order.orderNumber}</title>
+      <style>
+        @page{size:80mm auto;margin:4mm}
+        body{margin:0;padding:8px;font-family:'Courier New',Courier,monospace;font-size:11px;line-height:1.5}
+        h2,p.center{text-align:center;margin:2px 0}
+        .row{display:flex;justify-content:space-between}
+        .sep{border-top:1px dashed #333;margin:6px 0}
+        .bold{font-weight:bold}
+      </style>
+    </head><body>
+      <h2>Nexus POS</h2>
+      <p class="center">Your Business, Connected.</p>
+      <div class="sep"></div>
+      <div class="row"><span>Order:</span><span>${order.orderNumber}</span></div>
+      <div class="row"><span>Date:</span><span>${format(new Date(order.createdAt), "MMM d, h:mm a")}</span></div>
+      <div class="sep"></div>
+      ${order.items.map(item => `<div class="row"><span>${item.quantity}× ${item.productName}</span><span>${fmt(item.lineTotal)}</span></div>`).join("")}
+      <div class="sep"></div>
+      <div class="row"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
+      ${(order.discountValue ?? 0) > 0 ? `<div class="row"><span>Discount</span><span>-${fmt(order.discountValue ?? 0)}</span></div>` : ""}
+      <div class="row"><span>Tax (10%)</span><span>${fmt(order.tax)}</span></div>
+      <div class="row bold"><span>TOTAL</span><span>${fmt(order.total)}</span></div>
+      <div class="sep"></div>
+      <div class="row"><span>Payment:</span><span>${pm}</span></div>
+      ${order.notes ? `<div class="sep"></div><p>Note: ${order.notes}</p>` : ""}
+      <div class="sep"></div>
+      ${refundNote}
+      <p class="center">Thank you for your business!</p>
+      <p class="center">Powered by MicroBooks</p>
+    </body></html>`);
+    win.document.close();
+    win.print();
+  };
+
+  const openManagerPin = (type: "void" | "refund" | "reprint", orderId: number) => {
+    setPendingAction({ type, orderId });
     setManagerPinOpen(true);
   };
 
   const handleManagerPinSuccess = () => {
+    if (!pendingAction) return;
     setManagerPinOpen(false);
-    setOrderToVoid(pendingVoidId);
-    setVoidReason("");
-    setVoidDialogOpen(true);
-    setPendingVoidId(null);
+    const { type, orderId } = pendingAction;
+    setPendingAction(null);
+
+    if (type === "void") {
+      setOrderToVoid(orderId);
+      setVoidReason("");
+      setVoidDialogOpen(true);
+    } else if (type === "refund") {
+      setOrderToRefund(orderId);
+      setRefundReason("");
+      setRefundDialogOpen(true);
+    } else if (type === "reprint") {
+      const order = orders?.find(o => o.id === orderId) ?? null;
+      if (order) handleReprintReceipt(order);
+    }
   };
 
   const openChargeDialog = (order: { id: number; orderNumber: string; total: number }) => {
@@ -275,8 +352,44 @@ export function Orders() {
                           </>
                         )}
                         {order.status === 'completed' && (
-                          <Button variant="outline" size="sm" className="h-8 border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={() => openVoidDialog(order.id)}>
-                            Void
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1 text-xs border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                              onClick={() => openManagerPin("refund", order.id)}
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                              Refund
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1 text-xs border-muted-foreground/30 text-muted-foreground hover:text-foreground"
+                              onClick={() => openManagerPin("reprint", order.id)}
+                            >
+                              <Printer className="h-3 w-3" />
+                              Reprint
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                              onClick={() => openManagerPin("void", order.id)}
+                            >
+                              Void
+                            </Button>
+                          </>
+                        )}
+                        {(order.status === 'refunded' || order.status === 'voided') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1 text-xs border-muted-foreground/30 text-muted-foreground hover:text-foreground"
+                            onClick={() => openManagerPin("reprint", order.id)}
+                          >
+                            <Printer className="h-3 w-3" />
+                            Reprint
                           </Button>
                         )}
                       </div>
@@ -379,7 +492,7 @@ export function Orders() {
       </Card>
 
       {/* Manager PIN Override Dialog */}
-      <Dialog open={managerPinOpen} onOpenChange={(o) => { if (!o) { setManagerPinOpen(false); setPendingVoidId(null); } }}>
+      <Dialog open={managerPinOpen} onOpenChange={(o) => { if (!o) { setManagerPinOpen(false); setPendingAction(null); } }}>
         <DialogContent className="sm:max-w-xs">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
@@ -389,11 +502,15 @@ export function Orders() {
           </DialogHeader>
           <div className="py-2">
             <p className="text-sm text-muted-foreground text-center mb-6">
-              Voiding an order requires a manager or admin PIN.
+              {pendingAction?.type === "refund"
+                ? "Processing a refund requires a manager or admin PIN."
+                : pendingAction?.type === "reprint"
+                ? "Reprinting a receipt requires a manager or admin PIN."
+                : "Voiding an order requires a manager or admin PIN."}
             </p>
             <PinPad
               onSuccess={handleManagerPinSuccess}
-              requiredRoles={["manager", "admin"]}
+              requiredRoles={["manager", "admin", "supervisor"]}
               title=""
               subtitle=""
               pinLength={4}
@@ -428,6 +545,40 @@ export function Orders() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Confirm Void
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Refund Dialog */}
+      <AlertDialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-4 w-4 text-amber-500" />
+              Refund this order?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The order will be marked as refunded and inventory will be restored. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="my-4 space-y-2">
+            <Label htmlFor="refundReason">Reason for refund <span className="text-destructive">*</span></Label>
+            <Input
+              id="refundReason"
+              value={refundReason}
+              onChange={e => setRefundReason(e.target.value)}
+              placeholder="e.g. Wrong item, Customer complaint, Duplicate charge…"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleRefundConfirm(); }}
+              disabled={!refundReason.trim()}
+              className="bg-amber-500 text-white hover:bg-amber-600"
+            >
+              Confirm Refund
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

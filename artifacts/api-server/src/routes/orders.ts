@@ -302,6 +302,12 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  const [existing] = await db.select().from(ordersTable).where(eq(ordersTable.id, params.data.id));
+  if (!existing) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+
   const [order] = await db
     .update(ordersTable)
     .set({
@@ -315,6 +321,20 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
   if (!order) {
     res.status(404).json({ error: "Order not found" });
     return;
+  }
+
+  // Restore stock when order is refunded or voided (if it was previously completed/paid)
+  if (parsed.data.status === "refunded" || parsed.data.status === "voided") {
+    const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+    for (const item of items) {
+      await db
+        .update(productsTable)
+        .set({
+          stockCount: sql`${productsTable.stockCount} + ${item.quantity}`,
+          inStock: true,
+        })
+        .where(eq(productsTable.id, item.productId));
+    }
   }
 
   const fullOrder = await getOrderWithItems(order.id);
