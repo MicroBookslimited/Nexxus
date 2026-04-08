@@ -13,8 +13,17 @@ import {
   GetCustomerOrdersParams,
   GetCustomerOrdersResponse,
 } from "@workspace/api-zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
 
 function normalizeCustomer(c: typeof customersTable.$inferSelect) {
   return {
@@ -25,26 +34,28 @@ function normalizeCustomer(c: typeof customersTable.$inferSelect) {
 }
 
 router.get("/customers", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const query = ListCustomersQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
     return;
   }
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(customersTable.tenantId, tenantId)];
   if (query.data.search) {
     conditions.push(like(customersTable.name, `%${query.data.search}%`));
   }
 
-  const customers =
-    conditions.length > 0
-      ? await db.select().from(customersTable).where(and(...conditions))
-      : await db.select().from(customersTable);
-
+  const customers = await db.select().from(customersTable).where(and(...conditions));
   res.json(ListCustomersResponse.parse(customers.map(normalizeCustomer)));
 });
 
 router.post("/customers", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = CreateCustomerBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -54,6 +65,7 @@ router.post("/customers", async (req, res): Promise<void> => {
   const [customer] = await db
     .insert(customersTable)
     .values({
+      tenantId,
       name: parsed.data.name,
       email: parsed.data.email,
       phone: parsed.data.phone,
@@ -64,6 +76,9 @@ router.post("/customers", async (req, res): Promise<void> => {
 });
 
 router.get("/customers/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = GetCustomerParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -74,7 +89,7 @@ router.get("/customers/:id", async (req, res): Promise<void> => {
   const [customer] = await db
     .select()
     .from(customersTable)
-    .where(eq(customersTable.id, params.data.id));
+    .where(and(eq(customersTable.id, params.data.id), eq(customersTable.tenantId, tenantId)));
 
   if (!customer) {
     res.status(404).json({ error: "Customer not found" });
@@ -85,6 +100,9 @@ router.get("/customers/:id", async (req, res): Promise<void> => {
 });
 
 router.put("/customers/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = UpdateCustomerParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -105,7 +123,7 @@ router.put("/customers/:id", async (req, res): Promise<void> => {
       email: parsed.data.email,
       phone: parsed.data.phone,
     })
-    .where(eq(customersTable.id, params.data.id))
+    .where(and(eq(customersTable.id, params.data.id), eq(customersTable.tenantId, tenantId)))
     .returning();
 
   if (!customer) {
@@ -117,6 +135,9 @@ router.put("/customers/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/customers/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = DeleteCustomerParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -126,7 +147,7 @@ router.delete("/customers/:id", async (req, res): Promise<void> => {
 
   const [customer] = await db
     .delete(customersTable)
-    .where(eq(customersTable.id, params.data.id))
+    .where(and(eq(customersTable.id, params.data.id), eq(customersTable.tenantId, tenantId)))
     .returning();
 
   if (!customer) {
@@ -138,6 +159,9 @@ router.delete("/customers/:id", async (req, res): Promise<void> => {
 });
 
 router.get("/customers/:id/orders", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = GetCustomerOrdersParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -145,10 +169,14 @@ router.get("/customers/:id/orders", async (req, res): Promise<void> => {
     return;
   }
 
+  const [customer] = await db.select({ id: customersTable.id }).from(customersTable)
+    .where(and(eq(customersTable.id, params.data.id), eq(customersTable.tenantId, tenantId)));
+  if (!customer) { res.status(404).json({ error: "Customer not found" }); return; }
+
   const orders = await db
     .select()
     .from(ordersTable)
-    .where(eq(ordersTable.customerId, params.data.id));
+    .where(and(eq(ordersTable.customerId, params.data.id), eq(ordersTable.tenantId, tenantId)));
 
   const ordersWithItems = await Promise.all(
     orders.map(async (order) => {

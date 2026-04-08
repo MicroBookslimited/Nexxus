@@ -1,10 +1,19 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { diningTablesTable, ordersTable } from "@workspace/db";
 import { z } from "zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
 
 const CreateTableBody = z.object({
   name: z.string().min(1),
@@ -26,6 +35,9 @@ const UpdateTableBody = z.object({
 });
 
 router.get("/tables", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const rows = await db
     .select({
       id: diningTablesTable.id,
@@ -42,6 +54,7 @@ router.get("/tables", async (req, res): Promise<void> => {
     })
     .from(diningTablesTable)
     .leftJoin(ordersTable, eq(diningTablesTable.currentOrderId, ordersTable.id))
+    .where(eq(diningTablesTable.tenantId, tenantId))
     .orderBy(diningTablesTable.name);
 
   res.json(rows.map(t => ({
@@ -52,6 +65,9 @@ router.get("/tables", async (req, res): Promise<void> => {
 });
 
 router.post("/tables", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = CreateTableBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request body" });
@@ -59,6 +75,7 @@ router.post("/tables", async (req, res): Promise<void> => {
   }
 
   const [table] = await db.insert(diningTablesTable).values({
+    tenantId,
     name: parsed.data.name,
     capacity: parsed.data.capacity,
     color: parsed.data.color,
@@ -72,6 +89,9 @@ router.post("/tables", async (req, res): Promise<void> => {
 });
 
 router.patch("/tables/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = Array.isArray(req.params.id) ? parseInt(req.params.id[0]) : parseInt(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid table id" });
@@ -97,7 +117,7 @@ router.patch("/tables/:id", async (req, res): Promise<void> => {
   const [table] = await db
     .update(diningTablesTable)
     .set(updates)
-    .where(eq(diningTablesTable.id, id))
+    .where(and(eq(diningTablesTable.id, id), eq(diningTablesTable.tenantId, tenantId)))
     .returning();
 
   if (!table) {
@@ -109,13 +129,17 @@ router.patch("/tables/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/tables/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = Array.isArray(req.params.id) ? parseInt(req.params.id[0]) : parseInt(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid table id" });
     return;
   }
 
-  await db.delete(diningTablesTable).where(eq(diningTablesTable.id, id));
+  await db.delete(diningTablesTable)
+    .where(and(eq(diningTablesTable.id, id), eq(diningTablesTable.tenantId, tenantId)));
   res.status(204).send();
 });
 

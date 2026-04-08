@@ -3,6 +3,7 @@ import { staffTable } from "./staff";
 
 export const cashSessionsTable = pgTable("cash_sessions", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   staffId: integer("staff_id").references(() => staffTable.id),
   staffName: text("staff_name").notNull(),
   openingCash: real("opening_cash").notNull(),

@@ -14,8 +14,17 @@ import {
   ChargeOrderBody,
   ChargeOrderResponse,
 } from "@workspace/api-zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
 
 function normalizeOrder(order: typeof ordersTable.$inferSelect) {
   return {
@@ -71,19 +80,21 @@ async function getOrderWithItems(orderId: number) {
 }
 
 router.get("/orders", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const query = ListOrdersQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
     return;
   }
 
-  const conditions = [];
+  const conditions = [eq(ordersTable.tenantId, tenantId)];
   if (query.data.status) conditions.push(eq(ordersTable.status, query.data.status));
   if (query.data.from) {
     conditions.push(gte(ordersTable.createdAt, new Date(`${query.data.from}T00:00:00.000Z`)));
   }
   if (query.data.to) {
-    // Include the full end day by going to the next midnight
     const nextDay = new Date(`${query.data.to}T00:00:00.000Z`);
     nextDay.setUTCDate(nextDay.getUTCDate() + 1);
     conditions.push(lt(ordersTable.createdAt, nextDay));
@@ -92,7 +103,7 @@ router.get("/orders", async (req, res): Promise<void> => {
   const orders = await db
     .select()
     .from(ordersTable)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .where(and(...conditions))
     .orderBy(ordersTable.createdAt);
 
   const ordersWithItems = await Promise.all(
@@ -124,6 +135,9 @@ router.get("/orders", async (req, res): Promise<void> => {
 });
 
 router.post("/orders", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = CreateOrderBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -149,7 +163,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     const [product] = await db
       .select()
       .from(productsTable)
-      .where(eq(productsTable.id, item.productId));
+      .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
 
     if (!product) {
       res.status(400).json({ error: `Product ${item.productId} not found` });
@@ -176,7 +190,6 @@ router.post("/orders", async (req, res): Promise<void> => {
     });
   }
 
-  // Apply cart-level discount
   let discountValue = 0;
   if (parsed.data.discountAmount && parsed.data.discountType) {
     discountValue =
@@ -186,8 +199,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     discountValue = Math.min(discountValue, rawSubtotal);
   }
 
-  // Apply loyalty points redemption: 100 pts = $1
-  const LOYALTY_REDEEM_RATE = 100; // points per dollar
+  const LOYALTY_REDEEM_RATE = 100;
   const pointsToRedeem = parsed.data.loyaltyPointsToRedeem ?? 0;
   const loyaltyDiscount = pointsToRedeem > 0 ? Math.round((pointsToRedeem / LOYALTY_REDEEM_RATE) * 100) / 100 : 0;
 
@@ -206,6 +218,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   const [order] = await db
     .insert(ordersTable)
     .values({
+      tenantId,
       orderNumber,
       status: isOpenOrder ? "open" : isPaid ? "completed" : "pending",
       subtotal,
@@ -246,7 +259,6 @@ router.post("/orders", async (req, res): Promise<void> => {
     })),
   );
 
-  // Always deduct stock immediately (kitchen needs to prepare)
   for (const item of resolvedItems) {
     await db
       .update(productsTable)
@@ -254,9 +266,8 @@ router.post("/orders", async (req, res): Promise<void> => {
         stockCount: sql`GREATEST(0, ${productsTable.stockCount} - ${item.quantity})`,
         inStock: sql`CASE WHEN ${productsTable.stockCount} - ${item.quantity} <= 0 THEN false ELSE ${productsTable.inStock} END`,
       })
-      .where(eq(productsTable.id, item.productId));
+      .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
 
-    // Deduct from location inventory if a locationId was provided
     if (parsed.data.locationId) {
       await db
         .update(locationInventoryTable)
@@ -270,9 +281,8 @@ router.post("/orders", async (req, res): Promise<void> => {
     }
   }
 
-  // Update customer stats only on completed orders (not open/deferred payment)
   if (!isOpenOrder && parsed.data.customerId) {
-    const LOYALTY_EARN_RATE = 10; // 1 point per $10 spent
+    const LOYALTY_EARN_RATE = 10;
     const pointsEarned = Math.floor(total / LOYALTY_EARN_RATE);
     const netPoints = pointsEarned - pointsToRedeem;
     await db
@@ -282,22 +292,20 @@ router.post("/orders", async (req, res): Promise<void> => {
         orderCount: sql`${customersTable.orderCount} + 1`,
         loyaltyPoints: sql`GREATEST(0, ${customersTable.loyaltyPoints} + ${netPoints})`,
       })
-      .where(eq(customersTable.id, parsed.data.customerId));
+      .where(and(eq(customersTable.id, parsed.data.customerId), eq(customersTable.tenantId, tenantId)));
   }
 
-  // For open/dine-in orders: mark the table as occupied
-  // For completed counter orders: free the table
   if (parsed.data.tableId) {
     if (isOpenOrder) {
       await db
         .update(diningTablesTable)
         .set({ status: "occupied", currentOrderId: order.id })
-        .where(eq(diningTablesTable.id, parsed.data.tableId));
+        .where(and(eq(diningTablesTable.id, parsed.data.tableId), eq(diningTablesTable.tenantId, tenantId)));
     } else if (parsed.data.orderType === "counter" || !parsed.data.orderType) {
       await db
         .update(diningTablesTable)
         .set({ status: "available", currentOrderId: null })
-        .where(eq(diningTablesTable.id, parsed.data.tableId));
+        .where(and(eq(diningTablesTable.id, parsed.data.tableId), eq(diningTablesTable.tenantId, tenantId)));
     }
   }
 
@@ -306,6 +314,9 @@ router.post("/orders", async (req, res): Promise<void> => {
 });
 
 router.get("/orders/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = GetOrderParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -313,16 +324,21 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const order = await getOrderWithItems(params.data.id);
-  if (!order) {
+  const [orderRow] = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, params.data.id), eq(ordersTable.tenantId, tenantId)));
+  if (!orderRow) {
     res.status(404).json({ error: "Order not found" });
     return;
   }
 
+  const order = await getOrderWithItems(params.data.id);
   res.json(GetOrderResponse.parse(order));
 });
 
 router.patch("/orders/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = UpdateOrderStatusParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -336,7 +352,8 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [existing] = await db.select().from(ordersTable).where(eq(ordersTable.id, params.data.id));
+  const [existing] = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, params.data.id), eq(ordersTable.tenantId, tenantId)));
   if (!existing) {
     res.status(404).json({ error: "Order not found" });
     return;
@@ -349,7 +366,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
       voidReason: parsed.data.voidReason,
       completedAt: parsed.data.status === "completed" ? new Date() : undefined,
     })
-    .where(eq(ordersTable.id, params.data.id))
+    .where(and(eq(ordersTable.id, params.data.id), eq(ordersTable.tenantId, tenantId)))
     .returning();
 
   if (!order) {
@@ -357,7 +374,6 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Restore stock when order is refunded or voided (if it was previously completed/paid)
   if (parsed.data.status === "refunded" || parsed.data.status === "voided") {
     const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
     for (const item of items) {
@@ -367,7 +383,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           stockCount: sql`${productsTable.stockCount} + ${item.quantity}`,
           inStock: true,
         })
-        .where(eq(productsTable.id, item.productId));
+        .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
     }
   }
 
@@ -376,6 +392,9 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 });
 
 router.post("/orders/:id/charge", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = ChargeOrderParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -389,7 +408,8 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
     return;
   }
 
-  const [existing] = await db.select().from(ordersTable).where(eq(ordersTable.id, params.data.id));
+  const [existing] = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, params.data.id), eq(ordersTable.tenantId, tenantId)));
   if (!existing) {
     res.status(404).json({ error: "Order not found" });
     return;
@@ -412,10 +432,9 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
       splitCardAmount: parsed.data.splitCardAmount,
       splitCashAmount: parsed.data.splitCashAmount,
     })
-    .where(eq(ordersTable.id, params.data.id))
+    .where(and(eq(ordersTable.id, params.data.id), eq(ordersTable.tenantId, tenantId)))
     .returning();
 
-  // Update customer stats now that payment is collected
   if (existing.customerId) {
     const LOYALTY_EARN_RATE = 10;
     const pointsEarned = Math.floor(existing.total / LOYALTY_EARN_RATE);
@@ -428,15 +447,14 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
         orderCount: sql`${customersTable.orderCount} + 1`,
         loyaltyPoints: sql`GREATEST(0, ${customersTable.loyaltyPoints} + ${netPoints})`,
       })
-      .where(eq(customersTable.id, existing.customerId));
+      .where(and(eq(customersTable.id, existing.customerId), eq(customersTable.tenantId, tenantId)));
   }
 
-  // Free up the dining table
   if (existing.tableId) {
     await db
       .update(diningTablesTable)
       .set({ status: "available", currentOrderId: null })
-      .where(eq(diningTablesTable.id, existing.tableId));
+      .where(and(eq(diningTablesTable.id, existing.tableId), eq(diningTablesTable.tenantId, tenantId)));
   }
 
   const fullOrder = await getOrderWithItems(order.id);

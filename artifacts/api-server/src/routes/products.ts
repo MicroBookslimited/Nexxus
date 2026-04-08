@@ -12,8 +12,17 @@ import {
   ListProductsResponse,
   ListProductsQueryParams,
 } from "@workspace/api-zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
 
 async function withFlags(p: typeof productsTable.$inferSelect) {
   const [vCount] = await db
@@ -36,13 +45,16 @@ async function withFlags(p: typeof productsTable.$inferSelect) {
 }
 
 router.get("/products", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const query = ListProductsQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
     return;
   }
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(productsTable.tenantId, tenantId)];
   if (query.data.category) {
     conditions.push(eq(productsTable.category, query.data.category));
   }
@@ -50,16 +62,15 @@ router.get("/products", async (req, res): Promise<void> => {
     conditions.push(like(productsTable.name, `%${query.data.search}%`));
   }
 
-  const products =
-    conditions.length > 0
-      ? await db.select().from(productsTable).where(and(...conditions))
-      : await db.select().from(productsTable);
-
+  const products = await db.select().from(productsTable).where(and(...conditions));
   const enriched = await Promise.all(products.map(withFlags));
   res.json(ListProductsResponse.parse(enriched));
 });
 
 router.post("/products", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = CreateProductBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -69,6 +80,7 @@ router.post("/products", async (req, res): Promise<void> => {
   const [product] = await db
     .insert(productsTable)
     .values({
+      tenantId,
       name: parsed.data.name,
       description: parsed.data.description,
       price: parsed.data.price,
@@ -84,6 +96,9 @@ router.post("/products", async (req, res): Promise<void> => {
 });
 
 router.get("/products/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = GetProductParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -94,7 +109,7 @@ router.get("/products/:id", async (req, res): Promise<void> => {
   const [product] = await db
     .select()
     .from(productsTable)
-    .where(eq(productsTable.id, params.data.id));
+    .where(and(eq(productsTable.id, params.data.id), eq(productsTable.tenantId, tenantId)));
 
   if (!product) {
     res.status(404).json({ error: "Product not found" });
@@ -105,6 +120,9 @@ router.get("/products/:id", async (req, res): Promise<void> => {
 });
 
 router.put("/products/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = UpdateProductParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -130,7 +148,7 @@ router.put("/products/:id", async (req, res): Promise<void> => {
       inStock: parsed.data.inStock,
       stockCount: parsed.data.stockCount,
     })
-    .where(eq(productsTable.id, params.data.id))
+    .where(and(eq(productsTable.id, params.data.id), eq(productsTable.tenantId, tenantId)))
     .returning();
 
   if (!product) {
@@ -142,6 +160,9 @@ router.put("/products/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/products/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = DeleteProductParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -151,7 +172,7 @@ router.delete("/products/:id", async (req, res): Promise<void> => {
 
   const [product] = await db
     .delete(productsTable)
-    .where(eq(productsTable.id, params.data.id))
+    .where(and(eq(productsTable.id, params.data.id), eq(productsTable.tenantId, tenantId)))
     .returning();
 
   if (!product) {
@@ -165,8 +186,15 @@ router.delete("/products/:id", async (req, res): Promise<void> => {
 /* ── Product location availability & pricing ── */
 
 router.get("/products/:id/locations", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const productId = parseInt(req.params.id as string, 10);
   if (isNaN(productId)) { res.status(400).json({ error: "Invalid product id" }); return; }
+
+  const [product] = await db.select({ id: productsTable.id }).from(productsTable)
+    .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
   const locations = await db.select().from(locationsTable).where(eq(locationsTable.isActive, true));
   const overrides = await db.select().from(productLocationsTable).where(eq(productLocationsTable.productId, productId));
@@ -185,8 +213,15 @@ router.get("/products/:id/locations", async (req, res): Promise<void> => {
 });
 
 router.put("/products/:id/locations", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const productId = parseInt(req.params.id as string, 10);
   if (isNaN(productId)) { res.status(400).json({ error: "Invalid product id" }); return; }
+
+  const [product] = await db.select({ id: productsTable.id }).from(productsTable)
+    .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
   const { locations } = req.body as {
     locations: Array<{ locationId: number; isAvailable: boolean; priceOverride: number | null }>;

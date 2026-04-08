@@ -1,10 +1,19 @@
 import { Router, type IRouter } from "express";
-import { eq, and, gte, lte, isNotNull, sum, sql } from "drizzle-orm";
+import { eq, and, gte, lte, isNotNull, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { cashSessionsTable, cashPayoutsTable, ordersTable } from "@workspace/db";
 import { z } from "zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
 
 const OpenSessionBody = z.object({
   staffName: z.string().min(1),
@@ -25,33 +34,33 @@ const CloseSessionBody = z.object({
   closingNotes: z.string().optional(),
 });
 
-/** Build sales summary and order list from a set of orders */
 function computeSales(orders: { paymentMethod: string | null; total: number | null }[]) {
-  const cashSales = orders
-    .filter((r) => r.paymentMethod === "cash")
-    .reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const cardSales = orders
-    .filter((r) => r.paymentMethod === "card")
-    .reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const splitSales = orders
-    .filter((r) => r.paymentMethod === "split")
-    .reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const cashSales = orders.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const cardSales = orders.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const splitSales = orders.filter((r) => r.paymentMethod === "split").reduce((s, r) => s + Number(r.total ?? 0), 0);
   return { cashSales, cardSales, splitSales, totalSales: cashSales + cardSales + splitSales };
 }
 
-router.get("/cash/sessions", async (_req, res): Promise<void> => {
+router.get("/cash/sessions", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const sessions = await db
     .select()
     .from(cashSessionsTable)
+    .where(eq(cashSessionsTable.tenantId, tenantId))
     .orderBy(sql`${cashSessionsTable.openedAt} desc`);
   res.json(sessions);
 });
 
-router.get("/cash/sessions/current", async (_req, res): Promise<void> => {
+router.get("/cash/sessions/current", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const [session] = await db
     .select()
     .from(cashSessionsTable)
-    .where(eq(cashSessionsTable.status, "open"))
+    .where(and(eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId)))
     .orderBy(sql`${cashSessionsTable.openedAt} desc`)
     .limit(1);
 
@@ -66,7 +75,6 @@ router.get("/cash/sessions/current", async (_req, res): Promise<void> => {
     .where(eq(cashPayoutsTable.sessionId, session.id))
     .orderBy(cashPayoutsTable.createdAt);
 
-  // Count any paid order (has a paymentMethod), regardless of kitchen status
   const orderRows = await db
     .select({
       id: ordersTable.id,
@@ -79,6 +87,7 @@ router.get("/cash/sessions/current", async (_req, res): Promise<void> => {
     .from(ordersTable)
     .where(
       and(
+        eq(ordersTable.tenantId, tenantId),
         gte(ordersTable.createdAt, session.openedAt),
         isNotNull(ordersTable.paymentMethod)
       )
@@ -89,32 +98,22 @@ router.get("/cash/sessions/current", async (_req, res): Promise<void> => {
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
   const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts;
 
-  res.json({
-    session,
-    payouts,
-    orders: orderRows,
-    salesSummary,
-    expectedCash,
-    totalPayouts,
-  });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts });
 });
 
 router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = parseInt(req.params.id as string);
-  if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid session id" });
-    return;
-  }
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid session id" }); return; }
 
   const [session] = await db
     .select()
     .from(cashSessionsTable)
-    .where(eq(cashSessionsTable.id, id));
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)));
 
-  if (!session) {
-    res.status(404).json({ error: "Session not found" });
-    return;
-  }
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
 
   const payouts = await db
     .select()
@@ -136,6 +135,7 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
     .from(ordersTable)
     .where(
       and(
+        eq(ordersTable.tenantId, tenantId),
         gte(ordersTable.createdAt, session.openedAt),
         lte(ordersTable.createdAt, closedAt),
         isNotNull(ordersTable.paymentMethod)
@@ -147,27 +147,20 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
   const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts;
 
-  res.json({
-    session,
-    payouts,
-    orders: orderRows,
-    salesSummary,
-    expectedCash,
-    totalPayouts,
-  });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts });
 });
 
 router.post("/cash/sessions", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = OpenSessionBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid request body" });
-    return;
-  }
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request body" }); return; }
 
   const existing = await db
     .select()
     .from(cashSessionsTable)
-    .where(eq(cashSessionsTable.status, "open"))
+    .where(and(eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId)))
     .limit(1);
 
   if (existing.length > 0) {
@@ -178,6 +171,7 @@ router.post("/cash/sessions", async (req, res): Promise<void> => {
   const [session] = await db
     .insert(cashSessionsTable)
     .values({
+      tenantId,
       staffName: parsed.data.staffName,
       staffId: parsed.data.staffId ?? null,
       openingCash: parsed.data.openingCash,
@@ -189,27 +183,21 @@ router.post("/cash/sessions", async (req, res): Promise<void> => {
 });
 
 router.post("/cash/sessions/:id/payouts", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = parseInt(req.params.id as string);
-  if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid session id" });
-    return;
-  }
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid session id" }); return; }
 
   const parsed = AddPayoutBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid request body" });
-    return;
-  }
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request body" }); return; }
 
   const [session] = await db
     .select()
     .from(cashSessionsTable)
-    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.status, "open")));
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId)));
 
-  if (!session) {
-    res.status(404).json({ error: "Open session not found" });
-    return;
-  }
+  if (!session) { res.status(404).json({ error: "Open session not found" }); return; }
 
   const [payout] = await db
     .insert(cashPayoutsTable)
@@ -225,27 +213,21 @@ router.post("/cash/sessions/:id/payouts", async (req, res): Promise<void> => {
 });
 
 router.post("/cash/sessions/:id/close", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = parseInt(req.params.id as string);
-  if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid session id" });
-    return;
-  }
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid session id" }); return; }
 
   const parsed = CloseSessionBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid request body" });
-    return;
-  }
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request body" }); return; }
 
   const [session] = await db
     .select()
     .from(cashSessionsTable)
-    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.status, "open")));
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId)));
 
-  if (!session) {
-    res.status(404).json({ error: "Open session not found" });
-    return;
-  }
+  if (!session) { res.status(404).json({ error: "Open session not found" }); return; }
 
   const [closed] = await db
     .update(cashSessionsTable)
@@ -257,7 +239,7 @@ router.post("/cash/sessions/:id/close", async (req, res): Promise<void> => {
       actualOther: parsed.data.actualOther ?? 0,
       closingNotes: parsed.data.closingNotes ?? null,
     })
-    .where(eq(cashSessionsTable.id, id))
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)))
     .returning();
 
   res.json(closed);

@@ -1,9 +1,18 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, count } from "drizzle-orm";
+import { and, eq, desc, count } from "drizzle-orm";
 import { db, purchaseBillsTable, purchaseBillItemsTable, productsTable } from "@workspace/db";
 import { z } from "zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
 
 const CreateBillItemBody = z.object({
   productId: z.number().int().positive(),
@@ -62,9 +71,13 @@ async function enrichBillWithItems(bill: typeof purchaseBillsTable.$inferSelect)
 }
 
 router.get("/purchase-bills", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const bills = await db
     .select()
     .from(purchaseBillsTable)
+    .where(eq(purchaseBillsTable.tenantId, tenantId))
     .orderBy(desc(purchaseBillsTable.createdAt));
 
   const enriched = await Promise.all(bills.map((b) => enrichBill(b)));
@@ -72,6 +85,9 @@ router.get("/purchase-bills", async (req, res): Promise<void> => {
 });
 
 router.post("/purchase-bills", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = CreatePurchaseBillBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -80,11 +96,20 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
 
   const { billNumber, supplier, notes, status, items } = parsed.data;
 
+  for (const item of items) {
+    const [product] = await db.select({ id: productsTable.id }).from(productsTable)
+      .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+    if (!product) {
+      res.status(400).json({ error: `Product ${item.productId} not found` });
+      return;
+    }
+  }
+
   const totalCost = items.reduce((sum, item) => sum + item.unitCost * item.quantity, 0);
 
   const [bill] = await db
     .insert(purchaseBillsTable)
-    .values({ billNumber, supplier: supplier ?? null, notes: notes ?? null, status, totalCost })
+    .values({ tenantId, billNumber, supplier: supplier ?? null, notes: notes ?? null, status, totalCost })
     .returning();
 
   await db.insert(purchaseBillItemsTable).values(
@@ -99,18 +124,12 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
 
   if (status === "confirmed") {
     for (const item of items) {
-      const [product] = await db
-        .select()
-        .from(productsTable)
-        .where(eq(productsTable.id, item.productId));
+      const [product] = await db.select().from(productsTable)
+        .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
       if (product) {
-        await db
-          .update(productsTable)
-          .set({
-            stockCount: product.stockCount + item.quantity,
-            inStock: true,
-          })
-          .where(eq(productsTable.id, item.productId));
+        await db.update(productsTable)
+          .set({ stockCount: product.stockCount + item.quantity, inStock: true })
+          .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
       }
     }
   }
@@ -120,81 +139,50 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
 });
 
 router.get("/purchase-bills/:id", async (req, res): Promise<void> => {
-  if (Array.isArray(req.params.id)) {
-    res.status(400).json({ error: "Invalid id" });
-    return;
-  }
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  if (Array.isArray(req.params.id)) { res.status(400).json({ error: "Invalid id" }); return; }
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid id" });
-    return;
-  }
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const [bill] = await db
-    .select()
-    .from(purchaseBillsTable)
-    .where(eq(purchaseBillsTable.id, id));
+  const [bill] = await db.select().from(purchaseBillsTable)
+    .where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)));
 
-  if (!bill) {
-    res.status(404).json({ error: "Bill not found" });
-    return;
-  }
+  if (!bill) { res.status(404).json({ error: "Bill not found" }); return; }
 
   const enriched = await enrichBillWithItems(bill);
   res.json(enriched);
 });
 
 router.post("/purchase-bills/:id/confirm", async (req, res): Promise<void> => {
-  if (Array.isArray(req.params.id)) {
-    res.status(400).json({ error: "Invalid id" });
-    return;
-  }
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  if (Array.isArray(req.params.id)) { res.status(400).json({ error: "Invalid id" }); return; }
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid id" });
-    return;
-  }
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const [bill] = await db
-    .select()
-    .from(purchaseBillsTable)
-    .where(eq(purchaseBillsTable.id, id));
+  const [bill] = await db.select().from(purchaseBillsTable)
+    .where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)));
 
-  if (!bill) {
-    res.status(404).json({ error: "Bill not found" });
-    return;
-  }
+  if (!bill) { res.status(404).json({ error: "Bill not found" }); return; }
+  if (bill.status === "confirmed") { res.status(400).json({ error: "Bill already confirmed" }); return; }
 
-  if (bill.status === "confirmed") {
-    res.status(400).json({ error: "Bill already confirmed" });
-    return;
-  }
-
-  const items = await db
-    .select()
-    .from(purchaseBillItemsTable)
-    .where(eq(purchaseBillItemsTable.billId, id));
+  const items = await db.select().from(purchaseBillItemsTable).where(eq(purchaseBillItemsTable.billId, id));
 
   for (const item of items) {
-    const [product] = await db
-      .select()
-      .from(productsTable)
-      .where(eq(productsTable.id, item.productId));
+    const [product] = await db.select().from(productsTable)
+      .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
     if (product) {
-      await db
-        .update(productsTable)
-        .set({
-          stockCount: product.stockCount + item.quantity,
-          inStock: true,
-        })
-        .where(eq(productsTable.id, item.productId));
+      await db.update(productsTable)
+        .set({ stockCount: product.stockCount + item.quantity, inStock: true })
+        .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
     }
   }
 
-  const [updated] = await db
-    .update(purchaseBillsTable)
-    .set({ status: "confirmed" })
-    .where(eq(purchaseBillsTable.id, id))
+  const [updated] = await db.update(purchaseBillsTable).set({ status: "confirmed" })
+    .where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)))
     .returning();
 
   const enriched = await enrichBillWithItems(updated);
@@ -202,19 +190,15 @@ router.post("/purchase-bills/:id/confirm", async (req, res): Promise<void> => {
 });
 
 router.delete("/purchase-bills/:id", async (req, res): Promise<void> => {
-  if (Array.isArray(req.params.id)) {
-    res.status(400).json({ error: "Invalid id" });
-    return;
-  }
-  const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid id" });
-    return;
-  }
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-  await db
-    .delete(purchaseBillsTable)
-    .where(eq(purchaseBillsTable.id, id));
+  if (Array.isArray(req.params.id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  await db.delete(purchaseBillsTable)
+    .where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)));
 
   res.status(204).send();
 });

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, heldOrdersTable } from "@workspace/db";
 import {
   CreateHeldOrderBody,
@@ -8,8 +8,17 @@ import {
   DeleteHeldOrderParams,
   ListHeldOrdersResponse,
 } from "@workspace/api-zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
 
 function normalizeHeldOrder(h: typeof heldOrdersTable.$inferSelect) {
   return {
@@ -21,12 +30,18 @@ function normalizeHeldOrder(h: typeof heldOrdersTable.$inferSelect) {
   };
 }
 
-router.get("/held-orders", async (_req, res): Promise<void> => {
-  const held = await db.select().from(heldOrdersTable);
+router.get("/held-orders", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const held = await db.select().from(heldOrdersTable).where(eq(heldOrdersTable.tenantId, tenantId));
   res.json(ListHeldOrdersResponse.parse(held.map(normalizeHeldOrder)));
 });
 
 router.post("/held-orders", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = CreateHeldOrderBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -36,6 +51,7 @@ router.post("/held-orders", async (req, res): Promise<void> => {
   const [held] = await db
     .insert(heldOrdersTable)
     .values({
+      tenantId,
       label: parsed.data.label,
       items: parsed.data.items,
       notes: parsed.data.notes,
@@ -48,6 +64,9 @@ router.post("/held-orders", async (req, res): Promise<void> => {
 });
 
 router.get("/held-orders/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = GetHeldOrderParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -58,7 +77,7 @@ router.get("/held-orders/:id", async (req, res): Promise<void> => {
   const [held] = await db
     .select()
     .from(heldOrdersTable)
-    .where(eq(heldOrdersTable.id, params.data.id));
+    .where(and(eq(heldOrdersTable.id, params.data.id), eq(heldOrdersTable.tenantId, tenantId)));
 
   if (!held) {
     res.status(404).json({ error: "Held order not found" });
@@ -69,6 +88,9 @@ router.get("/held-orders/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/held-orders/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = DeleteHeldOrderParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
@@ -78,7 +100,7 @@ router.delete("/held-orders/:id", async (req, res): Promise<void> => {
 
   const [held] = await db
     .delete(heldOrdersTable)
-    .where(eq(heldOrdersTable.id, params.data.id))
+    .where(and(eq(heldOrdersTable.id, params.data.id), eq(heldOrdersTable.tenantId, tenantId)))
     .returning();
 
   if (!held) {

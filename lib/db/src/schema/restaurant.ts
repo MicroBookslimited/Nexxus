@@ -4,6 +4,7 @@ import { productsTable } from "./products";
 
 export const diningTablesTable = pgTable("dining_tables", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   name: text("name").notNull(),
   capacity: integer("capacity").notNull().default(4),
   status: text("status").notNull().default("available"),
@@ -29,6 +30,7 @@ export type KdsScreen = typeof kdsScreensTable.$inferSelect;
 
 export const purchasesTable = pgTable("purchases", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   productId: integer("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
   quantity: integer("quantity").notNull(),
   unitCost: real("unit_cost").notNull().default(0),
@@ -41,6 +43,7 @@ export type Purchase = typeof purchasesTable.$inferSelect;
 
 export const purchaseBillsTable = pgTable("purchase_bills", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   billNumber: text("bill_number").notNull(),
   supplier: text("supplier"),
   status: text("status").notNull().default("draft"),

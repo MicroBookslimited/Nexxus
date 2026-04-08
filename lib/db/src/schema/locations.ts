@@ -4,6 +4,7 @@ import { productsTable } from "./products";
 
 export const locationsTable = pgTable("locations", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   name: text("name").notNull(),
   address: text("address"),
   phone: text("phone"),

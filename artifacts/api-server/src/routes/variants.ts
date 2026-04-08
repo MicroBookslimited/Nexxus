@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import {
   db,
   productsTable,
@@ -22,8 +22,25 @@ import {
   SaveProductModifiersBody,
   SaveProductModifiersResponse,
 } from "@workspace/api-zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
+
+/* ─── Verify product belongs to tenant ─── */
+async function ownedProduct(productId: number, tenantId: number) {
+  const [p] = await db.select({ id: productsTable.id, name: productsTable.name, price: productsTable.price })
+    .from(productsTable)
+    .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+  return p ?? null;
+}
 
 async function getVariantGroupsForProduct(productId: number) {
   const groups = await db
@@ -62,22 +79,15 @@ async function getModifierGroupsForProduct(productId: number) {
 }
 
 router.get("/products/:id/customize", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = GetProductCustomizationParams.safeParse({ id: parseInt(raw, 10) });
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
-  const [product] = await db
-    .select()
-    .from(productsTable)
-    .where(eq(productsTable.id, params.data.id));
-
-  if (!product) {
-    res.status(404).json({ error: "Product not found" });
-    return;
-  }
+  const product = await ownedProduct(params.data.id, tenantId);
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
   const variantGroups = await getVariantGroupsForProduct(product.id);
   const modifierGroups = await getModifierGroupsForProduct(product.id);
@@ -94,38 +104,36 @@ router.get("/products/:id/customize", async (req, res): Promise<void> => {
 });
 
 router.get("/products/:id/variants", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = GetProductVariantsParams.safeParse({ id: parseInt(raw, 10) });
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  if (!await ownedProduct(params.data.id, tenantId)) { res.status(404).json({ error: "Product not found" }); return; }
 
   const groups = await getVariantGroupsForProduct(params.data.id);
   res.json(GetProductVariantsResponse.parse(groups));
 });
 
 router.put("/products/:id/variants", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = SaveProductVariantsParams.safeParse({ id: parseInt(raw, 10) });
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
   const parsed = SaveProductVariantsBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const productId = params.data.id;
+  if (!await ownedProduct(productId, tenantId)) { res.status(404).json({ error: "Product not found" }); return; }
 
-  // Delete all existing variant groups (cascade deletes options)
   await db.delete(variantGroupsTable).where(eq(variantGroupsTable.productId, productId));
 
-  // Insert new groups and options
-  for (const [gi, group] of parsed.data.groups.entries()) {
+  for (const group of parsed.data.groups) {
     const [insertedGroup] = await db
       .insert(variantGroupsTable)
       .values({ productId, name: group.name, required: group.required ?? true })
@@ -146,37 +154,35 @@ router.put("/products/:id/variants", async (req, res): Promise<void> => {
 });
 
 router.get("/products/:id/modifiers", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = GetProductModifiersParams.safeParse({ id: parseInt(raw, 10) });
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  if (!await ownedProduct(params.data.id, tenantId)) { res.status(404).json({ error: "Product not found" }); return; }
 
   const groups = await getModifierGroupsForProduct(params.data.id);
   res.json(GetProductModifiersResponse.parse(groups));
 });
 
 router.put("/products/:id/modifiers", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = SaveProductModifiersParams.safeParse({ id: parseInt(raw, 10) });
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
   const parsed = SaveProductModifiersBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const productId = params.data.id;
+  if (!await ownedProduct(productId, tenantId)) { res.status(404).json({ error: "Product not found" }); return; }
 
-  // Delete all existing modifier groups (cascade deletes options)
   await db.delete(modifierGroupsTable).where(eq(modifierGroupsTable.productId, productId));
 
-  // Insert new groups and options
   for (const group of parsed.data.groups) {
     const [insertedGroup] = await db
       .insert(modifierGroupsTable)

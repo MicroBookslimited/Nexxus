@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 
 export const ordersTable = pgTable("orders", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   orderNumber: text("order_number").notNull(),
   status: text("status").notNull().default("pending"),
   subtotal: real("subtotal").notNull(),
@@ -59,6 +60,7 @@ export const orderItemsTable = pgTable("order_items", {
 
 export const heldOrdersTable = pgTable("held_orders", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   label: text("label"),
   items: jsonb("items").notNull().$type<Array<{
     productId: number;

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, desc, lte } from "drizzle-orm";
+import { and, eq, sql, desc, lte } from "drizzle-orm";
 import { db, ordersTable, orderItemsTable, productsTable } from "@workspace/db";
 import {
   GetDashboardSummaryResponse,
@@ -14,10 +14,22 @@ import {
   GetLowStockProductsQueryParams,
   GetLowStockProductsResponse,
 } from "@workspace/api-zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
 
-router.get("/dashboard/summary", async (_req, res): Promise<void> => {
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
+
+router.get("/dashboard/summary", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -29,14 +41,22 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
     .select()
     .from(ordersTable)
     .where(
-      sql`${ordersTable.status} = 'completed' AND ${ordersTable.createdAt} >= ${today}`,
+      and(
+        eq(ordersTable.tenantId, tenantId),
+        eq(ordersTable.status, "completed"),
+        sql`${ordersTable.createdAt} >= ${today}`,
+      ),
     );
 
   const weekOrders = await db
     .select()
     .from(ordersTable)
     .where(
-      sql`${ordersTable.status} = 'completed' AND ${ordersTable.createdAt} >= ${weekAgo}`,
+      and(
+        eq(ordersTable.tenantId, tenantId),
+        eq(ordersTable.status, "completed"),
+        sql`${ordersTable.createdAt} >= ${weekAgo}`,
+      ),
     );
 
   const todaySales = todayOrders.reduce((s, o) => s + o.total, 0);
@@ -45,7 +65,8 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
 
   const [{ count: totalProducts }] = await db
     .select({ count: sql<number>`count(*)` })
-    .from(productsTable);
+    .from(productsTable)
+    .where(eq(productsTable.tenantId, tenantId));
 
   res.json(
     GetDashboardSummaryResponse.parse({
@@ -60,6 +81,9 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
 });
 
 router.get("/dashboard/recent-orders", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const query = GetRecentOrdersQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
@@ -71,6 +95,7 @@ router.get("/dashboard/recent-orders", async (req, res): Promise<void> => {
   const orders = await db
     .select()
     .from(ordersTable)
+    .where(eq(ordersTable.tenantId, tenantId))
     .orderBy(desc(ordersTable.createdAt))
     .limit(limit);
 
@@ -107,7 +132,10 @@ router.get("/dashboard/recent-orders", async (req, res): Promise<void> => {
   res.json(GetRecentOrdersResponse.parse(ordersWithItems));
 });
 
-router.get("/dashboard/sales-by-category", async (_req, res): Promise<void> => {
+router.get("/dashboard/sales-by-category", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const rows = await db
     .select({
       category: productsTable.category,
@@ -115,8 +143,8 @@ router.get("/dashboard/sales-by-category", async (_req, res): Promise<void> => {
       orderCount: sql<number>`count(distinct ${orderItemsTable.orderId})`,
     })
     .from(orderItemsTable)
-    .innerJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .innerJoin(productsTable, and(eq(orderItemsTable.productId, productsTable.id), eq(productsTable.tenantId, tenantId)))
+    .innerJoin(ordersTable, and(eq(orderItemsTable.orderId, ordersTable.id), eq(ordersTable.tenantId, tenantId)))
     .where(eq(ordersTable.status, "completed"))
     .groupBy(productsTable.category)
     .orderBy(desc(sql`sum(${orderItemsTable.lineTotal})`));
@@ -133,6 +161,9 @@ router.get("/dashboard/sales-by-category", async (_req, res): Promise<void> => {
 });
 
 router.get("/dashboard/daily-sales", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const query = GetDailySalesQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
@@ -149,7 +180,11 @@ router.get("/dashboard/daily-sales", async (req, res): Promise<void> => {
     })
     .from(ordersTable)
     .where(
-      sql`${ordersTable.status} = 'completed' AND ${ordersTable.createdAt} >= NOW() - INTERVAL '${sql.raw(String(days))} days'`,
+      and(
+        eq(ordersTable.tenantId, tenantId),
+        eq(ordersTable.status, "completed"),
+        sql`${ordersTable.createdAt} >= NOW() - INTERVAL '${sql.raw(String(days))} days'`,
+      ),
     )
     .groupBy(sql`DATE(${ordersTable.createdAt})`)
     .orderBy(sql`DATE(${ordersTable.createdAt})`);
@@ -171,6 +206,9 @@ router.get("/dashboard/daily-sales", async (req, res): Promise<void> => {
 });
 
 router.get("/dashboard/top-products", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const query = GetTopProductsQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
@@ -187,7 +225,7 @@ router.get("/dashboard/top-products", async (req, res): Promise<void> => {
       unitsSold: sql<number>`sum(${orderItemsTable.quantity})`,
     })
     .from(orderItemsTable)
-    .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .innerJoin(ordersTable, and(eq(orderItemsTable.orderId, ordersTable.id), eq(ordersTable.tenantId, tenantId)))
     .where(eq(ordersTable.status, "completed"))
     .groupBy(orderItemsTable.productId, orderItemsTable.productName)
     .orderBy(desc(sql`sum(${orderItemsTable.lineTotal})`))
@@ -205,7 +243,10 @@ router.get("/dashboard/top-products", async (req, res): Promise<void> => {
   );
 });
 
-router.get("/dashboard/payment-methods", async (_req, res): Promise<void> => {
+router.get("/dashboard/payment-methods", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const rows = await db
     .select({
       method: ordersTable.paymentMethod,
@@ -213,7 +254,7 @@ router.get("/dashboard/payment-methods", async (_req, res): Promise<void> => {
       count: sql<number>`count(*)`,
     })
     .from(ordersTable)
-    .where(eq(ordersTable.status, "completed"))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed")))
     .groupBy(ordersTable.paymentMethod);
 
   res.json(
@@ -228,6 +269,9 @@ router.get("/dashboard/payment-methods", async (_req, res): Promise<void> => {
 });
 
 router.get("/dashboard/low-stock", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const query = GetLowStockProductsQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
@@ -239,7 +283,7 @@ router.get("/dashboard/low-stock", async (req, res): Promise<void> => {
   const products = await db
     .select()
     .from(productsTable)
-    .where(lte(productsTable.stockCount, threshold))
+    .where(and(eq(productsTable.tenantId, tenantId), lte(productsTable.stockCount, threshold)))
     .orderBy(productsTable.stockCount);
 
   res.json(
