@@ -22,6 +22,7 @@ export interface Order {
   paymentMethod?: string | null;
   splitCardAmount?: number | null;
   splitCashAmount?: number | null;
+  cashTendered?: number | null;
   notes?: string | null;
   voidReason?: string | null;
   customerId?: number | null;

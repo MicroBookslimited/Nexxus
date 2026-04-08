@@ -335,7 +335,15 @@ function printReceiptWindow(order: GetOrderResponse, baseCurrency = "JMD", secon
 
   const paymentLines = order.paymentMethod === "split"
     ? [row("  Card:", fmt(order.splitCardAmount ?? 0)), row("  Cash:", fmt(order.splitCashAmount ?? 0))]
-    : [row("Payment:", (order.paymentMethod ?? "—").toUpperCase())];
+    : [
+        row("Payment:", (order.paymentMethod ?? "—").toUpperCase()),
+        ...(order.paymentMethod === "cash" && order.cashTendered != null && order.cashTendered > 0
+          ? [
+              row("Tendered:", fmt(order.cashTendered)),
+              row("Change:", fmt(Math.max(0, order.cashTendered - order.total))),
+            ]
+          : []),
+      ];
 
   const textLines = [
     center("NEXXUS POS"),
@@ -688,6 +696,9 @@ export function POS() {
           })),
           splitCardAmount: paymentMethod === "split" ? splitCardAmount : undefined,
           splitCashAmount: paymentMethod === "split" ? splitCashAmount : undefined,
+          cashTendered: paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0
+            ? parseFloat(numpadValue)
+            : undefined,
           discountType: discountType ?? undefined,
           discountAmount: discountAmount > 0 ? discountAmount : undefined,
           notes: buildOrderNotes(),
@@ -1456,6 +1467,18 @@ export function POS() {
                     <span>Payment</span>
                     <span className="capitalize">{receiptOrder.paymentMethod ?? "—"}</span>
                   </div>
+                )}
+                {receiptOrder.paymentMethod === "cash" && receiptOrder.cashTendered != null && receiptOrder.cashTendered > 0 && (
+                  <>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Cash Tendered</span>
+                      <span className="font-mono">{formatCurrency(receiptOrder.cashTendered)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs font-semibold text-emerald-400">
+                      <span>Change Due</span>
+                      <span className="font-mono">{formatCurrency(Math.max(0, receiptOrder.cashTendered - receiptOrder.total))}</span>
+                    </div>
+                  </>
                 )}
                 {receiptOrder.notes && (
                   <div className="text-xs text-muted-foreground mt-1">

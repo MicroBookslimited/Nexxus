@@ -16,6 +16,7 @@ export const ordersTable = pgTable("orders", {
   paymentMethod: text("payment_method"),
   splitCardAmount: real("split_card_amount"),
   splitCashAmount: real("split_cash_amount"),
+  cashTendered: real("cash_tendered"),
   notes: text("notes"),
   voidReason: text("void_reason"),
   customerId: integer("customer_id").references(() => customersTable.id),

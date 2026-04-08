@@ -26,6 +26,7 @@ function normalizeOrder(order: typeof ordersTable.$inferSelect) {
     paymentMethod: order.paymentMethod ?? undefined,
     splitCardAmount: order.splitCardAmount ?? undefined,
     splitCashAmount: order.splitCashAmount ?? undefined,
+    cashTendered: order.cashTendered ?? undefined,
     notes: order.notes ?? undefined,
     voidReason: order.voidReason ?? undefined,
     customerId: order.customerId ?? undefined,
@@ -199,13 +200,14 @@ router.post("/orders", async (req, res): Promise<void> => {
   const total = Math.round((discountedSubtotal + tax) * 100) / 100;
 
   const isOpenOrder = parsed.data.orderType === "dine-in" && !parsed.data.paymentMethod;
+  const isPaid = !!parsed.data.paymentMethod;
   const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
 
   const [order] = await db
     .insert(ordersTable)
     .values({
       orderNumber,
-      status: isOpenOrder ? "open" : "pending",
+      status: isOpenOrder ? "open" : isPaid ? "completed" : "pending",
       subtotal,
       discountType: parsed.data.discountType,
       discountAmount: parsed.data.discountAmount,
@@ -215,6 +217,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       paymentMethod: parsed.data.paymentMethod,
       splitCardAmount: parsed.data.splitCardAmount,
       splitCashAmount: parsed.data.splitCashAmount,
+      cashTendered: parsed.data.cashTendered,
       notes: parsed.data.notes,
       customerId: parsed.data.customerId,
       tableId: parsed.data.tableId,
@@ -223,7 +226,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       orderType: parsed.data.orderType ?? "counter",
       loyaltyPointsRedeemed: pointsToRedeem > 0 ? pointsToRedeem : undefined,
       loyaltyDiscount: loyaltyDiscount > 0 ? loyaltyDiscount : undefined,
-      completedAt: undefined,
+      completedAt: isPaid ? new Date() : undefined,
     })
     .returning();
 
@@ -403,7 +406,8 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
   const [order] = await db
     .update(ordersTable)
     .set({
-      status: "pending",
+      status: "completed",
+      completedAt: new Date(),
       paymentMethod: parsed.data.paymentMethod,
       splitCardAmount: parsed.data.splitCardAmount,
       splitCashAmount: parsed.data.splitCashAmount,
