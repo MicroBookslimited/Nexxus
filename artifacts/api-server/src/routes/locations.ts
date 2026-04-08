@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, locationsTable, staffLocationsTable, locationInventoryTable, stockTransfersTable, productsTable, staffTable } from "@workspace/db";
+import { db, locationsTable, staffLocationsTable, locationInventoryTable, stockTransfersTable, productsTable, staffTable, productLocationsTable } from "@workspace/db";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
@@ -288,6 +288,81 @@ router.get("/locations/:id/staff", async (req, res): Promise<void> => {
     .where(eq(staffLocationsTable.locationId, locationId))
     .orderBy(staffTable.name);
   res.json(rows);
+});
+
+/* ─── Product ↔ Location availability ─── */
+
+router.get("/products/:id/locations", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const productId = parseInt(req.params["id"] ?? "0", 10);
+  const [prod] = await db.select({ id: productsTable.id }).from(productsTable)
+    .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+  if (!prod) { res.status(404).json({ error: "Product not found" }); return; }
+
+  const locations = await db.select().from(locationsTable)
+    .where(and(eq(locationsTable.tenantId, tenantId), eq(locationsTable.isActive, true)))
+    .orderBy(locationsTable.name);
+
+  const plRows = await db.select().from(productLocationsTable)
+    .where(eq(productLocationsTable.productId, productId));
+
+  const plMap = new Map(plRows.map((r) => [r.locationId, r]));
+
+  res.json(locations.map((loc) => {
+    const pl = plMap.get(loc.id);
+    return {
+      locationId: loc.id,
+      locationName: loc.name,
+      isAvailable: pl ? pl.isAvailable : true,
+      priceOverride: pl ? pl.priceOverride : null,
+    };
+  }));
+});
+
+const ProductLocationBody = z.object({
+  isAvailable: z.boolean(),
+  priceOverride: z.number().nullable().optional(),
+});
+
+router.put("/products/:id/locations/:locationId", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const productId = parseInt(req.params["id"] ?? "0", 10);
+  const locationId = parseInt(req.params["locationId"] ?? "0", 10);
+
+  const [prod] = await db.select({ id: productsTable.id }).from(productsTable)
+    .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+  if (!prod) { res.status(404).json({ error: "Product not found" }); return; }
+
+  const [loc] = await db.select({ id: locationsTable.id }).from(locationsTable)
+    .where(and(eq(locationsTable.id, locationId), eq(locationsTable.tenantId, tenantId)));
+  if (!loc) { res.status(404).json({ error: "Location not found" }); return; }
+
+  const parsed = ProductLocationBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const [row] = await db.insert(productLocationsTable)
+    .values({
+      productId,
+      locationId,
+      isAvailable: parsed.data.isAvailable,
+      priceOverride: parsed.data.priceOverride ?? null,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [productLocationsTable.productId, productLocationsTable.locationId],
+      set: {
+        isAvailable: parsed.data.isAvailable,
+        priceOverride: parsed.data.priceOverride ?? null,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+
+  res.json(row);
 });
 
 export default router;

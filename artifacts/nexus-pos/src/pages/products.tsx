@@ -18,7 +18,7 @@ import {
   useDeletePurchaseBill,
 } from "@workspace/api-client-react";
 import type { GetProductResponse } from "@workspace/api-zod";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -58,7 +58,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, MapPin } from "lucide-react";
+import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
 const CATEGORIES = ["Beverages", "Food", "Bakery", "Merchandise", "Other"];
 const LOW_STOCK_THRESHOLD = 10;
@@ -404,6 +405,132 @@ function ModifierEditor({ productId }: { productId: number }) {
           {saveModifiers.isPending ? "Saving…" : "Save Modifiers"}
         </Button>
       )}
+    </div>
+  );
+}
+
+/* ─── Locations editor ─── */
+type ProductLocationRow = {
+  locationId: number;
+  locationName: string;
+  isAvailable: boolean;
+  priceOverride: number | null;
+};
+
+function authHeaders() {
+  const token = localStorage.getItem(TENANT_TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+}
+
+function LocationsEditor({ productId }: { productId: number }) {
+  const { toast } = useToast();
+  const queryKey = [`/api/products/${productId}/locations`];
+
+  const { data: rows, isLoading } = useQuery<ProductLocationRow[]>({
+    queryKey,
+    queryFn: async () => {
+      const r = await fetch(`/api/products/${productId}/locations`, { headers: authHeaders() });
+      if (!r.ok) throw new Error("Failed to load locations");
+      return r.json();
+    },
+  });
+
+  const [draft, setDraft] = useState<Record<number, { isAvailable: boolean; priceOverride: string }>>({});
+
+  useEffect(() => {
+    if (!rows) return;
+    const initial: Record<number, { isAvailable: boolean; priceOverride: string }> = {};
+    rows.forEach((r) => {
+      initial[r.locationId] = {
+        isAvailable: r.isAvailable,
+        priceOverride: r.priceOverride != null ? String(r.priceOverride) : "",
+      };
+    });
+    setDraft(initial);
+  }, [rows]);
+
+  const saveMutation = useMutation({
+    mutationFn: async ({ locationId, isAvailable, priceOverride }: { locationId: number; isAvailable: boolean; priceOverride: number | null }) => {
+      const r = await fetch(`/api/products/${productId}/locations/${locationId}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ isAvailable, priceOverride }),
+      });
+      if (!r.ok) throw new Error("Save failed");
+      return r.json();
+    },
+    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+  });
+
+  const handleSaveAll = async () => {
+    if (!rows) return;
+    try {
+      await Promise.all(
+        rows.map((row) => {
+          const d = draft[row.locationId];
+          if (!d) return Promise.resolve();
+          const priceOverride = d.priceOverride !== "" ? parseFloat(d.priceOverride) : null;
+          return saveMutation.mutateAsync({ locationId: row.locationId, isAvailable: d.isAvailable, priceOverride: Number.isFinite(priceOverride as number) ? priceOverride : null });
+        }),
+      );
+      toast({ title: "Location settings saved" });
+    } catch {
+      // errors handled per-mutation
+    }
+  };
+
+  if (isLoading) {
+    return <div className="space-y-2 py-2">{[...Array(3)].map((_, i) => <div key={i} className="h-12 rounded bg-secondary/40 animate-pulse" />)}</div>;
+  }
+
+  if (!rows || rows.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground">
+        <MapPin className="h-8 w-8 opacity-30" />
+        <p className="text-sm">No locations configured.</p>
+        <p className="text-xs">Add locations in the Locations page to manage per-location availability and pricing.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">Control whether this product is available at each location, and optionally set a location-specific price override.</p>
+      {rows.map((row) => {
+        const d = draft[row.locationId] ?? { isAvailable: row.isAvailable, priceOverride: "" };
+        return (
+          <Card key={row.locationId} className="border-border/50">
+            <CardContent className="pt-3 pb-3">
+              <div className="flex items-center gap-3">
+                <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="flex-1 text-sm font-medium">{row.locationName}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-xs text-muted-foreground">{d.isAvailable ? "Available" : "Unavailable"}</span>
+                  <Switch
+                    checked={d.isAvailable}
+                    onCheckedChange={(v) => setDraft((prev) => ({ ...prev, [row.locationId]: { ...d, isAvailable: v } }))}
+                  />
+                </div>
+                <div className="relative w-24 shrink-0">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="Base"
+                    value={d.priceOverride}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, [row.locationId]: { ...d, priceOverride: e.target.value } }))}
+                    className="h-8 text-xs pl-5"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+      <Button onClick={handleSaveAll} disabled={saveMutation.isPending} className="w-full">
+        {saveMutation.isPending ? "Saving…" : "Save Location Settings"}
+      </Button>
     </div>
   );
 }
@@ -1361,6 +1488,7 @@ export function Products() {
               <TabsTrigger value="details">Details</TabsTrigger>
               <TabsTrigger value="variants" disabled={!editingProduct}>Variants</TabsTrigger>
               <TabsTrigger value="modifiers" disabled={!editingProduct}>Modifiers</TabsTrigger>
+              <TabsTrigger value="locations" disabled={!editingProduct}>Locations</TabsTrigger>
             </TabsList>
 
             <div className="flex-1 overflow-y-auto mt-2 pr-1">
@@ -1417,6 +1545,10 @@ export function Products() {
 
               <TabsContent value="modifiers" className="mt-0">
                 {editingProduct && <ModifierEditor productId={editingProduct.id} />}
+              </TabsContent>
+
+              <TabsContent value="locations" className="mt-0">
+                {editingProduct && <LocationsEditor productId={editingProduct.id} />}
               </TabsContent>
             </div>
           </Tabs>
