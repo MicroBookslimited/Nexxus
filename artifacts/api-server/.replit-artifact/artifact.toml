@@ -14,6 +14,9 @@ run = "pnpm --filter @workspace/api-server run dev"
 
 [services.production]
 
+[services.production.migrate]
+args = ["bash", "scripts/migrate-prod.sh"]
+
 [services.production.build]
 args = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
 
