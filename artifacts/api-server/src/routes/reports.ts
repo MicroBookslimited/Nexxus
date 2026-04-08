@@ -12,8 +12,17 @@ import {
   GetHourlySalesQueryParams,
   ExportOrdersQueryParams,
 } from "@workspace/api-zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
 
 function parseDate(str: string | undefined, fallback: Date): Date {
   if (!str) return fallback;
@@ -22,7 +31,6 @@ function parseDate(str: string | undefined, fallback: Date): Date {
 }
 
 function endOfDay(d: Date): Date {
-  // Push to 23:59:59.999 UTC so the full day is included in lte comparisons
   d.setUTCHours(23, 59, 59, 999);
   return d;
 }
@@ -36,6 +44,9 @@ function rangeParams(q: Record<string, string | string[] | undefined>) {
 
 // ── 1. Daily Sales Summary ─────────────────────────────────────────────────
 router.get("/reports/summary", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const query = GetReportSummaryQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
@@ -44,20 +55,20 @@ router.get("/reports/summary", async (req, res): Promise<void> => {
   const to   = endOfDay(parseDate(query.data.to, new Date()));
 
   const completedOrders = await db.select().from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
 
   const [voidedRes] = await db.select({ count: sql<number>`count(*)` }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "voided"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "voided"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
 
   const [newCustRes] = await db.select({ count: sql<number>`count(*)` }).from(customersTable)
-    .where(and(gte(customersTable.createdAt, from), lte(customersTable.createdAt, to)));
+    .where(and(eq(customersTable.tenantId, tenantId), gte(customersTable.createdAt, from), lte(customersTable.createdAt, to)));
 
   const revenue = completedOrders.reduce((s, o) => s + o.total, 0);
   const orders  = completedOrders.length;
 
   const [topRow] = await db.select({ productName: orderItemsTable.productName, total: sql<number>`sum(${orderItemsTable.quantity})` })
     .from(orderItemsTable).innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(orderItemsTable.productName).orderBy(desc(sql`sum(${orderItemsTable.quantity})`)).limit(1);
 
   res.json(GetReportSummaryResponse.parse({
@@ -72,6 +83,9 @@ router.get("/reports/summary", async (req, res): Promise<void> => {
 
 // ── Hourly ─────────────────────────────────────────────────────────────────
 router.get("/reports/hourly", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const query = GetHourlySalesQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
@@ -84,7 +98,7 @@ router.get("/reports/hourly", async (req, res): Promise<void> => {
     revenue: sql<number>`sum(${ordersTable.total})`,
     orders:  sql<number>`count(*)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(sql`EXTRACT(HOUR FROM ${ordersTable.createdAt})`)
     .orderBy(sql`EXTRACT(HOUR FROM ${ordersTable.createdAt})`);
 
@@ -98,6 +112,9 @@ router.get("/reports/hourly", async (req, res): Promise<void> => {
 
 // ── Daily Trend ────────────────────────────────────────────────────────────
 router.get("/reports/daily-trend", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { from, to } = rangeParams(req.query as Record<string, string>);
   const rows = await db.select({
     date:    sql<string>`DATE(${ordersTable.createdAt})::text`,
@@ -106,7 +123,7 @@ router.get("/reports/daily-trend", async (req, res): Promise<void> => {
     tax:     sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
     discount: sql<number>`COALESCE(SUM(${ordersTable.discountValue}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(sql`DATE(${ordersTable.createdAt})`)
     .orderBy(asc(sql`DATE(${ordersTable.createdAt})`));
 
@@ -121,6 +138,9 @@ router.get("/reports/daily-trend", async (req, res): Promise<void> => {
 
 // ── 2. Payment Method Report ───────────────────────────────────────────────
 router.get("/reports/payment-breakdown", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { from, to } = rangeParams(req.query as Record<string, string>);
   const rows = await db.select({
     method: ordersTable.paymentMethod,
@@ -128,7 +148,7 @@ router.get("/reports/payment-breakdown", async (req, res): Promise<void> => {
     total:  sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
     tax:    sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(ordersTable.paymentMethod)
     .orderBy(desc(sql`SUM(${ordersTable.total})`));
 
@@ -144,6 +164,9 @@ router.get("/reports/payment-breakdown", async (req, res): Promise<void> => {
 
 // ── 3. Product Sales Report ────────────────────────────────────────────────
 router.get("/reports/product-mix", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { from, to } = rangeParams(req.query as Record<string, string>);
 
   const items = await db.select({
@@ -153,13 +176,12 @@ router.get("/reports/product-mix", async (req, res): Promise<void> => {
     revenue:     sql<number>`SUM(${orderItemsTable.lineTotal})`,
   }).from(orderItemsTable)
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(orderItemsTable.productId, orderItemsTable.productName)
     .orderBy(desc(sql`SUM(${orderItemsTable.lineTotal})`));
 
   const totalRevenue = items.reduce((s, i) => s + Number(i.revenue), 0);
 
-  // ── 7. Category Sales (embedded) ──────────────────────────────────────────
   const categoryRows = await db.select({
     category: productsTable.category,
     revenue:  sql<number>`SUM(${orderItemsTable.lineTotal})`,
@@ -168,7 +190,7 @@ router.get("/reports/product-mix", async (req, res): Promise<void> => {
   }).from(orderItemsTable)
     .innerJoin(ordersTable,  eq(orderItemsTable.orderId, ordersTable.id))
     .innerJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(productsTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(productsTable.category)
     .orderBy(desc(sql`SUM(${orderItemsTable.lineTotal})`));
 
@@ -194,38 +216,42 @@ router.get("/reports/product-mix", async (req, res): Promise<void> => {
 
 // ── 4. Inventory Consumption Report ───────────────────────────────────────
 router.get("/reports/inventory", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { from, to } = rangeParams(req.query as Record<string, string>);
 
-  const products = await db.select().from(productsTable).orderBy(asc(productsTable.stockCount));
+  const products = await db.select().from(productsTable)
+    .where(eq(productsTable.tenantId, tenantId))
+    .orderBy(asc(productsTable.stockCount));
 
-  // Units sold in period
   const soldInPeriod = await db.select({
     productId: orderItemsTable.productId,
     sold:      sql<number>`SUM(${orderItemsTable.quantity})`,
     revenue:   sql<number>`SUM(${orderItemsTable.lineTotal})`,
   }).from(orderItemsTable)
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(orderItemsTable.productId);
 
-  // Purchase cost per product (avg weighted)
   const costData = await db.select({
     productId: purchasesTable.productId,
     avgCost:   sql<number>`COALESCE(AVG(${purchasesTable.unitCost}), 0)`,
     totalPurchased: sql<number>`COALESCE(SUM(${purchasesTable.quantity}), 0)`,
     totalCost:      sql<number>`COALESCE(SUM(${purchasesTable.totalCost}), 0)`,
-  }).from(purchasesTable).groupBy(purchasesTable.productId);
+  }).from(purchasesTable)
+    .where(eq(purchasesTable.tenantId, tenantId))
+    .groupBy(purchasesTable.productId);
 
   const soldMap = new Map(soldInPeriod.map(r => [r.productId, { sold: Number(r.sold), revenue: Number(r.revenue) }]));
   const costMap = new Map(costData.map(r => [r.productId, { avgCost: Number(r.avgCost), totalPurchased: Number(r.totalPurchased), totalCost: Number(r.totalCost) }]));
 
-  // All-time sold for stock comparison
   const allTimeSold = await db.select({
     productId: orderItemsTable.productId,
     sold:      sql<number>`SUM(${orderItemsTable.quantity})`,
   }).from(orderItemsTable)
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-    .where(eq(ordersTable.status, "completed"))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed")))
     .groupBy(orderItemsTable.productId);
 
   const allTimeSoldMap = new Map(allTimeSold.map(r => [r.productId, Number(r.sold)]));
@@ -261,6 +287,9 @@ router.get("/reports/inventory", async (req, res): Promise<void> => {
 
 // ── 5. Staff Performance Report ────────────────────────────────────────────
 router.get("/reports/staff-performance", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { from, to } = rangeParams(req.query as Record<string, string>);
 
   const staffPerf = await db.select({
@@ -269,7 +298,7 @@ router.get("/reports/staff-performance", async (req, res): Promise<void> => {
     revenue: sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
     avgOrder: sql<number>`COALESCE(AVG(${ordersTable.total}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), isNotNull(ordersTable.staffId)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), isNotNull(ordersTable.staffId)))
     .groupBy(ordersTable.staffId)
     .orderBy(desc(sql`SUM(${ordersTable.total})`));
 
@@ -279,10 +308,10 @@ router.get("/reports/staff-performance", async (req, res): Promise<void> => {
     orders:  sql<number>`COUNT(*)`,
     revenue: sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), isNull(ordersTable.staffId)));
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), isNull(ordersTable.staffId)));
 
   const sessions = await db.select().from(cashSessionsTable)
-    .where(and(gte(cashSessionsTable.openedAt, from), lte(cashSessionsTable.openedAt, to)))
+    .where(and(eq(cashSessionsTable.tenantId, tenantId), gte(cashSessionsTable.openedAt, from), lte(cashSessionsTable.openedAt, to)))
     .orderBy(desc(cashSessionsTable.openedAt));
 
   res.json({
@@ -316,6 +345,9 @@ router.get("/reports/staff-performance", async (req, res): Promise<void> => {
 
 // ── 6. Discount & Void Report ──────────────────────────────────────────────
 router.get("/reports/exceptions", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { from, to } = rangeParams(req.query as Record<string, string>);
 
   const voids = await db.select({
@@ -326,19 +358,18 @@ router.get("/reports/exceptions", async (req, res): Promise<void> => {
     staffId:     ordersTable.staffId,
     createdAt:   ordersTable.createdAt,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "voided"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "voided"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .orderBy(desc(ordersTable.createdAt));
 
   const allStaff = await db.select().from(staffTable);
   const staffMap = new Map(allStaff.map(s => [s.id, s.name]));
 
-  // Discount breakdown by type
   const discountByType = await db.select({
     discountType: ordersTable.discountType,
     count:        sql<number>`COUNT(*)`,
     totalDiscount: sql<number>`COALESCE(SUM(${ordersTable.discountValue}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), sql`${ordersTable.discountValue} > 0`))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), sql`${ordersTable.discountValue} > 0`))
     .groupBy(ordersTable.discountType);
 
   const [discountStats] = await db.select({
@@ -346,14 +377,14 @@ router.get("/reports/exceptions", async (req, res): Promise<void> => {
     totalDiscount: sql<number>`COALESCE(SUM(${ordersTable.discountValue}), 0)`,
     avgDiscount:   sql<number>`COALESCE(AVG(${ordersTable.discountValue}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), sql`${ordersTable.discountValue} > 0`));
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), sql`${ordersTable.discountValue} > 0`));
 
   const [loyaltyStats] = await db.select({
     count:       sql<number>`COUNT(*)`,
     totalPoints: sql<number>`COALESCE(SUM(${ordersTable.loyaltyPointsRedeemed}), 0)`,
     totalValue:  sql<number>`COALESCE(SUM(${ordersTable.loyaltyDiscount}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), sql`${ordersTable.loyaltyPointsRedeemed} > 0`));
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), sql`${ordersTable.loyaltyPointsRedeemed} > 0`));
 
   res.json({
     voids: voids.map(v => ({
@@ -384,6 +415,9 @@ router.get("/reports/exceptions", async (req, res): Promise<void> => {
 
 // ── 9. Table Turnover Report ───────────────────────────────────────────────
 router.get("/reports/table-turnover", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { from, to } = rangeParams(req.query as Record<string, string>);
 
   const tableStats = await db.select({
@@ -392,27 +426,27 @@ router.get("/reports/table-turnover", async (req, res): Promise<void> => {
     revenue:  sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
     avgTotal: sql<number>`COALESCE(AVG(${ordersTable.total}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), isNotNull(ordersTable.tableId)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), isNotNull(ordersTable.tableId)))
     .groupBy(ordersTable.tableId)
     .orderBy(desc(sql`COUNT(*)`));
 
-  const allTables = await db.select().from(diningTablesTable).where(eq(diningTablesTable.isActive, true));
+  const allTables = await db.select().from(diningTablesTable)
+    .where(and(eq(diningTablesTable.tenantId, tenantId), eq(diningTablesTable.isActive, true)));
 
-  // Order type breakdown
   const byType = await db.select({
     orderType: ordersTable.orderType,
     count:     sql<number>`COUNT(*)`,
     revenue:   sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(ordersTable.orderType);
 
-  // Avg duration from createdAt → completedAt for dine-in orders
   const durRows = await db.select({
     tableId:     ordersTable.tableId,
     avgMinutes:  sql<number>`COALESCE(AVG(EXTRACT(EPOCH FROM (${ordersTable.completedAt} - ${ordersTable.createdAt}))/60), 0)`,
   }).from(ordersTable)
     .where(and(
+      eq(ordersTable.tenantId, tenantId),
       eq(ordersTable.status, "completed"),
       gte(ordersTable.createdAt, from),
       lte(ordersTable.createdAt, to),
@@ -447,36 +481,39 @@ router.get("/reports/table-turnover", async (req, res): Promise<void> => {
 
 // ── 10. Profit Snapshot Report ─────────────────────────────────────────────
 router.get("/reports/profit-snapshot", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { from, to } = rangeParams(req.query as Record<string, string>);
 
-  // Revenue from completed orders
   const [revRow] = await db.select({
     revenue:  sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
     subtotal: sql<number>`COALESCE(SUM(${ordersTable.subtotal}), 0)`,
     tax:      sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
     discount: sql<number>`COALESCE(SUM(${ordersTable.discountValue}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
 
-  // Sold items with line totals
   const soldItems = await db.select({
     productId: orderItemsTable.productId,
     quantity:  sql<number>`SUM(${orderItemsTable.quantity})`,
     lineTotal: sql<number>`SUM(${orderItemsTable.lineTotal})`,
   }).from(orderItemsTable)
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(orderItemsTable.productId);
 
-  // Cost per product (avg from purchases)
   const costData = await db.select({
     productId: purchasesTable.productId,
     avgCost:   sql<number>`COALESCE(AVG(${purchasesTable.unitCost}), 0)`,
-  }).from(purchasesTable).groupBy(purchasesTable.productId);
+  }).from(purchasesTable)
+    .where(eq(purchasesTable.tenantId, tenantId))
+    .groupBy(purchasesTable.productId);
 
   const costMap = new Map(costData.map(r => [r.productId, Number(r.avgCost)]));
   const allProducts = await db.select({ id: productsTable.id, name: productsTable.name, category: productsTable.category, price: productsTable.price })
-    .from(productsTable);
+    .from(productsTable)
+    .where(eq(productsTable.tenantId, tenantId));
   const prodMap = new Map(allProducts.map(p => [p.id, p]));
 
   let totalCOGS = 0;
@@ -509,7 +546,6 @@ router.get("/reports/profit-snapshot", async (req, res): Promise<void> => {
   const grossProfit = Math.round((revenue - cogs) * 100) / 100;
   const grossMargin = revenue > 0 ? Math.round((grossProfit / revenue) * 1000) / 10 : 0;
 
-  // Category-level profit
   const catMap = new Map<string, { revenue: number; cogs: number }>();
   productProfits.forEach(p => {
     const c = catMap.get(p.category) ?? { revenue: 0, cogs: 0 };
@@ -533,25 +569,31 @@ router.get("/reports/profit-snapshot", async (req, res): Promise<void> => {
 
 // ── Customer Summary ───────────────────────────────────────────────────────
 router.get("/reports/customers-summary", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { from, to } = rangeParams(req.query as Record<string, string>);
 
-  const topCustomers = await db.select().from(customersTable).orderBy(desc(customersTable.totalSpent)).limit(15);
+  const topCustomers = await db.select().from(customersTable)
+    .where(eq(customersTable.tenantId, tenantId))
+    .orderBy(desc(customersTable.totalSpent)).limit(15);
 
   const [newCustRes] = await db.select({ count: sql<number>`COUNT(*)` }).from(customersTable)
-    .where(and(gte(customersTable.createdAt, from), lte(customersTable.createdAt, to)));
+    .where(and(eq(customersTable.tenantId, tenantId), gte(customersTable.createdAt, from), lte(customersTable.createdAt, to)));
 
   const [returningRes] = await db.select({
     revenue: sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
     count:   sql<number>`COUNT(*)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), isNotNull(ordersTable.customerId)));
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to), isNotNull(ordersTable.customerId)));
 
   const [loyaltyRes] = await db.select({
     totalPoints:    sql<number>`COALESCE(SUM(${customersTable.loyaltyPoints}), 0)`,
     totalSpent:     sql<number>`COALESCE(SUM(${customersTable.totalSpent}), 0)`,
     totalCustomers: sql<number>`COUNT(*)`,
     withLoyalty:    sql<number>`COUNT(CASE WHEN ${customersTable.loyaltyPoints} > 0 THEN 1 END)`,
-  }).from(customersTable);
+  }).from(customersTable)
+    .where(eq(customersTable.tenantId, tenantId));
 
   res.json({
     topCustomers: topCustomers.map(c => ({
@@ -577,12 +619,15 @@ router.get("/reports/customers-summary", async (req, res): Promise<void> => {
 
 // ── EOD Summary ────────────────────────────────────────────────────────────
 router.get("/reports/eod-summary", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const dateStr = (req.query["date"] as string) ?? new Date().toISOString().split("T")[0];
   const from = new Date(`${dateStr}T00:00:00`);
   const to   = new Date(`${dateStr}T23:59:59`);
 
   const orders = await db.select().from(ordersTable)
-    .where(and(gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
+    .where(and(eq(ordersTable.tenantId, tenantId), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
 
   const completed = orders.filter(o => o.status === "completed");
   const voided    = orders.filter(o => o.status === "voided");
@@ -596,11 +641,19 @@ router.get("/reports/eod-summary", async (req, res): Promise<void> => {
   }, {});
 
   const sessions = await db.select().from(cashSessionsTable)
-    .where(and(gte(cashSessionsTable.openedAt, from), lte(cashSessionsTable.openedAt, to)))
+    .where(and(eq(cashSessionsTable.tenantId, tenantId), gte(cashSessionsTable.openedAt, from), lte(cashSessionsTable.openedAt, to)))
     .orderBy(asc(cashSessionsTable.openedAt));
 
-  const payouts = await db.select().from(cashPayoutsTable)
-    .where(and(gte(cashPayoutsTable.createdAt, from), lte(cashPayoutsTable.createdAt, to)));
+  // Payouts scoped via session membership
+  const sessionIds = sessions.map(s => s.id);
+  const payouts = sessionIds.length > 0
+    ? await db.select().from(cashPayoutsTable)
+        .where(and(
+          sql`${cashPayoutsTable.sessionId} = ANY(${sql.raw(`ARRAY[${sessionIds.join(",")}]::int[]`)})`,
+          gte(cashPayoutsTable.createdAt, from),
+          lte(cashPayoutsTable.createdAt, to),
+        ))
+    : [];
 
   const revenue  = completed.reduce((s, o) => s + o.total, 0);
   const tax      = completed.reduce((s, o) => s + o.tax, 0);
@@ -622,6 +675,9 @@ router.get("/reports/eod-summary", async (req, res): Promise<void> => {
 
 // ── Export CSV (main orders export) ───────────────────────────────────────
 router.get("/reports/export", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const query = ExportOrdersQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
@@ -630,7 +686,7 @@ router.get("/reports/export", async (req, res): Promise<void> => {
   const to   = parseDate(query.data.to, new Date());
 
   const orders = await db.select().from(ordersTable)
-    .where(and(gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .orderBy(desc(ordersTable.createdAt));
 
   const header = "Order Number,Status,Type,Payment,Subtotal,Discount,Tax,Total,Table,Staff ID,Notes,Date\n";
@@ -647,12 +703,14 @@ router.get("/reports/export", async (req, res): Promise<void> => {
 
 // ── GCT Tax Report ─────────────────────────────────────────────────────────
 router.get("/reports/tax", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { from, to } = rangeParams(req.query as Record<string, string>);
-  // Fetch current GCT rate from settings
-  const [taxRateSetting] = await db.select().from(appSettingsTable).where(eq(appSettingsTable.key, "tax_rate"));
+  const [taxRateSetting] = await db.select().from(appSettingsTable)
+    .where(and(eq(appSettingsTable.tenantId, tenantId), eq(appSettingsTable.key, "tax_rate")));
   const gctRate = parseFloat(taxRateSetting?.value ?? "15");
 
-  // Day-by-day breakdown
   const daily = await db.select({
     date:     sql<string>`DATE(${ordersTable.createdAt})::text`,
     orders:   sql<number>`COUNT(*)`,
@@ -661,11 +719,10 @@ router.get("/reports/tax", async (req, res): Promise<void> => {
     total:    sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
     discount: sql<number>`COALESCE(SUM(${ordersTable.discountValue}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(sql`DATE(${ordersTable.createdAt})`)
     .orderBy(asc(sql`DATE(${ordersTable.createdAt})`));
 
-  // Payment-method GCT breakdown
   const byMethod = await db.select({
     method:   ordersTable.paymentMethod,
     orders:   sql<number>`COUNT(*)`,
@@ -673,10 +730,9 @@ router.get("/reports/tax", async (req, res): Promise<void> => {
     tax:      sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
     total:    sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
     .groupBy(ordersTable.paymentMethod);
 
-  // Totals
   const totSubtotal = daily.reduce((s, r) => s + Number(r.subtotal), 0);
   const totTax      = daily.reduce((s, r) => s + Number(r.tax), 0);
   const totTotal    = daily.reduce((s, r) => s + Number(r.total), 0);

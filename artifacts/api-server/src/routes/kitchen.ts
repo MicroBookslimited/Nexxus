@@ -1,18 +1,33 @@
 import { Router, type IRouter } from "express";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db, ordersTable, orderItemsTable, productsTable, kdsScreensTable, diningTablesTable } from "@workspace/db";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
 
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
+
 router.get("/kitchen", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const activeOrders = await db
     .select()
     .from(ordersTable)
-    .where(inArray(ordersTable.status, ["open", "pending", "preparing", "ready"]))
+    .where(and(
+      eq(ordersTable.tenantId, tenantId),
+      inArray(ordersTable.status, ["open", "pending", "preparing", "ready"]),
+    ))
     .orderBy(ordersTable.createdAt);
 
-  // Pre-fetch all tables so we can resolve names without N+1 queries
-  const allTables = await db.select().from(diningTablesTable);
+  const allTables = await db.select().from(diningTablesTable)
+    .where(eq(diningTablesTable.tenantId, tenantId));
   const tableNameMap = new Map(allTables.map((t) => [t.id, t.name]));
 
   const ordersWithItems = await Promise.all(
@@ -27,7 +42,7 @@ router.get("/kitchen", async (req, res): Promise<void> => {
           category: productsTable.category,
         })
         .from(orderItemsTable)
-        .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+        .leftJoin(productsTable, and(eq(orderItemsTable.productId, productsTable.id), eq(productsTable.tenantId, tenantId)))
         .where(eq(orderItemsTable.orderId, order.id));
 
       return {
@@ -55,6 +70,9 @@ router.get("/kitchen", async (req, res): Promise<void> => {
 });
 
 router.patch("/kitchen/:id/status", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = Array.isArray(req.params.id) ? parseInt(req.params.id[0]) : parseInt(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid order id" });
@@ -71,7 +89,7 @@ router.patch("/kitchen/:id/status", async (req, res): Promise<void> => {
   const [order] = await db
     .update(ordersTable)
     .set({ status })
-    .where(eq(ordersTable.id, id))
+    .where(and(eq(ordersTable.id, id), eq(ordersTable.tenantId, tenantId)))
     .returning();
 
   if (!order) {
@@ -83,11 +101,17 @@ router.patch("/kitchen/:id/status", async (req, res): Promise<void> => {
 });
 
 router.get("/kds-screens", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const screens = await db.select().from(kdsScreensTable).orderBy(kdsScreensTable.createdAt);
   res.json(screens.map((s) => ({ ...s, categories: s.categories ?? [] })));
 });
 
 router.post("/kds-screens", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { name, categories } = req.body as { name?: string; categories?: string[] };
   if (!name?.trim()) {
     res.status(400).json({ error: "Name is required" });
@@ -101,6 +125,9 @@ router.post("/kds-screens", async (req, res): Promise<void> => {
 });
 
 router.patch("/kds-screens/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = Array.isArray(req.params.id) ? parseInt(req.params.id[0]) : parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -116,6 +143,9 @@ router.patch("/kds-screens/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/kds-screens/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = Array.isArray(req.params.id) ? parseInt(req.params.id[0]) : parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   await db.delete(kdsScreensTable).where(eq(kdsScreensTable.id, id));

@@ -1,9 +1,18 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type IRouter } from "express";
 import { db, accountingAccountsTable, journalEntriesTable, journalEntryLinesTable, quickbooksConnectionTable, ordersTable, orderItemsTable, productsTable, stockAdjustmentsTable, stockCountSessionsTable, stockCountItemsTable } from "@workspace/db";
 import { eq, and, gte, lte, sql, ne, inArray, desc } from "drizzle-orm";
 import { z } from "zod";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
 
 /* ─── Default Chart of Accounts ─── */
 const DEFAULT_ACCOUNTS = [
@@ -31,20 +40,26 @@ const DEFAULT_ACCOUNTS = [
   { code: "5700", name: "Interest Expense", type: "expense", subtype: "other_expense", isSystem: false },
 ];
 
-async function ensureDefaultAccounts() {
-  const existing = await db.select({ code: accountingAccountsTable.code }).from(accountingAccountsTable).limit(1);
+async function ensureDefaultAccounts(tenantId: number) {
+  const existing = await db.select({ code: accountingAccountsTable.code })
+    .from(accountingAccountsTable)
+    .where(eq(accountingAccountsTable.tenantId, tenantId))
+    .limit(1);
   if (existing.length === 0) {
-    await db.insert(accountingAccountsTable).values(DEFAULT_ACCOUNTS);
+    await db.insert(accountingAccountsTable).values(DEFAULT_ACCOUNTS.map(a => ({ ...a, tenantId })));
   }
 }
 
 /* ─── Chart of Accounts ─── */
-router.get("/accounting/accounts", async (_req, res): Promise<void> => {
-  await ensureDefaultAccounts();
+router.get("/accounting/accounts", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  await ensureDefaultAccounts(tenantId);
   const accounts = await db
     .select()
     .from(accountingAccountsTable)
-    .where(eq(accountingAccountsTable.isActive, true))
+    .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.isActive, true)))
     .orderBy(accountingAccountsTable.code);
   res.json(accounts);
 });
@@ -59,10 +74,13 @@ const AccountBody = z.object({
 });
 
 router.post("/accounting/accounts", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = AccountBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   try {
-    const [account] = await db.insert(accountingAccountsTable).values(parsed.data).returning();
+    const [account] = await db.insert(accountingAccountsTable).values({ ...parsed.data, tenantId }).returning();
     res.status(201).json(account);
   } catch {
     res.status(409).json({ error: "Account code already exists" });
@@ -70,31 +88,46 @@ router.post("/accounting/accounts", async (req, res): Promise<void> => {
 });
 
 router.patch("/accounting/accounts/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = parseInt(req.params["id"] ?? "0", 10);
   const parsed = AccountBody.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const [acc] = await db.update(accountingAccountsTable).set(parsed.data).where(eq(accountingAccountsTable.id, id)).returning();
+  const [acc] = await db.update(accountingAccountsTable).set(parsed.data)
+    .where(and(eq(accountingAccountsTable.id, id), eq(accountingAccountsTable.tenantId, tenantId)))
+    .returning();
   if (!acc) { res.status(404).json({ error: "Account not found" }); return; }
   res.json(acc);
 });
 
 router.delete("/accounting/accounts/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = parseInt(req.params["id"] ?? "0", 10);
-  const [acc] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.id, id));
+  const [acc] = await db.select().from(accountingAccountsTable)
+    .where(and(eq(accountingAccountsTable.id, id), eq(accountingAccountsTable.tenantId, tenantId)));
   if (!acc) { res.status(404).json({ error: "Account not found" }); return; }
   if (acc.isSystem) { res.status(400).json({ error: "Cannot delete system accounts" }); return; }
-  await db.update(accountingAccountsTable).set({ isActive: false }).where(eq(accountingAccountsTable.id, id));
+  await db.update(accountingAccountsTable).set({ isActive: false })
+    .where(and(eq(accountingAccountsTable.id, id), eq(accountingAccountsTable.tenantId, tenantId)));
   res.json({ success: true });
 });
 
 /* ─── Journal Entries ─── */
 router.get("/accounting/journal-entries", async (req, res): Promise<void> => {
-  const { from, to, type, limit: lim = "100", offset: off = "0" } = req.query as Record<string, string>;
-  let query = db.select().from(journalEntriesTable).$dynamic();
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-  const filters: any[] = [ne(journalEntriesTable.status, "voided")];
+  const { from, to, type, limit: lim = "100", offset: off = "0" } = req.query as Record<string, string>;
+
+  const filters: Parameters<typeof and>[0][] = [
+    ne(journalEntriesTable.status, "voided"),
+    eq(journalEntriesTable.tenantId, tenantId),
+  ];
   if (from) filters.push(gte(journalEntriesTable.date, new Date(from)));
-  if (to) filters.push(lte(journalEntriesTable.date, new Date(to)));
+  if (to)   filters.push(lte(journalEntriesTable.date, new Date(to)));
   if (type) filters.push(eq(journalEntriesTable.type, type));
 
   const entries = await db
@@ -105,7 +138,6 @@ router.get("/accounting/journal-entries", async (req, res): Promise<void> => {
     .limit(parseInt(lim, 10))
     .offset(parseInt(off, 10));
 
-  // Load lines for each entry
   if (entries.length === 0) { res.json([]); return; }
   const entryIds = entries.map(e => e.id);
   const lines = await db
@@ -149,27 +181,35 @@ const JournalEntryBody = z.object({
 });
 
 router.post("/accounting/journal-entries", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = JournalEntryBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { lines, ...entryData } = parsed.data;
 
-  // Validate double-entry (debits = credits)
-  const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
+  const totalDebit  = lines.reduce((s, l) => s + l.debit,  0);
   const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
   if (Math.abs(totalDebit - totalCredit) > 0.01) {
     res.status(400).json({ error: `Debits (${totalDebit.toFixed(2)}) must equal Credits (${totalCredit.toFixed(2)})` });
     return;
   }
 
-  const [entry] = await db.insert(journalEntriesTable).values({ ...entryData, date: new Date(entryData.date) }).returning();
+  const [entry] = await db.insert(journalEntriesTable)
+    .values({ ...entryData, tenantId, date: new Date(entryData.date) })
+    .returning();
   await db.insert(journalEntryLinesTable).values(lines.map(l => ({ ...l, entryId: entry.id })));
 
   res.status(201).json({ ...entry, lines });
 });
 
 router.delete("/accounting/journal-entries/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = parseInt(req.params["id"] ?? "0", 10);
-  await db.update(journalEntriesTable).set({ status: "voided" }).where(eq(journalEntriesTable.id, id));
+  await db.update(journalEntriesTable).set({ status: "voided" })
+    .where(and(eq(journalEntriesTable.id, id), eq(journalEntriesTable.tenantId, tenantId)));
   res.json({ success: true });
 });
 
@@ -177,76 +217,77 @@ router.delete("/accounting/journal-entries/:id", async (req, res): Promise<void>
 
 // Profit & Loss
 router.get("/accounting/reports/profit-loss", async (req, res): Promise<void> => {
-  const { from, to } = req.query as Record<string, string>;
-  const fromDate = from ? new Date(from) : new Date(new Date().getFullYear(), 0, 1); // Jan 1 this year
-  const toDate = to ? new Date(to) : new Date();
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-  // Revenue from orders
+  const { from, to } = req.query as Record<string, string>;
+  const fromDate = from ? new Date(from) : new Date(new Date().getFullYear(), 0, 1);
+  const toDate   = to ? new Date(to) : new Date();
+
   const ordersRevenue = await db
     .select({
       subtotal: sql<number>`COALESCE(SUM(${ordersTable.subtotal}), 0)`,
-      tax: sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
-      total: sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
+      tax:      sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
+      total:    sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
       discount: sql<number>`COALESCE(SUM(COALESCE(${ordersTable.discountValue}, 0)), 0)`,
     })
     .from(ordersTable)
-    .where(
-      and(
-        ne(ordersTable.status, "voided"),
-        ne(ordersTable.status, "refunded"),
-        ne(ordersTable.status, "open"),
-        gte(ordersTable.createdAt, fromDate),
-        lte(ordersTable.createdAt, toDate),
-      )
-    );
+    .where(and(
+      eq(ordersTable.tenantId, tenantId),
+      ne(ordersTable.status, "voided"),
+      ne(ordersTable.status, "refunded"),
+      ne(ordersTable.status, "open"),
+      gte(ordersTable.createdAt, fromDate),
+      lte(ordersTable.createdAt, toDate),
+    ));
 
-  const salesRevenue = ordersRevenue[0]?.subtotal ?? 0;
-  const taxCollected = ordersRevenue[0]?.tax ?? 0;
+  const salesRevenue  = ordersRevenue[0]?.subtotal ?? 0;
+  const taxCollected  = ordersRevenue[0]?.tax ?? 0;
 
-  // Revenue by payment method
   const revenueByMethod = await db
     .select({
       method: ordersTable.paymentMethod,
-      total: sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
-      count: sql<number>`COUNT(*)`,
+      total:  sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
+      count:  sql<number>`COUNT(*)`,
     })
     .from(ordersTable)
-    .where(
-      and(
-        ne(ordersTable.status, "voided"),
-        ne(ordersTable.status, "refunded"),
-        ne(ordersTable.status, "open"),
-        gte(ordersTable.createdAt, fromDate),
-        lte(ordersTable.createdAt, toDate),
-      )
-    )
+    .where(and(
+      eq(ordersTable.tenantId, tenantId),
+      ne(ordersTable.status, "voided"),
+      ne(ordersTable.status, "refunded"),
+      ne(ordersTable.status, "open"),
+      gte(ordersTable.createdAt, fromDate),
+      lte(ordersTable.createdAt, toDate),
+    ))
     .groupBy(ordersTable.paymentMethod);
 
-  // Manual revenue journal entries
-  await ensureDefaultAccounts();
-  const revenueAccounts = await db.select({ id: accountingAccountsTable.id }).from(accountingAccountsTable).where(eq(accountingAccountsTable.type, "revenue"));
+  await ensureDefaultAccounts(tenantId);
+
+  const revenueAccounts = await db.select({ id: accountingAccountsTable.id })
+    .from(accountingAccountsTable)
+    .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.type, "revenue")));
   const revenueAccountIds = revenueAccounts.map(a => a.id);
 
   let manualRevenue = 0;
   if (revenueAccountIds.length > 0) {
-    const manualRevenueResult = await db
+    const [result] = await db
       .select({ total: sql<number>`COALESCE(SUM(${journalEntryLinesTable.credit} - ${journalEntryLinesTable.debit}), 0)` })
       .from(journalEntryLinesTable)
       .leftJoin(journalEntriesTable, eq(journalEntriesTable.id, journalEntryLinesTable.entryId))
-      .where(
-        and(
-          inArray(journalEntryLinesTable.accountId, revenueAccountIds),
-          ne(journalEntriesTable.status, "voided"),
-          eq(journalEntriesTable.type, "manual"),
-          gte(journalEntriesTable.date, fromDate),
-          lte(journalEntriesTable.date, toDate),
-        )
-      );
-    manualRevenue = manualRevenueResult[0]?.total ?? 0;
+      .where(and(
+        inArray(journalEntryLinesTable.accountId, revenueAccountIds),
+        eq(journalEntriesTable.tenantId, tenantId),
+        ne(journalEntriesTable.status, "voided"),
+        eq(journalEntriesTable.type, "manual"),
+        gte(journalEntriesTable.date, fromDate),
+        lte(journalEntriesTable.date, toDate),
+      ));
+    manualRevenue = result?.total ?? 0;
   }
 
-  // Expenses from journal entries grouped by account
-  const expenseAccounts = await db.select({ id: accountingAccountsTable.id, name: accountingAccountsTable.name, code: accountingAccountsTable.code }).from(accountingAccountsTable).where(eq(accountingAccountsTable.type, "expense"));
+  const expenseAccounts = await db.select({ id: accountingAccountsTable.id, name: accountingAccountsTable.name, code: accountingAccountsTable.code })
+    .from(accountingAccountsTable)
+    .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.type, "expense")));
   const expenseAccountIds = expenseAccounts.map(a => a.id);
 
   const expenseLines: { accountId: number; name: string; code: string; amount: number }[] = [];
@@ -258,14 +299,13 @@ router.get("/accounting/reports/profit-loss", async (req, res): Promise<void> =>
       })
       .from(journalEntryLinesTable)
       .leftJoin(journalEntriesTable, eq(journalEntriesTable.id, journalEntryLinesTable.entryId))
-      .where(
-        and(
-          inArray(journalEntryLinesTable.accountId, expenseAccountIds),
-          ne(journalEntriesTable.status, "voided"),
-          gte(journalEntriesTable.date, fromDate),
-          lte(journalEntriesTable.date, toDate),
-        )
-      )
+      .where(and(
+        inArray(journalEntryLinesTable.accountId, expenseAccountIds),
+        eq(journalEntriesTable.tenantId, tenantId),
+        ne(journalEntriesTable.status, "voided"),
+        gte(journalEntriesTable.date, fromDate),
+        lte(journalEntriesTable.date, toDate),
+      ))
       .groupBy(journalEntryLinesTable.accountId);
 
     for (const row of expenseResult) {
@@ -274,19 +314,14 @@ router.get("/accounting/reports/profit-loss", async (req, res): Promise<void> =>
     }
   }
 
-  const totalExpenses = expenseLines.reduce((s, l) => s + l.amount, 0);
-  const totalRevenue = salesRevenue + manualRevenue;
-  const grossProfit = totalRevenue - (expenseLines.find(e => e.code === "5000")?.amount ?? 0);
-  const netIncome = totalRevenue - totalExpenses;
+  const totalExpenses  = expenseLines.reduce((s, l) => s + l.amount, 0);
+  const totalRevenue   = salesRevenue + manualRevenue;
+  const grossProfit    = totalRevenue - (expenseLines.find(e => e.code === "5000")?.amount ?? 0);
+  const netIncome      = totalRevenue - totalExpenses;
 
   res.json({
     period: { from: fromDate.toISOString(), to: toDate.toISOString() },
-    revenue: {
-      sales: salesRevenue,
-      manual: manualRevenue,
-      total: totalRevenue,
-      byPaymentMethod: revenueByMethod,
-    },
+    revenue: { sales: salesRevenue, manual: manualRevenue, total: totalRevenue, byPaymentMethod: revenueByMethod },
     taxCollected,
     expenses: expenseLines,
     totalExpenses,
@@ -297,26 +332,30 @@ router.get("/accounting/reports/profit-loss", async (req, res): Promise<void> =>
 
 // Trial Balance
 router.get("/accounting/reports/trial-balance", async (req, res): Promise<void> => {
-  await ensureDefaultAccounts();
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  await ensureDefaultAccounts(tenantId);
   const { as_of } = req.query as Record<string, string>;
   const asOf = as_of ? new Date(as_of) : new Date();
 
-  const accounts = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.isActive, true)).orderBy(accountingAccountsTable.code);
+  const accounts = await db.select().from(accountingAccountsTable)
+    .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.isActive, true)))
+    .orderBy(accountingAccountsTable.code);
 
   const lines = await db
     .select({
-      accountId: journalEntryLinesTable.accountId,
-      totalDebit: sql<number>`COALESCE(SUM(${journalEntryLinesTable.debit}), 0)`,
+      accountId:   journalEntryLinesTable.accountId,
+      totalDebit:  sql<number>`COALESCE(SUM(${journalEntryLinesTable.debit}), 0)`,
       totalCredit: sql<number>`COALESCE(SUM(${journalEntryLinesTable.credit}), 0)`,
     })
     .from(journalEntryLinesTable)
     .leftJoin(journalEntriesTable, eq(journalEntriesTable.id, journalEntryLinesTable.entryId))
-    .where(
-      and(
-        ne(journalEntriesTable.status, "voided"),
-        lte(journalEntriesTable.date, asOf),
-      )
-    )
+    .where(and(
+      eq(journalEntriesTable.tenantId, tenantId),
+      ne(journalEntriesTable.status, "voided"),
+      lte(journalEntriesTable.date, asOf),
+    ))
     .groupBy(journalEntryLinesTable.accountId);
 
   const balanceMap = new Map(lines.map(l => [l.accountId, { debit: l.totalDebit, credit: l.totalCredit }]));
@@ -326,7 +365,7 @@ router.get("/accounting/reports/trial-balance", async (req, res): Promise<void> 
     return { ...acc, totalDebit: balance.debit, totalCredit: balance.credit };
   });
 
-  const totalDebits = rows.reduce((s, r) => s + r.totalDebit, 0);
+  const totalDebits  = rows.reduce((s, r) => s + r.totalDebit,  0);
   const totalCredits = rows.reduce((s, r) => s + r.totalCredit, 0);
 
   res.json({ asOf: asOf.toISOString(), accounts: rows, totalDebits, totalCredits, isBalanced: Math.abs(totalDebits - totalCredits) < 0.01 });
@@ -334,20 +373,26 @@ router.get("/accounting/reports/trial-balance", async (req, res): Promise<void> 
 
 // Balance Sheet
 router.get("/accounting/reports/balance-sheet", async (req, res): Promise<void> => {
-  await ensureDefaultAccounts();
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  await ensureDefaultAccounts(tenantId);
   const { as_of } = req.query as Record<string, string>;
   const asOf = as_of ? new Date(as_of) : new Date();
 
-  const accounts = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.isActive, true)).orderBy(accountingAccountsTable.code);
+  const accounts = await db.select().from(accountingAccountsTable)
+    .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.isActive, true)))
+    .orderBy(accountingAccountsTable.code);
+
   const lines = await db
     .select({
-      accountId: journalEntryLinesTable.accountId,
-      totalDebit: sql<number>`COALESCE(SUM(${journalEntryLinesTable.debit}), 0)`,
+      accountId:   journalEntryLinesTable.accountId,
+      totalDebit:  sql<number>`COALESCE(SUM(${journalEntryLinesTable.debit}), 0)`,
       totalCredit: sql<number>`COALESCE(SUM(${journalEntryLinesTable.credit}), 0)`,
     })
     .from(journalEntryLinesTable)
     .leftJoin(journalEntriesTable, eq(journalEntriesTable.id, journalEntryLinesTable.entryId))
-    .where(and(ne(journalEntriesTable.status, "voided"), lte(journalEntriesTable.date, asOf)))
+    .where(and(eq(journalEntriesTable.tenantId, tenantId), ne(journalEntriesTable.status, "voided"), lte(journalEntriesTable.date, asOf)))
     .groupBy(journalEntryLinesTable.accountId);
 
   const balanceMap = new Map(lines.map(l => [l.accountId, { debit: l.totalDebit, credit: l.totalCredit }]));
@@ -358,34 +403,30 @@ router.get("/accounting/reports/balance-sheet", async (req, res): Promise<void> 
     return b.credit - b.debit;
   }
 
-  const assets = accounts.filter(a => a.type === "asset").map(a => ({ ...a, balance: accountBalance(a) }));
+  const assets      = accounts.filter(a => a.type === "asset").map(a => ({ ...a, balance: accountBalance(a) }));
   const liabilities = accounts.filter(a => a.type === "liability").map(a => ({ ...a, balance: accountBalance(a) }));
-  const equity = accounts.filter(a => a.type === "equity").map(a => ({ ...a, balance: accountBalance(a) }));
+  const equity      = accounts.filter(a => a.type === "equity").map(a => ({ ...a, balance: accountBalance(a) }));
 
-  const totalAssets = assets.reduce((s, a) => s + a.balance, 0);
+  const totalAssets      = assets.reduce((s, a) => s + a.balance, 0);
   const totalLiabilities = liabilities.reduce((s, a) => s + a.balance, 0);
-  const totalEquity = equity.reduce((s, a) => s + a.balance, 0);
+  const totalEquity      = equity.reduce((s, a) => s + a.balance, 0);
 
   res.json({
     asOf: asOf.toISOString(),
-    assets,
-    liabilities,
-    equity,
-    totalAssets,
-    totalLiabilities,
-    totalEquity,
+    assets, liabilities, equity,
+    totalAssets, totalLiabilities, totalEquity,
     isBalanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01,
   });
 });
 
 /* ─── QuickBooks OAuth ─── */
-const QB_AUTH_BASE = "https://appcenter.intuit.com/connect/oauth2";
-const QB_TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
-const QB_API_BASE = "https://quickbooks.api.intuit.com/v3/company";
-const QB_SCOPE = "com.intuit.quickbooks.accounting";
+const QB_AUTH_BASE  = "https://appcenter.intuit.com/connect/oauth2";
+const QB_TOKEN_URL  = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
+const QB_API_BASE   = "https://quickbooks.api.intuit.com/v3/company";
+const QB_SCOPE      = "com.intuit.quickbooks.accounting";
 
 function getQbCredentials() {
-  const clientId = process.env["QUICKBOOKS_CLIENT_ID"];
+  const clientId     = process.env["QUICKBOOKS_CLIENT_ID"];
   const clientSecret = process.env["QUICKBOOKS_CLIENT_SECRET"];
   return { clientId, clientSecret, configured: !!(clientId && clientSecret) };
 }
@@ -394,20 +435,17 @@ router.get("/accounting/quickbooks/status", async (_req, res): Promise<void> => 
   const creds = getQbCredentials();
   const [conn] = await db.select().from(quickbooksConnectionTable).where(eq(quickbooksConnectionTable.isActive, true)).limit(1);
 
-  if (!conn) {
-    res.json({ configured: creds.configured, connected: false });
-    return;
-  }
+  if (!conn) { res.json({ configured: creds.configured, connected: false }); return; }
 
   const isExpired = conn.expiresAt ? conn.expiresAt < new Date() : false;
   res.json({
-    configured: creds.configured,
-    connected: true,
-    realmId: conn.realmId,
-    connectedAt: conn.connectedAt,
-    tokenExpired: isExpired,
-    lastSyncAt: conn.lastSyncAt,
-    lastSyncStatus: conn.lastSyncStatus,
+    configured:      creds.configured,
+    connected:       true,
+    realmId:         conn.realmId,
+    connectedAt:     conn.connectedAt,
+    tokenExpired:    isExpired,
+    lastSyncAt:      conn.lastSyncAt,
+    lastSyncStatus:  conn.lastSyncStatus,
     lastSyncMessage: conn.lastSyncMessage,
   });
 });
@@ -462,17 +500,13 @@ router.get("/accounting/quickbooks/callback", async (req, res): Promise<void> =>
   }
 
   const tokens = await tokenResp.json() as {
-    access_token: string;
-    refresh_token: string;
-    token_type: string;
-    expires_in: number;
-    x_refresh_token_expires_in: number;
+    access_token: string; refresh_token: string; token_type: string;
+    expires_in: number; x_refresh_token_expires_in: number;
   };
 
-  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
-  const refreshTokenExpiresAt = new Date(Date.now() + tokens.x_refresh_token_expires_in * 1000);
+  const expiresAt              = new Date(Date.now() + tokens.expires_in * 1000);
+  const refreshTokenExpiresAt  = new Date(Date.now() + tokens.x_refresh_token_expires_in * 1000);
 
-  // Deactivate old connections, insert new one
   await db.update(quickbooksConnectionTable).set({ isActive: false });
   await db.insert(quickbooksConnectionTable).values({
     accessToken: tokens.access_token,
@@ -485,7 +519,6 @@ router.get("/accounting/quickbooks/callback", async (req, res): Promise<void> =>
     isActive: true,
   });
 
-  // Redirect back to the app's accounting page
   res.redirect("/app/accounting?qb=connected");
 });
 
@@ -494,7 +527,6 @@ router.post("/accounting/quickbooks/disconnect", async (_req, res): Promise<void
   res.json({ success: true });
 });
 
-// Refresh QB access token
 async function refreshQbToken(conn: { id: number; refreshToken: string | null }) {
   const { clientId, clientSecret } = getQbCredentials();
   if (!conn.refreshToken) throw new Error("No refresh token");
@@ -510,15 +542,17 @@ async function refreshQbToken(conn: { id: number; refreshToken: string | null })
 
   if (!tokenResp.ok) throw new Error("Token refresh failed");
   const tokens = await tokenResp.json() as { access_token: string; refresh_token: string; expires_in: number; x_refresh_token_expires_in: number };
-  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
+  const expiresAt             = new Date(Date.now() + tokens.expires_in * 1000);
   const refreshTokenExpiresAt = new Date(Date.now() + tokens.x_refresh_token_expires_in * 1000);
 
   await db.update(quickbooksConnectionTable).set({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token, expiresAt, refreshTokenExpiresAt }).where(eq(quickbooksConnectionTable.id, conn.id));
   return tokens.access_token;
 }
 
-// Sync recent orders to QuickBooks as Sales Receipts
 router.post("/accounting/quickbooks/sync", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const [conn] = await db.select().from(quickbooksConnectionTable).where(eq(quickbooksConnectionTable.isActive, true)).limit(1);
   if (!conn) { res.status(400).json({ error: "Not connected to QuickBooks" }); return; }
 
@@ -538,14 +572,13 @@ router.post("/accounting/quickbooks/sync", async (req, res): Promise<void> => {
   const orders = await db
     .select()
     .from(ordersTable)
-    .where(
-      and(
-        ne(ordersTable.status, "voided"),
-        ne(ordersTable.status, "refunded"),
-        ne(ordersTable.status, "open"),
-        gte(ordersTable.createdAt, since),
-      )
-    )
+    .where(and(
+      eq(ordersTable.tenantId, tenantId),
+      ne(ordersTable.status, "voided"),
+      ne(ordersTable.status, "refunded"),
+      ne(ordersTable.status, "open"),
+      gte(ordersTable.createdAt, since),
+    ))
     .limit(100);
 
   if (orders.length === 0) {
@@ -563,21 +596,15 @@ router.post("/accounting/quickbooks/sync", async (req, res): Promise<void> => {
         DocNumber: `POS-${order.id}`,
         TxnDate: order.createdAt.toISOString().split("T")[0],
         PaymentMethodRef: { name: order.paymentMethod ?? "Other" },
-        Line: [
-          {
-            Amount: order.subtotal,
-            DetailType: "SalesItemLineDetail",
-            Description: `POS Order #${order.id}`,
-            SalesItemLineDetail: {
-              ItemRef: { name: "Sales", value: "1" },
-              UnitPrice: order.subtotal,
-              Qty: 1,
-            },
-          },
-        ],
+        Line: [{
+          Amount: order.subtotal,
+          DetailType: "SalesItemLineDetail",
+          Description: `POS Order #${order.id}`,
+          SalesItemLineDetail: { ItemRef: { name: "Sales", value: "1" }, UnitPrice: order.subtotal, Qty: 1 },
+        }],
         TxnTaxDetail: order.tax > 0 ? { TotalTax: order.tax } : undefined,
         CustomerRef: { name: "Walk-in Customer", value: "1" },
-        PrivateNote: order.notes ?? `POS Order`,
+        PrivateNote: order.notes ?? "POS Order",
       };
 
       const qbResp = await fetch(`${QB_API_BASE}/${conn.realmId}/salesreceipt`, {
@@ -590,12 +617,11 @@ router.post("/accounting/quickbooks/sync", async (req, res): Promise<void> => {
         body: JSON.stringify({ SalesReceipt: salesReceipt }),
       });
 
-      if (qbResp.ok) synced++;
-      else { failed++; }
+      if (qbResp.ok) synced++; else failed++;
     } catch { failed++; }
   }
 
-  const status = failed === 0 ? "success" : synced > 0 ? "partial" : "failed";
+  const status  = failed === 0 ? "success" : synced > 0 ? "partial" : "failed";
   const message = `Synced ${synced} orders, ${failed} failed`;
   await db.update(quickbooksConnectionTable).set({ lastSyncAt: new Date(), lastSyncStatus: status, lastSyncMessage: message }).where(eq(quickbooksConnectionTable.id, conn.id));
 
@@ -604,25 +630,37 @@ router.post("/accounting/quickbooks/sync", async (req, res): Promise<void> => {
 
 /* ─── Overview / KPIs ─── */
 router.get("/accounting/overview", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { period = "month" } = req.query as Record<string, string>;
   const now = new Date();
   let fromDate: Date;
-  if (period === "week") fromDate = new Date(now.getTime() - 7 * 86400000);
+  if (period === "week")      fromDate = new Date(now.getTime() - 7 * 86400000);
   else if (period === "year") fromDate = new Date(now.getFullYear(), 0, 1);
-  else fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  else                        fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const [revenue] = await db
     .select({
-      total: sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
+      total:    sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
       subtotal: sql<number>`COALESCE(SUM(${ordersTable.subtotal}), 0)`,
-      tax: sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
-      count: sql<number>`COUNT(*)`,
+      tax:      sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
+      count:    sql<number>`COUNT(*)`,
     })
     .from(ordersTable)
-    .where(and(ne(ordersTable.status, "voided"), ne(ordersTable.status, "refunded"), ne(ordersTable.status, "open"), gte(ordersTable.createdAt, fromDate)));
+    .where(and(
+      eq(ordersTable.tenantId, tenantId),
+      ne(ordersTable.status, "voided"),
+      ne(ordersTable.status, "refunded"),
+      ne(ordersTable.status, "open"),
+      gte(ordersTable.createdAt, fromDate),
+    ));
 
-  await ensureDefaultAccounts();
-  const expenseAcctIds = (await db.select({ id: accountingAccountsTable.id }).from(accountingAccountsTable).where(eq(accountingAccountsTable.type, "expense"))).map(a => a.id);
+  await ensureDefaultAccounts(tenantId);
+  const expenseAcctIds = (await db.select({ id: accountingAccountsTable.id })
+    .from(accountingAccountsTable)
+    .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.type, "expense"))))
+    .map(a => a.id);
 
   let totalExpenses = 0;
   if (expenseAcctIds.length > 0) {
@@ -630,22 +668,29 @@ router.get("/accounting/overview", async (req, res): Promise<void> => {
       .select({ total: sql<number>`COALESCE(SUM(${journalEntryLinesTable.debit} - ${journalEntryLinesTable.credit}), 0)` })
       .from(journalEntryLinesTable)
       .leftJoin(journalEntriesTable, eq(journalEntriesTable.id, journalEntryLinesTable.entryId))
-      .where(and(inArray(journalEntryLinesTable.accountId, expenseAcctIds), ne(journalEntriesTable.status, "voided"), gte(journalEntriesTable.date, fromDate)));
+      .where(and(
+        inArray(journalEntryLinesTable.accountId, expenseAcctIds),
+        eq(journalEntriesTable.tenantId, tenantId),
+        ne(journalEntriesTable.status, "voided"),
+        gte(journalEntriesTable.date, fromDate),
+      ));
     totalExpenses = exp?.total ?? 0;
   }
 
-  const [entryCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(journalEntriesTable).where(and(ne(journalEntriesTable.status, "voided"), gte(journalEntriesTable.date, fromDate)));
+  const [entryCount] = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(journalEntriesTable)
+    .where(and(eq(journalEntriesTable.tenantId, tenantId), ne(journalEntriesTable.status, "voided"), gte(journalEntriesTable.date, fromDate)));
 
   res.json({
     period,
-    from: fromDate.toISOString(),
-    to: now.toISOString(),
-    revenue: revenue?.subtotal ?? 0,
-    taxCollected: revenue?.tax ?? 0,
-    totalRevenue: revenue?.total ?? 0,
+    from:              fromDate.toISOString(),
+    to:                now.toISOString(),
+    revenue:           revenue?.subtotal ?? 0,
+    taxCollected:      revenue?.tax ?? 0,
+    totalRevenue:      revenue?.total ?? 0,
     totalExpenses,
-    netIncome: (revenue?.subtotal ?? 0) - totalExpenses,
-    orderCount: revenue?.count ?? 0,
+    netIncome:         (revenue?.subtotal ?? 0) - totalExpenses,
+    orderCount:        revenue?.count ?? 0,
     journalEntryCount: entryCount?.count ?? 0,
   });
 });
@@ -664,18 +709,20 @@ const AdjustmentBody = z.object({
   createdBy: z.string().optional(),
 });
 
-// List stock adjustments
 router.get("/accounting/stock-adjustments", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { productId, from, to, limit: lim = "50", offset: off = "0" } = req.query as Record<string, string>;
-  const filters: any[] = [];
+  const filters: Parameters<typeof and>[0][] = [eq(stockAdjustmentsTable.tenantId, tenantId)];
   if (productId) filters.push(eq(stockAdjustmentsTable.productId, parseInt(productId, 10)));
-  if (from) filters.push(gte(stockAdjustmentsTable.createdAt, new Date(from)));
-  if (to) filters.push(lte(stockAdjustmentsTable.createdAt, new Date(to)));
+  if (from)      filters.push(gte(stockAdjustmentsTable.createdAt, new Date(from)));
+  if (to)        filters.push(lte(stockAdjustmentsTable.createdAt, new Date(to)));
 
   const adjustments = await db
     .select()
     .from(stockAdjustmentsTable)
-    .where(filters.length ? and(...filters) : undefined)
+    .where(and(...filters))
     .orderBy(desc(stockAdjustmentsTable.createdAt))
     .limit(parseInt(lim, 10))
     .offset(parseInt(off, 10));
@@ -683,36 +730,41 @@ router.get("/accounting/stock-adjustments", async (req, res): Promise<void> => {
   res.json(adjustments);
 });
 
-// Create a stock adjustment
 router.post("/accounting/stock-adjustments", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = AdjustmentBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { productId, adjustmentType, quantity, reason, notes, createJournalEntry, createdBy } = parsed.data;
 
-  // Fetch product
-  const [product] = await db.select().from(productsTable).where(eq(productsTable.id, productId));
+  const [product] = await db.select().from(productsTable)
+    .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
   const previousStock = product.stockCount;
-  const delta = adjustmentType === "increase" ? quantity : -quantity;
-  const newStock = Math.max(0, previousStock + delta);
+  const delta         = adjustmentType === "increase" ? quantity : -quantity;
+  const newStock      = Math.max(0, previousStock + delta);
 
-  // Update product stock
-  await db.update(productsTable).set({ stockCount: newStock, inStock: newStock > 0 }).where(eq(productsTable.id, productId));
+  await db.update(productsTable).set({ stockCount: newStock, inStock: newStock > 0 })
+    .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
 
-  // Optionally create journal entry
   let journalEntryId: number | undefined;
   if (createJournalEntry) {
-    await ensureDefaultAccounts();
-    const [inventoryAccount] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.code, "1200")).limit(1);
-    const [cogsAccount] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.code, "5000")).limit(1);
-    const [adjAccount] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.code, "5500")).limit(1);
+    await ensureDefaultAccounts(tenantId);
+    const [inventoryAccount] = await db.select().from(accountingAccountsTable)
+      .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.code, "1200"))).limit(1);
+    const [cogsAccount] = await db.select().from(accountingAccountsTable)
+      .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.code, "5000"))).limit(1);
+    const [adjAccount] = await db.select().from(accountingAccountsTable)
+      .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.code, "5500"))).limit(1);
 
     if (inventoryAccount && cogsAccount && adjAccount) {
-      const unitCost = product.price * 0.5; // estimate cost as 50% of price if no cost field
-      const amount = quantity * unitCost;
+      const unitCost = product.price * 0.5;
+      const amount   = quantity * unitCost;
 
       const [entry] = await db.insert(journalEntriesTable).values({
+        tenantId,
         date: new Date(),
         description: `Stock ${adjustmentType}: ${product.name} (${reason})`,
         reference: `ADJ-${productId}`,
@@ -720,16 +772,14 @@ router.post("/accounting/stock-adjustments", async (req, res): Promise<void> => 
         status: "posted",
       }).returning();
 
-      // Increase: DR Inventory, CR Adjustment Account
-      // Decrease: DR COGS/Loss, CR Inventory
       const lines = adjustmentType === "increase"
         ? [
             { entryId: entry.id, accountId: inventoryAccount.id, description: `Stock received: ${product.name}`, debit: amount, credit: 0 },
-            { entryId: entry.id, accountId: adjAccount.id, description: `Inventory adjustment`, debit: 0, credit: amount },
+            { entryId: entry.id, accountId: adjAccount.id, description: "Inventory adjustment", debit: 0, credit: amount },
           ]
         : [
             { entryId: entry.id, accountId: cogsAccount.id, description: `Stock loss: ${product.name} (${reason})`, debit: amount, credit: 0 },
-            { entryId: entry.id, accountId: inventoryAccount.id, description: `Inventory reduction`, debit: 0, credit: amount },
+            { entryId: entry.id, accountId: inventoryAccount.id, description: "Inventory reduction", debit: 0, credit: amount },
           ];
 
       await db.insert(journalEntryLinesTable).values(lines);
@@ -737,8 +787,8 @@ router.post("/accounting/stock-adjustments", async (req, res): Promise<void> => 
     }
   }
 
-  // Record adjustment
   const [adjustment] = await db.insert(stockAdjustmentsTable).values({
+    tenantId,
     productId,
     productName: product.name,
     adjustmentType,
@@ -759,28 +809,34 @@ router.post("/accounting/stock-adjustments", async (req, res): Promise<void> => 
    STOCK COUNT
    ═══════════════════════════════════════════ */
 
-// List stock count sessions
-router.get("/accounting/stock-counts", async (_req, res): Promise<void> => {
+router.get("/accounting/stock-counts", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const sessions = await db
     .select()
     .from(stockCountSessionsTable)
+    .where(eq(stockCountSessionsTable.tenantId, tenantId))
     .orderBy(desc(stockCountSessionsTable.startedAt))
     .limit(20);
   res.json(sessions);
 });
 
-// Create a new stock count session (snapshots current stock levels)
 router.post("/accounting/stock-counts", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const { name, notes, createdBy, categoryFilter } = req.body as { name: string; notes?: string; createdBy?: string; categoryFilter?: string };
   if (!name) { res.status(400).json({ error: "Name is required" }); return; }
 
-  // Fetch all active products
-  let productQuery = db.select().from(productsTable).$dynamic();
+  let productQuery = db.select().from(productsTable)
+    .where(eq(productsTable.tenantId, tenantId))
+    .$dynamic();
   if (categoryFilter) productQuery = productQuery.where(eq(productsTable.category, categoryFilter));
   const products = await productQuery.orderBy(productsTable.category, productsTable.name);
 
-  // Create session
   const [session] = await db.insert(stockCountSessionsTable).values({
+    tenantId,
     name,
     notes,
     createdBy,
@@ -788,25 +844,27 @@ router.post("/accounting/stock-counts", async (req, res): Promise<void> => {
     totalItems: products.length,
   }).returning();
 
-  // Create items (snapshot of current stock)
   if (products.length > 0) {
     await db.insert(stockCountItemsTable).values(products.map(p => ({
-      sessionId: session.id,
-      productId: p.id,
-      productName: p.name,
+      sessionId:       session.id,
+      productId:       p.id,
+      productName:     p.name,
       productCategory: p.category,
-      systemCount: p.stockCount,
-      unitCost: p.price * 0.5,
+      systemCount:     p.stockCount,
+      unitCost:        p.price * 0.5,
     })));
   }
 
   res.status(201).json({ ...session, itemCount: products.length });
 });
 
-// Get stock count session with all items
 router.get("/accounting/stock-counts/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = parseInt(req.params["id"] ?? "0", 10);
-  const [session] = await db.select().from(stockCountSessionsTable).where(eq(stockCountSessionsTable.id, id));
+  const [session] = await db.select().from(stockCountSessionsTable)
+    .where(and(eq(stockCountSessionsTable.id, id), eq(stockCountSessionsTable.tenantId, tenantId)));
   if (!session) { res.status(404).json({ error: "Session not found" }); return; }
 
   const items = await db
@@ -818,16 +876,23 @@ router.get("/accounting/stock-counts/:id", async (req, res): Promise<void> => {
   res.json({ ...session, items });
 });
 
-// Update a count item (set physical count)
 router.patch("/accounting/stock-counts/:id/items/:itemId", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const sessionId = parseInt(req.params["id"] ?? "0", 10);
-  const itemId = parseInt(req.params["itemId"] ?? "0", 10);
+  const itemId    = parseInt(req.params["itemId"] ?? "0", 10);
   const { physicalCount } = req.body as { physicalCount: number };
 
   if (typeof physicalCount !== "number" || physicalCount < 0) {
     res.status(400).json({ error: "physicalCount must be a non-negative number" });
     return;
   }
+
+  // Verify the session belongs to this tenant
+  const [session] = await db.select({ id: stockCountSessionsTable.id }).from(stockCountSessionsTable)
+    .where(and(eq(stockCountSessionsTable.id, sessionId), eq(stockCountSessionsTable.tenantId, tenantId)));
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
 
   const [item] = await db.select().from(stockCountItemsTable).where(
     and(eq(stockCountItemsTable.id, itemId), eq(stockCountItemsTable.sessionId, sessionId))
@@ -840,36 +905,41 @@ router.patch("/accounting/stock-counts/:id/items/:itemId", async (req, res): Pro
   res.json(updated);
 });
 
-// Apply a stock count (adjust all products with discrepancies)
 router.post("/accounting/stock-counts/:id/apply", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const sessionId = parseInt(req.params["id"] ?? "0", 10);
   const { createJournalEntries = false } = req.body as { createJournalEntries?: boolean };
 
-  const [session] = await db.select().from(stockCountSessionsTable).where(eq(stockCountSessionsTable.id, sessionId));
+  const [session] = await db.select().from(stockCountSessionsTable)
+    .where(and(eq(stockCountSessionsTable.id, sessionId), eq(stockCountSessionsTable.tenantId, tenantId)));
   if (!session) { res.status(404).json({ error: "Session not found" }); return; }
   if (session.status === "completed") { res.status(400).json({ error: "Session already applied" }); return; }
 
   const items = await db.select().from(stockCountItemsTable).where(eq(stockCountItemsTable.sessionId, sessionId));
   const discrepancyItems = items.filter(i => i.physicalCount !== null && i.discrepancy !== null && i.discrepancy !== 0);
 
-  let adjustedCount = 0;
+  let adjustedCount  = 0;
   let journalEntryId: number | undefined;
 
-  // Create one consolidate journal entry for all adjustments if requested
   if (createJournalEntries && discrepancyItems.length > 0) {
-    await ensureDefaultAccounts();
-    const [inventoryAccount] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.code, "1200")).limit(1);
-    const [adjAccount] = await db.select().from(accountingAccountsTable).where(eq(accountingAccountsTable.code, "5500")).limit(1);
+    await ensureDefaultAccounts(tenantId);
+    const [inventoryAccount] = await db.select().from(accountingAccountsTable)
+      .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.code, "1200"))).limit(1);
+    const [adjAccount] = await db.select().from(accountingAccountsTable)
+      .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.code, "5500"))).limit(1);
 
     if (inventoryAccount && adjAccount) {
       const positiveAdjustments = discrepancyItems.filter(i => (i.discrepancy ?? 0) > 0);
       const negativeAdjustments = discrepancyItems.filter(i => (i.discrepancy ?? 0) < 0);
-      const positiveTotal = positiveAdjustments.reduce((s, i) => s + (i.discrepancy ?? 0) * (i.unitCost ?? 0), 0);
-      const negativeTotal = negativeAdjustments.reduce((s, i) => s + Math.abs(i.discrepancy ?? 0) * (i.unitCost ?? 0), 0);
-      const netChange = positiveTotal - negativeTotal;
+      const positiveTotal       = positiveAdjustments.reduce((s, i) => s + (i.discrepancy ?? 0) * (i.unitCost ?? 0), 0);
+      const negativeTotal       = negativeAdjustments.reduce((s, i) => s + Math.abs(i.discrepancy ?? 0) * (i.unitCost ?? 0), 0);
+      const netChange            = positiveTotal - negativeTotal;
 
       if (Math.abs(netChange) > 0.01) {
         const [entry] = await db.insert(journalEntriesTable).values({
+          tenantId,
           date: new Date(),
           description: `Stock Count Adjustment: ${session.name}`,
           reference: `COUNT-${sessionId}`,
@@ -877,38 +947,36 @@ router.post("/accounting/stock-counts/:id/apply", async (req, res): Promise<void
           status: "posted",
         }).returning();
 
-        const lines: any[] = [];
+        const lines: Parameters<typeof db.insert>[0][] = [];
         if (netChange > 0) {
-          // Net inventory increase
-          lines.push({ entryId: entry.id, accountId: inventoryAccount.id, debit: netChange, credit: 0, description: "Inventory count increase" });
-          lines.push({ entryId: entry.id, accountId: adjAccount.id, debit: 0, credit: netChange, description: "Inventory adjustment offset" });
+          lines.push({ entryId: entry.id, accountId: inventoryAccount.id, debit: netChange, credit: 0, description: "Inventory count increase" } as never);
+          lines.push({ entryId: entry.id, accountId: adjAccount.id, debit: 0, credit: netChange, description: "Inventory adjustment offset" } as never);
         } else {
-          // Net inventory decrease
-          lines.push({ entryId: entry.id, accountId: adjAccount.id, debit: Math.abs(netChange), credit: 0, description: "Inventory count loss" });
-          lines.push({ entryId: entry.id, accountId: inventoryAccount.id, debit: 0, credit: Math.abs(netChange), description: "Inventory count reduction" });
+          lines.push({ entryId: entry.id, accountId: adjAccount.id, debit: Math.abs(netChange), credit: 0, description: "Inventory count loss" } as never);
+          lines.push({ entryId: entry.id, accountId: inventoryAccount.id, debit: 0, credit: Math.abs(netChange), description: "Inventory count reduction" } as never);
         }
-        await db.insert(journalEntryLinesTable).values(lines);
+        await db.insert(journalEntryLinesTable).values(lines as never);
         journalEntryId = entry.id;
       }
     }
   }
 
-  // Apply adjustments to product stock
   for (const item of discrepancyItems) {
     if (item.physicalCount === null) continue;
-    await db.update(productsTable).set({ stockCount: item.physicalCount, inStock: item.physicalCount > 0 }).where(eq(productsTable.id, item.productId));
+    await db.update(productsTable).set({ stockCount: item.physicalCount, inStock: item.physicalCount > 0 })
+      .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
 
-    // Record individual stock adjustment
     await db.insert(stockAdjustmentsTable).values({
-      productId: item.productId,
-      productName: item.productName,
+      tenantId,
+      productId:      item.productId,
+      productName:    item.productName,
       adjustmentType: (item.discrepancy ?? 0) > 0 ? "increase" : "decrease",
-      quantity: Math.abs(item.discrepancy ?? 0),
-      reason: "correction",
-      notes: `Stock count: ${session.name}`,
-      previousStock: item.systemCount,
-      newStock: item.physicalCount,
-      unitCost: item.unitCost,
+      quantity:       Math.abs(item.discrepancy ?? 0),
+      reason:         "correction",
+      notes:          `Stock count: ${session.name}`,
+      previousStock:  item.systemCount,
+      newStock:       item.physicalCount,
+      unitCost:       item.unitCost,
       journalEntryId,
     });
 
@@ -916,23 +984,31 @@ router.post("/accounting/stock-counts/:id/apply", async (req, res): Promise<void
     adjustedCount++;
   }
 
-  // Update session status
   const totalDiscrepancies = items.filter(i => i.physicalCount !== null && i.discrepancy !== 0).length;
-  await db.update(stockCountSessionsTable).set({ status: "completed", completedAt: new Date(), totalDiscrepancies }).where(eq(stockCountSessionsTable.id, sessionId));
+  await db.update(stockCountSessionsTable).set({ status: "completed", completedAt: new Date(), totalDiscrepancies })
+    .where(and(eq(stockCountSessionsTable.id, sessionId), eq(stockCountSessionsTable.tenantId, tenantId)));
 
   res.json({ adjusted: adjustedCount, discrepancies: discrepancyItems.length, journalEntryId, message: `Applied ${adjustedCount} stock adjustments` });
 });
 
-// Void a stock count session
 router.delete("/accounting/stock-counts/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const id = parseInt(req.params["id"] ?? "0", 10);
-  await db.update(stockCountSessionsTable).set({ status: "voided" }).where(eq(stockCountSessionsTable.id, id));
+  await db.update(stockCountSessionsTable).set({ status: "voided" })
+    .where(and(eq(stockCountSessionsTable.id, id), eq(stockCountSessionsTable.tenantId, tenantId)));
   res.json({ success: true });
 });
 
-// Get available product categories
-router.get("/accounting/stock-counts/categories", async (_req, res): Promise<void> => {
-  const cats = await db.selectDistinct({ category: productsTable.category }).from(productsTable).orderBy(productsTable.category);
+router.get("/accounting/stock-counts/categories", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const cats = await db.selectDistinct({ category: productsTable.category })
+    .from(productsTable)
+    .where(eq(productsTable.tenantId, tenantId))
+    .orderBy(productsTable.category);
   res.json(cats.map(c => c.category));
 });
 

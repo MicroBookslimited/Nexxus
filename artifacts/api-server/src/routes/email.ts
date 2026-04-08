@@ -5,8 +5,17 @@ import { db, ordersTable, orderItemsTable, cashSessionsTable, cashPayoutsTable, 
 import { eq, and, gte, lte, isNotNull, desc, sql, asc } from "drizzle-orm";
 import { z } from "zod";
 import { getSetting, getAllSettings } from "./settings";
+import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
 
 const ZEPTOMAIL_API_URL = "api.zeptomail.com/";
 
@@ -502,13 +511,17 @@ const SendEodReportBody = z.object({
 });
 
 router.post("/email/receipt", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = SendReceiptBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request body", details: parsed.error.issues });
     return;
   }
 
-  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, parsed.data.orderId));
+  const [order] = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, parsed.data.orderId), eq(ordersTable.tenantId, tenantId)));
   if (!order) {
     res.status(404).json({ error: "Order not found" });
     return;
@@ -553,7 +566,10 @@ router.post("/email/receipt", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/email/daily-digest", async (_req, res): Promise<void> => {
+router.post("/email/daily-digest", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const result = await sendDailyDigest();
   if (result.error) {
     res.status(500).json({ error: result.error });
@@ -567,6 +583,9 @@ router.post("/email/daily-digest", async (_req, res): Promise<void> => {
 });
 
 router.post("/email/eod-report", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
   const parsed = SendEodReportBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request body", details: parsed.error.issues });
@@ -576,7 +595,7 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
   const [session] = await db
     .select()
     .from(cashSessionsTable)
-    .where(eq(cashSessionsTable.id, parsed.data.sessionId));
+    .where(and(eq(cashSessionsTable.id, parsed.data.sessionId), eq(cashSessionsTable.tenantId, tenantId)));
 
   if (!session) {
     res.status(404).json({ error: "Session not found" });
@@ -599,6 +618,7 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
     .from(ordersTable)
     .where(
       and(
+        eq(ordersTable.tenantId, tenantId),
         gte(ordersTable.createdAt, session.openedAt),
         lte(ordersTable.createdAt, closedAt),
         isNotNull(ordersTable.paymentMethod)
