@@ -3,6 +3,7 @@ import { productsTable } from "./products";
 
 export const accountingAccountsTable = pgTable("accounting_accounts", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   code: text("code").notNull(),
   name: text("name").notNull(),
   type: text("type").notNull(), // "asset" | "liability" | "equity" | "revenue" | "expense"
@@ -11,10 +12,11 @@ export const accountingAccountsTable = pgTable("accounting_accounts", {
   isSystem: boolean("is_system").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [unique("uq_account_code").on(t.code)]);
+}, (t) => [unique("uq_account_code_tenant").on(t.tenantId, t.code)]);
 
 export const journalEntriesTable = pgTable("journal_entries", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   date: timestamp("date", { withTimezone: true }).notNull(),
   description: text("description").notNull(),
   reference: text("reference"),
@@ -51,11 +53,12 @@ export const quickbooksConnectionTable = pgTable("quickbooks_connection", {
 /* ─── Stock Adjustments ─── */
 export const stockAdjustmentsTable = pgTable("stock_adjustments", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   productId: integer("product_id").notNull().references(() => productsTable.id),
   productName: text("product_name").notNull(),
   adjustmentType: text("adjustment_type").notNull(), // "increase" | "decrease"
   quantity: integer("quantity").notNull(),
-  reason: text("reason").notNull(), // "damaged" | "theft" | "received" | "returned" | "expired" | "manual" | "other"
+  reason: text("reason").notNull(),
   notes: text("notes"),
   previousStock: integer("previous_stock").notNull(),
   newStock: integer("new_stock").notNull(),
@@ -68,6 +71,7 @@ export const stockAdjustmentsTable = pgTable("stock_adjustments", {
 /* ─── Stock Count Sessions ─── */
 export const stockCountSessionsTable = pgTable("stock_count_sessions", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
   name: text("name").notNull(),
   status: text("status").notNull().default("draft"), // "draft" | "in_progress" | "completed" | "voided"
   notes: text("notes"),
