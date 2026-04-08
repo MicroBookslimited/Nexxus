@@ -12,9 +12,10 @@ function superadminAuthHeaders(): Record<string, string> {
 }
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const { headers: optHeaders, ...restOptions } = options ?? {};
   const resp = await fetch(`/api${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
+    headers: { "Content-Type": "application/json", ...optHeaders },
+    ...restOptions,
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ error: resp.statusText })) as { error?: string };

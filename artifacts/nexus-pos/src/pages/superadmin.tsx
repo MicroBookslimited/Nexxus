@@ -107,15 +107,19 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
   const [planId, setPlanId] = useState(tenant.planId ?? 0);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   async function handleSave() {
     setSaving(true);
+    setSaveError("");
     try {
       await superadminUpdateTenant(tenant.id, {
         status: tenantStatus, subscriptionStatus: subStatus, ...(planId ? { planId } : {}),
       });
       setSaved(true);
       setTimeout(() => { setSaved(false); onUpdate(); }, 900);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save changes");
     } finally { setSaving(false); }
   }
 
@@ -167,6 +171,9 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
             </select>
           </div>
         </div>
+        {saveError && (
+          <div className="mx-6 mb-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{saveError}</div>
+        )}
         <div className="flex gap-3 p-6 border-t border-[#2a3a55]">
           <button onClick={onClose} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Cancel</button>
           <button onClick={handleSave} disabled={saving}
