@@ -53,9 +53,13 @@ export function PinPad({
       const body: { pin: string; requiredRoles?: string[] } = { pin };
       if (requiredRoles && requiredRoles.length > 0) body.requiredRoles = requiredRoles;
 
+      const token = localStorage.getItem("nexus_tenant_token");
       const res = await fetch("/api/staff/authenticate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(body),
       });
 

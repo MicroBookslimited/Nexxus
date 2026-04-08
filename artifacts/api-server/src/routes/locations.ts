@@ -202,52 +202,6 @@ router.post("/stock-transfers", async (req, res): Promise<void> => {
   res.status(201).json(transfer);
 });
 
-/* ─── Staff-Location Assignments ─── */
-router.get("/staff/:id/locations", async (req, res): Promise<void> => {
-  const staffId = parseInt(req.params["id"] ?? "0", 10);
-  const rows = await db
-    .select({
-      id: staffLocationsTable.id,
-      locationId: staffLocationsTable.locationId,
-      isPrimary: staffLocationsTable.isPrimary,
-      locationName: locationsTable.name,
-      locationAddress: locationsTable.address,
-      locationPhone: locationsTable.phone,
-      isActive: locationsTable.isActive,
-    })
-    .from(staffLocationsTable)
-    .leftJoin(locationsTable, eq(locationsTable.id, staffLocationsTable.locationId))
-    .where(eq(staffLocationsTable.staffId, staffId));
-  res.json(rows);
-});
-
-router.put("/staff/:id/locations", async (req, res): Promise<void> => {
-  const staffId = parseInt(req.params["id"] ?? "0", 10);
-  const parsed = z.object({
-    locationIds: z.array(z.number().int()),
-    primaryLocationId: z.number().int().optional(),
-  }).safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-
-  const { locationIds, primaryLocationId } = parsed.data;
-
-  // Delete existing assignments
-  await db.delete(staffLocationsTable).where(eq(staffLocationsTable.staffId, staffId));
-
-  // Insert new ones
-  if (locationIds.length > 0) {
-    await db.insert(staffLocationsTable).values(
-      locationIds.map(locationId => ({
-        staffId,
-        locationId,
-        isPrimary: locationId === primaryLocationId,
-      }))
-    );
-  }
-
-  res.json({ success: true });
-});
-
 /* ─── Location Staff list (which staff are assigned to a branch) ─── */
 router.get("/locations/:id/staff", async (req, res): Promise<void> => {
   const locationId = parseInt(req.params["id"] ?? "0", 10);
