@@ -6,7 +6,6 @@ import { verifyTenantToken } from "./saas-auth";
 
 const router: IRouter = Router();
 
-/* ─── Auth helper ─── */
 function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
   const auth = req.headers["authorization"];
   if (!auth?.startsWith("Bearer ")) return null;
@@ -32,9 +31,13 @@ const DEFAULTS: Record<string, string> = {
   low_stock_threshold: "5",
 };
 
+function makeDbKey(tenantId: number, key: string): string {
+  return `${tenantId}:${key}`;
+}
+
 async function getSetting(key: string, tenantId = 0): Promise<string> {
-  const [row] = await db.select().from(appSettingsTable)
-    .where(and(eq(appSettingsTable.tenantId, tenantId), eq(appSettingsTable.key, key)));
+  const dbKey = makeDbKey(tenantId, key);
+  const [row] = await db.select().from(appSettingsTable).where(eq(appSettingsTable.key, dbKey));
   return row?.value ?? DEFAULTS[key] ?? "";
 }
 
@@ -42,8 +45,10 @@ async function getAllSettings(tenantId = 0): Promise<Record<string, string>> {
   const rows = await db.select().from(appSettingsTable)
     .where(eq(appSettingsTable.tenantId, tenantId));
   const map: Record<string, string> = { ...DEFAULTS };
+  const prefix = `${tenantId}:`;
   for (const row of rows) {
-    map[row.key] = row.value;
+    const originalKey = row.key.startsWith(prefix) ? row.key.slice(prefix.length) : row.key;
+    map[originalKey] = row.value;
   }
   return map;
 }
@@ -68,10 +73,11 @@ router.patch("/settings", async (req, res): Promise<void> => {
     return;
   }
   for (const [key, value] of Object.entries(parsed.data)) {
+    const dbKey = makeDbKey(tenantId, key);
     await db
       .insert(appSettingsTable)
-      .values({ tenantId, key, value, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: [appSettingsTable.tenantId, appSettingsTable.key], set: { value, updatedAt: new Date() } });
+      .values({ key: dbKey, tenantId, value, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: appSettingsTable.key, set: { value, updatedAt: new Date() } });
   }
   const updated = await getAllSettings(tenantId);
   res.json(updated);

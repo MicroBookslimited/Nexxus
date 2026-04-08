@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, integer, real, timestamp, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, integer, real, timestamp } from "drizzle-orm/pg-core";
 import { productsTable } from "./products";
 
 export const accountingAccountsTable = pgTable("accounting_accounts", {
@@ -12,7 +12,7 @@ export const accountingAccountsTable = pgTable("accounting_accounts", {
   isSystem: boolean("is_system").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [unique("uq_account_code_tenant").on(t.tenantId, t.code)]);
+});
 
 export const journalEntriesTable = pgTable("journal_entries", {
   id: serial("id").primaryKey(),
