@@ -1399,16 +1399,23 @@ export function POS() {
             {paymentMethod === "cash" && (
               <div className="grid grid-cols-4 gap-1.5 mt-1.5">
                 {(() => {
-                  const strictNext = (amount: number, step: number) =>
-                    Math.floor(amount / step) * step + step;
-                  const next1k = strictNext(total, 1000);
-                  const next5k = strictNext(total, 5000);
-                  const safe5k = next5k === next1k ? next5k + 5000 : next5k;
+                  // JMD bills: pick denominations relevant to the order size
+                  // so suggestions are what a customer would realistically hand over
+                  let denoms: number[];
+                  if (total < 200)       denoms = [50, 100, 500, 1000];
+                  else if (total < 1000) denoms = [100, 500, 1000, 2000];
+                  else                   denoms = [500, 1000, 2000, 5000];
+
+                  const rounded = new Set(
+                    denoms.map(b => Math.ceil(total / b) * b).filter(a => a > total)
+                  );
+                  const sorted = [...rounded].sort((a, b) => a - b);
+                  // Pad with $5000 steps if fewer than 3 options
+                  let pad = Math.ceil(((sorted[sorted.length - 1] ?? total) + 0.01) / 5000) * 5000;
+                  while (sorted.length < 3) { sorted.push(pad); pad += 5000; }
                   return [
                     { label: "Exact", val: total.toFixed(2) },
-                    { label: formatCurrency(next1k), val: next1k.toFixed(2) },
-                    { label: formatCurrency(next1k + 1000), val: (next1k + 1000).toFixed(2) },
-                    { label: formatCurrency(safe5k), val: safe5k.toFixed(2) },
+                    ...sorted.slice(0, 3).map(a => ({ label: formatCurrency(a), val: a.toFixed(2) })),
                   ];
                 })().map(({ label, val }) => (
                   <button key={label} onClick={() => setNumpadValue(val)}
