@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface PinPadProps {
-  onSuccess: (staff: { id: number; name: string; role: string }) => void;
+  onSuccess: (staff: { id: number; name: string; role: string; permissions?: string[] }) => void;
   onError?: (msg: string) => void;
   requiredRoles?: string[];
   title?: string;

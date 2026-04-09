@@ -4,13 +4,15 @@ import {
   LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2,
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
-  Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff,
+  Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TENANT_TOKEN_KEY, saasMe } from "@/lib/saas-api";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useStaff } from "@/contexts/StaffContext";
+import { PinPad } from "@/components/PinPad";
 
 const NAV_ITEMS = [
   { href: "/dashboard",    label: "Dashboard",   icon: LayoutDashboard, permission: null },
@@ -62,7 +64,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const { theme, toggleTheme } = useTheme();
-  const { staff, can, clearStaff } = useStaff();
+  const { staff, setStaff, can, clearStaff } = useStaff();
+  const [switchUserOpen, setSwitchUserOpen] = useState(false);
 
   const [expiryDate, setExpiryDate] = useState<Date | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -214,6 +217,17 @@ export function Layout({ children }: { children: ReactNode }) {
               <span className="text-[9px] text-muted-foreground hidden lg:inline">({staff.role})</span>
             </div>
           )}
+          {/* Switch User */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-muted-foreground hover:text-primary transition-colors"
+            onClick={() => setSwitchUserOpen(true)}
+            title="Switch staff user"
+          >
+            <UserCheck className="h-4 w-4" />
+          </Button>
+
           {/* Theme toggle */}
           <Button
             size="icon"
@@ -425,6 +439,30 @@ export function Layout({ children }: { children: ReactNode }) {
       <footer className="shrink-0 border-t border-border py-1.5 text-center text-xs text-muted-foreground/60 bg-card hidden md:block">
         Powered by MicroBooks
       </footer>
+
+      {/* ── SWITCH USER DIALOG ───────────────────────────────── */}
+      <Dialog open={switchUserOpen} onOpenChange={setSwitchUserOpen}>
+        <DialogContent className="max-w-xs bg-card border-border p-6">
+          <DialogHeader className="items-center text-center pb-2">
+            <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-2">
+              <UserCheck className="h-6 w-6 text-primary" />
+            </div>
+            <DialogTitle className="text-lg font-bold">Switch Staff User</DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              {staff ? `Currently: ${staff.name} (${staff.role})` : "No staff signed in"}
+            </p>
+          </DialogHeader>
+          <PinPad
+            title=""
+            subtitle="Enter your 4-digit PIN to identify yourself"
+            onSuccess={(s: { id: number; name: string; role: string; permissions?: string[] }) => {
+              setStaff({ id: s.id, name: s.name, role: s.role, permissions: s.permissions ?? [] });
+              setSwitchUserOpen(false);
+            }}
+            pinLength={4}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
