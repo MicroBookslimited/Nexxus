@@ -324,64 +324,87 @@ export function AdminSettings() {
           {/* Receipt Template */}
           <div className="space-y-2">
             <Label>Receipt Template</Label>
-            <p className="text-xs text-muted-foreground -mt-1">Controls how the order number and header appear. The last 3 digits of the order number are always shown in bold.</p>
+            <p className="text-xs text-muted-foreground -mt-1">The last 3 digits of the order number are always printed large at the bottom of the receipt — easy for staff to call out orders.</p>
             <div className="grid grid-cols-2 gap-3">
               {([
                 {
                   id: "classic",
                   name: "Classic",
-                  desc: "Centered header, dashed dividers, bold order number",
+                  desc: "Centered header, dashed dividers",
                   preview: (
-                    <div className="font-mono text-[8px] leading-tight text-center space-y-0.5 py-1">
-                      <div className="font-bold text-[9px]">BUSINESS NAME</div>
-                      <div className="text-muted-foreground text-[7px]">123 Main St</div>
+                    <div className="font-mono text-[7px] leading-tight text-center py-1 space-y-px">
+                      <div className="font-black text-[8px]">BUSINESS NAME</div>
+                      <div className="text-muted-foreground">Order #: 1042 · Sale</div>
                       <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
-                      <div className="text-[7px]">Order <span className="font-black text-[10px]">#042</span></div>
-                      <div className="text-[7px] text-muted-foreground">Apr 9, 2026</div>
+                      <div className="flex justify-between"><span>1× Item</span><span>$6.00</span></div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="flex justify-between text-muted-foreground"><span>Total:</span><span>$6.00</span></div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="text-muted-foreground text-[6px]">Thank you!</div>
+                      <div className="text-muted-foreground text-[5px]">Powered by NEXXUS POS</div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="font-black text-[16px] leading-none tracking-widest">042</div>
                     </div>
                   ),
                 },
                 {
                   id: "modern",
                   name: "Modern",
-                  desc: "Bold black header band, large inverted order number",
+                  desc: "Bold underlined header, inverted number",
                   preview: (
-                    <div className="font-mono text-[8px] leading-tight text-center space-y-0.5 py-1">
-                      <div className="font-black text-[9px] tracking-wider border-b-2 border-foreground pb-0.5">BUSINESS NAME</div>
-                      <div className="bg-foreground text-background px-1 py-0.5 mt-0.5">
-                        <div className="text-[6px] tracking-widest">ORDER NUMBER</div>
-                        <div className="font-black text-[11px] tracking-wider">#<b>042</b></div>
-                        <div className="text-[6px] text-muted-foreground">Apr 9, 2026</div>
-                      </div>
+                    <div className="font-mono text-[7px] leading-tight text-center py-1 space-y-px">
+                      <div className="font-black text-[8px] tracking-wider border-b-2 border-foreground pb-0.5">BUSINESS NAME</div>
+                      <div className="text-muted-foreground">Order #: 1042</div>
+                      <div className="border-t-2 border-foreground my-0.5" />
+                      <div className="flex justify-between"><span>1× Item</span><span>$6.00</span></div>
+                      <div className="border-t-2 border-foreground my-0.5" />
+                      <div className="flex justify-between text-muted-foreground"><span>Total:</span><span>$6.00</span></div>
+                      <div className="border-t-2 border-foreground my-0.5" />
+                      <div className="text-muted-foreground text-[6px]">Thank you!</div>
+                      <div className="text-muted-foreground text-[5px]">Powered by NEXXUS POS</div>
+                      <div className="border-t-2 border-foreground my-0.5" />
+                      <div className="bg-foreground text-background font-black text-[16px] leading-none tracking-widest py-1">042</div>
                     </div>
                   ),
                 },
                 {
                   id: "minimal",
                   name: "Minimal",
-                  desc: "Left-aligned header, clean hairline dividers",
+                  desc: "Left-aligned, hairline dividers",
                   preview: (
-                    <div className="font-mono text-[8px] leading-tight py-1 space-y-0.5">
-                      <div className="font-bold text-[9px]">Business Name</div>
-                      <div className="text-[7px] text-muted-foreground">123 Main St</div>
+                    <div className="font-mono text-[7px] leading-tight py-1 space-y-px">
+                      <div className="font-bold text-[8px]">Business Name</div>
+                      <div className="text-muted-foreground">Order #: 1042</div>
                       <div className="border-t border-muted-foreground/30 my-0.5" />
-                      <div className="flex justify-between items-baseline">
-                        <span className="text-[7px] text-muted-foreground">Apr 9, 2026</span>
-                        <span className="font-black text-[11px]">#042</span>
-                      </div>
+                      <div className="flex justify-between"><span>1× Item</span><span>$6.00</span></div>
+                      <div className="border-t border-muted-foreground/30 my-0.5" />
+                      <div className="flex justify-between text-muted-foreground"><span>Total:</span><span>$6.00</span></div>
+                      <div className="border-t border-muted-foreground/30 my-0.5" />
+                      <div className="text-muted-foreground text-[6px]">Thank you!</div>
+                      <div className="text-muted-foreground text-[5px]">Powered by NEXXUS POS</div>
+                      <div className="border-t border-muted-foreground/40 my-0.5" />
+                      <div className="font-black text-[16px] leading-none tracking-wider">042</div>
                     </div>
                   ),
                 },
                 {
                   id: "bold",
                   name: "Bold",
-                  desc: "Extra-large centered order number, ideal for busy counters",
+                  desc: "All-caps, extra-large number — great for busy counters",
                   preview: (
-                    <div className="font-mono text-[8px] leading-tight text-center py-1 space-y-0.5">
-                      <div className="font-black text-[10px] tracking-widest">BUSINESS NAME</div>
+                    <div className="font-mono text-[7px] leading-tight text-center py-1 space-y-px">
+                      <div className="font-black text-[9px] tracking-widest">BUSINESS NAME</div>
+                      <div className="text-muted-foreground text-[6px]">ORDER #: 1042 · SALE</div>
                       <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
-                      <div className="text-[6px] tracking-widest text-muted-foreground">YOUR ORDER</div>
-                      <div className="font-black text-[16px] tracking-widest leading-none">#042</div>
+                      <div className="flex justify-between"><span>1× Item</span><span>$6.00</span></div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="flex justify-between text-muted-foreground"><span>Total:</span><span>$6.00</span></div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="text-muted-foreground text-[6px]">Thank you!</div>
+                      <div className="text-muted-foreground text-[5px]">Powered by NEXXUS POS</div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="text-[5px] tracking-widest text-muted-foreground">YOUR ORDER</div>
+                      <div className="font-black text-[18px] leading-none tracking-widest">042</div>
                     </div>
                   ),
                 },
