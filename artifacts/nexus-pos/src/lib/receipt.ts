@@ -321,6 +321,87 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
 </html>`;
 }
 
+export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings = {}): string {
+  const businessName  = settings.business_name    || "NEXXUS POS";
+  const baseCurrency  = settings.base_currency    || "JMD";
+  const taxRate       = settings.tax_rate         || "15";
+  const taxName       = settings.tax_name         || "GCT";
+  const receiptFooter = settings.receipt_footer   || "Thank you for your business!";
+
+  const fmt = (n: number) => {
+    try {
+      return new Intl.NumberFormat("en-US", { style: "currency", currency: baseCurrency }).format(Math.abs(n));
+    } catch {
+      return `${baseCurrency} ${Math.abs(n).toFixed(2)}`;
+    }
+  };
+
+  const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
+  const dateStr   = createdAt.toLocaleString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
+
+  const orderNum  = String(order.orderNumber);
+  const lastThree = orderNum.replace(/\D/g, "").slice(-3).padStart(3, "0");
+
+  const lines: string[] = [];
+  lines.push(`🧾 *${businessName}*`);
+  lines.push(`Order #: ${orderNum}  |  Pickup: *${lastThree}*`);
+  lines.push(`📅 ${dateStr}`);
+  lines.push(`─────────────────────`);
+
+  for (const item of order.items) {
+    lines.push(`${item.quantity}× ${item.productName}  ${fmt(item.lineTotal)}`);
+    for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
+      lines.push(`   ↳ ${v.optionName}`);
+    }
+    for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
+      lines.push(`   + ${m.optionName}`);
+    }
+  }
+
+  lines.push(`─────────────────────`);
+  lines.push(`Subtotal:   ${fmt(order.subtotal)}`);
+  if ((order.discountValue ?? 0) > 0) {
+    lines.push(`Discount:  -${fmt(order.discountValue ?? 0)}`);
+  }
+  lines.push(`${taxName} (${taxRate}%): ${fmt(order.tax)}`);
+  lines.push(`─────────────────────`);
+  lines.push(`*Total:     ${fmt(order.total)}*`);
+  lines.push(`─────────────────────`);
+
+  if (order.paymentMethod === "split") {
+    lines.push(`Payment:   SPLIT`);
+    lines.push(`  Card:    ${fmt(order.splitCardAmount ?? 0)}`);
+    lines.push(`  Cash:    ${fmt(order.splitCashAmount ?? 0)}`);
+  } else {
+    lines.push(`Payment:   ${(order.paymentMethod ?? "—").toUpperCase()}`);
+    if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
+      lines.push(`Tendered:  ${fmt(order.cashTendered)}`);
+      lines.push(`Change:    ${fmt(Math.max(0, order.cashTendered - order.total))}`);
+    }
+  }
+
+  if (order.notes) {
+    lines.push(`─────────────────────`);
+    lines.push(`📝 Note: ${order.notes}`);
+  }
+
+  lines.push(`─────────────────────`);
+  lines.push(`_${receiptFooter}_`);
+  lines.push(`_Powered by NEXXUS POS_`);
+
+  return lines.join("\n");
+}
+
+export function openWhatsAppReceipt(phone: string, order: ReceiptOrder, settings: ReceiptSettings = {}): void {
+  const text = buildWhatsAppText(order, settings);
+  const digits = phone.replace(/\D/g, "");
+  const url = `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+  window.open(url, "_blank");
+}
+
 export function openReceiptWindow(html: string): void {
   const w = window.open("", "_blank", "width=420,height=760");
   if (!w) return;
