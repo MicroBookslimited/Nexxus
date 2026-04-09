@@ -182,3 +182,10 @@
 .border-r { border-right-width: 2px; }
 .border-x { border-left-width: 2px; border-right-width: 2px; }
 .border-y { border-top-width: 2px; border-bottom-width: 2px; }
+
+/* Hide scrollbar but allow scrolling */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Safe area for mobile bottom nav */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
