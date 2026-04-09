@@ -80,6 +80,8 @@ export function AdminSettings() {
   const [businessPhone, setBusinessPhone] = useState("");
   const [taxRate, setTaxRate] = useState("");
   const [receiptFooter, setReceiptFooter] = useState("");
+  const [receiptSize, setReceiptSize] = useState<"58mm" | "80mm">("80mm");
+  const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold">("classic");
   const [baseCurrency, setBaseCurrency] = useState("JMD");
   const [secondaryCurrency, setSecondaryCurrency] = useState("");
   const [currencyRate, setCurrencyRate] = useState("");
@@ -110,6 +112,8 @@ export function AdminSettings() {
     setBusinessPhone(settings.business_phone ?? "");
     setTaxRate(settings.tax_rate ?? "15");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
+    setReceiptSize((settings.receipt_size as "58mm" | "80mm") ?? "80mm");
+    setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold") ?? "classic");
     setBaseCurrency(settings.base_currency ?? "JMD");
     setSecondaryCurrency(settings.secondary_currency ?? "");
     setCurrencyRate(settings.currency_rate ?? "");
@@ -136,6 +140,8 @@ export function AdminSettings() {
           business_phone: businessPhone,
           tax_rate: taxRate,
           receipt_footer: receiptFooter,
+          receipt_size: receiptSize,
+          receipt_template: receiptTemplate,
           base_currency: baseCurrency.toUpperCase().trim() || "JMD",
           secondary_currency: secondaryCurrency.toUpperCase().trim(),
           currency_rate: currencyRate,
@@ -251,27 +257,161 @@ export function AdminSettings() {
             <Receipt className="h-4 w-4 text-primary" />
             Receipt Settings
           </CardTitle>
-          <CardDescription>Customize how receipts look</CardDescription>
+          <CardDescription>Customize size, layout, and content of your printed receipts</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="tax-rate">Default Tax Rate</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="tax-rate"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={taxRate}
-                  onChange={(e) => { setTaxRate(e.target.value); markDirty(); }}
-                  className="w-28"
-                />
-                <span className="text-sm text-muted-foreground">%</span>
-              </div>
+        <CardContent className="space-y-6">
+
+          {/* Tax Rate */}
+          <div className="space-y-1.5">
+            <Label htmlFor="tax-rate">Default Tax Rate</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="tax-rate"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={taxRate}
+                onChange={(e) => { setTaxRate(e.target.value); markDirty(); }}
+                className="w-28"
+              />
+              <span className="text-sm text-muted-foreground">%</span>
             </div>
           </div>
+
+          {/* Receipt Paper Size */}
+          <div className="space-y-2">
+            <Label>Receipt Paper Size</Label>
+            <div className="flex gap-3">
+              {([
+                { value: "58mm", label: "58 mm", desc: "Narrow thermal" },
+                { value: "80mm", label: "80 mm", desc: "Standard thermal" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => { setReceiptSize(opt.value); markDirty(); }}
+                  className={cn(
+                    "flex-1 rounded-lg border p-3 text-left transition-all",
+                    receiptSize === opt.value
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border hover:border-muted-foreground/50 bg-card"
+                  )}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {/* Paper icon */}
+                    <div className={cn(
+                      "flex-shrink-0 border-2 rounded-sm bg-white flex items-center justify-center",
+                      opt.value === "58mm" ? "w-6 h-8" : "w-8 h-8",
+                      receiptSize === opt.value ? "border-primary" : "border-border"
+                    )}>
+                      <div className="space-y-0.5 w-full px-0.5">
+                        <div className="h-px bg-muted-foreground/30 rounded" />
+                        <div className="h-px bg-muted-foreground/30 rounded" />
+                        <div className="h-px bg-muted-foreground/20 rounded w-3/4" />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">{opt.label}</p>
+                      <p className="text-[11px] text-muted-foreground">{opt.desc}</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Receipt Template */}
+          <div className="space-y-2">
+            <Label>Receipt Template</Label>
+            <p className="text-xs text-muted-foreground -mt-1">Controls how the order number and header appear. The last 3 digits of the order number are always shown in bold.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                {
+                  id: "classic",
+                  name: "Classic",
+                  desc: "Centered header, dashed dividers, bold order number",
+                  preview: (
+                    <div className="font-mono text-[8px] leading-tight text-center space-y-0.5 py-1">
+                      <div className="font-bold text-[9px]">BUSINESS NAME</div>
+                      <div className="text-muted-foreground text-[7px]">123 Main St</div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="text-[7px]">Order <span className="font-black text-[10px]">#042</span></div>
+                      <div className="text-[7px] text-muted-foreground">Apr 9, 2026</div>
+                    </div>
+                  ),
+                },
+                {
+                  id: "modern",
+                  name: "Modern",
+                  desc: "Bold black header band, large inverted order number",
+                  preview: (
+                    <div className="font-mono text-[8px] leading-tight text-center space-y-0.5 py-1">
+                      <div className="font-black text-[9px] tracking-wider border-b-2 border-foreground pb-0.5">BUSINESS NAME</div>
+                      <div className="bg-foreground text-background px-1 py-0.5 mt-0.5">
+                        <div className="text-[6px] tracking-widest">ORDER NUMBER</div>
+                        <div className="font-black text-[11px] tracking-wider">#<b>042</b></div>
+                        <div className="text-[6px] text-muted-foreground">Apr 9, 2026</div>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  id: "minimal",
+                  name: "Minimal",
+                  desc: "Left-aligned header, clean hairline dividers",
+                  preview: (
+                    <div className="font-mono text-[8px] leading-tight py-1 space-y-0.5">
+                      <div className="font-bold text-[9px]">Business Name</div>
+                      <div className="text-[7px] text-muted-foreground">123 Main St</div>
+                      <div className="border-t border-muted-foreground/30 my-0.5" />
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-[7px] text-muted-foreground">Apr 9, 2026</span>
+                        <span className="font-black text-[11px]">#042</span>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  id: "bold",
+                  name: "Bold",
+                  desc: "Extra-large centered order number, ideal for busy counters",
+                  preview: (
+                    <div className="font-mono text-[8px] leading-tight text-center py-1 space-y-0.5">
+                      <div className="font-black text-[10px] tracking-widest">BUSINESS NAME</div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="text-[6px] tracking-widest text-muted-foreground">YOUR ORDER</div>
+                      <div className="font-black text-[16px] tracking-widest leading-none">#042</div>
+                    </div>
+                  ),
+                },
+              ]).map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => { setReceiptTemplate(tpl.id as typeof receiptTemplate); markDirty(); }}
+                  className={cn(
+                    "rounded-lg border p-3 text-left transition-all",
+                    receiptTemplate === tpl.id
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border hover:border-muted-foreground/50 bg-card"
+                  )}
+                >
+                  {/* Mini receipt preview */}
+                  <div className={cn(
+                    "rounded border mb-2 bg-white text-foreground px-2",
+                    receiptTemplate === tpl.id ? "border-primary/40" : "border-border"
+                  )}>
+                    {tpl.preview}
+                  </div>
+                  <p className="text-xs font-semibold">{tpl.name}</p>
+                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{tpl.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Receipt Footer */}
           <div className="space-y-1.5">
             <Label htmlFor="receipt-footer">Receipt Footer Message</Label>
             <Input
@@ -280,7 +420,9 @@ export function AdminSettings() {
               onChange={(e) => { setReceiptFooter(e.target.value); markDirty(); }}
               placeholder="Thank you for your business!"
             />
+            <p className="text-xs text-muted-foreground">Appears at the bottom of every printed receipt</p>
           </div>
+
         </CardContent>
       </Card>
 
