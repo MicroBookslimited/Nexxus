@@ -20,6 +20,7 @@ export const HealthCheckResponse = zod.object({
 export const ListProductsQueryParams = zod.object({
   category: zod.coerce.string().optional(),
   search: zod.coerce.string().optional(),
+  locationId: zod.coerce.number().int().optional(),
 });
 
 export const ListProductsResponseItem = zod.object({
@@ -1476,6 +1477,8 @@ export const ListCashSessionsResponse = zod.array(ListCashSessionsResponseItem);
 export const OpenCashSessionBody = zod.object({
   staffName: zod.string(),
   staffId: zod.number().optional(),
+  locationId: zod.number().optional(),
+  locationName: zod.string().optional(),
   openingCash: zod.number(),
 });
 
@@ -1487,6 +1490,8 @@ export const GetCurrentCashSessionResponse = zod.object({
     id: zod.number(),
     staffId: zod.number().optional(),
     staffName: zod.string(),
+    locationId: zod.number().nullish(),
+    locationName: zod.string().nullish(),
     openingCash: zod.number(),
     status: zod.enum(["open", "closed"]),
     openedAt: zod.coerce.date(),
@@ -1538,6 +1543,8 @@ export const GetCashSessionResponse = zod.object({
     id: zod.number(),
     staffId: zod.number().optional(),
     staffName: zod.string(),
+    locationId: zod.number().nullish(),
+    locationName: zod.string().nullish(),
     openingCash: zod.number(),
     status: zod.enum(["open", "closed"]),
     openedAt: zod.coerce.date(),

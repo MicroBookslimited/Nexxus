@@ -17,6 +17,8 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
 const OpenSessionBody = z.object({
   staffName: z.string().min(1),
   staffId: z.number().int().optional(),
+  locationId: z.number().int().optional(),
+  locationName: z.string().optional(),
   openingCash: z.number().min(0),
 });
 
@@ -225,6 +227,8 @@ router.post("/cash/sessions", async (req, res): Promise<void> => {
       tenantId,
       staffName: parsed.data.staffName,
       staffId: parsed.data.staffId ?? null,
+      locationId: parsed.data.locationId ?? null,
+      locationName: parsed.data.locationName ?? null,
       openingCash: parsed.data.openingCash,
       status: "open",
     })

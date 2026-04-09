@@ -339,7 +339,15 @@ function printReceiptWindow(
 
 /* ─── Main POS component ─── */
 export function POS() {
-  const { data: products, isLoading: loadingProducts } = useListProducts();
+  const [, navigate] = useLocation();
+  const [locked, setLocked] = useState(true);
+  const [sessionStaff, setSessionStaff] = useState<{ id: number; name: string; role: string } | null>(null);
+  const [sessionLocationId, setSessionLocationId] = useState<number | null>(null);
+  const [posLocations, setPosLocations] = useState<{ id: number; name: string }[]>([]);
+
+  const { data: products, isLoading: loadingProducts } = useListProducts(
+    sessionLocationId ? { locationId: sessionLocationId } : undefined
+  );
   const createOrder = useCreateOrder();
   const { data: settings } = useGetSettings();
   const baseCurrency = settings?.base_currency || "JMD";
@@ -355,12 +363,6 @@ export function POS() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const sendReceiptEmail = useSendReceiptEmail();
-
-  const [, navigate] = useLocation();
-  const [locked, setLocked] = useState(true);
-  const [sessionStaff, setSessionStaff] = useState<{ id: number; name: string; role: string } | null>(null);
-  const [sessionLocationId, setSessionLocationId] = useState<number | null>(null);
-  const [posLocations, setPosLocations] = useState<{ id: number; name: string }[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_tenant_token");
@@ -394,6 +396,12 @@ export function POS() {
   const { data: cashSession, isError: noOpenShift, isLoading: checkingShift } = useGetCurrentCashSession({
     query: { retry: false, enabled: !locked },
   });
+
+  useEffect(() => {
+    if (cashSession?.session?.locationId && sessionLocationId === null) {
+      setSessionLocationId(cashSession.session.locationId);
+    }
+  }, [cashSession?.session?.locationId]);
 
   const MANAGEMENT_ROLES = ["admin", "manager", "supervisor"];
 

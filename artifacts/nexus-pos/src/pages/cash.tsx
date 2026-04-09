@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useGetCurrentCashSession,
   useOpenCashSession,
@@ -21,7 +21,7 @@ import { PinPad } from "@/components/PinPad";
 import {
   Coins, DollarSign, TrendingUp, TrendingDown, CreditCard, Banknote,
   SplitSquareHorizontal, Plus, CheckCircle2, History,
-  ArrowDownLeft, UserCheck, ArrowLeft, Mail, BookOpen, ShoppingBag,
+  ArrowDownLeft, UserCheck, ArrowLeft, Mail, BookOpen, ShoppingBag, MapPin,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -41,21 +41,46 @@ function VarianceBadge({ variance }: { variance: number }) {
 }
 
 /* ─── Open Shift Panel ─── */
-function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staffName: string) => void }) {
-  const [step, setStep] = useState<"pin" | "cash">("pin");
+function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staffName: string, locationId?: number, locationName?: string) => void }) {
+  const [step, setStep] = useState<"pin" | "location" | "cash">("pin");
   const [staff, setStaff] = useState<{ id: number; name: string; role: string } | null>(null);
   const [cash, setCash] = useState("");
+  const [locations, setLocations] = useState<{ id: number; name: string }[]>([]);
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem("nexus_tenant_token");
+    fetch("/api/locations", { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => r.ok ? r.json() : [])
+      .then((locs: { id: number; name: string; isActive: boolean }[]) => {
+        const active = locs.filter(l => l.isActive);
+        setLocations(active);
+        if (active.length === 1) setSelectedLocationId(active[0].id);
+      })
+      .catch(() => {});
+  }, []);
 
   const handlePinSuccess = (s: { id: number; name: string; role: string }) => {
     setStaff(s);
+    setStep(locations.length > 0 ? "location" : "cash");
+  };
+
+  const handleLocationNext = () => {
     setStep("cash");
   };
 
   const handleSubmit = () => {
     const amount = parseFloat(cash);
     if (isNaN(amount) || amount < 0 || !staff) return;
-    onOpen(amount, staff.name);
+    const loc = locations.find(l => l.id === selectedLocationId);
+    onOpen(amount, staff.name, selectedLocationId ?? undefined, loc?.name);
   };
+
+  const stepLabel = step === "pin"
+    ? "Enter your PIN to identify yourself and begin your shift."
+    : step === "location"
+      ? "Select the branch location for this shift."
+      : "Count and record the opening cash balance.";
 
   return (
     <div className="flex-1 flex items-center justify-center p-8">
@@ -65,31 +90,77 @@ function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staffName: s
             <Coins className="h-7 w-7 text-primary" />
           </div>
           <CardTitle className="text-xl">Open Cash Drawer</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            {step === "pin" ? "Enter your PIN to identify yourself and begin your shift." : "Count and record the opening cash balance."}
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">{stepLabel}</p>
         </CardHeader>
         <CardContent className="pt-2">
           {step === "pin" ? (
             <PinPad onSuccess={handlePinSuccess} title="" />
-          ) : (
+          ) : step === "location" ? (
             <div className="space-y-4 pt-2">
+              {/* Staff badge */}
               <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
                 <UserCheck className="h-4 w-4 text-emerald-400 shrink-0" />
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-emerald-300">{staff?.name}</p>
                   <p className="text-xs text-emerald-400/70 capitalize">{staff?.role}</p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="ml-auto h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => { setStep("pin"); setStaff(null); setCash(""); }}
-                >
-                  <ArrowLeft className="h-3 w-3 mr-1" />
-                  Change
+                <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => { setStep("pin"); setStaff(null); setCash(""); }}>
+                  <ArrowLeft className="h-3 w-3 mr-1" />Change
                 </Button>
               </div>
+              {/* Location selection */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Branch / Location</Label>
+                <div className="grid gap-2">
+                  {locations.map(loc => (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      onClick={() => setSelectedLocationId(loc.id)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors",
+                        selectedLocationId === loc.id
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:border-primary/40 hover:bg-secondary/40"
+                      )}
+                    >
+                      <MapPin className="h-4 w-4 shrink-0" />
+                      <span className="text-sm font-medium">{loc.name}</span>
+                      {selectedLocationId === loc.id && (
+                        <CheckCircle2 className="h-4 w-4 ml-auto text-primary" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <Button className="w-full" size="lg" onClick={handleLocationNext} disabled={!selectedLocationId}>
+                Continue
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4 pt-2">
+              {/* Staff badge */}
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+                <UserCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-emerald-300">{staff?.name}</p>
+                  <p className="text-xs text-emerald-400/70 capitalize">{staff?.role}</p>
+                </div>
+              </div>
+              {/* Selected location badge */}
+              {selectedLocationId && (
+                <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2.5">
+                  <MapPin className="h-4 w-4 text-primary shrink-0" />
+                  <p className="text-sm font-medium text-primary">
+                    {locations.find(l => l.id === selectedLocationId)?.name}
+                  </p>
+                  <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setStep("location")}>
+                    <ArrowLeft className="h-3 w-3 mr-1" />Change
+                  </Button>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label>Opening Cash on Hand</Label>
                 <div className="relative">
@@ -108,12 +179,7 @@ function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staffName: s
                 </div>
                 <p className="text-xs text-muted-foreground">Count bills and coins in the drawer before any sales.</p>
               </div>
-              <Button
-                className="w-full"
-                size="lg"
-                onClick={handleSubmit}
-                disabled={!cash || isNaN(parseFloat(cash))}
-              >
+              <Button className="w-full" size="lg" onClick={handleSubmit} disabled={!cash || isNaN(parseFloat(cash))}>
                 <Coins className="h-4 w-4 mr-2" />
                 Open Shift
               </Button>
@@ -730,10 +796,15 @@ function ActiveSessionPanel({ staffName, onShiftClosed }: { staffName: string; o
       {/* Session header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             <h2 className="text-lg font-bold">Shift Active</h2>
             <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs">Open</Badge>
+            {session.locationName && (
+              <Badge className="bg-primary/10 text-primary border-primary/30 text-xs flex items-center gap-1">
+                <MapPin className="h-2.5 w-2.5" />{session.locationName}
+              </Badge>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             Opened {format(new Date(session.openedAt), "h:mm a")} by {session.staffName}
@@ -902,9 +973,9 @@ export function CashManagement() {
   const hasOpenSession = !!current?.session;
   const closedSessions = (sessions ?? []).filter((s) => s.status === "closed").slice(0, 10);
 
-  const handleOpenShift = (openingCash: number, name: string) => {
+  const handleOpenShift = (openingCash: number, name: string, locationId?: number, locationName?: string) => {
     openSession.mutate(
-      { data: { staffName: name, openingCash } },
+      { data: { staffName: name, openingCash, locationId, locationName } },
       {
         onSuccess: () => {
           toast({ title: "Shift opened", description: `Opening cash: ${formatCurrency(openingCash)}` });

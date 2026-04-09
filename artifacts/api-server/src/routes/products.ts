@@ -63,7 +63,25 @@ router.get("/products", async (req, res): Promise<void> => {
   }
 
   const products = await db.select().from(productsTable).where(and(...conditions));
-  const enriched = await Promise.all(products.map(withFlags));
+
+  const locationId = query.data.locationId;
+  let overrides: { productId: number; priceOverride: number | null; isAvailable: boolean }[] = [];
+  if (locationId) {
+    overrides = await db
+      .select({ productId: productLocationsTable.productId, priceOverride: productLocationsTable.priceOverride, isAvailable: productLocationsTable.isAvailable })
+      .from(productLocationsTable)
+      .where(eq(productLocationsTable.locationId, locationId));
+  }
+
+  const enriched = await Promise.all(
+    products.map(async (p) => {
+      const override = overrides.find((o) => o.productId === p.id);
+      const effectivePrice = override?.priceOverride != null ? override.priceOverride : p.price;
+      const effectiveInStock = locationId ? (override ? override.isAvailable && p.inStock : p.inStock) : p.inStock;
+      return withFlags({ ...p, price: effectivePrice, inStock: effectiveInStock });
+    })
+  );
+
   res.json(ListProductsResponse.parse(enriched));
 });
 

@@ -6,6 +6,8 @@ export const cashSessionsTable = pgTable("cash_sessions", {
   tenantId: integer("tenant_id").notNull().default(0),
   staffId: integer("staff_id").references(() => staffTable.id),
   staffName: text("staff_name").notNull(),
+  locationId: integer("location_id"),
+  locationName: text("location_name"),
   openingCash: real("opening_cash").notNull(),
   status: text("status").notNull().default("open"),
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
