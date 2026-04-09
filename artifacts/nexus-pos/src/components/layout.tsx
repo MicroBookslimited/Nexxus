@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2,
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
-  Menu, X, MoreHorizontal,
+  Menu, X, MoreHorizontal, BookOpen,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { href: "/staff",    label: "Staff",       icon: UserCog },
   { href: "/locations",label: "Locations",   icon: MapPin },
   { href: "/accounting",label: "Accounting", icon: Calculator },
+  { href: "/ar",       label: "Receivables", icon: BookOpen },
   { href: "/reports",  label: "Reports",     icon: BarChart2 },
   { href: "/settings", label: "Settings",    icon: Settings },
   { href: "/subscription", label: "Plan",    icon: CreditCard },

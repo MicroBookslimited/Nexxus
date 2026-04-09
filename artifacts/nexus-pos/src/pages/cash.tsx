@@ -21,7 +21,7 @@ import { PinPad } from "@/components/PinPad";
 import {
   Coins, DollarSign, TrendingUp, TrendingDown, CreditCard, Banknote,
   SplitSquareHorizontal, Plus, CheckCircle2, History,
-  ArrowDownLeft, UserCheck, ArrowLeft, Mail,
+  ArrowDownLeft, UserCheck, ArrowLeft, Mail, BookOpen, ShoppingBag,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -207,7 +207,7 @@ function CloseShiftDialog({
   open: boolean;
   sessionId: number;
   expectedCash: number;
-  salesSummary: { cashSales: number; cardSales: number; splitSales: number; totalSales: number };
+  salesSummary: { cashSales: number; cardSales: number; splitSales: number; creditSales?: number; totalSales: number };
   onClose: () => void;
   onClosed: (closedSessionId: number) => void;
 }) {
@@ -318,14 +318,17 @@ function CloseShiftDialog({
 /* ─── Print helpers ─── */
 type ItemSummaryRow = { productName: string; totalQty: number; totalRevenue: number };
 
+type CreditOrderRow = { orderNumber: string; total: number; customerName: string | null; customerPhone: string | null; arId: number | null; amountPaid: number | null; arStatus: string | null; createdAt: string };
+
 type SessionDetail = {
   session: { staffName: string; openedAt: string; closedAt?: string | null; openingCash: number; actualCash?: number | null; actualCard?: number | null; closingNotes?: string | null };
   payouts: { reason: string; amount: number; staffName: string; createdAt: string }[];
   orders: { orderNumber: string; total: number; paymentMethod: string; createdAt: string }[];
-  salesSummary: { cashSales: number; cardSales: number; splitSales: number; totalSales: number };
+  salesSummary: { cashSales: number; cardSales: number; splitSales: number; creditSales?: number; totalSales: number };
   expectedCash: number;
   totalPayouts: number;
   itemSummary?: ItemSummaryRow[];
+  creditOrders?: CreditOrderRow[];
 };
 
 function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
@@ -357,6 +360,7 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
       <div style="display:flex;justify-content:space-between"><span>Cash sales:</span><span>${fmt(d.salesSummary.cashSales)}</span></div>
       <div style="display:flex;justify-content:space-between"><span>Card sales:</span><span>${fmt(d.salesSummary.cardSales)}</span></div>
       ${d.salesSummary.splitSales > 0 ? `<div style="display:flex;justify-content:space-between"><span>Split sales:</span><span>${fmt(d.salesSummary.splitSales)}</span></div>` : ""}
+      ${(d.salesSummary.creditSales ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between"><span>Credit sales:</span><span>${fmt(d.salesSummary.creditSales ?? 0)}</span></div>` : ""}
       <div style="display:flex;justify-content:space-between;font-weight:bold"><span>Total sales:</span><span>${fmt(d.salesSummary.totalSales)}</span></div>
       <div style="border-top:1px dashed #000;margin:8px 0"></div>
       <b>Cash Reconciliation</b>
@@ -387,6 +391,25 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
             <td>${r.productName}</td>
             <td style="text-align:right">${r.totalQty}</td>
             <td style="text-align:right">${fmt(r.totalRevenue)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>` : ""}
+      ${d.creditOrders && d.creditOrders.length > 0 ? `
+      <div style="border-top:1px dashed #000;margin:8px 0"></div>
+      <b>Credit Customers (${d.creditOrders.length})</b>
+      <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:11px">
+        <thead><tr style="border-bottom:1px solid #000">
+          <th style="text-align:left">Customer</th>
+          <th style="text-align:left">Order</th>
+          <th style="text-align:right">Amount</th>
+          <th style="text-align:right">Status</th>
+        </tr></thead>
+        <tbody>${d.creditOrders.map(r => `
+          <tr>
+            <td>${r.customerName ?? "—"}</td>
+            <td>${r.orderNumber}</td>
+            <td style="text-align:right">${fmt(r.total)}</td>
+            <td style="text-align:right;text-transform:capitalize">${r.arStatus ?? "open"}</td>
           </tr>`).join("")}
         </tbody>
       </table>` : ""}
@@ -460,7 +483,7 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
   const cashVariance = (session.actualCash ?? 0) - expectedCash;
   const cardVariance = (session.actualCard ?? 0) - salesSummary.cardSales;
 
-  const detail: SessionDetail = { session, payouts, orders, salesSummary, expectedCash, totalPayouts, itemSummary: data.itemSummary };
+  const detail: SessionDetail = { session, payouts, orders, salesSummary, expectedCash, totalPayouts, itemSummary: data.itemSummary, creditOrders: data.creditOrders };
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -492,6 +515,7 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
             <div className="flex justify-between"><span className="flex items-center gap-1.5 text-muted-foreground"><Banknote className="h-3.5 w-3.5 text-emerald-400" />Cash</span><span className="font-mono font-medium">{formatCurrency(salesSummary.cashSales)}</span></div>
             <div className="flex justify-between"><span className="flex items-center gap-1.5 text-muted-foreground"><CreditCard className="h-3.5 w-3.5 text-blue-400" />Card</span><span className="font-mono font-medium">{formatCurrency(salesSummary.cardSales)}</span></div>
             {salesSummary.splitSales > 0 && <div className="flex justify-between"><span className="flex items-center gap-1.5 text-muted-foreground"><SplitSquareHorizontal className="h-3.5 w-3.5 text-purple-400" />Split</span><span className="font-mono font-medium">{formatCurrency(salesSummary.splitSales)}</span></div>}
+            {(salesSummary.creditSales ?? 0) > 0 && <div className="flex justify-between"><span className="flex items-center gap-1.5 text-muted-foreground"><BookOpen className="h-3.5 w-3.5 text-amber-400" />Credit</span><span className="font-mono font-medium text-amber-400">{formatCurrency(salesSummary.creditSales ?? 0)}</span></div>}
             <Separator />
             <div className="flex justify-between font-bold"><span>Total Sales</span><span className="font-mono text-primary">{formatCurrency(salesSummary.totalSales)}</span></div>
           </div>
@@ -560,6 +584,32 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
                 <span>Total</span>
                 <span className="font-mono text-right tabular-nums">{data.itemSummary.reduce((s, r) => s + r.totalQty, 0)}</span>
                 <span className="font-mono text-right tabular-nums text-primary">{formatCurrency(data.itemSummary.reduce((s, r) => s + r.totalRevenue, 0))}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Credit customers section */}
+          {data.creditOrders && data.creditOrders.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2 text-sm">
+              <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Credit Customers This Shift</p>
+              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide pb-1 border-b border-amber-500/20">
+                <span>Customer</span><span className="text-right">Order</span><span className="text-right">Amount</span><span className="text-right">Status</span>
+              </div>
+              {data.creditOrders.map((row, i) => (
+                <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 text-sm">
+                  <div className="min-w-0">
+                    <span className="text-foreground truncate block">{row.customerName ?? "—"}</span>
+                    {row.customerPhone && <span className="text-[10px] text-muted-foreground">{row.customerPhone}</span>}
+                  </div>
+                  <span className="font-mono text-right tabular-nums text-xs">{row.orderNumber}</span>
+                  <span className="font-mono text-right tabular-nums">{formatCurrency(row.total)}</span>
+                  <span className={`text-right text-xs capitalize font-semibold ${row.arStatus === "paid" ? "text-emerald-400" : row.arStatus === "partial" ? "text-amber-400" : "text-red-400"}`}>{row.arStatus ?? "open"}</span>
+                </div>
+              ))}
+              <Separator />
+              <div className="flex justify-between font-bold">
+                <span>Total Credit</span>
+                <span className="font-mono text-amber-400">{formatCurrency(data.creditOrders.reduce((s, r) => s + r.total, 0))}</span>
               </div>
             </div>
           )}

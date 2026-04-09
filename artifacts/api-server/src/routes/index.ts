@@ -23,6 +23,7 @@ import rolesRouter from "./roles";
 import locationsRouter from "./locations";
 import accountingRouter from "./accounting";
 import publicMenuRouter from "./public-menu";
+import arRouter from "./ar";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use(rolesRouter);
 router.use(locationsRouter);
 router.use(accountingRouter);
 router.use(publicMenuRouter);
+router.use(arRouter);
 
 export default router;

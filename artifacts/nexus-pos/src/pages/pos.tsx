@@ -30,7 +30,7 @@ import {
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
-  ClipboardList,
+  ClipboardList, BookOpen,
 } from "lucide-react";
 import { saasMe } from "@/lib/saas-api";
 import { useLocation, Link } from "wouter";
@@ -312,6 +312,8 @@ function printReceiptWindow(
   order: GetOrderResponse,
   settings: Record<string, string> = {},
 ) {
+  const LOYALTY_EARN_RATE = 10;
+  const loyaltyPointsEarned = order.customerId ? Math.floor(order.total / LOYALTY_EARN_RATE) : undefined;
   const html = buildReceiptHtml(
     {
       orderNumber: order.orderNumber,
@@ -327,6 +329,8 @@ function printReceiptWindow(
       cashTendered: order.cashTendered,
       notes: order.notes,
       status: order.status,
+      loyaltyPointsEarned,
+      loyaltyPointsRedeemed: (order as any).loyaltyPointsRedeemed ?? undefined,
     },
     settings,
   );
@@ -426,7 +430,7 @@ export function POS() {
       cartBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [cart.length]);
-  const [paymentMethod, setPaymentMethod] = useState<"card" | "cash" | "split">("card");
+  const [paymentMethod, setPaymentMethod] = useState<"card" | "cash" | "split" | "credit">("card");
 
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
@@ -644,6 +648,10 @@ export function POS() {
     }
     if (paymentMethod === "split" && !isSplitValid) {
       toast({ title: "Invalid Split", description: "Card and cash amounts must equal total.", variant: "destructive" });
+      return;
+    }
+    if (paymentMethod === "credit" && !selectedCustomerId) {
+      toast({ title: "Customer required", description: "Select a customer to process a credit sale.", variant: "destructive" });
       return;
     }
 
@@ -1373,17 +1381,23 @@ export function POS() {
 
           {/* Payment & action buttons */}
           <div className="p-2 space-y-1.5 shrink-0">
-            <div className="flex gap-1.5">
-              <Button variant={paymentMethod === "card" ? "default" : "outline"} onClick={() => { setPaymentMethod("card"); setNumpadValue(""); }} className="flex-1 h-9 text-xs">
-                <CreditCard className="h-3.5 w-3.5 mr-1" />Card
+            <div className="grid grid-cols-4 gap-1.5">
+              <Button variant={paymentMethod === "card" ? "default" : "outline"} onClick={() => { setPaymentMethod("card"); setNumpadValue(""); }} className="h-9 text-xs px-1">
+                <CreditCard className="h-3.5 w-3.5 mr-1 shrink-0" />Card
               </Button>
-              <Button variant={paymentMethod === "cash" ? "default" : "outline"} onClick={() => setPaymentMethod("cash")} className="flex-1 h-9 text-xs">
-                <Banknote className="h-3.5 w-3.5 mr-1" />Cash
+              <Button variant={paymentMethod === "cash" ? "default" : "outline"} onClick={() => setPaymentMethod("cash")} className="h-9 text-xs px-1">
+                <Banknote className="h-3.5 w-3.5 mr-1 shrink-0" />Cash
               </Button>
-              <Button variant={paymentMethod === "split" ? "default" : "outline"} onClick={handleSplitClick} className="flex-1 h-9 text-xs">
-                <SplitSquareHorizontal className="h-3.5 w-3.5 mr-1" />Split
+              <Button variant={paymentMethod === "split" ? "default" : "outline"} onClick={handleSplitClick} className="h-9 text-xs px-1">
+                <SplitSquareHorizontal className="h-3.5 w-3.5 mr-1 shrink-0" />Split
+              </Button>
+              <Button variant={paymentMethod === "credit" ? "default" : "outline"} onClick={() => { setPaymentMethod("credit"); setNumpadValue(""); }} className={`h-9 text-xs px-1 ${paymentMethod === "credit" ? "" : "border-amber-500/40 text-amber-400 hover:bg-amber-500/10"}`}>
+                <BookOpen className="h-3.5 w-3.5 mr-1 shrink-0" />Credit
               </Button>
             </div>
+            {paymentMethod === "credit" && !selectedCustomerId && (
+              <p className="text-amber-500 text-[10px] font-medium">⚠ Select a customer above to enable credit sale</p>
+            )}
 
             {paymentMethod === "split" && (
               <div className="flex gap-1.5 bg-secondary/50 p-1.5 rounded-md">
@@ -1408,7 +1422,7 @@ export function POS() {
               </Button>
             )}
             <Button className="w-full h-12 text-base shadow-lg shadow-primary/20" size="lg" onClick={handleCharge}
-              disabled={cart.length === 0 || createOrder.isPending || (paymentMethod === "split" && !isSplitValid)}>
+              disabled={cart.length === 0 || createOrder.isPending || (paymentMethod === "split" && !isSplitValid) || (paymentMethod === "credit" && !selectedCustomerId)}>
               {createOrder.isPending ? "Processing…" : `Charge ${formatCurrency(total, baseCurrency)}`}
             </Button>
           </div>
@@ -1523,7 +1537,25 @@ export function POS() {
                     <span className="font-medium">Note:</span> {receiptOrder.notes}
                   </div>
                 )}
+                {receiptOrder.paymentMethod === "credit" && (
+                  <div className="mt-2 rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs font-semibold text-amber-400 text-center">
+                    CREDIT SALE — Balance Due
+                  </div>
+                )}
               </div>
+
+              {receiptOrder.customerId && (
+                <div className="border-t border-border pt-2">
+                  <p className="text-center text-xs font-bold text-primary">
+                    ★ +{Math.floor(receiptOrder.total / 10)} Loyalty Points Earned ★
+                  </p>
+                  {(receiptOrder as any).loyaltyPointsRedeemed > 0 && (
+                    <p className="text-center text-xs text-muted-foreground">
+                      − {(receiptOrder as any).loyaltyPointsRedeemed} pts redeemed
+                    </p>
+                  )}
+                </div>
+              )}
 
               <p className="text-center text-xs text-muted-foreground pt-2 border-t border-border">Powered by MicroBooks</p>
             </div>

@@ -1,7 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, and, gte, lte, isNotNull, sql } from "drizzle-orm";
-import { db } from "@workspace/db";
-import { cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable } from "@workspace/db";
+import { eq, and, gte, lte, isNotNull, sql, desc } from "drizzle-orm";
+import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
 
@@ -38,7 +37,34 @@ function computeSales(orders: { paymentMethod: string | null; total: number | nu
   const cashSales = orders.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + Number(r.total ?? 0), 0);
   const cardSales = orders.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
   const splitSales = orders.filter((r) => r.paymentMethod === "split").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  return { cashSales, cardSales, splitSales, totalSales: cashSales + cardSales + splitSales };
+  const creditSales = orders.filter((r) => r.paymentMethod === "credit").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  return { cashSales, cardSales, splitSales, creditSales, totalSales: cashSales + cardSales + splitSales + creditSales };
+}
+
+async function computeCreditOrders(tenantId: number, from: Date, to: Date) {
+  return db
+    .select({
+      orderNumber: ordersTable.orderNumber,
+      total: ordersTable.total,
+      customerName: customersTable.name,
+      customerPhone: customersTable.phone,
+      arId: accountsReceivableTable.id,
+      amountPaid: accountsReceivableTable.amountPaid,
+      arStatus: accountsReceivableTable.status,
+      createdAt: ordersTable.createdAt,
+    })
+    .from(ordersTable)
+    .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
+    .leftJoin(accountsReceivableTable, eq(accountsReceivableTable.orderId, ordersTable.id))
+    .where(
+      and(
+        eq(ordersTable.tenantId, tenantId),
+        gte(ordersTable.createdAt, from),
+        lte(ordersTable.createdAt, to),
+        eq(ordersTable.paymentMethod, "credit"),
+      )
+    )
+    .orderBy(desc(ordersTable.createdAt));
 }
 
 async function computeItemSummary(tenantId: number, from: Date, to: Date) {
@@ -119,8 +145,9 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
   const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, new Date());
+  const creditOrders = await computeCreditOrders(tenantId, session.openedAt, new Date());
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, itemSummary });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, itemSummary, creditOrders });
 });
 
 router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
@@ -169,8 +196,9 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
   const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, closedAt);
+  const creditOrders = await computeCreditOrders(tenantId, session.openedAt, closedAt);
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, itemSummary });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, itemSummary, creditOrders });
 });
 
 router.post("/cash/sessions", async (req, res): Promise<void> => {

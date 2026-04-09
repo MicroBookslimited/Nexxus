@@ -37,6 +37,9 @@ export interface ReceiptOrder {
   orderType?: string | null;
   staffName?: string | null;
   guestCount?: number | null;
+  customerName?: string | null;
+  loyaltyPointsEarned?: number | null;
+  loyaltyPointsRedeemed?: number | null;
 }
 
 function escHtml(str: string): string {
@@ -306,6 +309,14 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   ${notesHtml}
   ${refundedHtml}
 
+  ${(order.loyaltyPointsEarned || order.loyaltyPointsRedeemed) ? `
+  ${dividerHtml}
+  <div style="text-align:center;font-weight:bold;font-size:${baseFontSize};">
+    &#9733; LOYALTY POINTS &#9733;
+    ${order.loyaltyPointsEarned ? `<div style="font-weight:bold;">+ ${order.loyaltyPointsEarned} pts earned</div>` : ""}
+    ${order.loyaltyPointsRedeemed ? `<div style="font-weight:bold;">- ${order.loyaltyPointsRedeemed} pts redeemed</div>` : ""}
+  </div>` : ""}
+
   ${addressBlock}
 
   ${dividerHtml}
@@ -388,6 +399,12 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
     lines.push(`📝 Note: ${order.notes}`);
   }
 
+  if (order.loyaltyPointsEarned || order.loyaltyPointsRedeemed) {
+    lines.push(`─────────────────────`);
+    lines.push(`*★ LOYALTY POINTS ★*`);
+    if (order.loyaltyPointsEarned) lines.push(`*+ ${order.loyaltyPointsEarned} pts earned*`);
+    if (order.loyaltyPointsRedeemed) lines.push(`*- ${order.loyaltyPointsRedeemed} pts redeemed*`);
+  }
   lines.push(`─────────────────────`);
   lines.push(`_${receiptFooter}_`);
   lines.push(`_Powered by NEXXUS POS_`);

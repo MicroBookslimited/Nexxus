@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq, gte, lt, sql } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable } from "@workspace/db";
 import { getSetting } from "./settings";
 import {
   CreateOrderBody,
@@ -307,6 +307,25 @@ router.post("/orders", async (req, res): Promise<void> => {
         .update(diningTablesTable)
         .set({ status: "available", currentOrderId: null })
         .where(and(eq(diningTablesTable.id, parsed.data.tableId), eq(diningTablesTable.tenantId, tenantId)));
+    }
+  }
+
+  if (parsed.data.paymentMethod === "credit" && parsed.data.customerId) {
+    const [cust] = await db
+      .select({ name: customersTable.name })
+      .from(customersTable)
+      .where(eq(customersTable.id, parsed.data.customerId));
+    if (cust) {
+      await db.insert(accountsReceivableTable).values({
+        tenantId,
+        customerId: parsed.data.customerId,
+        customerName: cust.name,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        amount: order.total,
+        amountPaid: 0,
+        status: "open",
+      });
     }
   }
 

@@ -22,6 +22,7 @@ import { SubscriptionPage } from "@/pages/subscription";
 import { ResetPassword } from "@/pages/reset-password";
 import { Locations } from "@/pages/locations";
 import { Accounting } from "@/pages/accounting";
+import { AccountsReceivable } from "@/pages/ar";
 import { Layout } from "@/components/layout";
 
 const queryClient = new QueryClient();
@@ -59,6 +60,7 @@ function Router() {
       <Route path="/staff"><ProtectedRoute component={Staff} /></Route>
       <Route path="/locations"><ProtectedRoute component={Locations} /></Route>
       <Route path="/accounting"><ProtectedRoute component={Accounting} /></Route>
+      <Route path="/ar"><ProtectedRoute component={AccountsReceivable} /></Route>
       <Route path="/cash"><ProtectedRoute component={CashManagement} /></Route>
       <Route path="/settings"><ProtectedRoute component={AdminSettings} /></Route>
       <Route path="/subscription"><ProtectedRoute component={SubscriptionPage} /></Route>
