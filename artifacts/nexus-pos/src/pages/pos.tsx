@@ -1398,12 +1398,19 @@ export function POS() {
             </div>
             {paymentMethod === "cash" && (
               <div className="grid grid-cols-4 gap-1.5 mt-1.5">
-                {[
-                  { label: "Exact", val: total.toFixed(2) },
-                  { label: "$20", val: "20.00" },
-                  { label: "$50", val: "50.00" },
-                  { label: "$100", val: "100.00" },
-                ].map(({ label, val }) => (
+                {(() => {
+                  const strictNext = (amount: number, step: number) =>
+                    Math.floor(amount / step) * step + step;
+                  const next1k = strictNext(total, 1000);
+                  const next5k = strictNext(total, 5000);
+                  const safe5k = next5k === next1k ? next5k + 5000 : next5k;
+                  return [
+                    { label: "Exact", val: total.toFixed(2) },
+                    { label: formatCurrency(next1k), val: next1k.toFixed(2) },
+                    { label: formatCurrency(next1k + 1000), val: (next1k + 1000).toFixed(2) },
+                    { label: formatCurrency(safe5k), val: safe5k.toFixed(2) },
+                  ];
+                })().map(({ label, val }) => (
                   <button key={label} onClick={() => setNumpadValue(val)}
                     className="h-8 rounded text-xs font-medium border border-border hover:bg-secondary/80 active:scale-95 transition-all">
                     {label}
