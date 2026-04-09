@@ -1121,9 +1121,9 @@ export function POS() {
                           </Button>
                         </div>
                         <div className="flex items-center gap-1 mt-1.5">
-                          <Button size="icon" variant="outline" className="h-5 w-5" onClick={() => updateQuantity(item.cartKey, -1)}><Minus className="h-2.5 w-2.5" /></Button>
+                          <Button size="icon" variant="outline" className="h-5 w-5 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:border-red-500" onClick={() => updateQuantity(item.cartKey, -1)}><Minus className="h-2.5 w-2.5" /></Button>
                           <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
-                          <Button size="icon" variant="outline" className="h-5 w-5" onClick={() => updateQuantity(item.cartKey, 1)}><Plus className="h-2.5 w-2.5" /></Button>
+                          <Button size="icon" variant="outline" className="h-5 w-5 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500" onClick={() => updateQuantity(item.cartKey, 1)}><Plus className="h-2.5 w-2.5" /></Button>
                           <span className="ml-auto text-xs font-mono font-semibold">{formatCurrency(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
                         </div>
                       </div>
