@@ -436,6 +436,11 @@ export function POS() {
 
   const [discountType, setDiscountType] = useState<"percent" | "fixed" | null>(null);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [discountAuthorizedBy, setDiscountAuthorizedBy] = useState<string | null>(null);
+  const [discountOverrideOpen, setDiscountOverrideOpen] = useState(false);
+  const [discountEntryOpen, setDiscountEntryOpen] = useState(false);
+  const [pendingDiscountType, setPendingDiscountType] = useState<"percent" | "fixed">("percent");
+  const [pendingDiscountAmount, setPendingDiscountAmount] = useState<number>(0);
   const [notes, setNotes] = useState("");
 
   const [splitCardAmount, setSplitCardAmount] = useState<number>(0);
@@ -612,6 +617,9 @@ export function POS() {
     setCart([]);
     setDiscountType(null);
     setDiscountAmount(0);
+    setDiscountAuthorizedBy(null);
+    setPendingDiscountType("percent");
+    setPendingDiscountAmount(0);
     setNotes("");
     setPaymentMethod("card");
     setSplitCardAmount(0);
@@ -1129,19 +1137,28 @@ export function POS() {
 
           {/* Order options — static, not scrollable */}
           <div className="px-3 py-2 space-y-2 border-t border-border shrink-0">
-              {/* Discount */}
-              <div className="flex gap-1.5">
-                <Button size="sm" variant={discountType === "percent" ? "default" : "outline"} className="flex-1 h-7 text-xs" onClick={() => setDiscountType(discountType === "percent" ? null : "percent")}>
-                  <Percent className="h-3 w-3 mr-1" />%
+              {/* Discount — requires manager override */}
+              {discountType && discountAuthorizedBy ? (
+                <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 rounded-md px-2 py-1.5">
+                  <div>
+                    <p className="text-xs font-semibold text-amber-400 flex items-center gap-1">
+                      <Percent className="h-3 w-3" />
+                      {discountType === "percent" ? `${discountAmount}% Discount` : `$${discountAmount} Discount`}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">Approved by {discountAuthorizedBy}</p>
+                  </div>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => { setDiscountType(null); setDiscountAmount(0); setDiscountAuthorizedBy(null); }}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <Button size="sm" variant="outline" className="w-full h-7 text-xs border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                  disabled={cart.length === 0}
+                  onClick={() => { setPendingDiscountType("percent"); setPendingDiscountAmount(0); setDiscountOverrideOpen(true); }}>
+                  <Percent className="h-3 w-3 mr-1" />Apply Discount (Manager Override)
                 </Button>
-                <Button size="sm" variant={discountType === "fixed" ? "default" : "outline"} className="flex-1 h-7 text-xs" onClick={() => setDiscountType(discountType === "fixed" ? null : "fixed")}>
-                  <DollarSign className="h-3 w-3 mr-1" />Fixed
-                </Button>
-                {discountType && (
-                  <Input type="number" min={0} className="flex-1 h-7 text-xs font-mono" placeholder={discountType === "percent" ? "%" : "$"}
-                    value={discountAmount || ""} onChange={(e) => setDiscountAmount(Number(e.target.value))} />
-                )}
-              </div>
+              )}
 
               {/* Customer */}
               {selectedCustomer ? (
@@ -1438,6 +1455,112 @@ export function POS() {
           onConfirm={handleCustomizeConfirm}
         />
       )}
+
+      {/* Manager Override — Discount */}
+      <Dialog open={discountOverrideOpen} onOpenChange={(o) => !o && setDiscountOverrideOpen(false)}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-400">
+              <Percent className="h-4 w-4" />
+              Manager Override Required
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground text-center -mt-2 mb-2">
+            A manager or admin PIN is required to apply a discount.
+          </p>
+          <PinPad
+            title=""
+            requiredRoles={["manager", "admin", "supervisor"]}
+            onSuccess={(staff) => {
+              setDiscountOverrideOpen(false);
+              setDiscountAuthorizedBy(staff.name);
+              setPendingDiscountType("percent");
+              setPendingDiscountAmount(0);
+              setDiscountEntryOpen(true);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Discount Entry — after override approved */}
+      <Dialog open={discountEntryOpen} onOpenChange={(o) => !o && setDiscountEntryOpen(false)}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-400">
+              <Percent className="h-4 w-4" />
+              Apply Discount
+            </DialogTitle>
+          </DialogHeader>
+          {discountAuthorizedBy && (
+            <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2.5 py-1.5 -mt-1 mb-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              <p className="text-xs text-emerald-400">Override approved by <span className="font-semibold">{discountAuthorizedBy}</span></p>
+            </div>
+          )}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant={pendingDiscountType === "percent" ? "default" : "outline"}
+                className="h-10 text-sm"
+                onClick={() => setPendingDiscountType("percent")}
+              >
+                <Percent className="h-4 w-4 mr-1.5" />Percent
+              </Button>
+              <Button
+                variant={pendingDiscountType === "fixed" ? "default" : "outline"}
+                className="h-10 text-sm"
+                onClick={() => setPendingDiscountType("fixed")}
+              >
+                <DollarSign className="h-4 w-4 mr-1.5" />Fixed $
+              </Button>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                {pendingDiscountType === "percent" ? "Discount %" : "Discount Amount ($)"}
+              </Label>
+              <Input
+                autoFocus
+                type="number"
+                min={0}
+                max={pendingDiscountType === "percent" ? 100 : undefined}
+                step={pendingDiscountType === "percent" ? 1 : 0.01}
+                className="font-mono text-base h-10"
+                placeholder={pendingDiscountType === "percent" ? "e.g. 10" : "e.g. 5.00"}
+                value={pendingDiscountAmount || ""}
+                onChange={(e) => setPendingDiscountAmount(Number(e.target.value))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && pendingDiscountAmount > 0) {
+                    setDiscountType(pendingDiscountType);
+                    setDiscountAmount(pendingDiscountAmount);
+                    setDiscountEntryOpen(false);
+                  }
+                }}
+              />
+              {pendingDiscountType === "percent" && pendingDiscountAmount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  = {formatCurrency(subtotal * pendingDiscountAmount / 100, baseCurrency)} off {formatCurrency(subtotal, baseCurrency)}
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" className="flex-1" onClick={() => { setDiscountEntryOpen(false); setDiscountAuthorizedBy(null); }}>
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              disabled={pendingDiscountAmount <= 0}
+              onClick={() => {
+                setDiscountType(pendingDiscountType);
+                setDiscountAmount(pendingDiscountAmount);
+                setDiscountEntryOpen(false);
+              }}
+            >
+              Apply Discount
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Receipt Modal */}
       <Dialog open={!!receiptOrder} onOpenChange={(o) => !o && setReceiptOrder(null)}>
