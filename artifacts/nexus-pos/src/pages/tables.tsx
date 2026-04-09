@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, Edit2, Trash2, UtensilsCrossed, Users, Unlock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useStaff } from "@/contexts/StaffContext";
 
 const TABLE_COLORS = [
   "#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444",
@@ -23,7 +24,7 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   reserved: { label: "Reserved", className: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
 };
 
-function TableCard({ table, onEdit, onDelete, onFree }: { table: DiningTable; onEdit: (t: DiningTable) => void; onDelete: (id: number) => void; onFree: (id: number) => void }) {
+function TableCard({ table, onEdit, onDelete, onFree, canManage }: { table: DiningTable; onEdit: (t: DiningTable) => void; onDelete: (id: number) => void; onFree: (id: number) => void; canManage: boolean }) {
   const statusMeta = STATUS_LABELS[table.status] ?? STATUS_LABELS.available;
   const isOccupied = table.status !== "available";
   return (
@@ -47,7 +48,7 @@ function TableCard({ table, onEdit, onDelete, onFree }: { table: DiningTable; on
           Order {table.currentOrderNumber ?? `#${table.currentOrderId}`}
         </p>
       )}
-      {isOccupied && (
+      {isOccupied && canManage && (
         <Button
           size="sm"
           className="h-8 text-xs w-full bg-emerald-600 hover:bg-emerald-500 text-white"
@@ -56,14 +57,16 @@ function TableCard({ table, onEdit, onDelete, onFree }: { table: DiningTable; on
           <Unlock className="h-3 w-3 mr-1" /> Free Table
         </Button>
       )}
-      <div className="flex gap-2 mt-auto pt-2 border-t border-border">
-        <Button size="sm" variant="ghost" className="flex-1 h-8 text-xs" onClick={() => onEdit(table)}>
-          <Edit2 className="h-3 w-3 mr-1" /> Edit
-        </Button>
-        <Button size="sm" variant="ghost" className="flex-1 h-8 text-xs text-destructive hover:text-destructive" onClick={() => onDelete(table.id)}>
-          <Trash2 className="h-3 w-3 mr-1" /> Delete
-        </Button>
-      </div>
+      {canManage && (
+        <div className="flex gap-2 mt-auto pt-2 border-t border-border">
+          <Button size="sm" variant="ghost" className="flex-1 h-8 text-xs" onClick={() => onEdit(table)}>
+            <Edit2 className="h-3 w-3 mr-1" /> Edit
+          </Button>
+          <Button size="sm" variant="ghost" className="flex-1 h-8 text-xs text-destructive hover:text-destructive" onClick={() => onDelete(table.id)}>
+            <Trash2 className="h-3 w-3 mr-1" /> Delete
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -166,6 +169,9 @@ function TableDialog({
 }
 
 export function Tables() {
+  const { can } = useStaff();
+  const canManage = can("reports.view");
+
   const { data: tables, isLoading } = useListTables();
   const createTable = useCreateTable();
   const updateTable = useUpdateTable();
@@ -238,12 +244,14 @@ export function Tables() {
             <span className="text-blue-400 font-medium">{occupied} Occupied</span>
             <span className="text-amber-400 font-medium">{reserved} Reserved</span>
           </div>
-          <Button
-            size="sm"
-            onClick={() => { setEditingTable(null); setDialogOpen(true); }}
-          >
-            <Plus className="h-4 w-4 mr-1" /> Add Table
-          </Button>
+          {canManage && (
+            <Button
+              size="sm"
+              onClick={() => { setEditingTable(null); setDialogOpen(true); }}
+            >
+              <Plus className="h-4 w-4 mr-1" /> Add Table
+            </Button>
+          )}
         </div>
       </div>
 
@@ -257,9 +265,11 @@ export function Tables() {
               <p className="font-medium">No tables configured</p>
               <p className="text-sm mt-1">Add tables to enable restaurant mode</p>
             </div>
-            <Button onClick={() => { setEditingTable(null); setDialogOpen(true); }}>
-              <Plus className="h-4 w-4 mr-1" /> Add Your First Table
-            </Button>
+            {canManage && (
+              <Button onClick={() => { setEditingTable(null); setDialogOpen(true); }}>
+                <Plus className="h-4 w-4 mr-1" /> Add Your First Table
+              </Button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
@@ -270,6 +280,7 @@ export function Tables() {
                 onEdit={(t) => { setEditingTable(t); setDialogOpen(true); }}
                 onDelete={handleDelete}
                 onFree={handleFreeTable}
+                canManage={canManage}
               />
             ))}
           </div>

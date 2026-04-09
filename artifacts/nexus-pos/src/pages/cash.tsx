@@ -945,10 +945,12 @@ function ActiveSessionPanel({ staffName, onShiftClosed }: { staffName: string; o
 }
 
 /* ─── Session History Row ─── */
-function SessionHistoryItem({ sessionId }: { sessionId: number }) {
+function SessionHistoryItem({ sessionId, staffFilter }: { sessionId: number; staffFilter?: string }) {
   const { data } = useGetCashSession(sessionId);
   if (!data) return null;
   const { session, salesSummary, expectedCash } = data;
+  // If a staffFilter is set, only show sessions belonging to that staff member
+  if (staffFilter && session.staffName !== staffFilter) return null;
   const cashVariance = (session.actualCash ?? 0) - expectedCash;
   return (
     <div className="flex items-center gap-4 p-3 rounded-lg border border-border hover:bg-secondary/20 transition-colors text-sm">
@@ -972,6 +974,9 @@ function SessionHistoryItem({ sessionId }: { sessionId: number }) {
 
 /* ─── Main Cash Management Page ─── */
 export function CashManagement() {
+  const { can, staff: sessionStaff } = useStaff();
+  const canViewAllHistory = can("reports.view");
+
   const { data: current, isLoading: loadingCurrent, isError: noSession } = useGetCurrentCashSession({
     query: { retry: false },
   });
@@ -982,7 +987,9 @@ export function CashManagement() {
   const [eodSessionId, setEodSessionId] = useState<number | null>(null);
 
   const hasOpenSession = !!current?.session;
-  const closedSessions = (sessions ?? []).filter((s) => s.status === "closed").slice(0, 10);
+  const closedSessions = (sessions ?? []).filter((s) => s.status === "closed").slice(0, 20);
+  // Cashiers only see their own shift history; managers see all
+  const staffFilter = canViewAllHistory ? undefined : (sessionStaff?.name ?? undefined);
 
   const handleOpenShift = (openingCash: number, name: string, locationId?: number, locationName?: string) => {
     openSession.mutate(
@@ -1049,7 +1056,7 @@ export function CashManagement() {
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
               {closedSessions.map((s) => (
-                <SessionHistoryItem key={s.id} sessionId={s.id} />
+                <SessionHistoryItem key={s.id} sessionId={s.id} staffFilter={staffFilter} />
               ))}
             </div>
           </div>
