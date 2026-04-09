@@ -56,8 +56,8 @@ function getPreset(preset: string): { from: string; to: string } {
 export function Orders() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [fromDate, setFromDate] = useState<string>(todayStr());
-  const [toDate, setToDate] = useState<string>(todayStr());
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
   
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
@@ -297,6 +297,14 @@ export function Orders() {
           </div>
 
           {/* Preset shortcut pills */}
+          <Button
+            size="sm"
+            variant={activePreset === "all" ? "default" : "outline"}
+            className="h-9 text-xs"
+            onClick={() => { setFromDate(""); setToDate(""); }}
+          >
+            All Time
+          </Button>
           {(["today", "yesterday", "week", "month"] as const).map((p) => (
             <Button
               key={p}
@@ -558,7 +566,7 @@ export function Orders() {
                   )}
                 </React.Fragment>
               ))}
-              {!isLoading && filteredOrders?.length === 0 && (
+              {!isLoading && (!filteredOrders || filteredOrders.length === 0) && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center h-32 text-muted-foreground">
                     No orders found.
