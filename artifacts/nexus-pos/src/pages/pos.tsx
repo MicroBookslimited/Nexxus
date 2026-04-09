@@ -404,6 +404,14 @@ export function POS() {
     }
   }, [cashSession?.session?.locationId]);
 
+  // When staff is set externally (e.g. via layout Switch User dialog), auto-unlock POS
+  useEffect(() => {
+    if (sessionStaff && locked) {
+      setLocked(false);
+      toast({ title: `Welcome, ${sessionStaff.name}!`, description: `Logged in as ${sessionStaff.role}` });
+    }
+  }, [sessionStaff?.id]);
+
   const MANAGEMENT_ROLES = ["admin", "manager", "supervisor"];
 
   const handlePinSuccess = (staff: { id: number; name: string; role: string; permissions?: string[] }) => {
