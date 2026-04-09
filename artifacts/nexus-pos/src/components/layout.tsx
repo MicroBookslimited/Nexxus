@@ -4,11 +4,12 @@ import {
   LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2,
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
-  Menu, X, MoreHorizontal, BookOpen,
+  Menu, X, MoreHorizontal, BookOpen, Sun, Moon,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { TENANT_TOKEN_KEY, saasMe } from "@/lib/saas-api";
+import { useTheme } from "@/contexts/ThemeContext";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -59,6 +60,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const { theme, toggleTheme } = useTheme();
 
   const [expiryDate, setExpiryDate] = useState<Date | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -200,6 +202,17 @@ export function Layout({ children }: { children: ReactNode }) {
 
         {/* Right actions */}
         <div className="flex items-center gap-1 shrink-0">
+          {/* Theme toggle */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground hidden sm:flex"
+            onClick={toggleTheme}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+
           {fsSupported && (
             <Button
               size="icon"
@@ -292,7 +305,14 @@ export function Layout({ children }: { children: ReactNode }) {
             </nav>
 
             {/* Drawer footer */}
-            <div className="shrink-0 border-t border-border p-3">
+            <div className="shrink-0 border-t border-border p-3 space-y-1">
+              <button
+                onClick={toggleTheme}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              </button>
               <button
                 onClick={handleSignOut}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-destructive hover:bg-destructive/10 transition-colors"
