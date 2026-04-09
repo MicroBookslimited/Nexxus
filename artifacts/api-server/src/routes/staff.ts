@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db, staffTable, staffLocationsTable, locationsTable, rolesTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
@@ -173,7 +173,10 @@ router.post("/staff/authenticate", async (req, res): Promise<void> => {
   if (tenantId) {
     const roleRows = await db.select({ permissions: rolesTable.permissions })
       .from(rolesTable)
-      .where(and(eq(rolesTable.tenantId, tenantId), eq(rolesTable.name, match.role)));
+      .where(and(
+        eq(rolesTable.tenantId, tenantId),
+        sql`LOWER(${rolesTable.name}) = LOWER(${match.role})`
+      ));
     if (roleRows.length > 0) {
       permissions = roleRows[0]!.permissions as string[];
     }
