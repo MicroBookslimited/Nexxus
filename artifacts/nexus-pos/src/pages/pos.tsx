@@ -70,9 +70,9 @@ function makeCartKey(productId: number, variantChoices: ChoiceItem[], modifierCh
 
 function formatCurrency(val: number, currency = "JMD") {
   try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(val);
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: "narrowSymbol" }).format(val);
   } catch {
-    return `${currency} ${val.toFixed(2)}`;
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(val);
   }
 }
 
