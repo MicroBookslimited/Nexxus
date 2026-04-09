@@ -4,32 +4,33 @@ import {
   LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2,
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
-  Menu, X, MoreHorizontal, BookOpen, Sun, Moon,
+  Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { TENANT_TOKEN_KEY, saasMe } from "@/lib/saas-api";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useStaff } from "@/contexts/StaffContext";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/pos",       label: "POS",        icon: ShoppingCart },
-  { href: "/tables",   label: "Tables",      icon: UtensilsCrossed },
-  { href: "/kitchen",  label: "Kitchen",     icon: ChefHat },
-  { href: "/orders",   label: "Orders",      icon: ListOrdered },
-  { href: "/cash",     label: "Cash",        icon: Coins },
-  { href: "/products", label: "Products",    icon: Package },
-  { href: "/customers",label: "Customers",   icon: Users },
-  { href: "/staff",    label: "Staff",       icon: UserCog },
-  { href: "/locations",label: "Locations",   icon: MapPin },
-  { href: "/accounting",label: "Accounting", icon: Calculator },
-  { href: "/ar",       label: "Receivables", icon: BookOpen },
-  { href: "/reports",  label: "Reports",     icon: BarChart2 },
-  { href: "/settings", label: "Settings",    icon: Settings },
-  { href: "/subscription", label: "Plan",    icon: CreditCard },
+  { href: "/dashboard",    label: "Dashboard",   icon: LayoutDashboard, permission: null },
+  { href: "/pos",          label: "POS",          icon: ShoppingCart,    permission: "pos.sale" },
+  { href: "/tables",       label: "Tables",       icon: UtensilsCrossed, permission: "orders.view" },
+  { href: "/kitchen",      label: "Kitchen",      icon: ChefHat,         permission: "kitchen.view" },
+  { href: "/orders",       label: "Orders",       icon: ListOrdered,     permission: "orders.view" },
+  { href: "/cash",         label: "Cash",         icon: Coins,           permission: "cash.open_session" },
+  { href: "/products",     label: "Products",     icon: Package,         permission: "inventory.view" },
+  { href: "/customers",    label: "Customers",    icon: Users,           permission: "customers.view" },
+  { href: "/staff",        label: "Staff",        icon: UserCog,         permission: "staff.view" },
+  { href: "/locations",    label: "Locations",    icon: MapPin,          permission: "inventory.manage" },
+  { href: "/accounting",   label: "Accounting",   icon: Calculator,      permission: "reports.view" },
+  { href: "/ar",           label: "Receivables",  icon: BookOpen,        permission: "reports.view" },
+  { href: "/reports",      label: "Reports",      icon: BarChart2,       permission: "reports.view" },
+  { href: "/settings",     label: "Settings",     icon: Settings,        permission: "settings.view" },
+  { href: "/subscription", label: "Plan",         icon: CreditCard,      permission: "settings.manage" },
 ];
 
-const MOBILE_PRIMARY = ["/dashboard", "/pos", "/orders", "/products"];
+const MOBILE_PRIMARY = ["/dashboard", "/pos", "/orders", "/customers"];
 
 function useCountdown(targetDate: Date | null) {
   const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null);
@@ -61,6 +62,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const { theme, toggleTheme } = useTheme();
+  const { staff, can, clearStaff } = useStaff();
 
   const [expiryDate, setExpiryDate] = useState<Date | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -98,9 +100,10 @@ export function Layout({ children }: { children: ReactNode }) {
 
   const handleSignOut = useCallback(() => {
     localStorage.removeItem(TENANT_TOKEN_KEY);
+    clearStaff();
     setProfileOpen(false);
     setLocation("/login");
-  }, [setLocation]);
+  }, [setLocation, clearStaff]);
 
   const fsSupported = typeof document.documentElement.requestFullscreen === "function";
 
@@ -126,8 +129,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const isWarning = daysLeft <= 7;
   const pad = (n: number) => String(n).padStart(2, "0");
 
-  const mobilePrimary = NAV_ITEMS.filter(i => MOBILE_PRIMARY.includes(i.href));
-  const mobileSecondary = NAV_ITEMS.filter(i => !MOBILE_PRIMARY.includes(i.href));
+  const visibleNav = NAV_ITEMS.filter(i => !i.permission || can(i.permission));
+  const mobilePrimary = visibleNav.filter(i => MOBILE_PRIMARY.includes(i.href));
+  const mobileSecondary = visibleNav.filter(i => !MOBILE_PRIMARY.includes(i.href));
 
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground overflow-hidden">
@@ -149,7 +153,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
         {/* ── DESKTOP NAV (≥1280px): icon + label ── */}
         <nav className="hidden xl:flex items-center gap-0 overflow-x-auto no-scrollbar mx-2 flex-1">
-          {NAV_ITEMS.map((item) => {
+          {visibleNav.map((item) => {
             const isActive = location.startsWith(item.href);
             return (
               <Link
@@ -171,7 +175,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
         {/* ── TABLET NAV (768-1279px): icon-only with tooltip ── */}
         <nav className="hidden md:flex xl:hidden items-center gap-0 overflow-x-auto no-scrollbar mx-2 flex-1 justify-center">
-          {NAV_ITEMS.map((item) => {
+          {visibleNav.map((item) => {
             const isActive = location.startsWith(item.href);
             return (
               <Link
@@ -202,6 +206,14 @@ export function Layout({ children }: { children: ReactNode }) {
 
         {/* Right actions */}
         <div className="flex items-center gap-1 shrink-0">
+          {/* Staff badge */}
+          {staff && (
+            <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-primary/10 border border-primary/20">
+              <div className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-[10px] font-medium text-primary truncate max-w-20">{staff.name}</span>
+              <span className="text-[9px] text-muted-foreground hidden lg:inline">({staff.role})</span>
+            </div>
+          )}
           {/* Theme toggle */}
           <Button
             size="icon"
@@ -284,7 +296,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
             {/* Nav items */}
             <nav className="flex-1 overflow-y-auto py-3 px-2">
-              {NAV_ITEMS.map((item) => {
+              {visibleNav.map((item) => {
                 const isActive = location.startsWith(item.href);
                 return (
                   <Link
@@ -306,6 +318,15 @@ export function Layout({ children }: { children: ReactNode }) {
 
             {/* Drawer footer */}
             <div className="shrink-0 border-t border-border p-3 space-y-1">
+              {staff && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 mb-2">
+                  <div className="h-2 w-2 rounded-full bg-green-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-primary truncate">{staff.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{staff.role}</p>
+                  </div>
+                </div>
+              )}
               <button
                 onClick={toggleTheme}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
@@ -404,6 +425,25 @@ export function Layout({ children }: { children: ReactNode }) {
       <footer className="shrink-0 border-t border-border py-1.5 text-center text-xs text-muted-foreground/60 bg-card hidden md:block">
         Powered by MicroBooks
       </footer>
+    </div>
+  );
+}
+
+export function PermissionGate({ permission, children }: { permission: string; children: ReactNode }) {
+  const { can, staff } = useStaff();
+  if (!staff || can(permission)) return <>{children}</>;
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6 py-16">
+      <div className="h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center">
+        <ShieldOff className="h-8 w-8 text-destructive" />
+      </div>
+      <div>
+        <h2 className="text-lg font-bold text-foreground">Access Restricted</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Your role ({staff.role}) does not have permission to access this area.
+        </p>
+        <p className="text-xs text-muted-foreground/60 mt-1">Contact your manager for assistance.</p>
+      </div>
     </div>
   );
 }

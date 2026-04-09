@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { StaffProvider } from "@/contexts/StaffContext";
 import NotFound from "@/pages/not-found";
 import { Login } from "@/pages/login";
 import { Dashboard } from "@/pages/dashboard";
@@ -24,16 +25,20 @@ import { ResetPassword } from "@/pages/reset-password";
 import { Locations } from "@/pages/locations";
 import { Accounting } from "@/pages/accounting";
 import { AccountsReceivable } from "@/pages/ar";
-import { Layout } from "@/components/layout";
+import { Layout, PermissionGate } from "@/components/layout";
 
 const queryClient = new QueryClient();
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType<any> }) {
-  // Simplistic auth check: any user not on login could be considered authed, 
-  // but realistically we'll just wrap protected pages in the layout.
+function ProtectedRoute({ component: Component, permission }: { component: React.ComponentType<any>; permission?: string }) {
   return (
     <Layout>
-      <Component />
+      {permission ? (
+        <PermissionGate permission={permission}>
+          <Component />
+        </PermissionGate>
+      ) : (
+        <Component />
+      )}
     </Layout>
   );
 }
@@ -51,20 +56,20 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
-      <Route path="/pos"><ProtectedRoute component={POS} /></Route>
-      <Route path="/orders"><ProtectedRoute component={Orders} /></Route>
-      <Route path="/products"><ProtectedRoute component={Products} /></Route>
-      <Route path="/customers"><ProtectedRoute component={Customers} /></Route>
-      <Route path="/reports"><ProtectedRoute component={Reports} /></Route>
-      <Route path="/tables"><ProtectedRoute component={Tables} /></Route>
-      <Route path="/kitchen"><ProtectedRoute component={Kitchen} /></Route>
-      <Route path="/staff"><ProtectedRoute component={Staff} /></Route>
-      <Route path="/locations"><ProtectedRoute component={Locations} /></Route>
-      <Route path="/accounting"><ProtectedRoute component={Accounting} /></Route>
-      <Route path="/ar"><ProtectedRoute component={AccountsReceivable} /></Route>
-      <Route path="/cash"><ProtectedRoute component={CashManagement} /></Route>
-      <Route path="/settings"><ProtectedRoute component={AdminSettings} /></Route>
-      <Route path="/subscription"><ProtectedRoute component={SubscriptionPage} /></Route>
+      <Route path="/pos"><ProtectedRoute component={POS} permission="pos.sale" /></Route>
+      <Route path="/orders"><ProtectedRoute component={Orders} permission="orders.view" /></Route>
+      <Route path="/products"><ProtectedRoute component={Products} permission="inventory.view" /></Route>
+      <Route path="/customers"><ProtectedRoute component={Customers} permission="customers.view" /></Route>
+      <Route path="/reports"><ProtectedRoute component={Reports} permission="reports.view" /></Route>
+      <Route path="/tables"><ProtectedRoute component={Tables} permission="orders.view" /></Route>
+      <Route path="/kitchen"><ProtectedRoute component={Kitchen} permission="kitchen.view" /></Route>
+      <Route path="/staff"><ProtectedRoute component={Staff} permission="staff.view" /></Route>
+      <Route path="/locations"><ProtectedRoute component={Locations} permission="inventory.manage" /></Route>
+      <Route path="/accounting"><ProtectedRoute component={Accounting} permission="reports.view" /></Route>
+      <Route path="/ar"><ProtectedRoute component={AccountsReceivable} permission="reports.view" /></Route>
+      <Route path="/cash"><ProtectedRoute component={CashManagement} permission="cash.open_session" /></Route>
+      <Route path="/settings"><ProtectedRoute component={AdminSettings} permission="settings.view" /></Route>
+      <Route path="/subscription"><ProtectedRoute component={SubscriptionPage} permission="settings.manage" /></Route>
       <Route path="/signup" component={Onboarding} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/superadmin" component={Superadmin} />
@@ -148,15 +153,17 @@ function App() {
 
   return (
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-          <FullscreenFab />
-        </TooltipProvider>
-      </QueryClientProvider>
+      <StaffProvider>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
+            <Toaster />
+            <FullscreenFab />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </StaffProvider>
     </ThemeProvider>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useStaff } from "@/contexts/StaffContext";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   useListProducts,
@@ -565,6 +566,9 @@ function LocationsEditor({ productId }: { productId: number }) {
 
 /* ─── Main Products page ─── */
 export function Products() {
+  const { can } = useStaff();
+  const canManage = can("inventory.manage");
+
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
@@ -839,7 +843,7 @@ export function Products() {
               )}
             </button>
           </div>
-          {pageTab === "products" && (
+          {pageTab === "products" && canManage && (
             <Button onClick={openAdd} className="gap-2">
               <Plus className="h-4 w-4" />Add Product
             </Button>
@@ -912,7 +916,7 @@ export function Products() {
         <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
           <Package className="h-12 w-12 opacity-30" />
           <p className="text-lg">No products found</p>
-          <Button variant="outline" onClick={openAdd}>Add your first product</Button>
+          {canManage && <Button variant="outline" onClick={openAdd}>Add your first product</Button>}
         </div>
       ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -959,15 +963,21 @@ export function Products() {
                       </div>
                     </div>
                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" onClick={() => openRestock(product)}>
-                        <PackagePlus className="h-3 w-3 mr-1" />Restock
-                      </Button>
-                      <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => openEdit(product)}>
-                        <Pencil className="h-3 w-3 mr-1" />Edit
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      {canManage && (
+                        <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" onClick={() => openRestock(product)}>
+                          <PackagePlus className="h-3 w-3 mr-1" />Restock
+                        </Button>
+                      )}
+                      {canManage && (
+                        <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => openEdit(product)}>
+                          <Pencil className="h-3 w-3 mr-1" />Edit
+                        </Button>
+                      )}
+                      {canManage && (
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -1045,17 +1055,19 @@ export function Products() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button size="icon" variant="outline" className="h-7 w-7 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" title="Restock" onClick={() => openRestock(product)}>
-                    <PackagePlus className="h-3 w-3" />
-                  </Button>
-                  <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => openEdit(product)}>
-                    <Pencil className="h-3 w-3" />
-                  </Button>
-                  <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
+                {canManage && (
+                  <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button size="icon" variant="outline" className="h-7 w-7 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" title="Restock" onClick={() => openRestock(product)}>
+                      <PackagePlus className="h-3 w-3" />
+                    </Button>
+                    <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => openEdit(product)}>
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
               </motion.div>
             );
             })}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useStaff } from "@/contexts/StaffContext";
 import {
   useGetCurrentCashSession,
   useOpenCashSession,
@@ -783,6 +784,7 @@ function ActiveSessionPanel({ staffName, onShiftClosed }: { staffName: string; o
   const { data, isLoading, isError } = useGetCurrentCashSession({ query: { refetchInterval: 15000, retry: false } });
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
+  const { can } = useStaff();
 
   if (isLoading && !isError) {
     return <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading session…</div>;
@@ -811,14 +813,23 @@ function ActiveSessionPanel({ staffName, onShiftClosed }: { staffName: string; o
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPayoutOpen(true)}>
-            <ArrowDownLeft className="h-3.5 w-3.5 mr-1.5 text-amber-400" />
-            Add Payout
-          </Button>
-          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setCloseOpen(true)}>
-            <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
-            Close Shift
-          </Button>
+          {can("cash.manage_payouts") && (
+            <Button variant="outline" size="sm" onClick={() => setPayoutOpen(true)}>
+              <ArrowDownLeft className="h-3.5 w-3.5 mr-1.5 text-amber-400" />
+              Add Payout
+            </Button>
+          )}
+          {can("cash.close_session") ? (
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setCloseOpen(true)}>
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+              Close Shift
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" disabled title="Manager approval required to close shift">
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+              Close Shift
+            </Button>
+          )}
         </div>
       </div>
 

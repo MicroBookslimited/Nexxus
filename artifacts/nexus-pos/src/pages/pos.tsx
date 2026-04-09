@@ -33,6 +33,7 @@ import {
   ClipboardList, BookOpen,
 } from "lucide-react";
 import { saasMe } from "@/lib/saas-api";
+import { useStaff } from "@/contexts/StaffContext";
 import { useLocation, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -340,8 +341,8 @@ function printReceiptWindow(
 /* ─── Main POS component ─── */
 export function POS() {
   const [, navigate] = useLocation();
-  const [locked, setLocked] = useState(true);
-  const [sessionStaff, setSessionStaff] = useState<{ id: number; name: string; role: string } | null>(null);
+  const { staff: sessionStaff, setStaff, clearStaff, can } = useStaff();
+  const [locked, setLocked] = useState(() => !sessionStaff);
   const [sessionLocationId, setSessionLocationId] = useState<number | null>(null);
   const [posLocations, setPosLocations] = useState<{ id: number; name: string }[]>([]);
 
@@ -405,8 +406,8 @@ export function POS() {
 
   const MANAGEMENT_ROLES = ["admin", "manager", "supervisor"];
 
-  const handlePinSuccess = (staff: { id: number; name: string; role: string }) => {
-    setSessionStaff(staff);
+  const handlePinSuccess = (staff: { id: number; name: string; role: string; permissions?: string[] }) => {
+    setStaff({ id: staff.id, name: staff.name, role: staff.role, permissions: staff.permissions ?? [] });
     setLocked(false);
     toast({ title: `Welcome, ${staff.name}!`, description: `Logged in as ${staff.role}` });
 
@@ -860,7 +861,7 @@ export function POS() {
               Open Shift in Cash Management
             </Link>
             <button
-              onClick={() => { setLocked(true); setSessionStaff(null); }}
+              onClick={() => { setLocked(true); clearStaff(); }}
               className="rounded-md border border-border px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
             >
               Back
@@ -895,7 +896,7 @@ export function POS() {
           </span>
           <button
             className="text-xs text-muted-foreground hover:text-destructive underline-offset-2 hover:underline transition-colors"
-            onClick={() => { setLocked(true); setSessionStaff(null); setSessionLocationId(null); }}
+            onClick={() => { setLocked(true); clearStaff(); setSessionLocationId(null); }}
           >
             Lock
           </button>
