@@ -15,6 +15,8 @@ import {
   useGetCurrentCashSession,
   useSendReceiptEmail,
   useGetSettings,
+  useListOrders,
+  useChargeOrder,
 } from "@workspace/api-client-react";
 import { PinPad } from "@/components/PinPad";
 import type { GetOrderResponse } from "@workspace/api-zod";
@@ -28,13 +30,14 @@ import {
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
+  ClipboardList,
 } from "lucide-react";
 import { saasMe } from "@/lib/saas-api";
 import { useLocation, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { format } from "date-fns";
@@ -457,6 +460,18 @@ export function POS() {
   const { data: customers } = useListCustomers();
   const createCustomer = useCreateCustomer();
   const { data: tables } = useListTables();
+
+  // Pending / kiosk orders panel
+  const { data: pendingOrders } = useListOrders({ status: "pending" as "pending" }, { query: { enabled: !locked } });
+  const { data: openOrders } = useListOrders({ status: "open" as "open" }, { query: { enabled: !locked } });
+  const unpaidOrders = useMemo(() => {
+    const all = [...(pendingOrders ?? []), ...(openOrders ?? [])];
+    return all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [pendingOrders, openOrders]);
+  const chargeOrder = useChargeOrder();
+  const [kioskChargeOrder, setKioskChargeOrder] = useState<typeof unpaidOrders[0] | null>(null);
+  const [kioskPayMethod, setKioskPayMethod] = useState<"card" | "cash">("cash");
+  const [kioskPanelOpen, setKioskPanelOpen] = useState(false);
 
   const handleAddCustomer = async () => {
     if (!newCustName.trim()) return;
@@ -961,30 +976,104 @@ export function POS() {
               <Button size="icon" variant="ghost" className="h-7 w-7" title="Hold order" onClick={handleHoldOrder} disabled={cart.length === 0}>
                 <SaveAll className="h-3.5 w-3.5" />
               </Button>
-              {heldOrders && heldOrders.length > 0 && (
-                <Sheet>
-                  <Button size="icon" variant="ghost" className="h-7 w-7" title="Recall order" asChild>
-                    <label className="cursor-pointer">
-                      <Download className="h-3.5 w-3.5" />
-                    </label>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    title={heldOrders && heldOrders.length > 0 ? `${heldOrders.length} held order(s)` : "No held orders"}
+                    disabled={!heldOrders || heldOrders.length === 0}
+                  >
+                    <Download className="h-3.5 w-3.5" />
                   </Button>
-                  <SheetContent side="right" className="w-80">
-                    <SheetHeader>
-                      <SheetTitle>Held Orders</SheetTitle>
-                    </SheetHeader>
-                    <div className="mt-4 space-y-2">
-                      {heldOrders.map((h) => (
-                        <Button key={h.id} variant="outline" className="w-full justify-start text-sm h-auto py-2" onClick={() => handleRecallOrder(h.id)}>
-                          <div className="text-left">
-                            <p className="font-medium">{h.label ?? `Order #${h.id}`}</p>
-                            <p className="text-xs text-muted-foreground">{h.items.length} items · {format(new Date(h.createdAt), "h:mm a")}</p>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-80">
+                  <SheetHeader>
+                    <SheetTitle>Held Orders</SheetTitle>
+                  </SheetHeader>
+                  <div className="mt-4 space-y-2">
+                    {heldOrders?.map((h) => (
+                      <Button key={h.id} variant="outline" className="w-full justify-start text-sm h-auto py-2" onClick={() => handleRecallOrder(h.id)}>
+                        <div className="text-left">
+                          <p className="font-medium">{h.label ?? `Order #${h.id}`}</p>
+                          <p className="text-xs text-muted-foreground">{h.items.length} items · {format(new Date(h.createdAt), "h:mm a")}</p>
+                        </div>
+                      </Button>
+                    ))}
+                  </div>
+                </SheetContent>
+              </Sheet>
+              {/* Pending / kiosk orders panel */}
+              <Sheet open={kioskPanelOpen} onOpenChange={setKioskPanelOpen}>
+                <SheetTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant={unpaidOrders.length > 0 ? "default" : "ghost"}
+                    className="h-7 w-7 relative"
+                    title={`${unpaidOrders.length} unpaid order(s)`}
+                  >
+                    <ClipboardList className="h-3.5 w-3.5" />
+                    {unpaidOrders.length > 0 && (
+                      <span className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-amber-500 text-[9px] font-bold flex items-center justify-center text-white leading-none">
+                        {unpaidOrders.length > 9 ? "9+" : unpaidOrders.length}
+                      </span>
+                    )}
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-96 flex flex-col">
+                  <SheetHeader>
+                    <SheetTitle className="flex items-center gap-2">
+                      <ClipboardList className="h-4 w-4" />
+                      Unpaid Orders
+                      {unpaidOrders.length > 0 && <Badge variant="secondary">{unpaidOrders.length}</Badge>}
+                    </SheetTitle>
+                  </SheetHeader>
+                  <ScrollArea className="flex-1 mt-4">
+                    {unpaidOrders.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-8">No unpaid orders</p>
+                    ) : (
+                      <div className="space-y-2 pr-2">
+                        {unpaidOrders.map((order) => (
+                          <div key={order.id} className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="font-semibold text-sm">{order.orderNumber}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {format(new Date(order.createdAt), "MMM d, h:mm a")} · {order.items.length} item{order.items.length !== 1 ? "s" : ""}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-mono font-bold">${Number(order.total).toFixed(2)}</p>
+                                <Badge variant="outline" className="text-[10px] capitalize">{order.status}</Badge>
+                              </div>
+                            </div>
+                            <div className="text-xs text-muted-foreground space-y-0.5">
+                              {order.items.slice(0, 3).map((item, i) => (
+                                <p key={i}>• {item.quantity}× {item.productName}</p>
+                              ))}
+                              {order.items.length > 3 && <p className="text-primary">+ {order.items.length - 3} more</p>}
+                            </div>
+                            <Button
+                              size="sm"
+                              className="w-full h-8 text-xs gap-1.5"
+                              onClick={() => {
+                                setKioskChargeOrder(order);
+                                setKioskPayMethod("cash");
+                                setKioskPanelOpen(false);
+                              }}
+                            >
+                              <CreditCard className="h-3 w-3" />
+                              Collect Payment
+                            </Button>
                           </div>
-                        </Button>
-                      ))}
-                    </div>
-                  </SheetContent>
-                </Sheet>
-              )}
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </SheetContent>
+              </Sheet>
+
               <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" title="Clear cart" onClick={resetCart} disabled={cart.length === 0}>
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -1600,6 +1689,104 @@ export function POS() {
               onClick={() => { setExpiryPopupOpen(false); navigate("/subscription"); }}
             >
               Renew Now →
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Kiosk / Pending order charge dialog */}
+      <Dialog open={!!kioskChargeOrder} onOpenChange={(open) => { if (!open) setKioskChargeOrder(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-primary" />
+              Collect Payment — {kioskChargeOrder?.orderNumber}
+            </DialogTitle>
+          </DialogHeader>
+
+          {kioskChargeOrder && (
+            <div className="space-y-4">
+              {/* Order summary */}
+              <div className="rounded-lg bg-secondary/30 p-3 space-y-1.5">
+                {kioskChargeOrder.items.map((item, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{item.quantity}× {item.productName}</span>
+                    <span className="font-mono">${Number(Number(item.price) * Number(item.quantity)).toFixed(2)}</span>
+                  </div>
+                ))}
+                <div className="border-t border-border pt-1.5 mt-1.5 flex justify-between font-semibold">
+                  <span>Total</span>
+                  <span className="font-mono">${Number(kioskChargeOrder.total).toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Payment method */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Payment Method</Label>
+                <RadioGroup
+                  value={kioskPayMethod}
+                  onValueChange={(v) => setKioskPayMethod(v as "card" | "cash")}
+                  className="flex gap-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="cash" id="kiosk-cash" />
+                    <Label htmlFor="kiosk-cash" className="flex items-center gap-1.5 cursor-pointer">
+                      <Banknote className="h-4 w-4" /> Cash
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="card" id="kiosk-card" />
+                    <Label htmlFor="kiosk-card" className="flex items-center gap-1.5 cursor-pointer">
+                      <CreditCard className="h-4 w-4" /> Card
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setKioskChargeOrder(null)}>Cancel</Button>
+            <Button
+              className="gap-2"
+              disabled={chargeOrder.isPending}
+              onClick={() => {
+                if (!kioskChargeOrder) return;
+                chargeOrder.mutate(
+                  { id: kioskChargeOrder.id, data: { paymentMethod: kioskPayMethod } },
+                  {
+                    onSuccess: (order) => {
+                      toast({ title: "Payment collected!", description: `${kioskChargeOrder.orderNumber} marked as completed.` });
+                      setKioskChargeOrder(null);
+                      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+                      // Show receipt
+                      const html = buildReceiptHtml(
+                        {
+                          orderNumber: order.orderNumber,
+                          createdAt: order.createdAt,
+                          items: order.items,
+                          subtotal: order.subtotal,
+                          tax: order.tax,
+                          total: order.total,
+                          discountValue: order.discountValue,
+                          paymentMethod: order.paymentMethod,
+                          cashTendered: order.cashTendered,
+                          notes: order.notes,
+                          customerName: order.customerName,
+                        },
+                        settings ?? {},
+                      );
+                      openReceiptWindow(html);
+                    },
+                    onError: () => {
+                      toast({ title: "Charge failed", description: "Could not collect payment.", variant: "destructive" });
+                    },
+                  },
+                );
+              }}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {chargeOrder.isPending ? "Processing…" : "Confirm & Charge"}
             </Button>
           </DialogFooter>
         </DialogContent>
