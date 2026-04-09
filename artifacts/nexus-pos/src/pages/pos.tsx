@@ -921,7 +921,7 @@ export function POS() {
           </div>
 
           <ScrollArea className="flex-1">
-            <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-5 gap-2 p-3">
+            <div className="grid grid-cols-5 sm:grid-cols-6 lg:grid-cols-6 gap-2 p-3">
               {loadingProducts
                 ? Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="aspect-square rounded-xl bg-secondary/30 animate-pulse" />
@@ -963,7 +963,7 @@ export function POS() {
         </div>
 
         {/* ── MIDDLE: Order controls ── */}
-        <div className="w-[360px] shrink-0 border-l border-border flex flex-col bg-card">
+        <div className="w-[300px] shrink-0 border-l border-border flex flex-col bg-card">
           {/* Order mode selector */}
           <div className="grid grid-cols-3 gap-1 p-2 border-b border-border shrink-0">
             {([
@@ -1289,7 +1289,7 @@ export function POS() {
         </div>
 
         {/* ── RIGHT: Bill preview + keypad ── */}
-        <div className="w-[320px] shrink-0 border-l border-border flex flex-col bg-card">
+        <div className="w-[400px] shrink-0 border-l border-border flex flex-col bg-card">
           {/* Bill summary */}
           <div className="flex-1 overflow-y-auto p-3 border-b border-border">
             <div className="flex items-center gap-1.5 mb-2">
@@ -1356,7 +1356,7 @@ export function POS() {
                 ? (numpadValue ? `${baseCurrency} ${numpadValue}` : "— Cash —")
                 : <span className="text-muted-foreground text-xs font-normal">Select Cash to use keypad</span>}
             </div>
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-3 gap-1.5">
               {(["7","8","9","4","5","6","1","2","3",".","0","⌫"] as const).map((k) => (
                 <button key={k}
                   onClick={() => {
@@ -1373,14 +1373,14 @@ export function POS() {
                     }
                   }}
                   disabled={paymentMethod !== "cash"}
-                  className={`h-9 rounded-md text-sm font-semibold border border-border transition-all active:scale-95 ${k === "⌫" ? "text-red-400 hover:bg-red-500/10" : "hover:bg-secondary/80"} ${paymentMethod !== "cash" ? "opacity-25 cursor-not-allowed" : ""}`}
+                  className={`h-11 rounded-md text-base font-semibold border border-border transition-all active:scale-95 ${k === "⌫" ? "text-red-400 hover:bg-red-500/10" : "hover:bg-secondary/80"} ${paymentMethod !== "cash" ? "opacity-25 cursor-not-allowed" : ""}`}
                 >
                   {k}
                 </button>
               ))}
             </div>
             {paymentMethod === "cash" && (
-              <div className="grid grid-cols-4 gap-1 mt-1">
+              <div className="grid grid-cols-4 gap-1.5 mt-1.5">
                 {[
                   { label: "Exact", val: total.toFixed(2) },
                   { label: "$20", val: "20.00" },
@@ -1388,7 +1388,7 @@ export function POS() {
                   { label: "$100", val: "100.00" },
                 ].map(({ label, val }) => (
                   <button key={label} onClick={() => setNumpadValue(val)}
-                    className="h-7 rounded text-[10px] font-medium border border-border hover:bg-secondary/80 active:scale-95 transition-all">
+                    className="h-8 rounded text-xs font-medium border border-border hover:bg-secondary/80 active:scale-95 transition-all">
                     {label}
                   </button>
                 ))}
@@ -1397,19 +1397,19 @@ export function POS() {
           </div>
 
           {/* Payment & action buttons */}
-          <div className="p-2 space-y-1.5 shrink-0">
-            <div className="grid grid-cols-4 gap-1.5">
-              <Button variant={paymentMethod === "card" ? "default" : "outline"} onClick={() => { setPaymentMethod("card"); setNumpadValue(""); }} className="h-9 text-xs px-1">
-                <CreditCard className="h-3.5 w-3.5 mr-1 shrink-0" />Card
+          <div className="p-3 space-y-2 shrink-0">
+            <div className="grid grid-cols-4 gap-2">
+              <Button variant={paymentMethod === "card" ? "default" : "outline"} onClick={() => { setPaymentMethod("card"); setNumpadValue(""); }} className="h-12 text-sm flex-col gap-0.5 px-1">
+                <CreditCard className="h-4 w-4 shrink-0" />Card
               </Button>
-              <Button variant={paymentMethod === "cash" ? "default" : "outline"} onClick={() => setPaymentMethod("cash")} className="h-9 text-xs px-1">
-                <Banknote className="h-3.5 w-3.5 mr-1 shrink-0" />Cash
+              <Button variant={paymentMethod === "cash" ? "default" : "outline"} onClick={() => setPaymentMethod("cash")} className="h-12 text-sm flex-col gap-0.5 px-1">
+                <Banknote className="h-4 w-4 shrink-0" />Cash
               </Button>
-              <Button variant={paymentMethod === "split" ? "default" : "outline"} onClick={handleSplitClick} className="h-9 text-xs px-1">
-                <SplitSquareHorizontal className="h-3.5 w-3.5 mr-1 shrink-0" />Split
+              <Button variant={paymentMethod === "split" ? "default" : "outline"} onClick={handleSplitClick} className="h-12 text-sm flex-col gap-0.5 px-1">
+                <SplitSquareHorizontal className="h-4 w-4 shrink-0" />Split
               </Button>
-              <Button variant={paymentMethod === "credit" ? "default" : "outline"} onClick={() => { setPaymentMethod("credit"); setNumpadValue(""); }} className={`h-9 text-xs px-1 ${paymentMethod === "credit" ? "" : "border-amber-500/40 text-amber-400 hover:bg-amber-500/10"}`}>
-                <BookOpen className="h-3.5 w-3.5 mr-1 shrink-0" />Credit
+              <Button variant={paymentMethod === "credit" ? "default" : "outline"} onClick={() => { setPaymentMethod("credit"); setNumpadValue(""); }} className={`h-12 text-sm flex-col gap-0.5 px-1 ${paymentMethod === "credit" ? "" : "border-amber-500/40 text-amber-400 hover:bg-amber-500/10"}`}>
+                <BookOpen className="h-4 w-4 shrink-0" />Credit
               </Button>
             </div>
             {paymentMethod === "credit" && !selectedCustomerId && (
@@ -1417,28 +1417,28 @@ export function POS() {
             )}
 
             {paymentMethod === "split" && (
-              <div className="flex gap-1.5 bg-secondary/50 p-1.5 rounded-md">
-                <div className="flex-1 space-y-0.5">
-                  <label className="text-[10px] text-muted-foreground">Card $</label>
-                  <Input type="number" value={splitCardAmount} onChange={(e) => setSplitCardAmount(Number(e.target.value))} className="h-7 font-mono text-xs" />
+              <div className="flex gap-2 bg-secondary/50 p-2 rounded-md">
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs text-muted-foreground">Card $</label>
+                  <Input type="number" value={splitCardAmount} onChange={(e) => setSplitCardAmount(Number(e.target.value))} className="h-8 font-mono text-sm" />
                 </div>
-                <div className="flex-1 space-y-0.5">
-                  <label className="text-[10px] text-muted-foreground">Cash $</label>
-                  <Input type="number" value={splitCashAmount} onChange={(e) => setSplitCashAmount(Number(e.target.value))} className="h-7 font-mono text-xs" />
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs text-muted-foreground">Cash $</label>
+                  <Input type="number" value={splitCashAmount} onChange={(e) => setSplitCashAmount(Number(e.target.value))} className="h-8 font-mono text-sm" />
                 </div>
               </div>
             )}
             {paymentMethod === "split" && !isSplitValid && (
-              <p className="text-amber-500 text-[10px] font-medium">Must equal {formatCurrency(total, baseCurrency)}</p>
+              <p className="text-amber-500 text-xs font-medium">Must equal {formatCurrency(total, baseCurrency)}</p>
             )}
 
             {orderMode === "dine-in" && (
-              <Button variant="outline" className="w-full h-9 text-xs border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+              <Button variant="outline" className="w-full h-10 text-sm border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
                 onClick={handleSendToKitchen} disabled={cart.length === 0 || createOrder.isPending}>
-                <ChefHat className="mr-1.5 h-3.5 w-3.5" />Send to Kitchen (Pay Later)
+                <ChefHat className="mr-2 h-4 w-4" />Send to Kitchen (Pay Later)
               </Button>
             )}
-            <Button className="w-full h-12 text-base shadow-lg shadow-primary/20" size="lg" onClick={handleCharge}
+            <Button className="w-full h-14 text-lg font-bold shadow-lg shadow-primary/20" size="lg" onClick={handleCharge}
               disabled={cart.length === 0 || createOrder.isPending || (paymentMethod === "split" && !isSplitValid) || (paymentMethod === "credit" && !selectedCustomerId)}>
               {createOrder.isPending ? "Processing…" : `Charge ${formatCurrency(total, baseCurrency)}`}
             </Button>
