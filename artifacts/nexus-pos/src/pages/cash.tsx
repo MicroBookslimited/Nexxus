@@ -316,6 +316,8 @@ function CloseShiftDialog({
 }
 
 /* ─── Print helpers ─── */
+type ItemSummaryRow = { productName: string; totalQty: number; totalRevenue: number };
+
 type SessionDetail = {
   session: { staffName: string; openedAt: string; closedAt?: string | null; openingCash: number; actualCash?: number | null; actualCard?: number | null; closingNotes?: string | null };
   payouts: { reason: string; amount: number; staffName: string; createdAt: string }[];
@@ -323,6 +325,7 @@ type SessionDetail = {
   salesSummary: { cashSales: number; cardSales: number; splitSales: number; totalSales: number };
   expectedCash: number;
   totalPayouts: number;
+  itemSummary?: ItemSummaryRow[];
 };
 
 function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
@@ -370,6 +373,23 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
       ${d.payouts.map((p) => `<div style="display:flex;justify-content:space-between"><span>${p.reason}</span><span>-${fmt(p.amount)}</span></div>`).join("")}
       ` : ""}
       ${d.session.closingNotes ? `<div style="margin-top:6px;font-size:11px;color:#444">Notes: ${d.session.closingNotes}</div>` : ""}
+      ${d.itemSummary && d.itemSummary.length > 0 ? `
+      <div style="border-top:1px dashed #000;margin:8px 0"></div>
+      <b>Items Sold</b>
+      <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:11px">
+        <thead><tr style="border-bottom:1px solid #000">
+          <th style="text-align:left">Item</th>
+          <th style="text-align:right">Qty</th>
+          <th style="text-align:right">Revenue</th>
+        </tr></thead>
+        <tbody>${d.itemSummary.map(r => `
+          <tr>
+            <td>${r.productName}</td>
+            <td style="text-align:right">${r.totalQty}</td>
+            <td style="text-align:right">${fmt(r.totalRevenue)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>` : ""}
       ${withDetail && d.orders.length > 0 ? `
       <div style="border-top:1px dashed #000;margin:8px 0"></div>
       <b>Transactions (${d.orders.length})</b>
@@ -440,7 +460,7 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
   const cashVariance = (session.actualCash ?? 0) - expectedCash;
   const cardVariance = (session.actualCard ?? 0) - salesSummary.cardSales;
 
-  const detail: SessionDetail = { session, payouts, orders, salesSummary, expectedCash, totalPayouts };
+  const detail: SessionDetail = { session, payouts, orders, salesSummary, expectedCash, totalPayouts, itemSummary: data.itemSummary };
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -518,6 +538,29 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
               ))}
               <Separator />
               <div className="flex justify-between font-semibold"><span>Total payouts</span><span className="font-mono text-amber-400">−{formatCurrency(totalPayouts)}</span></div>
+            </div>
+          )}
+
+          {/* Items sold summary */}
+          {data.itemSummary && data.itemSummary.length > 0 && (
+            <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2 text-sm">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Items Sold This Shift</p>
+              <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide pb-1 border-b border-border/40">
+                <span>Item</span><span className="text-right">Qty</span><span className="text-right">Revenue</span>
+              </div>
+              {data.itemSummary.map((row, i) => (
+                <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-sm">
+                  <span className="text-foreground truncate">{row.productName}</span>
+                  <span className="font-mono font-semibold text-right tabular-nums">{row.totalQty}</span>
+                  <span className="font-mono text-right tabular-nums text-muted-foreground">{formatCurrency(row.totalRevenue)}</span>
+                </div>
+              ))}
+              <Separator />
+              <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-sm font-bold">
+                <span>Total</span>
+                <span className="font-mono text-right tabular-nums">{data.itemSummary.reduce((s, r) => s + r.totalQty, 0)}</span>
+                <span className="font-mono text-right tabular-nums text-primary">{formatCurrency(data.itemSummary.reduce((s, r) => s + r.totalRevenue, 0))}</span>
+              </div>
             </div>
           )}
 
