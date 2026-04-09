@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { useToast } from "@/hooks/use-toast";
-import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -428,7 +427,7 @@ export function Locations() {
   const inactiveLocs = locations.filter(l => !l.isActive);
 
   return (
-    <Layout>
+    <>
       <div className="flex h-full">
         {/* Sidebar */}
         <aside className="w-64 shrink-0 border-r border-border bg-card/50 flex flex-col">
@@ -647,6 +646,6 @@ export function Locations() {
           onSaved={() => { setTransferRefresh(r => r + 1); load(); }}
         />
       )}
-    </Layout>
+    </>
   );
 }

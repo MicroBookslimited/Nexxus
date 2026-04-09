@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { useToast } from "@/hooks/use-toast";
-import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1183,7 +1182,7 @@ export function Accounting() {
   const filteredAccounts = acctTypeFilter === "all" ? accounts : accounts.filter(a => a.type === acctTypeFilter);
 
   return (
-    <Layout>
+    <>
       <div className="h-full flex flex-col">
         {/* Header */}
         <div className="border-b border-border px-6 py-4 flex items-center justify-between bg-card shrink-0">
@@ -1394,6 +1393,6 @@ export function Accounting() {
       {showJEModal && (
         <JournalEntryModal accounts={accounts} onClose={() => setShowJEModal(false)} onSaved={loadEntries} />
       )}
-    </Layout>
+    </>
   );
 }
