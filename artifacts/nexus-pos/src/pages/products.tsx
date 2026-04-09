@@ -59,7 +59,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, MapPin, FileSpreadsheet, Upload, FileDown } from "lucide-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
 const CATEGORIES = ["Beverages", "Food", "Bakery", "Merchandise", "Other"];
@@ -564,6 +564,339 @@ function LocationsEditor({ productId }: { productId: number }) {
   );
 }
 
+/* ─── Import Products Dialog ─── */
+const IMPORT_FIELDS = [
+  { key: "name",        label: "Product Name",          required: true  },
+  { key: "price",       label: "Price",                 required: true  },
+  { key: "category",    label: "Category",              required: false },
+  { key: "description", label: "Description",           required: false },
+  { key: "barcode",     label: "Barcode / SKU",         required: false },
+  { key: "stockCount",  label: "Stock Quantity",        required: false },
+  { key: "inStock",     label: "In Stock (yes/no/1/0)", required: false },
+];
+
+const TEMPLATE_ROWS = [
+  ["Name", "Price", "Category", "Description", "Barcode", "Stock Quantity", "In Stock"],
+  ["Jerk Chicken",  "850.00", "Food",       "Seasoned jerk chicken",   "JC001", "50",  "yes"],
+  ["Ting Soda",     "120.00", "Beverages",  "Grapefruit flavour soda", "TS001", "100", "yes"],
+  ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "RC001", "30",  "yes"],
+];
+
+function downloadTemplate() {
+  const csv = TEMPLATE_ROWS.map(r => r.map(c => `"${c}"`).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement("a"), { href: url, download: "NEXUS_Product_Import_Template.csv" });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+type ImportResult = { row: number; name: string; status: "ok" | "error"; error?: string };
+
+function ImportProductsDialog({ open, onClose, onImported }: {
+  open: boolean;
+  onClose: () => void;
+  onImported: (count: number) => void;
+}) {
+  const createProduct = useCreateProduct();
+  const { toast } = useToast();
+  const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const [step, setStep]         = useState<"upload" | "map" | "done">("upload");
+  const [headers, setHeaders]   = useState<string[]>([]);
+  const [rows, setRows]         = useState<string[][]>([]);
+  const [mapping, setMapping]   = useState<Record<string, string>>({});
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [results, setResults]   = useState<ImportResult[]>([]);
+
+  const reset = () => { setStep("upload"); setHeaders([]); setRows([]); setMapping({}); setImporting(false); setProgress(0); setResults([]); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const parseFile = async (file: File) => {
+    try {
+      const XLSX = await import("xlsx");
+      const buf  = await file.arrayBuffer();
+      const wb   = XLSX.read(buf, { type: "array" });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: "" }) as string[][];
+      if (!data.length) { toast({ title: "Empty file", variant: "destructive" }); return; }
+      const [hdr, ...body] = data;
+      const clean = hdr.map(h => String(h).trim());
+      setHeaders(clean);
+      setRows(body.filter(r => r.some(c => String(c).trim())));
+      // Auto-map by column name similarity
+      const auto: Record<string, string> = {};
+      clean.forEach(h => {
+        const l = h.toLowerCase();
+        if      (/name|product/i.test(l))                           auto[h] = "name";
+        else if (/price|cost|amount/i.test(l))                      auto[h] = "price";
+        else if (/categ/i.test(l))                                   auto[h] = "category";
+        else if (/desc/i.test(l))                                    auto[h] = "description";
+        else if (/barcode|sku|code/i.test(l))                       auto[h] = "barcode";
+        else if (/stock.*qty|qty.*stock|quantity|stock.count/i.test(l)) auto[h] = "stockCount";
+        else if (/in.?stock|available/i.test(l))                    auto[h] = "inStock";
+      });
+      setMapping(auto);
+      setStep("map");
+    } catch {
+      toast({ title: "Could not read file", description: "Please use a valid CSV or Excel file.", variant: "destructive" });
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) parseFile(f); };
+
+  const getMapped = (header: string) => mapping[header] ?? "__skip__";
+  const setMapped = (header: string, val: string) => setMapping(m => ({ ...m, [header]: val }));
+
+  const extractRow = (row: string[]) => {
+    const obj: Record<string, string> = {};
+    headers.forEach((h, i) => { const f = mapping[h]; if (f && f !== "__skip__") obj[f] = String(row[i] ?? "").trim(); });
+    return obj;
+  };
+
+  const hasName  = Object.values(mapping).includes("name");
+  const hasPrice = Object.values(mapping).includes("price");
+
+  const handleImport = async () => {
+    setImporting(true);
+    const out: ImportResult[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const d = extractRow(rows[i]);
+      setProgress(i + 1);
+      if (!d.name?.trim()) { out.push({ row: i + 2, name: d.name || `Row ${i + 2}`, status: "error", error: "Name is required" }); continue; }
+      if (!d.price?.trim()) { out.push({ row: i + 2, name: d.name, status: "error", error: "Price is required" }); continue; }
+      const price = parseFloat(d.price.replace(/[^0-9.-]/g, ""));
+      if (isNaN(price) || price < 0) { out.push({ row: i + 2, name: d.name, status: "error", error: "Invalid price" }); continue; }
+      const stockCount = parseInt(d.stockCount ?? "0") || 0;
+      const inStockRaw = (d.inStock ?? "yes").toLowerCase().trim();
+      const inStock    = inStockRaw === "yes" || inStockRaw === "true" || inStockRaw === "1";
+      const category   = CATEGORIES.includes(d.category ?? "") ? d.category! : "Other";
+      try {
+        await new Promise<void>((resolve, reject) => {
+          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false } },
+            { onSuccess: () => resolve(), onError: (e) => reject(e) });
+        });
+        out.push({ row: i + 2, name: d.name, status: "ok" });
+      } catch { out.push({ row: i + 2, name: d.name, status: "error", error: "Server error" }); }
+    }
+    setResults(out);
+    setImporting(false);
+    setStep("done");
+    const ok = out.filter(r => r.status === "ok").length;
+    if (ok > 0) onImported(ok);
+  };
+
+  const previewRows = rows.slice(0, 5);
+  const okCount    = results.filter(r => r.status === "ok").length;
+  const errCount   = results.filter(r => r.status === "error").length;
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) handleClose(); }}>
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="h-5 w-5 text-primary" />
+            Import Products
+          </DialogTitle>
+          {/* Step breadcrumb */}
+          <div className="flex items-center gap-1.5 text-xs pt-2">
+            {(["upload","map","done"] as const).map((s, i) => (
+              <React.Fragment key={s}>
+                <span className={`flex items-center gap-1.5 ${step === s ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                  <span className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${step === s ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>{i + 1}</span>
+                  {s === "upload" ? "Upload File" : s === "map" ? "Map Columns" : "Results"}
+                </span>
+                {i < 2 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+              </React.Fragment>
+            ))}
+          </div>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+          {/* ── Step 1: Upload ── */}
+          {step === "upload" && (
+            <div className="space-y-4">
+              <div
+                onDrop={handleDrop} onDragOver={e => e.preventDefault()}
+                onClick={() => fileRef.current?.click()}
+                className="border-2 border-dashed border-border rounded-xl p-14 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-all text-center"
+              >
+                <Upload className="h-10 w-10 text-muted-foreground" />
+                <div>
+                  <p className="font-semibold">Drop your file here, or click to browse</p>
+                  <p className="text-xs text-muted-foreground mt-1">Supports CSV (.csv) and Excel (.xlsx, .xls)</p>
+                </div>
+                <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) parseFile(f); }} />
+              </div>
+
+              <div className="flex items-center gap-4 rounded-lg border border-border bg-secondary/20 p-4">
+                <FileDown className="h-8 w-8 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Download the import template</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Pre-filled with example rows and the exact column layout expected.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); downloadTemplate(); }} className="shrink-0">
+                  <FileDown className="h-3.5 w-3.5 mr-1.5" />Template
+                </Button>
+              </div>
+
+              <div className="rounded-lg border border-border bg-secondary/10 p-4 text-xs text-muted-foreground space-y-1">
+                <p className="font-semibold text-foreground text-sm mb-2">Expected columns</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                  {IMPORT_FIELDS.map(f => (
+                    <span key={f.key}><span className="font-medium text-foreground">{f.label}</span>{f.required ? <span className="text-red-400 ml-0.5">*</span> : <span className="text-muted-foreground"> (optional)</span>}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 2: Map columns ── */}
+          {step === "map" && (
+            <div className="space-y-5">
+              <p className="text-sm text-muted-foreground">
+                Found <span className="font-semibold text-foreground">{rows.length} product row{rows.length !== 1 ? "s" : ""}</span>.
+                Match each spreadsheet column to the correct product field.
+              </p>
+
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="grid grid-cols-[1fr_24px_1fr] gap-x-3 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <span>Spreadsheet Column</span><span />
+                  <span>Product Field</span>
+                </div>
+                <div className="divide-y divide-border/60">
+                  {headers.map(h => (
+                    <div key={h} className="grid grid-cols-[1fr_24px_1fr] items-center gap-x-3 px-4 py-2.5">
+                      <p className="text-sm font-medium truncate">{h}</p>
+                      <span className="text-muted-foreground text-center text-xs">→</span>
+                      <Select value={getMapped(h)} onValueChange={v => setMapped(h, v)}>
+                        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__skip__">— Skip this column —</SelectItem>
+                          {IMPORT_FIELDS.map(f => (
+                            <SelectItem key={f.key} value={f.key}>
+                              {f.label}{f.required ? " *" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {previewRows.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Data Preview — first {previewRows.length} row{previewRows.length !== 1 ? "s" : ""}</p>
+                  <div className="rounded-lg border border-border overflow-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-secondary/40 border-b border-border">
+                          {headers.map(h => (
+                            <th key={h} className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">
+                              {h}
+                              {mapping[h] && mapping[h] !== "__skip__" && (
+                                <span className="ml-1 text-[10px] text-primary font-normal">→ {IMPORT_FIELDS.find(f => f.key === mapping[h])?.label}</span>
+                              )}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewRows.map((row, i) => (
+                          <tr key={i} className="border-b border-border/40 last:border-0 hover:bg-secondary/20">
+                            {headers.map((_, j) => (
+                              <td key={j} className="px-3 py-1.5 text-muted-foreground whitespace-nowrap max-w-[160px] truncate">{row[j]}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {(!hasName || !hasPrice) && (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-2.5 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span className="text-amber-400">
+                    {!hasName && !hasPrice ? "Map both Product Name and Price before importing." : !hasName ? "Map the Product Name field." : "Map the Price field."}
+                  </span>
+                </div>
+              )}
+
+              {importing && (
+                <div className="space-y-2">
+                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                    <div className="h-full bg-primary transition-all duration-300 rounded-full" style={{ width: `${(progress / rows.length) * 100}%` }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">Importing {progress} of {rows.length}…</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step 3: Results ── */}
+          {step === "done" && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-5 text-center">
+                  <p className="text-3xl font-bold text-emerald-400">{okCount}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Products imported</p>
+                </div>
+                <div className={`rounded-lg border p-5 text-center ${errCount > 0 ? "border-red-500/30 bg-red-500/5" : "border-border bg-secondary/10"}`}>
+                  <p className={`text-3xl font-bold ${errCount > 0 ? "text-red-400" : "text-muted-foreground"}`}>{errCount}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Failed rows</p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="grid grid-cols-[3rem_1fr_7rem_1fr] gap-0 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <span>Row</span><span>Name</span><span>Status</span><span>Note</span>
+                </div>
+                <div className="divide-y divide-border/60 max-h-64 overflow-y-auto">
+                  {results.map((r, i) => (
+                    <div key={i} className="grid grid-cols-[3rem_1fr_7rem_1fr] items-center gap-0 px-4 py-2 text-sm">
+                      <span className="text-muted-foreground text-xs">{r.row}</span>
+                      <span className="font-medium truncate pr-3">{r.name}</span>
+                      <span>
+                        {r.status === "ok"
+                          ? <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs">Imported</Badge>
+                          : <Badge variant="destructive" className="text-xs">Failed</Badge>}
+                      </span>
+                      <span className="text-xs text-muted-foreground truncate pl-3">{r.error ?? ""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="px-6 py-4 border-t border-border shrink-0">
+          {step === "upload" && <Button variant="outline" onClick={handleClose}>Cancel</Button>}
+          {step === "map" && (
+            <>
+              <Button variant="outline" onClick={() => { setStep("upload"); setHeaders([]); setRows([]); }} disabled={importing}>Back</Button>
+              <Button onClick={handleImport} disabled={importing || !hasName || !hasPrice || rows.length === 0}>
+                {importing ? `Importing… (${progress}/${rows.length})` : `Import ${rows.length} Product${rows.length !== 1 ? "s" : ""}`}
+              </Button>
+            </>
+          )}
+          {step === "done" && (
+            <>
+              {errCount > 0 && <Button variant="outline" onClick={reset}>Import Another File</Button>}
+              <Button onClick={handleClose}>Done</Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ─── Main Products page ─── */
 export function Products() {
   const { can } = useStaff();
@@ -598,6 +931,7 @@ export function Products() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [restockProduct, setRestockProduct] = useState<GetProductResponse | null>(null);
   const [restockForm, setRestockForm] = useState<RestockForm>(emptyRestockForm());
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [billView, setBillView] = useState<"list" | "new">("list");
   const [viewBillId, setViewBillId] = useState<number | null>(null);
   const [billForm, setBillForm] = useState<BillForm>(emptyBillForm());
@@ -844,9 +1178,14 @@ export function Products() {
             </button>
           </div>
           {pageTab === "products" && canManage && (
-            <Button onClick={openAdd} className="gap-2">
-              <Plus className="h-4 w-4" />Add Product
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="gap-2">
+                <FileSpreadsheet className="h-4 w-4" />Import
+              </Button>
+              <Button onClick={openAdd} className="gap-2">
+                <Plus className="h-4 w-4" />Add Product
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -1612,6 +1951,16 @@ export function Products() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import Products dialog */}
+      <ImportProductsDialog
+        open={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        onImported={(count) => {
+          toast({ title: `${count} product${count !== 1 ? "s" : ""} imported successfully` });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+        }}
+      />
     </motion.div>
   );
 }
