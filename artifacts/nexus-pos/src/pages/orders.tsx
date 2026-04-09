@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useListOrders, useUpdateOrderStatus, useChargeOrder } from "@workspace/api-client-react";
+import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings } from "@workspace/api-client-react";
+import { buildReceiptHtml, openReceiptWindow } from "@/lib/receipt";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -100,7 +101,7 @@ export function Orders() {
   if (toDate) listParams.to = toDate;
 
   const { data: orders, isLoading } = useListOrders(listParams);
-  
+  const { data: settings } = useGetSettings();
   const updateStatus = useUpdateOrderStatus();
   const chargeOrder = useChargeOrder();
   const queryClient = useQueryClient();
@@ -143,48 +144,25 @@ export function Orders() {
   };
 
   const handleReprintReceipt = (order: NonNullable<typeof orders>[0]) => {
-    const fmt = (n: number) => {
-      try { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n); }
-      catch { return `$${n.toFixed(2)}`; }
-    };
-    const win = window.open("", "_blank", "width=400,height=700");
-    if (!win) return;
-    const pm = order.paymentMethod === "split"
-      ? `Split — Card: ${fmt(order.splitCardAmount ?? 0)}, Cash: ${fmt(order.splitCashAmount ?? 0)}`
-      : (order.paymentMethod ?? "—").toUpperCase();
-    const refundNote = order.status === "refunded" ? `<p class="center" style="color:red;font-weight:bold">*** REFUNDED ***</p>` : "";
-    win.document.write(`<!DOCTYPE html><html><head><title>Receipt – ${order.orderNumber}</title>
-      <style>
-        @page{size:80mm auto;margin:4mm}
-        body{margin:0;padding:8px;font-family:'Courier New',Courier,monospace;font-size:11px;line-height:1.5}
-        h2,p.center{text-align:center;margin:2px 0}
-        .row{display:flex;justify-content:space-between}
-        .sep{border-top:1px dashed #333;margin:6px 0}
-        .bold{font-weight:bold}
-      </style>
-    </head><body>
-      <h2>NEXXUS POS</h2>
-      <p class="center">Your Business, Connected.</p>
-      <div class="sep"></div>
-      <div class="row"><span>Order:</span><span>${order.orderNumber}</span></div>
-      <div class="row"><span>Date:</span><span>${format(new Date(order.createdAt), "MMM d, h:mm a")}</span></div>
-      <div class="sep"></div>
-      ${order.items.map(item => `<div class="row"><span>${item.quantity}× ${item.productName}</span><span>${fmt(item.lineTotal)}</span></div>`).join("")}
-      <div class="sep"></div>
-      <div class="row"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
-      ${(order.discountValue ?? 0) > 0 ? `<div class="row"><span>Discount</span><span>-${fmt(order.discountValue ?? 0)}</span></div>` : ""}
-      <div class="row"><span>Tax (10%)</span><span>${fmt(order.tax)}</span></div>
-      <div class="row bold"><span>TOTAL</span><span>${fmt(order.total)}</span></div>
-      <div class="sep"></div>
-      <div class="row"><span>Payment:</span><span>${pm}</span></div>
-      ${order.notes ? `<div class="sep"></div><p>Note: ${order.notes}</p>` : ""}
-      <div class="sep"></div>
-      ${refundNote}
-      <p class="center">Thank you for your business!</p>
-      <p class="center">Powered by MicroBooks</p>
-    </body></html>`);
-    win.document.close();
-    win.print();
+    const html = buildReceiptHtml(
+      {
+        orderNumber: order.orderNumber,
+        createdAt: order.createdAt,
+        items: order.items,
+        subtotal: order.subtotal,
+        tax: order.tax,
+        total: order.total,
+        discountValue: order.discountValue,
+        paymentMethod: order.paymentMethod,
+        splitCardAmount: order.splitCardAmount,
+        splitCashAmount: order.splitCashAmount,
+        cashTendered: order.cashTendered,
+        notes: order.notes,
+        status: order.status,
+      },
+      settings ?? {},
+    );
+    openReceiptWindow(html);
   };
 
   const openManagerPin = (type: "void" | "refund" | "reprint", orderId: number) => {

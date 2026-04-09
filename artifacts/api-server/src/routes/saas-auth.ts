@@ -153,7 +153,7 @@ router.get("/saas/me", async (req, res): Promise<void> => {
     plan = p;
   }
 
-  res.json({ tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, ownerName: tenant.ownerName, phone: tenant.phone, country: tenant.country, onboardingStep: tenant.onboardingStep, onboardingComplete: tenant.onboardingComplete, status: tenant.status }, subscription, plan });
+  res.json({ tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, ownerName: tenant.ownerName, phone: tenant.phone, country: tenant.country, slug: tenant.slug, onboardingStep: tenant.onboardingStep, onboardingComplete: tenant.onboardingComplete, status: tenant.status }, subscription, plan });
 });
 
 /* ─── Forgot Password ─── */

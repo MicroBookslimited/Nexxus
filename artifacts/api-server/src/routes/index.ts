@@ -22,6 +22,7 @@ import superadminRouter from "./superadmin";
 import rolesRouter from "./roles";
 import locationsRouter from "./locations";
 import accountingRouter from "./accounting";
+import publicMenuRouter from "./public-menu";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use(superadminRouter);
 router.use(rolesRouter);
 router.use(locationsRouter);
 router.use(accountingRouter);
+router.use(publicMenuRouter);
 
 export default router;

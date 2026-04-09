@@ -123,6 +123,18 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `POST /api/accounting/stock-counts/:id/apply` — Apply count (updates stock, optional JE)
   - `DELETE /api/accounting/stock-counts/:id` — Void a session
 
+### Customer Menu & Online Ordering (`artifacts/nexus-menu`)
+- **Type**: React + Vite web app
+- **Preview path**: `/menu/`
+- **Purpose**: Customer-facing menu, online ordering, kiosk mode
+- **Usage**: `/menu/?slug=<tenant-slug>` or `?slug=...&mode=kiosk` or `?mode=online`
+- **Features**: Category filter, product search, cart, customization dialog (variants/modifiers), checkout, order confirmation
+- **Public API Endpoints** (no auth required):
+  - `GET /api/public/menu/:slug` — Products + categories for tenant
+  - `GET /api/public/settings/:slug` — Business name, tax rate, currency settings
+  - `POST /api/public/orders/:slug` — Place customer order (online/kiosk)
+- **QR Code**: Admin Settings page shows QR code + links for menu/kiosk/online URLs (downloadable SVG)
+
 ## SaaS Layer
 
 ### Authentication

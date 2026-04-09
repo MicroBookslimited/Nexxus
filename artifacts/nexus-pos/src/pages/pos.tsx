@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { buildReceiptHtml, openReceiptWindow } from "@/lib/receipt";
 import {
   useListProducts,
   useCreateOrder,
@@ -304,83 +305,29 @@ function CustomizeDialog({
 }
 
 /* ─── 80mm Receipt Print Helper ─── */
-function printReceiptWindow(order: GetOrderResponse, baseCurrency = "JMD", secondaryCurrency = "", exchangeRate = 0) {
-  const fmt = (n: number, cur = baseCurrency) => {
-    try { return new Intl.NumberFormat("en-US", { style: "currency", currency: cur }).format(Math.abs(n)); }
-    catch { return `${cur} ${Math.abs(n).toFixed(2)}`; }
-  };
-  const W = 42;
-  const center = (s: string) => {
-    const pad = Math.max(0, Math.floor((W - s.length) / 2));
-    return " ".repeat(pad) + s;
-  };
-  const row = (left: string, right: string) => {
-    const space = Math.max(1, W - left.length - right.length);
-    return left + " ".repeat(space) + right;
-  };
-  const divider = "-".repeat(W);
-  const dblDivider = "=".repeat(W);
-
-  const itemLines = order.items.flatMap((item) => {
-    const label = `${item.quantity} x ${item.productName}`;
-    const lines = [row(label, fmt(item.lineTotal))];
-    for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
-      lines.push(`  + ${v.optionName}`);
-    }
-    for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
-      lines.push(`  + ${m.optionName}`);
-    }
-    return lines;
-  });
-
-  const paymentLines = order.paymentMethod === "split"
-    ? [row("  Card:", fmt(order.splitCardAmount ?? 0)), row("  Cash:", fmt(order.splitCashAmount ?? 0))]
-    : [
-        row("Payment:", (order.paymentMethod ?? "—").toUpperCase()),
-        ...(order.paymentMethod === "cash" && order.cashTendered != null && order.cashTendered > 0
-          ? [
-              row("Tendered:", fmt(order.cashTendered)),
-              row("Change:", fmt(Math.max(0, order.cashTendered - order.total))),
-            ]
-          : []),
-      ];
-
-  const textLines = [
-    center("NEXXUS POS"),
-    center("Your Business, Connected."),
-    dblDivider,
-    row(`Order: ${order.orderNumber}`, format(new Date(order.createdAt), "MMM d h:mm a")),
-    divider,
-    ...itemLines,
-    divider,
-    row("Subtotal:", fmt(order.subtotal)),
-    ...((order.discountValue ?? 0) > 0 ? [row("Discount:", `-${fmt(order.discountValue ?? 0)}`)] : []),
-    row("GCT:", fmt(order.tax)),
-    dblDivider,
-    row("TOTAL:", fmt(order.total)),
-    ...(secondaryCurrency && exchangeRate > 0 ? [row(`  ≈ ${secondaryCurrency}:`, fmt(order.total * exchangeRate, secondaryCurrency))] : []),
-    dblDivider,
-    ...paymentLines,
-    ...(order.notes ? [divider, `Note: ${order.notes}`] : []),
-    divider,
-    center("Thank you for your business!"),
-    center("Powered by MicroBooks"),
-    dblDivider,
-  ];
-
-  const pre = textLines.join("\n");
-  const w = window.open("", "_blank", "width=400,height=700");
-  if (!w) return;
-  w.document.write(`<!DOCTYPE html><html><head><title>Receipt</title>
-    <style>
-      @page { size: 80mm auto; margin: 4mm; }
-      body { margin: 0; padding: 8px; font-family: 'Courier New', Courier, monospace; font-size: 11px; line-height: 1.4; }
-      pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
-    </style>
-  </head><body><pre>${pre}</pre>
-    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script>
-  </body></html>`);
-  w.document.close();
+function printReceiptWindow(
+  order: GetOrderResponse,
+  settings: Record<string, string> = {},
+) {
+  const html = buildReceiptHtml(
+    {
+      orderNumber: order.orderNumber,
+      createdAt: order.createdAt,
+      items: order.items,
+      subtotal: order.subtotal,
+      tax: order.tax,
+      total: order.total,
+      discountValue: order.discountValue,
+      paymentMethod: order.paymentMethod,
+      splitCardAmount: order.splitCardAmount,
+      splitCashAmount: order.splitCashAmount,
+      cashTendered: order.cashTendered,
+      notes: order.notes,
+      status: order.status,
+    },
+    settings,
+  );
+  openReceiptWindow(html);
 }
 
 /* ─── Main POS component ─── */
@@ -1528,7 +1475,7 @@ export function POS() {
           )}
 
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => receiptOrder && printReceiptWindow(receiptOrder, baseCurrency, secondaryCurrency, exchangeRate)} className="gap-2 flex-1">
+            <Button variant="outline" onClick={() => receiptOrder && printReceiptWindow(receiptOrder, settings ?? {})} className="gap-2 flex-1">
               <Printer className="h-4 w-4" />Print
             </Button>
             <Button

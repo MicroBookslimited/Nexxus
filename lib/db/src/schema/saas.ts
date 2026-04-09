@@ -25,6 +25,7 @@ export const tenantsTable = pgTable("tenants", {
   phone: text("phone"),
   address: text("address"),
   country: text("country").default("US"),
+  slug: text("slug").unique(),
   status: text("status").notNull().default("pending"),
   passwordHash: text("password_hash").notNull(),
   onboardingStep: integer("onboarding_step").notNull().default(1),

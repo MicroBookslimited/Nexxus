@@ -7,10 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import {
   Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign, Bell, Send,
-  ShieldCheck, Plus, Trash2, ChevronDown, ChevronRight, Edit2, Check, X,
+  ShieldCheck, Plus, Trash2, ChevronDown, ChevronRight, Edit2, Check, X, QrCode, Copy, Download, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef } from "@/lib/saas-api";
+import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { QRCodeSVG } from "qrcode.react";
 
 function ProviderCard({
   id,
@@ -88,6 +89,16 @@ export function AdminSettings() {
   const [lowStockThreshold, setLowStockThreshold] = useState("5");
   const [sendingTest, setSendingTest] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [tenantSlug, setTenantSlug] = useState<string>("");
+
+  useEffect(() => {
+    const token = localStorage.getItem(TENANT_TOKEN_KEY);
+    if (!token) return;
+    fetch("/api/saas/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.tenant?.slug) setTenantSlug(data.tenant.slug); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!settings) return;
@@ -536,6 +547,9 @@ export function AdminSettings() {
         </CardContent>
       </Card>
 
+      {/* QR Code / Online Menu */}
+      {tenantSlug && <QRCodeSection slug={tenantSlug} />}
+
       <div className="flex justify-end pt-2">
         <Button
           onClick={handleSave}
@@ -548,6 +562,108 @@ export function AdminSettings() {
 
       <RolesSettings />
     </div>
+  );
+}
+
+/* ─── QR Code Section ─── */
+function QRCodeSection({ slug }: { slug: string }) {
+  const { toast } = useToast();
+  const base = window.location.origin;
+  const menuBase = `${base}/menu/?slug=${slug}`;
+  const menuUrl = menuBase;
+  const kioskUrl = `${menuBase}&mode=kiosk`;
+  const onlineUrl = `${menuBase}&mode=online`;
+  const [active, setActive] = useState<"menu" | "kiosk" | "online">("menu");
+  const qrUrl = active === "menu" ? menuUrl : active === "kiosk" ? kioskUrl : onlineUrl;
+
+  const copy = (url: string) => {
+    navigator.clipboard.writeText(url).then(() => toast({ title: "Copied!", description: "Link copied to clipboard." }));
+  };
+
+  const download = () => {
+    const svg = document.getElementById("qr-svg-export");
+    if (!svg) return;
+    const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `qr-${active}-${slug}.svg`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const links = [
+    { key: "menu" as const, label: "Menu", url: menuUrl, desc: "Customer-facing browseable menu" },
+    { key: "kiosk" as const, label: "Kiosk", url: kioskUrl, desc: "Self-service kiosk mode" },
+    { key: "online" as const, label: "Online Order", url: onlineUrl, desc: "Online ordering for pickup/delivery" },
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <QrCode className="h-4 w-4 text-primary" />
+          QR Code &amp; Online Menu
+        </CardTitle>
+        <CardDescription>Share your menu or set up a kiosk / online ordering page</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col sm:flex-row gap-6">
+          <div className="flex flex-col items-center gap-3">
+            <div className="p-3 bg-white rounded-xl border border-border shadow-sm">
+              <QRCodeSVG id="qr-svg-export" value={qrUrl} size={160} level="M" />
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={download} className="gap-1.5">
+                <Download className="h-3.5 w-3.5" /> Download SVG
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex-1 space-y-3">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Choose URL type:</p>
+            {links.map(link => (
+              <div
+                key={link.key}
+                className={cn(
+                  "rounded-lg border p-3 cursor-pointer transition-all",
+                  active === link.key
+                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                    : "border-border hover:border-muted-foreground/50 bg-card"
+                )}
+                onClick={() => setActive(link.key)}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold">{link.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{link.desc}</p>
+                    <p className="text-xs font-mono text-muted-foreground mt-1 break-all">{link.url}</p>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0 mt-0.5">
+                    <button
+                      onClick={e => { e.stopPropagation(); copy(link.url); }}
+                      className="p-1.5 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors"
+                      title="Copy link"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      className="p-1.5 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors"
+                      title="Open in new tab"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
