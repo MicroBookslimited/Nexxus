@@ -39,6 +39,18 @@ router.post("/locations", async (req, res): Promise<void> => {
   const parsed = LocationBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [loc] = await db.insert(locationsTable).values({ ...parsed.data, tenantId }).returning();
+
+  const tenantProducts = await db
+    .select({ id: productsTable.id })
+    .from(productsTable)
+    .where(eq(productsTable.tenantId, tenantId));
+
+  if (tenantProducts.length > 0) {
+    await db.insert(locationInventoryTable)
+      .values(tenantProducts.map((p) => ({ locationId: loc.id, productId: p.id, stockCount: 0 })))
+      .onConflictDoNothing();
+  }
+
   res.status(201).json(loc);
 });
 

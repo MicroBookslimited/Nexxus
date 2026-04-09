@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, like, and, type SQL, count } from "drizzle-orm";
-import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable } from "@workspace/db";
+import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable } from "@workspace/db";
 import {
   CreateProductBody,
   UpdateProductBody,
@@ -66,19 +66,29 @@ router.get("/products", async (req, res): Promise<void> => {
 
   const locationId = query.data.locationId;
   let overrides: { productId: number; priceOverride: number | null; isAvailable: boolean }[] = [];
+  let locationStock: { productId: number; stockCount: number }[] = [];
   if (locationId) {
-    overrides = await db
-      .select({ productId: productLocationsTable.productId, priceOverride: productLocationsTable.priceOverride, isAvailable: productLocationsTable.isAvailable })
-      .from(productLocationsTable)
-      .where(eq(productLocationsTable.locationId, locationId));
+    [overrides, locationStock] = await Promise.all([
+      db
+        .select({ productId: productLocationsTable.productId, priceOverride: productLocationsTable.priceOverride, isAvailable: productLocationsTable.isAvailable })
+        .from(productLocationsTable)
+        .where(eq(productLocationsTable.locationId, locationId)),
+      db
+        .select({ productId: locationInventoryTable.productId, stockCount: locationInventoryTable.stockCount })
+        .from(locationInventoryTable)
+        .where(eq(locationInventoryTable.locationId, locationId)),
+    ]);
   }
+
+  const stockMap = new Map(locationStock.map((s) => [s.productId, s.stockCount]));
 
   const enriched = await Promise.all(
     products.map(async (p) => {
       const override = overrides.find((o) => o.productId === p.id);
       const effectivePrice = override?.priceOverride != null ? override.priceOverride : p.price;
       const effectiveInStock = locationId ? (override ? override.isAvailable && p.inStock : p.inStock) : p.inStock;
-      return withFlags({ ...p, price: effectivePrice, inStock: effectiveInStock });
+      const effectiveStockCount = locationId && stockMap.has(p.id) ? stockMap.get(p.id)! : p.stockCount;
+      return withFlags({ ...p, price: effectivePrice, inStock: effectiveInStock, stockCount: effectiveStockCount });
     })
   );
 
@@ -214,8 +224,17 @@ router.get("/products/:id/locations", async (req, res): Promise<void> => {
     .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
-  const locations = await db.select().from(locationsTable).where(eq(locationsTable.isActive, true));
-  const overrides = await db.select().from(productLocationsTable).where(eq(productLocationsTable.productId, productId));
+  const [locations, overrides, inventoryRows] = await Promise.all([
+    db.select().from(locationsTable)
+      .where(and(eq(locationsTable.tenantId, tenantId), eq(locationsTable.isActive, true)))
+      .orderBy(locationsTable.name),
+    db.select().from(productLocationsTable).where(eq(productLocationsTable.productId, productId)),
+    db.select({ locationId: locationInventoryTable.locationId, stockCount: locationInventoryTable.stockCount })
+      .from(locationInventoryTable)
+      .where(eq(locationInventoryTable.productId, productId)),
+  ]);
+
+  const invMap = new Map(inventoryRows.map((r) => [r.locationId, r.stockCount]));
 
   const result = locations.map((loc) => {
     const override = overrides.find((o) => o.locationId === loc.id);
@@ -224,6 +243,7 @@ router.get("/products/:id/locations", async (req, res): Promise<void> => {
       locationName: loc.name,
       isAvailable: override ? override.isAvailable : true,
       priceOverride: override?.priceOverride ?? null,
+      stockCount: invMap.get(loc.id) ?? null,
     };
   });
 

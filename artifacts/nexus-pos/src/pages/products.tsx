@@ -415,6 +415,7 @@ type ProductLocationRow = {
   locationName: string;
   isAvailable: boolean;
   priceOverride: number | null;
+  stockCount: number | null;
 };
 
 function authHeaders() {
@@ -424,6 +425,7 @@ function authHeaders() {
 
 function LocationsEditor({ productId }: { productId: number }) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const queryKey = [`/api/products/${productId}/locations`];
 
   const { data: rows, isLoading } = useQuery<ProductLocationRow[]>({
@@ -435,47 +437,60 @@ function LocationsEditor({ productId }: { productId: number }) {
     },
   });
 
-  const [draft, setDraft] = useState<Record<number, { isAvailable: boolean; priceOverride: string }>>({});
+  const [draft, setDraft] = useState<Record<number, { isAvailable: boolean; priceOverride: string; stockCount: string }>>({});
 
   useEffect(() => {
     if (!rows) return;
-    const initial: Record<number, { isAvailable: boolean; priceOverride: string }> = {};
+    const initial: Record<number, { isAvailable: boolean; priceOverride: string; stockCount: string }> = {};
     rows.forEach((r) => {
       initial[r.locationId] = {
         isAvailable: r.isAvailable,
         priceOverride: r.priceOverride != null ? String(r.priceOverride) : "",
+        stockCount: r.stockCount != null ? String(r.stockCount) : "",
       };
     });
     setDraft(initial);
   }, [rows]);
 
-  const saveMutation = useMutation({
-    mutationFn: async ({ locationId, isAvailable, priceOverride }: { locationId: number; isAvailable: boolean; priceOverride: number | null }) => {
-      const r = await fetch(`/api/products/${productId}/locations/${locationId}`, {
-        method: "PUT",
-        headers: authHeaders(),
-        body: JSON.stringify({ isAvailable, priceOverride }),
-      });
-      if (!r.ok) throw new Error("Save failed");
-      return r.json();
-    },
-    onError: () => toast({ title: "Save failed", variant: "destructive" }),
-  });
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSaveAll = async () => {
     if (!rows) return;
+    setIsSaving(true);
     try {
       await Promise.all(
-        rows.map((row) => {
+        rows.map(async (row) => {
           const d = draft[row.locationId];
-          if (!d) return Promise.resolve();
+          if (!d) return;
           const priceOverride = d.priceOverride !== "" ? parseFloat(d.priceOverride) : null;
-          return saveMutation.mutateAsync({ locationId: row.locationId, isAvailable: d.isAvailable, priceOverride: Number.isFinite(priceOverride as number) ? priceOverride : null });
+
+          await fetch(`/api/products/${productId}/locations/${row.locationId}`, {
+            method: "PUT",
+            headers: authHeaders(),
+            body: JSON.stringify({
+              isAvailable: d.isAvailable,
+              priceOverride: Number.isFinite(priceOverride as number) ? priceOverride : null,
+            }),
+          });
+
+          if (d.stockCount !== "") {
+            const sc = parseInt(d.stockCount, 10);
+            if (!isNaN(sc) && sc >= 0) {
+              await fetch(`/api/locations/${row.locationId}/inventory/${productId}`, {
+                method: "PUT",
+                headers: authHeaders(),
+                body: JSON.stringify({ stockCount: sc }),
+              });
+            }
+          }
         }),
       );
+      await queryClient.invalidateQueries({ queryKey });
       toast({ title: "Location settings saved" });
     } catch {
-      // errors handled per-mutation
+      toast({ title: "Save failed", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -495,12 +510,12 @@ function LocationsEditor({ productId }: { productId: number }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">Control whether this product is available at each location, and optionally set a location-specific price override.</p>
+      <p className="text-xs text-muted-foreground">Control availability, price, and stock level of this product at each location.</p>
       {rows.map((row) => {
-        const d = draft[row.locationId] ?? { isAvailable: row.isAvailable, priceOverride: "" };
+        const d = draft[row.locationId] ?? { isAvailable: row.isAvailable, priceOverride: "", stockCount: "" };
         return (
           <Card key={row.locationId} className="border-border/50">
-            <CardContent className="pt-3 pb-3">
+            <CardContent className="pt-3 pb-3 space-y-2">
               <div className="flex items-center gap-3">
                 <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
                 <span className="flex-1 text-sm font-medium">{row.locationName}</span>
@@ -511,16 +526,29 @@ function LocationsEditor({ productId }: { productId: number }) {
                     onCheckedChange={(v) => setDraft((prev) => ({ ...prev, [row.locationId]: { ...d, isAvailable: v } }))}
                   />
                 </div>
-                <div className="relative w-24 shrink-0">
+              </div>
+              <div className="flex items-center gap-2 pl-6">
+                <div className="relative flex-1">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
                   <Input
                     type="number"
                     step="0.01"
                     min="0"
-                    placeholder="Base"
+                    placeholder="Price override"
                     value={d.priceOverride}
                     onChange={(e) => setDraft((prev) => ({ ...prev, [row.locationId]: { ...d, priceOverride: e.target.value } }))}
                     className="h-8 text-xs pl-5"
+                  />
+                </div>
+                <div className="relative flex-1">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">📦</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder={row.stockCount != null ? `${row.stockCount} in stock` : "Stock count"}
+                    value={d.stockCount}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, [row.locationId]: { ...d, stockCount: e.target.value } }))}
+                    className="h-8 text-xs pl-7"
                   />
                 </div>
               </div>
@@ -528,8 +556,8 @@ function LocationsEditor({ productId }: { productId: number }) {
           </Card>
         );
       })}
-      <Button onClick={handleSaveAll} disabled={saveMutation.isPending} className="w-full">
-        {saveMutation.isPending ? "Saving…" : "Save Location Settings"}
+      <Button onClick={handleSaveAll} disabled={isSaving} className="w-full">
+        {isSaving ? "Saving…" : "Save Location Settings"}
       </Button>
     </div>
   );
