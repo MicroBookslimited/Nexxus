@@ -442,7 +442,6 @@ export function POS() {
   };
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [barcodeTerm, setBarcodeTerm] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const cartBottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -580,18 +579,16 @@ export function POS() {
     setCustomizingProductId(null);
   };
 
-  const handleBarcodeScan = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      const product = products?.find((p) => p.barcode === barcodeTerm);
-      if (product) {
-        handleProductTap(product);
-        if (!product.hasVariants && !product.hasModifiers) {
-          toast({ title: "Product added", description: product.name });
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && searchTerm.trim()) {
+      const barcodeMatch = products?.find((p) => p.barcode === searchTerm.trim());
+      if (barcodeMatch) {
+        handleProductTap(barcodeMatch);
+        if (!barcodeMatch.hasVariants && !barcodeMatch.hasModifiers) {
+          toast({ title: "Product added", description: barcodeMatch.name });
         }
-      } else {
-        toast({ title: "Product not found", description: `Barcode: ${barcodeTerm}`, variant: "destructive" });
+        setSearchTerm("");
       }
-      setBarcodeTerm("");
     }
   };
 
@@ -997,15 +994,17 @@ export function POS() {
         <div className="flex-1 flex flex-col min-w-0 border-r border-border">
           {/* Search & filters */}
           <div className="p-4 border-b border-border space-y-3">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input className="pl-9 w-full" placeholder="Search products…" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-              </div>
-              <div className="relative flex-1">
-                <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input className="pl-9 w-full" placeholder="Scan barcode…" value={barcodeTerm} onChange={(e) => setBarcodeTerm(e.target.value)} onKeyDown={handleBarcodeScan} />
-              </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-400 pointer-events-none" />
+              <Input
+                className="pl-9 pr-10 h-11 text-sm w-full border-2 border-blue-500/60 focus-visible:border-blue-500 focus-visible:ring-0 rounded-lg bg-background/80 placeholder:text-muted-foreground/70"
+                placeholder="Search products or scan barcode (Enter)"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                autoComplete="off"
+              />
+              <ScanBarcode className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
             </div>
             <div className="flex gap-2 flex-wrap">
               <Button size="sm" variant={categoryFilter === null ? "default" : "outline"} onClick={() => setCategoryFilter(null)} className="h-7 text-xs">
