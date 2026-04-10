@@ -681,7 +681,6 @@ export function POS() {
     }
 
     if (!isOnline) {
-      const token = localStorage.getItem(TENANT_TOKEN_KEY);
       const orderPayload = {
         paymentMethod,
         items: cart.map((item) => ({
@@ -707,11 +706,8 @@ export function POS() {
       enqueueRequest({
         url: "/api/orders",
         method: "POST",
-        body: { data: orderPayload },
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        body: orderPayload,
+        headers: { "Content-Type": "application/json" },
         label: `Sale ${formatCurrency(total, baseCurrency)}`,
       });
       const offlineNum = `OFF-${Date.now().toString(36).toUpperCase()}`;

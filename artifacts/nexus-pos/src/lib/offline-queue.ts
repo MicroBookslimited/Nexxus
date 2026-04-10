@@ -1,3 +1,5 @@
+import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
+
 const QUEUE_KEY = "nexus_offline_queue";
 
 export interface QueuedRequest {
@@ -51,10 +53,30 @@ export async function flushQueue(
   for (let i = 0; i < queue.length; i++) {
     const req = queue[i];
     try {
+      // Always read the auth token fresh at flush time so stale stored
+      // tokens don't cause 401s after the token has been refreshed.
+      const freshToken = localStorage.getItem(TENANT_TOKEN_KEY);
+      const authHeader: Record<string, string> = freshToken
+        ? { Authorization: `Bearer ${freshToken}` }
+        : {};
+
+      // Backwards-compat: old entries had body wrapped in { data: ... }.
+      // Unwrap if detected so stale queue entries don't fail validation.
+      let body = req.body;
+      if (
+        body != null &&
+        typeof body === "object" &&
+        "data" in (body as Record<string, unknown>) &&
+        !("items" in (body as Record<string, unknown>)) &&
+        !("paymentMethod" in (body as Record<string, unknown>))
+      ) {
+        body = (body as Record<string, unknown>)["data"];
+      }
+
       const res = await fetch(req.url, {
         method: req.method,
-        headers: req.headers,
-        body: req.body != null ? JSON.stringify(req.body) : undefined,
+        headers: { ...req.headers, ...authHeader },
+        body: body != null ? JSON.stringify(body) : undefined,
       });
       if (res.ok) {
         removeFromQueue(req.id);
