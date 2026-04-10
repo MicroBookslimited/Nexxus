@@ -59,7 +59,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, MapPin, FileSpreadsheet, Upload, FileDown } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, MapPin, FileSpreadsheet, Upload, FileDown, Printer } from "lucide-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
 const CATEGORIES = ["Beverages", "Food", "Bakery", "Merchandise", "Other"];
@@ -564,6 +564,205 @@ function LocationsEditor({ productId }: { productId: number }) {
   );
 }
 
+/* ─── Print Label Dialog ─── */
+type LabelSize = "small" | "medium" | "large";
+type LabelProduct = Pick<GetProductResponse, "id" | "name" | "price" | "barcode" | "category">;
+
+const LABEL_SIZES: { key: LabelSize; label: string; previewW: number; previewH: number; printMmW: number; printMmH: number }[] = [
+  { key: "small",  label: 'Small  (2" × 1")',    previewW: 192, previewH:  96, printMmW:  51, printMmH: 25 },
+  { key: "medium", label: 'Medium (3" × 1.5")',  previewW: 288, previewH: 144, printMmW:  76, printMmH: 38 },
+  { key: "large",  label: 'Large  (4" × 2")',    previewW: 384, previewH: 192, printMmW: 101, printMmH: 51 },
+];
+
+function PrintLabelDialog({ product, onClose }: { product: LabelProduct | null; onClose: () => void }) {
+  const svgRef = React.useRef<SVGSVGElement>(null);
+
+  const [size,            setSize]            = useState<LabelSize>("medium");
+  const [qty,             setQty]             = useState(1);
+  const [showStoreName,   setShowStoreName]   = useState(true);
+  const [showPrice,       setShowPrice]       = useState(true);
+  const [showCategory,    setShowCategory]    = useState(false);
+  const [showBarcodeText, setShowBarcodeText] = useState(true);
+
+  const barcodeValue = product
+    ? (product.barcode?.trim() || `PROD${String(product.id).padStart(6, "0")}`)
+    : "";
+
+  const sizeConf = LABEL_SIZES.find(s => s.key === size)!;
+  const barcodeH = size === "small" ? 26 : size === "medium" ? 40 : 54;
+
+  useEffect(() => {
+    if (!product || !svgRef.current) return;
+    import("jsbarcode").then(({ default: JsBarcode }) => {
+      try {
+        JsBarcode(svgRef.current!, barcodeValue, {
+          format: "CODE128",
+          width: 1.5,
+          height: barcodeH,
+          displayValue: showBarcodeText,
+          fontSize: 8,
+          margin: 2,
+          background: "transparent",
+          lineColor: "#000000",
+        });
+      } catch { /* invalid barcode value */ }
+    });
+  }, [product, barcodeValue, size, showBarcodeText, barcodeH]);
+
+  const handlePrint = async () => {
+    if (!product || !svgRef.current) return;
+    const { default: JsBarcode } = await import("jsbarcode");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    try {
+      JsBarcode(svg, barcodeValue, {
+        format: "CODE128",
+        width: 2,
+        height: barcodeH,
+        displayValue: showBarcodeText,
+        fontSize: 8,
+        margin: 2,
+        background: "#ffffff",
+        lineColor: "#000000",
+      });
+    } catch { /* skip barcode if invalid */ }
+    const svgStr = new XMLSerializer().serializeToString(svg);
+    const svgB64 = btoa(unescape(encodeURIComponent(svgStr)));
+
+    const labelCss = `
+      .label {
+        width:${sizeConf.printMmW}mm; height:${sizeConf.printMmH}mm;
+        border:0.5pt solid #bbb; display:flex; flex-direction:column;
+        align-items:center; justify-content:center; padding:2mm;
+        font-family:Arial,sans-serif; overflow:hidden; box-sizing:border-box;
+        page-break-inside:avoid;
+      }
+      .store  { font-size:5.5pt; color:#666; text-transform:uppercase; letter-spacing:.4px; margin-bottom:1mm; }
+      .name   { font-size:${size==="small"?"7":"8"}pt; font-weight:700; text-align:center; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .cat    { font-size:5.5pt; color:#888; margin-top:.5mm; }
+      .bc     { max-width:100%; height:auto; margin:1mm 0; }
+      .price  { font-size:${size==="small"?"10":"13"}pt; font-weight:700; margin-top:1mm; }
+    `;
+
+    const oneLabelHtml = `
+      <div class="label">
+        ${showStoreName ? '<p class="store">NEXXUS POS</p>' : ""}
+        <p class="name">${product.name}</p>
+        ${showCategory ? `<p class="cat">${product.category}</p>` : ""}
+        <img class="bc" src="data:image/svg+xml;base64,${svgB64}" alt="" />
+        ${showPrice ? `<p class="price">${formatCurrency(product.price)}</p>` : ""}
+      </div>`;
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Label — ${product.name}</title>
+      <style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#fff;}
+      .page{display:flex;flex-wrap:wrap;padding:4mm;gap:2mm;}${labelCss}
+      @media print{body{margin:0;}.page{padding:4mm;gap:2mm;}}</style></head>
+      <body><div class="page">${Array.from({length:qty}).map(()=>oneLabelHtml).join("")}</div>
+      <script>window.onload=function(){window.print();setTimeout(function(){window.close();},800);}<\/script>
+      </body></html>`;
+
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (win) { win.document.write(html); win.document.close(); }
+  };
+
+  const textSm = size === "small" ? "8px" : size === "medium" ? "10px" : "12px";
+  const priceSm = size === "small" ? "11px" : size === "medium" ? "14px" : "18px";
+
+  return (
+    <Dialog open={!!product} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Printer className="h-5 w-5 text-primary" />
+            Print Barcode Label
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          {/* Live preview */}
+          <div className="flex items-center justify-center rounded-xl bg-white border border-border p-6 min-h-[200px]">
+            <div
+              className="flex flex-col items-center justify-center bg-white border border-gray-300 overflow-hidden"
+              style={{ width: sizeConf.previewW, height: sizeConf.previewH, padding: "6px" }}
+            >
+              {showStoreName && (
+                <p style={{ fontSize: "6px", color: "#666", textTransform: "uppercase", letterSpacing: ".4px", marginBottom: "2px" }}>
+                  NEXXUS POS
+                </p>
+              )}
+              <p style={{ fontSize: textSm, fontWeight: 700, textAlign: "center", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#000" }}>
+                {product?.name}
+              </p>
+              {showCategory && (
+                <p style={{ fontSize: "7px", color: "#888", marginTop: "1px" }}>{product?.category}</p>
+              )}
+              <svg ref={svgRef} style={{ maxWidth: "100%", height: "auto", margin: "2px 0" }} />
+              {showPrice && (
+                <p style={{ fontSize: priceSm, fontWeight: 700, color: "#000", marginTop: "2px" }}>
+                  {product ? formatCurrency(product.price) : ""}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Size + Copies */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs mb-1.5 block text-muted-foreground">Label Size</Label>
+              <Select value={size} onValueChange={v => setSize(v as LabelSize)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {LABEL_SIZES.map(s => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs mb-1.5 block text-muted-foreground">Copies</Label>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setQty(q => Math.max(1, q - 1))}>−</Button>
+                <Input
+                  type="number" min={1} max={100}
+                  value={qty}
+                  onChange={e => setQty(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                  className="h-8 text-center text-sm"
+                />
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setQty(q => Math.min(100, q + 1))}>+</Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Toggle options */}
+          <div className="grid grid-cols-2 gap-2.5">
+            {([ ["Store Name", showStoreName, setShowStoreName], ["Price", showPrice, setShowPrice],
+                ["Category",  showCategory,  setShowCategory],  ["Barcode Text", showBarcodeText, setShowBarcodeText],
+              ] as [string, boolean, (v: boolean) => void][]).map(([label, val, set]) => (
+              <div key={label} className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+                <span className="text-sm">{label}</span>
+                <Switch checked={val} onCheckedChange={set} />
+              </div>
+            ))}
+          </div>
+
+          {/* Barcode source note */}
+          {product && !product.barcode && (
+            <p className="text-xs text-muted-foreground bg-secondary/30 rounded-lg px-3 py-2">
+              This product has no barcode. A generated code <span className="font-mono text-foreground">{barcodeValue}</span> will be used.
+              Add a barcode to the product to use a custom value.
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handlePrint} className="gap-2">
+            <Printer className="h-4 w-4" />
+            Print {qty} Label{qty !== 1 ? "s" : ""}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ─── Import Products Dialog ─── */
 const IMPORT_FIELDS = [
   { key: "name",        label: "Product Name",          required: true  },
@@ -932,6 +1131,7 @@ export function Products() {
   const [restockProduct, setRestockProduct] = useState<GetProductResponse | null>(null);
   const [restockForm, setRestockForm] = useState<RestockForm>(emptyRestockForm());
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [printProduct, setPrintProduct] = useState<LabelProduct | null>(null);
   const [billView, setBillView] = useState<"list" | "new">("list");
   const [viewBillId, setViewBillId] = useState<number | null>(null);
   const [billForm, setBillForm] = useState<BillForm>(emptyBillForm());
@@ -1302,6 +1502,9 @@ export function Products() {
                       </div>
                     </div>
                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Print Label" onClick={() => setPrintProduct(product)}>
+                        <Printer className="h-3 w-3" />
+                      </Button>
                       {canManage && (
                         <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" onClick={() => openRestock(product)}>
                           <PackagePlus className="h-3 w-3 mr-1" />Restock
@@ -1394,19 +1597,26 @@ export function Products() {
                 </div>
 
                 {/* Actions */}
-                {canManage && (
-                  <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button size="icon" variant="outline" className="h-7 w-7" title="Print Label" onClick={() => setPrintProduct(product)}>
+                    <Printer className="h-3 w-3" />
+                  </Button>
+                  {canManage && (
                     <Button size="icon" variant="outline" className="h-7 w-7 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" title="Restock" onClick={() => openRestock(product)}>
                       <PackagePlus className="h-3 w-3" />
                     </Button>
+                  )}
+                  {canManage && (
                     <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => openEdit(product)}>
                       <Pencil className="h-3 w-3" />
                     </Button>
+                  )}
+                  {canManage && (
                     <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
                       <Trash2 className="h-3 w-3" />
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </motion.div>
             );
             })}
@@ -1951,6 +2161,12 @@ export function Products() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Print Label dialog */}
+      <PrintLabelDialog
+        product={printProduct}
+        onClose={() => setPrintProduct(null)}
+      />
 
       {/* Import Products dialog */}
       <ImportProductsDialog
