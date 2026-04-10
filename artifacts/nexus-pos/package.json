@@ -76,9 +76,13 @@
   },
   "dependencies": {
     "@paypal/paypal-js": "^9.5.0",
+    "@tanstack/query-sync-storage-persister": "^5.97.0",
+    "@tanstack/react-query-persist-client": "^5.97.0",
     "@types/jsbarcode": "^3.11.4",
     "jsbarcode": "^3.12.3",
     "qrcode.react": "^4.2.0",
+    "vite-plugin-pwa": "^1.2.0",
+    "workbox-window": "^7.4.0",
     "xlsx": "^0.18.5"
   }
 }

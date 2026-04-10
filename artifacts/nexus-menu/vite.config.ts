@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { VitePWA } from "vite-plugin-pwa";
 
 const rawPort = process.env.PORT;
 
@@ -32,6 +33,51 @@ export default defineConfig({
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
+    VitePWA({
+      registerType: "autoUpdate",
+      injectRegister: "auto",
+      devOptions: { enabled: true },
+      scope: basePath,
+      base: basePath,
+      manifest: {
+        name: "NEXXUS Menu",
+        short_name: "NEXXUS",
+        description: "Browse the menu and place orders.",
+        theme_color: "#0f1729",
+        background_color: "#0f1729",
+        display: "standalone",
+        start_url: basePath,
+        scope: basePath,
+        icons: [
+          {
+            src: "icon-192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any maskable",
+          },
+          {
+            src: "icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any maskable",
+          },
+        ],
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        runtimeCaching: [
+          {
+            urlPattern: /\/api\/products/,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "menu-products",
+              expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 4 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+      },
+    }),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [

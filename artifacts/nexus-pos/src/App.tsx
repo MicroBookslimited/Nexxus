@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { queryClient, persister } from "@/lib/query-persister";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { StaffProvider } from "@/contexts/StaffContext";
+import { OfflineBanner } from "@/components/OfflineBanner";
+import { PWAUpdatePrompt } from "@/components/PWAUpdatePrompt";
 import NotFound from "@/pages/not-found";
 import { Login } from "@/pages/login";
 import { Dashboard } from "@/pages/dashboard";
@@ -27,7 +30,6 @@ import { Accounting } from "@/pages/accounting";
 import { AccountsReceivable } from "@/pages/ar";
 import { Layout, PermissionGate } from "@/components/layout";
 
-const queryClient = new QueryClient();
 
 function ProtectedRoute({ component: Component, permission }: { component: React.ComponentType<any>; permission?: string }) {
   return (
@@ -154,15 +156,20 @@ function App() {
   return (
     <ThemeProvider>
       <StaffProvider>
-        <QueryClientProvider client={queryClient}>
+        <PersistQueryClientProvider
+          client={queryClient}
+          persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}
+        >
           <TooltipProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />
             </WouterRouter>
             <Toaster />
+            <OfflineBanner />
+            <PWAUpdatePrompt />
             <FullscreenFab />
           </TooltipProvider>
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </StaffProvider>
     </ThemeProvider>
   );
