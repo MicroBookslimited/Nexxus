@@ -17,6 +17,7 @@ import {
   useGetPurchaseBill,
   useConfirmPurchaseBill,
   useDeletePurchaseBill,
+  useGetSettings,
 } from "@workspace/api-client-react";
 import type { GetProductResponse } from "@workspace/api-zod";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
@@ -574,7 +575,7 @@ const LABEL_SIZES: { key: LabelSize; label: string; previewW: number; previewH: 
   { key: "large",  label: 'Large  (4" × 2")',    previewW: 384, previewH: 192, printMmW: 101, printMmH: 51 },
 ];
 
-function PrintLabelDialog({ product, onClose }: { product: LabelProduct | null; onClose: () => void }) {
+function PrintLabelDialog({ product, onClose, businessName }: { product: LabelProduct | null; onClose: () => void; businessName: string }) {
   const svgRef = React.useRef<SVGSVGElement>(null);
 
   const [size,            setSize]            = useState<LabelSize>("medium");
@@ -645,7 +646,7 @@ function PrintLabelDialog({ product, onClose }: { product: LabelProduct | null; 
 
     const oneLabelHtml = `
       <div class="label">
-        ${showStoreName ? '<p class="store">NEXXUS POS</p>' : ""}
+        ${showStoreName ? `<p class="store">${businessName}</p>` : ""}
         <p class="name">${product.name}</p>
         ${showCategory ? `<p class="cat">${product.category}</p>` : ""}
         <img class="bc" src="data:image/svg+xml;base64,${svgB64}" alt="" />
@@ -686,7 +687,7 @@ function PrintLabelDialog({ product, onClose }: { product: LabelProduct | null; 
             >
               {showStoreName && (
                 <p style={{ fontSize: "6px", color: "#666", textTransform: "uppercase", letterSpacing: ".4px", marginBottom: "2px" }}>
-                  NEXXUS POS
+                  {businessName}
                 </p>
               )}
               <p style={{ fontSize: textSm, fontWeight: 700, textAlign: "center", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#000" }}>
@@ -1113,6 +1114,8 @@ export function Products() {
   const deleteProduct = useDeleteProduct();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { data: settings } = useGetSettings();
+  const businessName = settings?.business_name || "My Store";
 
   const createPurchase = useCreatePurchase();
   const { data: purchases } = useListPurchases();
@@ -2166,6 +2169,7 @@ export function Products() {
       <PrintLabelDialog
         product={printProduct}
         onClose={() => setPrintProduct(null)}
+        businessName={businessName}
       />
 
       {/* Import Products dialog */}
