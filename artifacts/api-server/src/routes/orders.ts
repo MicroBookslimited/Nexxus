@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable } from "@workspace/db";
 import { getSetting } from "./settings";
 import {
@@ -90,22 +90,28 @@ router.get("/orders", async (req, res): Promise<void> => {
     return;
   }
 
+  // Jamaica is UTC-5 year-round (no DST). Local midnight = T05:00:00.000Z in UTC.
+  const jamaicaDayStart = (dateStr: string) => new Date(`${dateStr}T05:00:00.000Z`);
+  const jamaicaDayEnd   = (dateStr: string) => {
+    const d = jamaicaDayStart(dateStr);
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d;
+  };
+
   const conditions = [eq(ordersTable.tenantId, tenantId)];
   if (query.data.status) conditions.push(eq(ordersTable.status, query.data.status));
   if (query.data.from) {
-    conditions.push(gte(ordersTable.createdAt, new Date(`${query.data.from}T00:00:00.000Z`)));
+    conditions.push(gte(ordersTable.createdAt, jamaicaDayStart(query.data.from)));
   }
   if (query.data.to) {
-    const nextDay = new Date(`${query.data.to}T00:00:00.000Z`);
-    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-    conditions.push(lt(ordersTable.createdAt, nextDay));
+    conditions.push(lt(ordersTable.createdAt, jamaicaDayEnd(query.data.to)));
   }
 
   const orders = await db
     .select()
     .from(ordersTable)
     .where(and(...conditions))
-    .orderBy(ordersTable.createdAt);
+    .orderBy(desc(ordersTable.createdAt));
 
   const ordersWithItems = await Promise.all(
     orders.map(async (order) => {
