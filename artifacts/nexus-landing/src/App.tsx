@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import logoUrl from "@assets/CE921A75-1E79-4B12-9F18-6809B5113B30_1775830070572.png";
 import "./index.css";
 
 const BASE_URL = import.meta.env.BASE_URL;
@@ -146,11 +147,8 @@ function Navbar() {
       }}
     >
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-16">
-        <a href="#" className="flex items-center gap-2 text-lg font-bold">
-          <span className="w-8 h-8 rounded-lg gradient-blue flex items-center justify-center text-white text-sm font-bold">
-            N
-          </span>
-          <span className="text-white">NEXXUS <span style={{ color: "#3b82f6" }}>POS</span></span>
+        <a href="#">
+          <img src={logoUrl} alt="NEXXUS POS" style={{ height: "34px", width: "auto" }} />
         </a>
 
         <div className="hidden md:flex items-center gap-8">
@@ -820,9 +818,8 @@ function Footer() {
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-10 mb-12">
           <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-8 h-8 rounded-lg gradient-blue flex items-center justify-center text-white text-sm font-bold">N</span>
-              <span className="font-bold text-white">NEXXUS POS</span>
+            <div className="mb-3">
+              <img src={logoUrl} alt="NEXXUS POS" style={{ height: "30px", width: "auto" }} />
             </div>
             <p className="text-sm leading-relaxed mb-4" style={{ color: "#475569" }}>
               Your Business, Connected. The modern tablet POS built for growing businesses.

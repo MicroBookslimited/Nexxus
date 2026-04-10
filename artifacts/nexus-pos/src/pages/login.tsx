@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Store, ArrowRight, AlertCircle, Mail, CheckCircle, X } from "lucide-react";
+import { ArrowRight, AlertCircle, Mail, CheckCircle, X } from "lucide-react";
+import logoUrl from "@assets/CE921A75-1E79-4B12-9F18-6809B5113B30_1775830070572.png";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -145,11 +146,8 @@ export function Login() {
           className="w-full max-w-[400px]"
         >
           <div className="flex flex-col items-center text-center mb-8">
-            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
-              <Store className="h-8 w-8" />
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight">NEXXUS POS</h1>
-            <p className="mt-2 text-muted-foreground">Your Business, Connected.</p>
+            <img src={logoUrl} alt="NEXXUS POS" className="h-16 w-auto mb-4 drop-shadow-lg" />
+            <p className="mt-1 text-muted-foreground">Your Business, Connected.</p>
           </div>
 
           <Card className="border-border/50 bg-card/50 backdrop-blur-xl shadow-2xl">

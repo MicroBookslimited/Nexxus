@@ -1,12 +1,13 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard, ShoppingCart, ListOrdered, Store, Package, Users, BarChart2,
+  LayoutDashboard, ShoppingCart, ListOrdered, Package, Users, BarChart2,
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
+import logoUrl from "@assets/CE921A75-1E79-4B12-9F18-6809B5113B30_1775830070572.png";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TENANT_TOKEN_KEY, saasMe } from "@/lib/saas-api";
@@ -143,15 +144,8 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-3 sm:px-5 bg-card">
 
         {/* Logo */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-lg shadow-primary/30">
-            <Store className="h-4 w-4" />
-          </div>
-          <div className="leading-tight hidden sm:block">
-            <span className="text-sm font-bold tracking-tight">NEXXUS POS</span>
-            <span className="text-[10px] text-muted-foreground ml-2 hidden 2xl:inline">Your Business, Connected.</span>
-          </div>
-          <span className="text-sm font-bold tracking-tight sm:hidden">NEXXUS</span>
+        <div className="flex items-center shrink-0">
+          <img src={logoUrl} alt="NEXXUS POS" className="h-8 w-auto" />
         </div>
 
         {/* ── DESKTOP NAV (≥1280px): icon + label ── */}
@@ -294,11 +288,8 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="relative z-10 flex flex-col w-72 max-w-[85vw] h-full bg-card border-r border-border shadow-2xl">
             {/* Drawer header */}
             <div className="flex items-center justify-between px-4 h-14 border-b border-border shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <Store className="h-3.5 w-3.5" />
-                </div>
-                <span className="text-sm font-bold tracking-tight">NEXXUS POS</span>
+              <div className="flex items-center">
+                <img src={logoUrl} alt="NEXXUS POS" className="h-7 w-auto" />
               </div>
               <button
                 onClick={() => setDrawerOpen(false)}
