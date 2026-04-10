@@ -32,7 +32,9 @@ import {
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen,
 } from "lucide-react";
-import { saasMe } from "@/lib/saas-api";
+import { saasMe, TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { enqueueRequest } from "@/lib/offline-queue";
 import { useStaff } from "@/contexts/StaffContext";
 import { useLocation, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -364,6 +366,7 @@ export function POS() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const sendReceiptEmail = useSendReceiptEmail();
+  const isOnline = useOnlineStatus();
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_tenant_token");
@@ -677,6 +680,85 @@ export function POS() {
     }
     if (paymentMethod === "credit" && !selectedCustomerId) {
       toast({ title: "Customer required", description: "Select a customer to process a credit sale.", variant: "destructive" });
+      return;
+    }
+
+    if (!isOnline) {
+      const token = localStorage.getItem(TENANT_TOKEN_KEY);
+      const orderPayload = {
+        paymentMethod,
+        items: cart.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          discountAmount: item.itemDiscount || undefined,
+          variantChoices: item.variantChoices.length > 0 ? item.variantChoices : undefined,
+          modifierChoices: item.modifierChoices.length > 0 ? item.modifierChoices : undefined,
+        })),
+        splitCardAmount: paymentMethod === "split" ? splitCardAmount : undefined,
+        splitCashAmount: paymentMethod === "split" ? splitCashAmount : undefined,
+        cashTendered: paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0
+          ? parseFloat(numpadValue) : undefined,
+        discountType: discountType ?? undefined,
+        discountAmount: discountAmount > 0 ? discountAmount : undefined,
+        notes: buildOrderNotes(),
+        customerId: selectedCustomerId ?? undefined,
+        loyaltyPointsToRedeem: clampedPoints > 0 ? clampedPoints : undefined,
+        tableId: orderMode === "dine-in" ? (selectedTableId ?? undefined) : undefined,
+        orderType: orderMode,
+        locationId: sessionLocationId ?? undefined,
+      };
+      enqueueRequest({
+        url: "/api/orders",
+        method: "POST",
+        body: { data: orderPayload },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        label: `Sale ${formatCurrency(total, baseCurrency)}`,
+      });
+      const offlineNum = `OFF-${Date.now().toString(36).toUpperCase()}`;
+      const cashTendered = paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0
+        ? parseFloat(numpadValue) : undefined;
+      const offlineReceipt = {
+        id: -Date.now(),
+        orderNumber: offlineNum,
+        tenantId: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: "completed" as const,
+        paymentMethod,
+        items: cart.map((item, i) => ({
+          id: i,
+          orderId: -1,
+          productId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: item.effectivePrice,
+          lineTotal: item.effectivePrice * item.quantity - item.itemDiscount,
+          discountAmount: item.itemDiscount || null,
+          variantChoices: item.variantChoices,
+          modifierChoices: item.modifierChoices,
+        })),
+        subtotal,
+        discountValue: cartDiscountValue + loyaltyDiscountValue,
+        tax,
+        total,
+        cashTendered: cashTendered ?? null,
+        splitCardAmount: paymentMethod === "split" ? splitCardAmount : null,
+        splitCashAmount: paymentMethod === "split" ? splitCashAmount : null,
+        notes: buildOrderNotes() ?? null,
+        customerId: selectedCustomerId,
+        tableId: orderMode === "dine-in" ? selectedTableId : null,
+        orderType: orderMode,
+        locationId: sessionLocationId,
+      } as unknown as GetOrderResponse;
+      setReceiptOrder(offlineReceipt);
+      resetCart();
+      toast({
+        title: "Sale Recorded Offline",
+        description: "Transaction saved locally. It will sync to the server when your connection returns.",
+      });
       return;
     }
 
@@ -1599,12 +1681,17 @@ export function POS() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-400">
               <CheckCircle2 className="h-5 w-5" />
-              Payment Successful
+              {receiptOrder?.orderNumber?.startsWith("OFF-") ? "Sale Saved Offline" : "Payment Successful"}
             </DialogTitle>
           </DialogHeader>
 
           {receiptOrder && (
             <div className="space-y-4 text-sm" id="receipt-print-area">
+              {receiptOrder.orderNumber?.startsWith("OFF-") && (
+                <div className="rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs text-amber-400 font-medium text-center">
+                  ⚡ Saved offline — will sync when connection returns
+                </div>
+              )}
               <div className="text-center py-2 border-b border-border">
                 <p className="font-bold text-base">NEXXUS POS</p>
                 <p className="text-xs text-muted-foreground">Your Business, Connected.</p>

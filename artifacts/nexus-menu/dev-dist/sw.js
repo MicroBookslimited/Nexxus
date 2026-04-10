@@ -79,38 +79,20 @@ define(['./workbox-7cf1e716'], (function (workbox) { 'use strict';
    */
   workbox.precacheAndRoute([{
     "url": "registerSW.js",
-    "revision": "f935fee1215d47eef7d227ef09bed8cd"
+    "revision": "80dbee54d1c120c19034111695da11a7"
   }, {
     "url": "index.html",
-    "revision": "0.70ln1q6ikh4"
+    "revision": "0.q9astv9h61g"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
     allowlist: [/^\/$/]
   }));
   workbox.registerRoute(/\/api\/products/, new workbox.StaleWhileRevalidate({
-    "cacheName": "api-products",
+    "cacheName": "menu-products",
     plugins: [new workbox.ExpirationPlugin({
       maxEntries: 500,
-      maxAgeSeconds: 86400
-    }), new workbox.CacheableResponsePlugin({
-      statuses: [0, 200]
-    })]
-  }), 'GET');
-  workbox.registerRoute(/\/api\/settings/, new workbox.StaleWhileRevalidate({
-    "cacheName": "api-settings",
-    plugins: [new workbox.ExpirationPlugin({
-      maxEntries: 20,
-      maxAgeSeconds: 86400
-    }), new workbox.CacheableResponsePlugin({
-      statuses: [0, 200]
-    })]
-  }), 'GET');
-  workbox.registerRoute(/\/api\/categories/, new workbox.StaleWhileRevalidate({
-    "cacheName": "api-categories",
-    plugins: [new workbox.ExpirationPlugin({
-      maxEntries: 100,
-      maxAgeSeconds: 86400
+      maxAgeSeconds: 14400
     }), new workbox.CacheableResponsePlugin({
       statuses: [0, 200]
     })]
