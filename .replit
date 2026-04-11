@@ -32,3 +32,5 @@ packages = ["fontconfig", "ghostscript", "glib", "harfbuzz", "pango"]
 [userenv]
 
 [userenv.shared]
+SUPERADMIN_EMAIL = "accounts@microbookssolutions.com"
+SUPERADMIN_PASSWORD = "@Mbooks2026*"
