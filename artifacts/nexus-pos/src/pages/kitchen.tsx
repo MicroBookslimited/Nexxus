@@ -16,10 +16,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChefHat, Clock, CheckCircle2, AlertCircle, RefreshCw, UtensilsCrossed,
-  Monitor, Plus, Trash2, Settings, X, GripVertical,
+  Monitor, Plus, Trash2, Settings, X, GripVertical, AlertTriangle,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
 const TARGET_MINUTES = 15;
 
@@ -335,8 +336,36 @@ export function Kitchen() {
   const { toast } = useToast();
   const [activeScreen, setActiveScreen] = useState<number | "all">("all");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/kitchen"] });
+
+  const handleClearAll = async () => {
+    setClearing(true);
+    try {
+      const token = localStorage.getItem(TENANT_TOKEN_KEY) ?? "";
+      const res = await fetch("/api/kitchen/clear-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to clear orders");
+      const { cleared } = await res.json() as { cleared: number };
+      setClearConfirmOpen(false);
+      await invalidate();
+      refetch();
+      toast({
+        title: "Kitchen cleared",
+        description: cleared > 0
+          ? `${cleared} order${cleared === 1 ? "" : "s"} marked as completed.`
+          : "No active orders to clear.",
+      });
+    } catch {
+      toast({ title: "Error", description: "Could not clear orders. Please try again.", variant: "destructive" });
+    } finally {
+      setClearing(false);
+    }
+  };
 
   const handleStatusChange = (id: number, status: string) => {
     updateStatus.mutate(
@@ -390,6 +419,15 @@ export function Kitchen() {
           </Button>
           <Button size="sm" variant="outline" onClick={() => refetch()}>
             <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            className="bg-red-600/20 hover:bg-red-600 border border-red-500/40 text-red-400 hover:text-white transition-colors"
+            onClick={() => setClearConfirmOpen(true)}
+            disabled={!visibleOrders.length}
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear All
           </Button>
         </div>
       </div>
@@ -505,6 +543,47 @@ export function Kitchen() {
         screens={screens}
         onRefresh={refetchScreens}
       />
+
+      {/* ── Clear All Confirmation ─────────────────────────── */}
+      <Dialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
+        <DialogContent className="max-w-sm" style={{ background: "#0f1729", border: "1px solid rgba(239,68,68,0.25)" }}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <AlertTriangle className="h-5 w-5 text-red-400" />
+              Clear All Kitchen Orders?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <p className="text-slate-400 text-sm leading-relaxed">
+              This will mark all <span className="text-white font-semibold">{visibleOrders.length} active order{visibleOrders.length === 1 ? "" : "s"}</span> as completed and remove them from the display.
+            </p>
+            <p className="text-slate-500 text-xs mt-2">
+              Orders are also cleared automatically after 48 hours.
+            </p>
+          </div>
+          <div className="flex gap-3 mt-2">
+            <Button
+              variant="outline"
+              className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-700"
+              onClick={() => setClearConfirmOpen(false)}
+              disabled={clearing}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold"
+              onClick={handleClearAll}
+              disabled={clearing}
+            >
+              {clearing ? (
+                <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Clearing…</>
+              ) : (
+                <><Trash2 className="h-4 w-4 mr-2" />Clear All Orders</>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

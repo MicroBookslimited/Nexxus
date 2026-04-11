@@ -1,7 +1,9 @@
 import { Router, type IRouter } from "express";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { db, ordersTable, orderItemsTable, productsTable, kdsScreensTable, diningTablesTable } from "@workspace/db";
 import { verifyTenantToken } from "./saas-auth";
+
+const KITCHEN_EXPIRY_HOURS = 48;
 
 const router: IRouter = Router();
 
@@ -16,6 +18,27 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
 router.get("/kitchen", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  // Auto-expire orders older than 48 hours (fire-and-forget)
+  const expiryThreshold = new Date(Date.now() - KITCHEN_EXPIRY_HOURS * 60 * 60 * 1000);
+  db.update(ordersTable)
+    .set({ kitchenStatus: "completed" })
+    .where(and(
+      eq(ordersTable.tenantId, tenantId),
+      lt(ordersTable.createdAt, expiryThreshold),
+      inArray(ordersTable.kitchenStatus, ["pending", "preparing", "ready"]),
+    ))
+    .catch(() => {});
+  // Also expire legacy orders without kitchenStatus
+  db.update(ordersTable)
+    .set({ status: "completed" })
+    .where(and(
+      eq(ordersTable.tenantId, tenantId),
+      lt(ordersTable.createdAt, expiryThreshold),
+      isNull(ordersTable.kitchenStatus),
+      inArray(ordersTable.status, ["open", "pending", "preparing", "ready"]),
+    ))
+    .catch(() => {});
 
   const activeOrders = await db
     .select()
@@ -75,6 +98,35 @@ router.get("/kitchen", async (req, res): Promise<void> => {
   );
 
   res.json(ordersWithItems);
+});
+
+/* ─── Clear All Kitchen Orders ─── */
+router.post("/kitchen/clear-all", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  // Mark all active kitchen orders as completed (new kitchenStatus field)
+  const cleared1 = await db
+    .update(ordersTable)
+    .set({ kitchenStatus: "completed" })
+    .where(and(
+      eq(ordersTable.tenantId, tenantId),
+      inArray(ordersTable.kitchenStatus, ["pending", "preparing", "ready"]),
+    ))
+    .returning({ id: ordersTable.id });
+
+  // Also handle legacy orders without kitchenStatus
+  const cleared2 = await db
+    .update(ordersTable)
+    .set({ status: "completed" })
+    .where(and(
+      eq(ordersTable.tenantId, tenantId),
+      isNull(ordersTable.kitchenStatus),
+      inArray(ordersTable.status, ["open", "pending", "preparing", "ready"]),
+    ))
+    .returning({ id: ordersTable.id });
+
+  res.json({ cleared: cleared1.length + cleared2.length });
 });
 
 router.patch("/kitchen/:id/status", async (req, res): Promise<void> => {
