@@ -862,6 +862,7 @@ export function POS() {
           setReceiptOrder(data);
           resetCart();
           queryClient.invalidateQueries({ queryKey: ["/api/kitchen"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
         },
         onError: () => {
           toast({ title: "Payment Failed", description: "There was an error processing the payment.", variant: "destructive" });
@@ -898,6 +899,7 @@ export function POS() {
           toast({ title: "Order Sent to Kitchen", description: "The order is now visible on the kitchen display." });
           queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
           queryClient.invalidateQueries({ queryKey: ["/api/kitchen"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
           resetCart();
         },
         onError: () => {
