@@ -143,6 +143,13 @@ export const saasForgotPassword = (email: string) =>
 export const saasResetPassword = (token: string, newPassword: string) =>
   api<{ success: boolean }>("/saas/reset-password", { method: "POST", body: JSON.stringify({ token, newPassword }) });
 
+/* ─── Email Verification ─── */
+export const saasSendVerification = () =>
+  api<{ success: boolean }>("/saas/send-verification", { method: "POST", headers: tenantAuthHeaders() });
+
+export const saasVerifyEmail = (token: string) =>
+  api<{ success: boolean }>("/saas/verify-email", { method: "POST", body: JSON.stringify({ token }) });
+
 /* ─── Roles ─── */
 export const getRoles = () =>
   api<{ roles: RoleRow[]; permissions: PermissionDef[] }>("/roles", { headers: tenantAuthHeaders() });
@@ -173,6 +180,7 @@ export const superadminResetPassword = (tenantId: number, newPassword: string) =
 export interface Tenant {
   id: number; businessName: string; ownerName: string; email: string; phone?: string;
   country?: string; status: string; onboardingStep: number; onboardingComplete: boolean;
+  emailVerified: boolean;
 }
 
 export interface Subscription {

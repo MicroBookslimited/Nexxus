@@ -25,6 +25,7 @@ import { Onboarding } from "@/pages/onboarding";
 import { Superadmin } from "@/pages/superadmin";
 import { SubscriptionPage } from "@/pages/subscription";
 import { ResetPassword } from "@/pages/reset-password";
+import { VerifyEmail } from "@/pages/verify-email";
 import { Locations } from "@/pages/locations";
 import { Accounting } from "@/pages/accounting";
 import { AccountsReceivable } from "@/pages/ar";
@@ -139,6 +140,7 @@ function POSRouter() {
       <Route path="/subscription"><ProtectedRoute component={SubscriptionPage} permission="settings.manage" /></Route>
       <Route path="/signup" component={Onboarding} />
       <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/verify-email" component={VerifyEmail} />
       <Route path="/superadmin" component={Superadmin} />
       <Route component={NotFound} />
     </Switch>

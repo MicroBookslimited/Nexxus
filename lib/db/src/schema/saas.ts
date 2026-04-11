@@ -31,6 +31,8 @@ export const tenantsTable = pgTable("tenants", {
   onboardingStep: integer("onboarding_step").notNull().default(1),
   onboardingComplete: boolean("onboarding_complete").notNull().default(false),
   resellerId: integer("reseller_id"),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  emailVerificationToken: text("email_verification_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

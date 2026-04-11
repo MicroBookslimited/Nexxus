@@ -13,6 +13,7 @@ import logoUrl from "@assets/EB8B578F-2602-4DD8-AB97-D02AF59C49D3_1775943434994.
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TENANT_TOKEN_KEY, saasMe } from "@/lib/saas-api";
+import { EmailVerificationBanner } from "@/components/EmailVerificationBanner";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useStaff } from "@/contexts/StaffContext";
 import { PinPad } from "@/components/PinPad";
@@ -213,12 +214,16 @@ export function Layout({ children }: { children: ReactNode }) {
   const [expiryDate, setExpiryDate] = useState<Date | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const timeLeft = useCountdown(expiryDate);
+  const [tenantEmail, setTenantEmail] = useState<string | null>(null);
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem(TENANT_TOKEN_KEY);
     if (!token) return;
     saasMe().then((me) => {
       const sub = me.subscription;
+      setTenantEmail(me.tenant.email);
+      setEmailVerified(me.tenant.emailVerified ?? true);
       if (!sub) return;
       let expiry: Date | null = null;
       if (sub.status === "trial" && sub.trialEndsAt) expiry = new Date(sub.trialEndsAt);
@@ -628,6 +633,11 @@ export function Layout({ children }: { children: ReactNode }) {
             <button onClick={() => setBannerDismissed(true)} className="text-muted-foreground hover:text-foreground text-xs px-1" title="Dismiss">✕</button>
           </div>
         </div>
+      )}
+
+      {/* ── EMAIL VERIFICATION POPUP ─────────────────────────── */}
+      {emailVerified === false && tenantEmail && (
+        <EmailVerificationBanner email={tenantEmail} />
       )}
 
       {/* ── MAIN CONTENT ─────────────────────────────────────── */}

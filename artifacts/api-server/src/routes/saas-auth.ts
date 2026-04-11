@@ -5,6 +5,7 @@ import { z } from "zod";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { SendMailClient } from "zeptomail";
+import crypto from "crypto";
 
 const router: IRouter = Router();
 
@@ -23,6 +24,34 @@ export function verifyTenantToken(token: string): { tenantId: number; email: str
     return { tenantId: payload.tenantId, email: payload.email };
   } catch {
     return null;
+  }
+}
+
+async function sendVerificationEmail(email: string, token: string, businessName: string) {
+  const zeptoToken = process.env["ZEPTOMAIL_TOKEN"];
+  if (!zeptoToken) { console.warn("ZEPTOMAIL_TOKEN not configured — skipping verification email"); return; }
+  const appBase = process.env["APP_BASE_URL"] ?? "";
+  const link = `${appBase}/app/verify-email?token=${token}`;
+  try {
+    const zepto = new SendMailClient({ url: "api.zeptomail.com/", token: zeptoToken });
+    await zepto.sendMail({
+      from: { address: "noreply@microbookspos.com", name: "NEXXUS POS" },
+      to: [{ email_address: { address: email } }],
+      subject: "Verify your NEXXUS POS email address",
+      htmlbody: `
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#0f1729;padding:32px;border-radius:12px;color:#f1f5f9">
+          <h1 style="font-size:22px;margin:0 0 8px">Verify your email</h1>
+          <p style="color:#94a3b8;margin:0 0 8px">Hi ${businessName},</p>
+          <p style="color:#94a3b8;margin:0 0 24px">Please verify your email address to secure your NEXXUS POS account.</p>
+          <a href="${link}" style="display:inline-block;background:#3b82f6;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px">Verify Email Address</a>
+          <p style="color:#475569;font-size:13px;margin:24px 0 0">If you did not sign up for NEXXUS POS, you can safely ignore this email.</p>
+          <hr style="border:none;border-top:1px solid #1e293b;margin:24px 0"/>
+          <p style="color:#334155;font-size:12px;margin:0">Powered by MicroBooks · NEXXUS POS</p>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error("Failed to send verification email:", err);
   }
 }
 
@@ -68,6 +97,8 @@ router.post("/saas/register", async (req, res): Promise<void> => {
 
   const passwordHash = await bcryptjs.hash(password, 12);
 
+  const emailVerificationToken = crypto.randomUUID();
+
   const [tenant] = await db
     .insert(tenantsTable)
     .values({
@@ -81,6 +112,8 @@ router.post("/saas/register", async (req, res): Promise<void> => {
       onboardingStep: 2,
       onboardingComplete: false,
       resellerId,
+      emailVerified: false,
+      emailVerificationToken,
     })
     .returning();
 
@@ -93,8 +126,11 @@ router.post("/saas/register", async (req, res): Promise<void> => {
     trialEndsAt: trialEnd,
   });
 
+  // Send verification email (non-blocking)
+  sendVerificationEmail(email, emailVerificationToken, businessName).catch(() => {});
+
   const token = signToken(tenant.id, tenant.email);
-  res.json({ token, tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, onboardingStep: tenant.onboardingStep } });
+  res.json({ token, tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, onboardingStep: tenant.onboardingStep, emailVerified: false } });
 });
 
 router.post("/saas/login", async (req, res): Promise<void> => {
@@ -130,6 +166,7 @@ router.post("/saas/login", async (req, res): Promise<void> => {
       email: tenant.email,
       onboardingStep: tenant.onboardingStep,
       onboardingComplete: tenant.onboardingComplete,
+      emailVerified: tenant.emailVerified,
     },
     subscription,
   });
@@ -165,7 +202,53 @@ router.get("/saas/me", async (req, res): Promise<void> => {
     plan = p;
   }
 
-  res.json({ tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, ownerName: tenant.ownerName, phone: tenant.phone, country: tenant.country, slug: tenant.slug, onboardingStep: tenant.onboardingStep, onboardingComplete: tenant.onboardingComplete, status: tenant.status }, subscription, plan });
+  res.json({ tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, ownerName: tenant.ownerName, phone: tenant.phone, country: tenant.country, slug: tenant.slug, onboardingStep: tenant.onboardingStep, onboardingComplete: tenant.onboardingComplete, status: tenant.status, emailVerified: tenant.emailVerified }, subscription, plan });
+});
+
+/* ─── Email Verification ─── */
+
+router.post("/saas/send-verification", async (req, res): Promise<void> => {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const payload = verifyTenantToken(auth.slice(7));
+  if (!payload) { res.status(401).json({ error: "Invalid token" }); return; }
+
+  const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.id, payload.tenantId));
+  if (!tenant) { res.status(404).json({ error: "Account not found" }); return; }
+  if (tenant.emailVerified) { res.json({ success: true, alreadyVerified: true }); return; }
+
+  // Generate a fresh token each time
+  const verificationToken = crypto.randomUUID();
+  await db.update(tenantsTable)
+    .set({ emailVerificationToken: verificationToken, updatedAt: new Date() })
+    .where(eq(tenantsTable.id, tenant.id));
+
+  await sendVerificationEmail(tenant.email, verificationToken, tenant.businessName);
+  res.json({ success: true });
+});
+
+router.post("/saas/verify-email", async (req, res): Promise<void> => {
+  const { token } = req.body as { token?: string };
+  if (!token || typeof token !== "string") {
+    res.status(400).json({ error: "Verification token is required" }); return;
+  }
+
+  const [tenant] = await db
+    .select({ id: tenantsTable.id, emailVerified: tenantsTable.emailVerified })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.emailVerificationToken, token));
+
+  if (!tenant) {
+    res.status(400).json({ error: "Invalid or expired verification link" }); return;
+  }
+
+  if (!tenant.emailVerified) {
+    await db.update(tenantsTable)
+      .set({ emailVerified: true, emailVerificationToken: null, updatedAt: new Date() })
+      .where(eq(tenantsTable.id, tenant.id));
+  }
+
+  res.json({ success: true });
 });
 
 /* ─── Forgot Password ─── */
