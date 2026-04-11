@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "2Jjx5EOYhZW2kzZ40RpsV"
+uri = "file://NEXXUS_POS_User_Manual.pdf"
+type = "pdf"
+title = "NEXXUS POS — User Manual"
