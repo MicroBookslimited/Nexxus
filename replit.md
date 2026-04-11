@@ -28,12 +28,19 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 
 ## Artifacts
 
-### Nexus POS (`artifacts/nexus-pos`)
-- **Type**: React + Vite web app
-- **Preview path**: `/`
-- **Brand**: Nexus POS — "Your Business, Connected." Powered by MicroBooks
-- **Theme**: Dark navy/blue enterprise SaaS design
-- **Pages**:
+### NEXXUS POS — Unified App (`artifacts/nexus-pos`)
+- **Type**: React + Vite web app (single app, all sections)
+- **Preview path**: `/` (owns all routes: `/`, `/app/`, `/customer-display/`, `/menu/`, `/reseller/`)
+- **Architecture**: Top-level `App.tsx` dispatches to lazy-loaded section components based on `window.location.pathname` prefix. Each section manages its own router. The 4 old separate apps (nexus-landing, nexus-customer-display, nexus-menu, nexus-reseller) have been consolidated here.
+- **Sections**:
+  - `src/sections/landing/` → Landing page served at `/`
+  - `src/sections/customer-display/` → Customer Display served at `/customer-display`
+  - `src/sections/menu/` → Customer Menu served at `/menu`
+  - `src/sections/reseller/` → Reseller Portal served at `/reseller`
+  - POS app (existing `src/pages/`) served at `/app/`
+- **Brand**: NEXXUS POS — "Your Business, Connected." Powered by MicroBooks
+- **Theme**: Dark navy (#0f1729) / electric blue (#3b82f6)
+- **POS Pages** (under `/app/`):
   - `/login` — Branded login screen
   - `/dashboard` — Business overview with Recharts charts (revenue, top products, payment methods, category breakdown)
   - `/pos` — Main POS with product grid, cart, discounts, notes, hold/recall, split payments, barcode scanning, receipt modal, customer selector, loyalty points redemption, table selector (dine-in)
@@ -123,9 +130,8 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - `POST /api/accounting/stock-counts/:id/apply` — Apply count (updates stock, optional JE)
   - `DELETE /api/accounting/stock-counts/:id` — Void a session
 
-### Customer Menu & Online Ordering (`artifacts/nexus-menu`)
-- **Type**: React + Vite web app
-- **Preview path**: `/menu/`
+### Customer Menu & Online Ordering (consolidated into `artifacts/nexus-pos`)
+- **Route prefix**: `/menu/`
 - **Purpose**: Customer-facing menu, online ordering, kiosk mode
 - **Usage**: `/menu/?slug=<tenant-slug>` or `?slug=...&mode=kiosk` or `?mode=online`
 - **Features**: Category filter, product search, cart, customization dialog (variants/modifiers), checkout, order confirmation
@@ -168,9 +174,8 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - `staff` — Staff members with name, PIN (hashed), role, isActive
 - `purchases` — Stock purchase records with productId, quantity, unitCost, totalCost, notes; creating a purchase auto-increments product stockCount
 
-### NEXXUS Reseller Portal (`artifacts/nexus-reseller`)
-- **Type**: React + Vite web app
-- **Preview path**: `/reseller/`
+### NEXXUS Reseller Portal (consolidated into `artifacts/nexus-pos`)
+- **Route prefix**: `/reseller/`
 - **Purpose**: Dedicated portal for channel resellers/partners to manage their referrals and commissions
 - **Auth**: Separate JWT-based auth (type="reseller"), token stored as `reseller_token` in localStorage
 - **Pages**:

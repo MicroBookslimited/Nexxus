@@ -19,16 +19,8 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    "BASE_PATH environment variable is required but was not provided.",
-  );
-}
-
 export default defineConfig({
-  base: basePath,
+  base: "/",
   plugins: [
     react(),
     tailwindcss(),
@@ -37,8 +29,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       injectRegister: "auto",
       devOptions: { enabled: true },
-      scope: basePath,
-      base: basePath,
+      scope: "/",
+      base: "/",
       manifest: {
         name: "NEXXUS POS",
         short_name: "NEXXUS",
@@ -47,8 +39,8 @@ export default defineConfig({
         background_color: "#0f1729",
         display: "standalone",
         orientation: "landscape",
-        start_url: basePath,
-        scope: basePath,
+        start_url: "/app/",
+        scope: "/",
         icons: [
           {
             src: "icon-192.png",

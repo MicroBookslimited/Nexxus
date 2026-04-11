@@ -1,31 +1,32 @@
 kind = "web"
-previewPath = "/customer-display/"
-title = "NEXXUS POS — Customer Display"
-version = "1.0.0"
-id = "artifacts/nexus-customer-display"
-router = "path"
+  previewPath = "/deprecated-customer-display/"
+  title = "NEXXUS POS — Customer Display (deprecated)"
+  version = "1.0.0"
+  id = "artifacts/nexus-customer-display"
+  router = "path"
 
-[[integratedSkills]]
-name = "react-vite"
-version = "1.0.0"
+  [[integratedSkills]]
+  name = "react-vite"
+  version = "1.0.0"
 
-[[services]]
-name = "web"
-paths = [ "/customer-display/" ]
-localPort = 21510
+  [[services]]
+  name = "web"
+  paths = [ "/deprecated-customer-display/" ]
+  localPort = 21510
 
-[services.development]
-run = "pnpm --filter @workspace/nexus-customer-display run dev"
+  [services.development]
+  run = "pnpm --filter @workspace/nexus-customer-display run dev"
 
-[services.production]
-build = [ "pnpm", "--filter", "@workspace/nexus-customer-display", "run", "build" ]
-publicDir = "artifacts/nexus-customer-display/dist/public"
-serve = "static"
+  [services.production]
+  build = [ "pnpm", "--filter", "@workspace/nexus-customer-display", "run", "build" ]
+  publicDir = "artifacts/nexus-customer-display/dist/public"
+  serve = "static"
 
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+  [[services.production.rewrites]]
+  from = "/*"
+  to = "/index.html"
 
-[services.env]
-PORT = "21510"
-BASE_PATH = "/customer-display/"
+  [services.env]
+  PORT = "21510"
+  BASE_PATH = "/deprecated-customer-display/"
+  

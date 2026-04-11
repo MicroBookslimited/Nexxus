@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { queryClient, persister } from "@/lib/query-persister";
@@ -33,6 +33,65 @@ import { Recipes } from "@/pages/recipes";
 import { Production } from "@/pages/production";
 import { Layout, PermissionGate } from "@/components/layout";
 
+// ─── Lazy section imports ───────────────────────────────────────────────────
+const Landing = lazy(() => import("@/sections/landing/Landing"));
+const CustomerDisplay = lazy(() => import("@/sections/customer-display/CustomerDisplay"));
+const Menu = lazy(() => import("@/sections/menu/Menu"));
+const Reseller = lazy(() => import("@/sections/reseller/Reseller"));
+
+// ─── Section fallback spinner ───────────────────────────────────────────────
+function SectionSpinner() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0f1729" }}>
+      <div style={{ width: 32, height: 32, border: "3px solid rgba(59,130,246,0.3)", borderTopColor: "#3b82f6", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+// ─── Top-level section router ───────────────────────────────────────────────
+// Dispatches to the correct section based on URL path prefix.
+// Each section manages its own internal router.
+function SectionDispatch() {
+  const path = window.location.pathname;
+
+  if (path.startsWith("/customer-display")) {
+    return (
+      <Suspense fallback={<SectionSpinner />}>
+        <CustomerDisplay />
+      </Suspense>
+    );
+  }
+
+  if (path.startsWith("/menu")) {
+    return (
+      <Suspense fallback={<SectionSpinner />}>
+        <Menu />
+      </Suspense>
+    );
+  }
+
+  if (path.startsWith("/reseller")) {
+    return (
+      <Suspense fallback={<SectionSpinner />}>
+        <Reseller />
+      </Suspense>
+    );
+  }
+
+  if (path.startsWith("/app")) {
+    return <POSApp />;
+  }
+
+  // Default: landing page at "/"
+  return (
+    <Suspense fallback={<SectionSpinner />}>
+      <Landing />
+    </Suspense>
+  );
+}
+
+// ─── POS app internals ──────────────────────────────────────────────────────
 
 function ProtectedRoute({ component: Component, permission }: { component: React.ComponentType<any>; permission?: string }) {
   return (
@@ -48,7 +107,7 @@ function ProtectedRoute({ component: Component, permission }: { component: React
   );
 }
 
-function Router() {
+function POSRouter() {
   const [location, setLocation] = useLocation();
 
   useEffect(() => {
@@ -86,7 +145,7 @@ function Router() {
   );
 }
 
-const fsSupported = typeof document.documentElement.requestFullscreen === "function";
+const fsSupported = typeof document !== "undefined" && typeof document.documentElement.requestFullscreen === "function";
 
 function useAutoFullscreen() {
   useEffect(() => {
@@ -156,7 +215,7 @@ function FullscreenFab() {
   );
 }
 
-function App() {
+function POSApp() {
   useAutoFullscreen();
 
   return (
@@ -167,8 +226,8 @@ function App() {
           persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}
         >
           <TooltipProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <Router />
+            <WouterRouter base="/app">
+              <POSRouter />
             </WouterRouter>
             <Toaster />
             <OfflineBanner />
@@ -181,4 +240,7 @@ function App() {
   );
 }
 
-export default App;
+// ─── Root App ───────────────────────────────────────────────────────────────
+export default function App() {
+  return <SectionDispatch />;
+}

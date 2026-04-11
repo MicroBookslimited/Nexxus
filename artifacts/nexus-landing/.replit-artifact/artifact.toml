@@ -1,31 +1,32 @@
 kind = "web"
-previewPath = "/"
-title = "Nexus POS — Landing Page"
-version = "1.0.0"
-id = "artifacts/nexus-landing"
-router = "path"
+  previewPath = "/deprecated-landing/"
+  title = "Nexus POS — Landing Page (deprecated)"
+  version = "1.0.0"
+  id = "artifacts/nexus-landing"
+  router = "path"
 
-[[integratedSkills]]
-name = "react-vite"
-version = "1.0.0"
+  [[integratedSkills]]
+  name = "react-vite"
+  version = "1.0.0"
 
-[[services]]
-name = "web"
-paths = [ "/" ]
-localPort = 21189
+  [[services]]
+  name = "web"
+  paths = [ "/deprecated-landing/" ]
+  localPort = 21189
 
-[services.development]
-run = "pnpm --filter @workspace/nexus-landing run dev"
+  [services.development]
+  run = "pnpm --filter @workspace/nexus-landing run dev"
 
-[services.production]
-build = [ "pnpm", "--filter", "@workspace/nexus-landing", "run", "build" ]
-publicDir = "artifacts/nexus-landing/dist/public"
-serve = "static"
+  [services.production]
+  build = [ "pnpm", "--filter", "@workspace/nexus-landing", "run", "build" ]
+  publicDir = "artifacts/nexus-landing/dist/public"
+  serve = "static"
 
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+  [[services.production.rewrites]]
+  from = "/*"
+  to = "/index.html"
 
-[services.env]
-PORT = "21189"
-BASE_PATH = "/"
+  [services.env]
+  PORT = "21189"
+  BASE_PATH = "/deprecated-landing/"
+  
