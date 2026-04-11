@@ -212,7 +212,7 @@ export function Onboarding() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f1729] flex flex-col items-center justify-start pt-8 px-4">
+    <div className="min-h-screen bg-[#0f1729] flex flex-col items-center justify-center py-8 px-4">
       <div className="w-full max-w-2xl">
         {/* Logo */}
         <div className="text-center mb-8">
