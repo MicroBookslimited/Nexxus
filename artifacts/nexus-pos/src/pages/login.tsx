@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { saasLogin, saasForgotPassword, TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { saasLogin, saasMe, saasForgotPassword, TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
 /* ─── Forgot Password Modal ─── */
 function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
@@ -112,8 +112,20 @@ export function Login() {
 
   useEffect(() => {
     const token = localStorage.getItem(TENANT_TOKEN_KEY);
-    if (token) setLocation("/dashboard");
-  }, [setLocation]);
+    if (!token) return;
+    saasMe()
+      .then(({ tenant }) => {
+        if (tenant.onboardingComplete) {
+          setLocation("/dashboard");
+        } else {
+          setLocation("/signup");
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem(TENANT_TOKEN_KEY);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

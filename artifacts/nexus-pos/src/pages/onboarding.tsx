@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Check, ChevronRight, Building2, CreditCard, Zap, ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck } from "lucide-react";
-import { TENANT_TOKEN_KEY, saasRegister, saasUpdateOnboarding, createFirstStaff, getPlans, createPayPalOrder, capturePayPalOrder, initiatePowerTranz, type Plan } from "@/lib/saas-api";
+import { TENANT_TOKEN_KEY, saasRegister, saasMe, saasUpdateOnboarding, createFirstStaff, getPlans, createPayPalOrder, capturePayPalOrder, initiatePowerTranz, type Plan } from "@/lib/saas-api";
 import { loadScript } from "@paypal/paypal-js";
 
 const STEPS = ["Account", "Business", "Plan", "Payment", "Setup", "Launch"] as const;
@@ -37,13 +37,32 @@ export function Onboarding() {
   const [showPin, setShowPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
 
-  // Only redirect already-logged-in users on initial mount — NOT after token is
-  // set during onboarding (step 1), which would skip the remaining steps.
+  // On mount: if there's an existing token, check whether onboarding is already
+  // complete. If yes → send to dashboard. If no → resume from the saved step so
+  // the user can pick up where they left off after a refresh.
   useEffect(() => {
     const existingToken = localStorage.getItem(TENANT_TOKEN_KEY);
-    if (existingToken) {
-      navigate("/dashboard");
-    }
+    if (!existingToken) return;
+
+    saasMe()
+      .then(({ tenant }) => {
+        if (tenant.onboardingComplete) {
+          navigate("/dashboard");
+        } else {
+          // Resume from the step stored on the server (clamped to 2–5)
+          const resumeStep = Math.max(2, Math.min(5, tenant.onboardingStep ?? 2));
+          setStep(resumeStep);
+          if (tenant.businessName) updateForm("businessName", tenant.businessName);
+          if (tenant.ownerName)    updateForm("ownerName",    tenant.ownerName);
+          if (tenant.email)        updateForm("email",        tenant.email);
+          if (tenant.phone)        updateForm("phone",        tenant.phone ?? "");
+          if (tenant.country)      updateForm("country",      tenant.country ?? "United States");
+        }
+      })
+      .catch(() => {
+        // Token is invalid / expired — clear it and let them start fresh
+        localStorage.removeItem(TENANT_TOKEN_KEY);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
