@@ -5,9 +5,10 @@ import {
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
-  FlaskConical, Factory, Beaker,
+  FlaskConical, Factory,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import logoUrl from "@assets/CE921A75-1E79-4B12-9F18-6809B5113B30_1775830070572.png";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -47,7 +48,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/locations",    label: "Locations",    icon: MapPin,          permission: "inventory.manage" },
   {
     label: "Production",
-    icon: Beaker,
+    icon: FlaskConical,
     permission: "inventory.manage",
     children: [
       { href: "/ingredients", label: "Ingredients", icon: FlaskConical, permission: "inventory.manage" },
@@ -91,13 +92,89 @@ function isGroup(entry: NavEntry): entry is NavGroup {
   return Array.isArray((entry as NavGroup).children);
 }
 
+type NavGroupButtonProps = {
+  entry: NavGroup;
+  iconOnly?: boolean;
+  active: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  can: (perm: string) => boolean;
+  location: string;
+};
+
+function NavGroupButton({ entry, iconOnly, active, open, onOpenChange, can, location }: NavGroupButtonProps) {
+  const children = entry.children.filter(c => !c.permission || can(c.permission));
+
+  return (
+    <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
+      <DropdownMenu.Trigger asChild>
+        {iconOnly ? (
+          <button
+            title={entry.label}
+            className={cn(
+              "flex items-center justify-center w-8 h-9 rounded-md transition-all shrink-0 outline-none",
+              active
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+            )}
+          >
+            <entry.icon className="h-4 w-4" />
+          </button>
+        ) : (
+          <button
+            className={cn(
+              "flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0 outline-none",
+              active
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+            )}
+          >
+            <entry.icon className="h-3.5 w-3.5 shrink-0" />
+            {entry.label}
+            <ChevronDown className={cn("h-3 w-3 ml-0.5 transition-transform", open && "rotate-180")} />
+          </button>
+        )}
+      </DropdownMenu.Trigger>
+
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          sideOffset={4}
+          align="start"
+          className="z-[9999] min-w-[152px] rounded-lg border border-border bg-card shadow-2xl overflow-hidden"
+        >
+          {children.map(child => {
+            const childActive = location.startsWith(child.href);
+            return (
+              <DropdownMenu.Item
+                key={child.href}
+                asChild
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2.5 text-[11px] font-medium transition-colors cursor-pointer outline-none select-none",
+                  childActive
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60 focus:text-foreground focus:bg-secondary/60",
+                )}
+              >
+                <a href={`/app${child.href}`}>
+                  <child.icon className="h-3.5 w-3.5 shrink-0" />
+                  {child.label}
+                </a>
+              </DropdownMenu.Item>
+            );
+          })}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
 /** Check if any child of a group matches the current location */
 function groupActive(group: NavGroup, location: string) {
   return group.children.some(c => location.startsWith(c.href));
 }
 
 export function Layout({ children }: { children: ReactNode }) {
-  const [location, setLocation] = useLocation();
+  const [location, navigate] = useLocation();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -125,6 +202,13 @@ export function Layout({ children }: { children: ReactNode }) {
       return next;
     });
   };
+
+  const closeAllGroups = () => setOpenGroups(new Set());
+
+  // Close open groups whenever the route changes
+  useEffect(() => {
+    setOpenGroups(new Set());
+  }, [location]);
 
   const [expiryDate, setExpiryDate] = useState<Date | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -164,8 +248,8 @@ export function Layout({ children }: { children: ReactNode }) {
     localStorage.removeItem(TENANT_TOKEN_KEY);
     clearStaff();
     setProfileOpen(false);
-    setLocation("/login");
-  }, [setLocation, clearStaff]);
+    navigate("/login");
+  }, [navigate, clearStaff]);
 
   const fsSupported = typeof document.documentElement.requestFullscreen === "function";
 
@@ -223,46 +307,17 @@ export function Layout({ children }: { children: ReactNode }) {
               const active = groupActive(entry, location);
               const open = openGroups.has(entry.label);
               return (
-                <div key={entry.label} className="relative">
-                  <button
-                    onClick={() => toggleGroup(entry.label)}
-                    className={cn(
-                      "flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0",
-                      active
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
-                    )}
-                  >
-                    <entry.icon className="h-3.5 w-3.5 shrink-0" />
-                    {entry.label}
-                    <ChevronDown className={cn("h-3 w-3 ml-0.5 transition-transform", open && "rotate-180")} />
-                  </button>
-                  {open && (
-                    <div className="absolute left-0 top-full mt-1 z-50 min-w-[140px] rounded-lg border border-border bg-card shadow-xl overflow-hidden">
-                      {entry.children.filter(c => !c.permission || can(c.permission)).map(child => {
-                        const childActive = location.startsWith(child.href);
-                        return (
-                          <Link
-                            key={child.href}
-                            href={child.href}
-                            className={cn(
-                              "flex items-center gap-2 px-3 py-2 text-[11px] font-medium transition-colors",
-                              childActive
-                                ? "bg-primary/10 text-primary"
-                                : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
-                            )}
-                          >
-                            <child.icon className="h-3.5 w-3.5 shrink-0" />
-                            {child.label}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                <NavGroupButton
+                  key={entry.label}
+                  entry={entry}
+                  active={active}
+                  open={open}
+                  onOpenChange={(o) => o ? setOpenGroups(new Set([entry.label])) : setOpenGroups(new Set())}
+                  can={can}
+                  location={location}
+                />
               );
             }
-            // Flat item
             const isActive = location.startsWith(entry.href);
             return (
               <Link
@@ -289,45 +344,18 @@ export function Layout({ children }: { children: ReactNode }) {
               const active = groupActive(entry, location);
               const open = openGroups.has(entry.label);
               return (
-                <div key={entry.label} className="relative">
-                  <button
-                    onClick={() => toggleGroup(entry.label)}
-                    title={entry.label}
-                    className={cn(
-                      "flex items-center justify-center w-8 h-9 rounded-md transition-all shrink-0",
-                      active
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
-                    )}
-                  >
-                    <entry.icon className="h-4 w-4" />
-                  </button>
-                  {open && (
-                    <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 min-w-[140px] rounded-lg border border-border bg-card shadow-xl overflow-hidden">
-                      {entry.children.filter(c => !c.permission || can(c.permission)).map(child => {
-                        const childActive = location.startsWith(child.href);
-                        return (
-                          <Link
-                            key={child.href}
-                            href={child.href}
-                            className={cn(
-                              "flex items-center gap-2 px-3 py-2 text-[11px] font-medium transition-colors",
-                              childActive
-                                ? "bg-primary/10 text-primary"
-                                : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
-                            )}
-                          >
-                            <child.icon className="h-3.5 w-3.5 shrink-0" />
-                            {child.label}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                <NavGroupButton
+                  key={entry.label}
+                  entry={entry}
+                  iconOnly
+                  active={active}
+                  open={open}
+                  onOpenChange={(o) => o ? setOpenGroups(new Set([entry.label])) : setOpenGroups(new Set())}
+                  can={can}
+                  location={location}
+                />
               );
             }
-            // Flat item
             const isActive = location.startsWith(entry.href);
             return (
               <Link
