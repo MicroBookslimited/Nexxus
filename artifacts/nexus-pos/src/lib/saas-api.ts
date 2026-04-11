@@ -37,6 +37,13 @@ export const saasMe = () =>
 export const saasUpdateOnboarding = (step: number, fields: Record<string, unknown>) =>
   api<{ tenant: Tenant }>("/saas/onboarding", { method: "PATCH", body: JSON.stringify({ step, ...fields }), headers: tenantAuthHeaders() });
 
+export const createFirstStaff = (data: { name: string; pin: string; role: string }) =>
+  api<{ id: number; name: string; role: string }>("/staff", {
+    method: "POST",
+    body: JSON.stringify(data),
+    headers: tenantAuthHeaders(),
+  });
+
 /* ─── Plans ─── */
 export const getPlans = () => api<Plan[]>("/plans");
 

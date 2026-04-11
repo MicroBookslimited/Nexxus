@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Check, ChevronRight, Building2, User, CreditCard, Zap, ArrowRight, Eye, EyeOff } from "lucide-react";
-import { TENANT_TOKEN_KEY, saasRegister, saasUpdateOnboarding, getPlans, createPayPalOrder, capturePayPalOrder, initiatePowerTranz, type Plan } from "@/lib/saas-api";
+import { Check, ChevronRight, Building2, CreditCard, Zap, ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck } from "lucide-react";
+import { TENANT_TOKEN_KEY, saasRegister, saasUpdateOnboarding, createFirstStaff, getPlans, createPayPalOrder, capturePayPalOrder, initiatePowerTranz, type Plan } from "@/lib/saas-api";
 import { loadScript } from "@paypal/paypal-js";
 
-const STEPS = ["Account", "Business", "Plan", "Payment", "Launch"] as const;
+const STEPS = ["Account", "Business", "Plan", "Payment", "Setup", "Launch"] as const;
 
 const COUNTRIES = [
   "United States", "United Kingdom", "Canada", "Australia", "Jamaica", "Trinidad and Tobago",
@@ -31,6 +31,11 @@ export function Onboarding() {
   const [card, setCard] = useState({ number: "", expiry: "", cvv: "", name: "" });
   const [paypalReady, setPaypalReady] = useState(false);
   const [paypalRendered, setPaypalRendered] = useState(false);
+
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [showPin, setShowPin] = useState(false);
+  const [showConfirmPin, setShowConfirmPin] = useState(false);
 
   const token = localStorage.getItem(TENANT_TOKEN_KEY);
 
@@ -85,7 +90,8 @@ export function Onboarding() {
 
   const updateForm = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  async function handleStep1() {
+  async function handleStep1(e: React.FormEvent) {
+    e.preventDefault();
     if (!form.businessName || !form.ownerName || !form.email || !form.password) {
       setError("Please fill in all fields."); return;
     }
@@ -108,7 +114,8 @@ export function Onboarding() {
     }
   }
 
-  async function handleStep2() {
+  async function handleStep2(e: React.FormEvent) {
+    e.preventDefault();
     setError(""); setIsLoading(true);
     try {
       await saasUpdateOnboarding(3, { phone: form.phone, address: form.address, country: form.country });
@@ -120,14 +127,16 @@ export function Onboarding() {
     }
   }
 
-  function handleStep3() {
+  function handleStep3(e: React.FormEvent) {
+    e.preventDefault();
     if (!selectedPlan) { setError("Please select a plan."); return; }
     setError("");
     setPaypalRendered(false);
     setStep(4);
   }
 
-  async function handlePowerTranz() {
+  async function handlePowerTranz(e: React.FormEvent) {
+    e.preventDefault();
     if (!selectedPlan) return;
     if (!card.number || !card.expiry || !card.cvv || !card.name) {
       setError("Please fill in all card details."); return;
@@ -150,6 +159,40 @@ export function Onboarding() {
       }
     } catch (e) {
       setError(String(e));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleStep5(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pin) { setError("Please enter a PIN."); return; }
+    if (pin.length < 4) { setError("PIN must be at least 4 digits."); return; }
+    if (!/^\d+$/.test(pin)) { setError("PIN must contain digits only."); return; }
+    if (pin !== confirmPin) { setError("PINs do not match. Please try again."); return; }
+    setError(""); setIsLoading(true);
+    try {
+      await createFirstStaff({
+        name: form.ownerName || "Admin",
+        pin,
+        role: "admin",
+      });
+      await saasUpdateOnboarding(6, {});
+      setStep(6);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleSkipPin() {
+    setError(""); setIsLoading(true);
+    try {
+      await saasUpdateOnboarding(6, {});
+      setStep(6);
+    } catch {
+      setStep(6);
     } finally {
       setIsLoading(false);
     }
@@ -195,7 +238,7 @@ export function Onboarding() {
                 <span className={`text-xs hidden sm:block ${i + 1 === step ? "text-white" : "text-[#475569]"}`}>{s}</span>
               </div>
               {i < STEPS.length - 1 && (
-                <div className={`w-10 sm:w-16 h-0.5 mx-1 mb-5 transition-all ${i + 1 < step ? "bg-green-500" : "bg-[#1e2a45]"}`} />
+                <div className={`w-8 sm:w-12 h-0.5 mx-1 mb-5 transition-all ${i + 1 < step ? "bg-green-500" : "bg-[#1e2a45]"}`} />
               )}
             </div>
           ))}
@@ -209,25 +252,28 @@ export function Onboarding() {
 
           {/* Step 1: Account */}
           {step === 1 && (
-            <div>
+            <form onSubmit={handleStep1} noValidate>
               <h2 className="text-2xl font-bold text-white mb-1">Create your account</h2>
               <p className="text-[#94a3b8] text-sm mb-6">Start your 14-day free trial — no credit card required.</p>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-[#94a3b8] mb-1">Business Name</label>
                   <input value={form.businessName} onChange={e => updateForm("businessName", e.target.value)}
+                    autoComplete="organization"
                     className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none"
                     placeholder="Acme Store" />
                 </div>
                 <div>
                   <label className="block text-sm text-[#94a3b8] mb-1">Your Name</label>
                   <input value={form.ownerName} onChange={e => updateForm("ownerName", e.target.value)}
+                    autoComplete="name"
                     className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none"
                     placeholder="John Smith" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-[#94a3b8] mb-1">Email Address</label>
                   <input type="email" value={form.email} onChange={e => updateForm("email", e.target.value)}
+                    autoComplete="email"
                     className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none"
                     placeholder="you@company.com" />
                 </div>
@@ -235,6 +281,7 @@ export function Onboarding() {
                   <label className="block text-sm text-[#94a3b8] mb-1">Password</label>
                   <div className="relative">
                     <input type={showPw ? "text" : "password"} value={form.password} onChange={e => updateForm("password", e.target.value)}
+                      autoComplete="new-password"
                       className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 pr-10 text-white focus:border-[#3b82f6] outline-none"
                       placeholder="Min. 8 characters" />
                     <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#475569] hover:text-white">
@@ -243,32 +290,34 @@ export function Onboarding() {
                   </div>
                 </div>
               </div>
-              <button onClick={handleStep1} disabled={isLoading}
+              <button type="submit" disabled={isLoading}
                 className="mt-6 w-full bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
                 {isLoading ? "Creating account…" : <>Create Account <ArrowRight size={16} /></>}
               </button>
               <p className="text-center text-sm text-[#475569] mt-4">
                 Already have an account?{" "}
-                <button onClick={() => navigate("/login")} className="text-[#3b82f6] hover:text-blue-400">Sign in</button>
+                <button type="button" onClick={() => navigate("/login")} className="text-[#3b82f6] hover:text-blue-400">Sign in</button>
               </p>
-            </div>
+            </form>
           )}
 
           {/* Step 2: Business Details */}
           {step === 2 && (
-            <div>
+            <form onSubmit={handleStep2}>
               <h2 className="text-2xl font-bold text-white mb-1">Business details</h2>
               <p className="text-[#94a3b8] text-sm mb-6">Help us personalise your NEXXUS POS experience.</p>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm text-[#94a3b8] mb-1">Phone Number</label>
                   <input value={form.phone} onChange={e => updateForm("phone", e.target.value)}
+                    autoComplete="tel"
                     className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none"
                     placeholder="+1 555 000 0000" />
                 </div>
                 <div>
                   <label className="block text-sm text-[#94a3b8] mb-1">Business Address</label>
                   <input value={form.address} onChange={e => updateForm("address", e.target.value)}
+                    autoComplete="street-address"
                     className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none"
                     placeholder="123 Main St, City" />
                 </div>
@@ -281,27 +330,27 @@ export function Onboarding() {
                 </div>
               </div>
               <div className="flex gap-3 mt-6">
-                <button onClick={() => setStep(1)} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white font-semibold py-3 rounded-lg transition-colors">Back</button>
-                <button onClick={handleStep2} disabled={isLoading}
+                <button type="button" onClick={() => setStep(1)} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white font-semibold py-3 rounded-lg transition-colors">Back</button>
+                <button type="submit" disabled={isLoading}
                   className="flex-[2] bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
                   {isLoading ? "Saving…" : <>Continue <ChevronRight size={16} /></>}
                 </button>
               </div>
-            </div>
+            </form>
           )}
 
           {/* Step 3: Plan Selection */}
           {step === 3 && (
-            <div>
+            <form onSubmit={handleStep3}>
               <h2 className="text-2xl font-bold text-white mb-1">Choose your plan</h2>
               <p className="text-[#94a3b8] text-sm mb-4">Start free for 14 days, then pay as you grow.</p>
 
               <div className="flex items-center justify-center gap-3 mb-6 bg-[#0f1729] rounded-lg p-1 w-fit mx-auto">
-                <button onClick={() => setBillingCycle("monthly")}
+                <button type="button" onClick={() => setBillingCycle("monthly")}
                   className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${billingCycle === "monthly" ? "bg-[#3b82f6] text-white" : "text-[#94a3b8] hover:text-white"}`}>
                   Monthly
                 </button>
-                <button onClick={() => setBillingCycle("annual")}
+                <button type="button" onClick={() => setBillingCycle("annual")}
                   className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${billingCycle === "annual" ? "bg-[#3b82f6] text-white" : "text-[#94a3b8] hover:text-white"}`}>
                   Annual <span className="text-xs text-green-400 ml-1">Save 17%</span>
                 </button>
@@ -309,7 +358,7 @@ export function Onboarding() {
 
               <div className="space-y-3">
                 {plans.map((plan) => (
-                  <button key={plan.id} onClick={() => setSelectedPlan(plan)}
+                  <button type="button" key={plan.id} onClick={() => setSelectedPlan(plan)}
                     className={`w-full text-left border rounded-xl p-4 transition-all ${
                       selectedPlan?.id === plan.id
                         ? "border-[#3b82f6] bg-[#3b82f6]/10"
@@ -352,13 +401,13 @@ export function Onboarding() {
               </div>
 
               <div className="flex gap-3 mt-6">
-                <button onClick={() => setStep(2)} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white font-semibold py-3 rounded-lg transition-colors">Back</button>
-                <button onClick={handleStep3}
+                <button type="button" onClick={() => setStep(2)} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white font-semibold py-3 rounded-lg transition-colors">Back</button>
+                <button type="submit"
                   className="flex-[2] bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors">
                   Continue <ChevronRight size={16} />
                 </button>
               </div>
-            </div>
+            </form>
           )}
 
           {/* Step 4: Payment */}
@@ -370,15 +419,14 @@ export function Onboarding() {
               </p>
               <p className="text-xs text-green-400 mb-6">Your 14-day free trial is already active. You will be charged after it ends.</p>
 
-              {/* Payment method tabs */}
               <div className="flex gap-2 mb-6">
-                <button onClick={() => { setPaymentMethod("paypal"); setPaypalRendered(false); }}
+                <button type="button" onClick={() => { setPaymentMethod("paypal"); setPaypalRendered(false); }}
                   className={`flex-1 border rounded-lg py-3 text-sm font-medium transition-all ${paymentMethod === "paypal" ? "border-[#3b82f6] bg-[#3b82f6]/10 text-white" : "border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/50"}`}>
                   <div className="flex items-center justify-center gap-2">
                     <span className="text-blue-400 font-bold">Pay</span><span className="text-blue-200 font-bold">Pal</span>
                   </div>
                 </button>
-                <button onClick={() => setPaymentMethod("powertranz")}
+                <button type="button" onClick={() => setPaymentMethod("powertranz")}
                   className={`flex-1 border rounded-lg py-3 text-sm font-medium transition-all ${paymentMethod === "powertranz" ? "border-[#3b82f6] bg-[#3b82f6]/10 text-white" : "border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/50"}`}>
                   <div className="flex items-center justify-center gap-2">
                     <CreditCard size={16} /> Card
@@ -402,16 +450,18 @@ export function Onboarding() {
               )}
 
               {paymentMethod === "powertranz" && (
-                <div className="space-y-4">
+                <form onSubmit={handlePowerTranz} className="space-y-4">
                   <div>
                     <label className="block text-sm text-[#94a3b8] mb-1">Cardholder Name</label>
                     <input value={card.name} onChange={e => setCard(c => ({ ...c, name: e.target.value }))}
+                      autoComplete="cc-name"
                       className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none"
                       placeholder="John Smith" />
                   </div>
                   <div>
                     <label className="block text-sm text-[#94a3b8] mb-1">Card Number</label>
                     <input value={card.number} onChange={e => setCard(c => ({ ...c, number: e.target.value }))}
+                      autoComplete="cc-number"
                       className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono"
                       placeholder="4111 1111 1111 1111" maxLength={19} />
                   </div>
@@ -419,32 +469,108 @@ export function Onboarding() {
                     <div>
                       <label className="block text-sm text-[#94a3b8] mb-1">Expiry</label>
                       <input value={card.expiry} onChange={e => setCard(c => ({ ...c, expiry: e.target.value }))}
+                        autoComplete="cc-exp"
                         className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono"
                         placeholder="MM / YY" maxLength={7} />
                     </div>
                     <div>
                       <label className="block text-sm text-[#94a3b8] mb-1">CVV</label>
                       <input value={card.cvv} onChange={e => setCard(c => ({ ...c, cvv: e.target.value }))}
+                        autoComplete="cc-csc"
                         className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono"
                         placeholder="123" maxLength={4} type="password" />
                     </div>
                   </div>
-                  <button onClick={handlePowerTranz} disabled={isLoading}
+                  <button type="submit" disabled={isLoading}
                     className="w-full bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-60 mt-2">
                     {isLoading ? "Processing…" : "Pay Now"}
                   </button>
                   <p className="text-xs text-center text-[#475569]">Secured by PowerTranz</p>
-                </div>
+                </form>
               )}
 
-              <button onClick={() => setStep(3)} className="w-full mt-4 text-[#475569] hover:text-[#94a3b8] text-sm text-center transition-colors">
+              <button type="button" onClick={() => setStep(3)} className="w-full mt-4 text-[#475569] hover:text-[#94a3b8] text-sm text-center transition-colors">
                 ← Back to plans
               </button>
             </div>
           )}
 
-          {/* Step 5: Success */}
+          {/* Step 5: Admin PIN Setup */}
           {step === 5 && (
+            <form onSubmit={handleStep5}>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 bg-[#3b82f6]/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <KeyRound size={24} className="text-[#3b82f6]" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Set your Admin PIN</h2>
+                  <p className="text-[#94a3b8] text-sm">Used to access the POS and authorise manager actions.</p>
+                </div>
+              </div>
+
+              <div className="bg-[#3b82f6]/5 border border-[#3b82f6]/20 rounded-xl p-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <ShieldCheck size={18} className="text-[#3b82f6] flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-[#94a3b8]">
+                    This creates your <span className="text-white font-medium">Admin staff account</span> under the name <span className="text-white font-medium">"{form.ownerName || "Admin"}"</span>. You can add more staff members in the Staff section after setup.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-[#94a3b8] mb-1">Admin PIN <span className="text-[#475569]">(4–8 digits)</span></label>
+                  <div className="relative">
+                    <input
+                      type={showPin ? "text" : "password"}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={8}
+                      value={pin}
+                      onChange={e => setPin(e.target.value.replace(/\D/g, ""))}
+                      autoComplete="new-password"
+                      className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 pr-10 text-white focus:border-[#3b82f6] outline-none font-mono text-lg tracking-widest"
+                      placeholder="••••"
+                    />
+                    <button type="button" onClick={() => setShowPin(!showPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#475569] hover:text-white">
+                      {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm text-[#94a3b8] mb-1">Confirm PIN</label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPin ? "text" : "password"}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={8}
+                      value={confirmPin}
+                      onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ""))}
+                      autoComplete="new-password"
+                      className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 pr-10 text-white focus:border-[#3b82f6] outline-none font-mono text-lg tracking-widest"
+                      placeholder="••••"
+                    />
+                    <button type="button" onClick={() => setShowConfirmPin(!showConfirmPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#475569] hover:text-white">
+                      {showConfirmPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <button type="submit" disabled={isLoading}
+                className="mt-6 w-full bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
+                {isLoading ? "Setting up…" : <>Set PIN &amp; Continue <ArrowRight size={16} /></>}
+              </button>
+              <button type="button" onClick={handleSkipPin} disabled={isLoading}
+                className="w-full mt-3 text-[#475569] hover:text-[#94a3b8] text-sm text-center transition-colors">
+                Skip for now (set up staff PINs later in Settings)
+              </button>
+            </form>
+          )}
+
+          {/* Step 6: Success / Launch */}
+          {step === 6 && (
             <div className="text-center py-4">
               <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check size={32} className="text-green-400" />
