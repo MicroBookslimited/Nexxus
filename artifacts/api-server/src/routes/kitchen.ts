@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db, ordersTable, orderItemsTable, productsTable, kdsScreensTable, diningTablesTable } from "@workspace/db";
 import { verifyTenantToken } from "./saas-auth";
 
@@ -22,7 +22,15 @@ router.get("/kitchen", async (req, res): Promise<void> => {
     .from(ordersTable)
     .where(and(
       eq(ordersTable.tenantId, tenantId),
-      inArray(ordersTable.status, ["open", "pending", "preparing", "ready"]),
+      or(
+        // New orders: use kitchenStatus field
+        inArray(ordersTable.kitchenStatus, ["pending", "preparing", "ready"]),
+        // Backward compat: old orders without kitchenStatus that are still active
+        and(
+          isNull(ordersTable.kitchenStatus),
+          inArray(ordersTable.status, ["open", "pending", "preparing", "ready"]),
+        ),
+      ),
     ))
     .orderBy(ordersTable.createdAt);
 
@@ -48,7 +56,7 @@ router.get("/kitchen", async (req, res): Promise<void> => {
       return {
         id: order.id,
         orderNumber: order.orderNumber,
-        status: order.status === "open" ? "pending" : order.status,
+        status: order.kitchenStatus ?? (order.status === "open" ? "pending" : order.status),
         tableId: order.tableId ?? undefined,
         tableName: order.tableId ? (tableNameMap.get(order.tableId) ?? undefined) : undefined,
         orderType: order.orderType ?? "counter",
@@ -86,9 +94,26 @@ router.patch("/kitchen/:id/status", async (req, res): Promise<void> => {
     return;
   }
 
+  // Fetch the current order to determine which field to update (backward compat)
+  const [existing] = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, id), eq(ordersTable.tenantId, tenantId)));
+  if (!existing) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+
+  const updates: Partial<typeof ordersTable.$inferInsert> = {};
+  if (existing.kitchenStatus !== null && existing.kitchenStatus !== undefined) {
+    // New order: update kitchenStatus
+    updates.kitchenStatus = status;
+  } else {
+    // Old order (backward compat): update main status
+    updates.status = status;
+  }
+
   const [order] = await db
     .update(ordersTable)
-    .set({ status })
+    .set(updates)
     .where(and(eq(ordersTable.id, id), eq(ordersTable.tenantId, tenantId)))
     .returning();
 
@@ -97,7 +122,7 @@ router.patch("/kitchen/:id/status", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json({ id: order.id, status: order.status });
+  res.json({ id: order.id, status: order.kitchenStatus ?? order.status });
 });
 
 router.get("/kds-screens", async (req, res): Promise<void> => {

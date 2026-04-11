@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable } from "@workspace/db";
 import { getSetting } from "./settings";
 import {
@@ -30,6 +30,7 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
 function normalizeOrder(order: typeof ordersTable.$inferSelect) {
   return {
     ...order,
+    kitchenStatus: order.kitchenStatus ?? undefined,
     discountType: order.discountType ?? undefined,
     discountAmount: order.discountAmount ?? undefined,
     discountValue: order.discountValue ?? undefined,
@@ -228,6 +229,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       tenantId,
       orderNumber,
       status: isOpenOrder ? "open" : isPaid ? "completed" : "pending",
+      kitchenStatus: "pending",
       subtotal,
       discountType: parsed.data.discountType,
       discountAmount: parsed.data.discountAmount,

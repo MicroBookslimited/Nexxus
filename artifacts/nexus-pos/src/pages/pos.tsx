@@ -861,6 +861,7 @@ export function POS() {
         onSuccess: (data) => {
           setReceiptOrder(data);
           resetCart();
+          queryClient.invalidateQueries({ queryKey: ["/api/kitchen"] });
         },
         onError: () => {
           toast({ title: "Payment Failed", description: "There was an error processing the payment.", variant: "destructive" });

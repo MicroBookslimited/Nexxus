@@ -8,6 +8,7 @@ export const ordersTable = pgTable("orders", {
   tenantId: integer("tenant_id").notNull().default(0),
   orderNumber: text("order_number").notNull(),
   status: text("status").notNull().default("pending"),
+  kitchenStatus: text("kitchen_status"),
   subtotal: real("subtotal").notNull(),
   discountType: text("discount_type"),
   discountAmount: real("discount_amount"),
