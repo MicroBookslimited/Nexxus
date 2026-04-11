@@ -221,7 +221,21 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   const isOpenOrder = parsed.data.orderType === "dine-in" && !parsed.data.paymentMethod;
   const isPaid = !!parsed.data.paymentMethod;
-  const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
+
+  // Generate sequential order number: ORD-YY-DD-XXXXXX
+  // Jamaica is UTC-5 year-round; shift UTC time back 5 hours to get local date
+  const nowJamaica = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const yy = String(nowJamaica.getUTCFullYear()).slice(-2);
+  const dd = String(nowJamaica.getUTCDate()).padStart(2, "0");
+  // Count orders already placed today (Jamaica time) for this tenant to get next seq
+  const dayStart = new Date(`${nowJamaica.getUTCFullYear()}-${String(nowJamaica.getUTCMonth() + 1).padStart(2, "0")}-${String(nowJamaica.getUTCDate()).padStart(2, "0")}T05:00:00.000Z`);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+  const [{ todayCount }] = await db
+    .select({ todayCount: sql<number>`cast(count(*) as int)` })
+    .from(ordersTable)
+    .where(and(eq(ordersTable.tenantId, tenantId), gte(ordersTable.createdAt, dayStart), lt(ordersTable.createdAt, dayEnd)));
+  const seq = String((todayCount ?? 0) + 1).padStart(6, "0");
+  const orderNumber = `ORD-${yy}-${dd}-${seq}`;
 
   const [order] = await db
     .insert(ordersTable)
