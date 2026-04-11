@@ -37,13 +37,15 @@ export function Onboarding() {
   const [showPin, setShowPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
 
-  const token = localStorage.getItem(TENANT_TOKEN_KEY);
-
+  // Only redirect already-logged-in users on initial mount — NOT after token is
+  // set during onboarding (step 1), which would skip the remaining steps.
   useEffect(() => {
-    if (token) {
+    const existingToken = localStorage.getItem(TENANT_TOKEN_KEY);
+    if (existingToken) {
       navigate("/dashboard");
     }
-  }, [token, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (step === 3) {
@@ -489,9 +491,19 @@ export function Onboarding() {
                 </form>
               )}
 
-              <button type="button" onClick={() => setStep(3)} className="w-full mt-4 text-[#475569] hover:text-[#94a3b8] text-sm text-center transition-colors">
-                ← Back to plans
-              </button>
+              <div className="mt-6 border-t border-[#2a3a55] pt-5">
+                <p className="text-xs text-center text-[#475569] mb-3">Your 14-day free trial is already active — payment is only required when the trial ends.</p>
+                <button
+                  type="button"
+                  onClick={async () => { setError(""); setIsLoading(true); try { await saasUpdateOnboarding(5, {}); } catch { /* ignore */ } finally { setIsLoading(false); } setStep(5); }}
+                  disabled={isLoading}
+                  className="w-full border border-[#2a3a55] hover:border-[#3b82f6]/50 text-[#94a3b8] hover:text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50">
+                  Continue with free trial — set up payment later
+                </button>
+                <button type="button" onClick={() => setStep(3)} className="w-full mt-2 text-[#475569] hover:text-[#94a3b8] text-sm text-center transition-colors">
+                  ← Back to plans
+                </button>
+              </div>
             </div>
           )}
 
