@@ -256,7 +256,7 @@ export function Orders() {
       <p class="center">Your Business, Connected.</p>
       <div class="sep"></div>
       <div class="row"><span>Order:</span><span>${order.orderNumber}</span></div>
-      <div class="row"><span>Date:</span><span>${format(new Date(order.createdAt), "MMM d, yyyy h:mm a")}</span></div>
+      <div class="row"><span>Date:</span><span>${format(new Date(order.createdAt), "dd/MM/yyyy, h:mm a")}</span></div>
       <div class="sep"></div>
       ${order.items.map(item => `<div class="row"><span>${item.quantity}x ${item.productName}</span><span>${formatCurrency(item.lineTotal)}</span></div>`).join("")}
       <div class="sep"></div>
@@ -402,7 +402,7 @@ export function Orders() {
                       </TableCell>
                       <TableCell className="font-medium font-mono">{d.orderNumber}</TableCell>
                       <TableCell className="text-muted-foreground">
-                        {format(new Date(req.timestamp), "MMM d, yyyy h:mm a")}
+                        {format(new Date(req.timestamp), "dd/MM/yyyy, h:mm a")}
                       </TableCell>
                       <TableCell>
                         <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 border gap-1 pr-2">
@@ -508,7 +508,7 @@ export function Orders() {
                     </TableCell>
                     <TableCell className="font-medium">{order.orderNumber}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {format(new Date(order.createdAt), "MMM d, yyyy h:mm a")}
+                      {format(new Date(order.createdAt), "dd/MM/yyyy, h:mm a")}
                     </TableCell>
                     <TableCell>
                       {getStatusBadge(order.status)}

@@ -1233,7 +1233,7 @@ export function POS() {
                               <div>
                                 <p className="font-semibold text-sm">{order.orderNumber}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  {format(new Date(order.createdAt), "MMM d, h:mm a")} · {order.items.length} item{order.items.length !== 1 ? "s" : ""}
+                                  {format(new Date(order.createdAt), "dd/MM, h:mm a")} · {order.items.length} item{order.items.length !== 1 ? "s" : ""}
                                 </p>
                               </div>
                               <div className="text-right">
@@ -1773,7 +1773,7 @@ export function POS() {
               <div className="text-center py-2 border-b border-border">
                 <p className="font-bold text-base">NEXXUS POS</p>
                 <p className="text-xs text-muted-foreground">Your Business, Connected.</p>
-                <p className="text-xs text-muted-foreground mt-1">{format(new Date(receiptOrder.createdAt), "MMM d, yyyy h:mm a")}</p>
+                <p className="text-xs text-muted-foreground mt-1">{format(new Date(receiptOrder.createdAt), "dd/MM/yyyy, h:mm a")}</p>
                 <p className="font-mono text-xs mt-1">{receiptOrder.orderNumber}</p>
               </div>
 

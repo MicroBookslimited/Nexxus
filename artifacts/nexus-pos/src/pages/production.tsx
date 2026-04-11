@@ -148,7 +148,7 @@ export function Production() {
                             <p className="font-medium text-sm font-mono">{batch.batchNumber}</p>
                             <p className="text-xs text-muted-foreground mt-0.5">
                               {batch.items.length} product{batch.items.length !== 1 ? "s" : ""}
-                              {batch.completedAt ? ` · Completed ${format(new Date(batch.completedAt), "MMM d, yyyy")}` : ""}
+                              {batch.completedAt ? ` · Completed ${format(new Date(batch.completedAt), "dd/MM/yyyy")}` : ""}
                             </p>
                           </div>
                         </div>

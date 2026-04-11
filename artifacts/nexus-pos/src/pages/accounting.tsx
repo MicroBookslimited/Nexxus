@@ -304,7 +304,7 @@ function PLReportView({ accounts }: { accounts: Account[] }) {
         <div className="max-w-xl space-y-0 rounded-xl border border-border overflow-hidden">
           <div className="bg-card/70 px-4 py-3 border-b border-border">
             <h3 className="font-semibold text-sm">Profit & Loss Statement</h3>
-            <p className="text-xs text-muted-foreground">{format(new Date(report.period.from), "MMM d, yyyy")} — {format(new Date(report.period.to), "MMM d, yyyy")}</p>
+            <p className="text-xs text-muted-foreground">{format(new Date(report.period.from), "dd/MM/yyyy")} — {format(new Date(report.period.to), "dd/MM/yyyy")}</p>
           </div>
 
           {/* Revenue section */}
@@ -554,8 +554,8 @@ function QuickBooksPanel() {
           <>
             <div className="grid grid-cols-2 gap-3 text-xs">
               {status.realmId && <div><p className="text-muted-foreground">Company ID</p><p className="font-mono mt-0.5">{status.realmId}</p></div>}
-              {status.connectedAt && <div><p className="text-muted-foreground">Connected</p><p className="mt-0.5">{format(new Date(status.connectedAt), "MMM d, yyyy")}</p></div>}
-              {status.lastSyncAt && <div><p className="text-muted-foreground">Last Synced</p><p className="mt-0.5">{format(new Date(status.lastSyncAt), "MMM d, h:mm a")}</p></div>}
+              {status.connectedAt && <div><p className="text-muted-foreground">Connected</p><p className="mt-0.5">{format(new Date(status.connectedAt), "dd/MM/yyyy")}</p></div>}
+              {status.lastSyncAt && <div><p className="text-muted-foreground">Last Synced</p><p className="mt-0.5">{format(new Date(status.lastSyncAt), "dd/MM, h:mm a")}</p></div>}
               {status.lastSyncStatus && (
                 <div>
                   <p className="text-muted-foreground">Last Sync Status</p>
@@ -865,7 +865,7 @@ function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number;
         <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs" onClick={onBack}>← Back</Button>
         <div className="flex-1">
           <h2 className="font-bold text-base">{session?.name ?? "Loading…"}</h2>
-          <p className="text-xs text-muted-foreground">{session?.startedAt ? format(new Date(session.startedAt), "MMM d, yyyy 'at' h:mm a") : ""}</p>
+          <p className="text-xs text-muted-foreground">{session?.startedAt ? format(new Date(session.startedAt), "dd/MM/yyyy 'at' h:mm a") : ""}</p>
         </div>
         <Badge variant="outline" className={cn("shrink-0", isCompleted ? "border-green-500/40 text-green-400" : session?.status === "voided" ? "border-red-500/40 text-red-400" : "border-yellow-500/40 text-yellow-400")}>
           {session?.status ?? "…"}
@@ -964,7 +964,7 @@ function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number;
       {isCompleted && session?.completedAt && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Completed on {format(new Date(session.completedAt), "MMM d, yyyy 'at' h:mm a")} · {session.totalDiscrepancies ?? 0} adjustments applied
+          Completed on {format(new Date(session.completedAt), "dd/MM/yyyy 'at' h:mm a")} · {session.totalDiscrepancies ?? 0} adjustments applied
         </div>
       )}
     </div>
@@ -1064,7 +1064,7 @@ function InventoryPanel({ products }: { products: StockProduct[] }) {
                     </p>
                     <p className="text-sm text-center text-muted-foreground">{adj.previousStock}</p>
                     <p className="text-sm text-center font-medium">{adj.newStock}</p>
-                    <p className="text-xs text-right text-muted-foreground">{format(new Date(adj.createdAt), "MMM d, h:mm a")}</p>
+                    <p className="text-xs text-right text-muted-foreground">{format(new Date(adj.createdAt), "dd/MM, h:mm a")}</p>
                   </div>
                 ))}
               </div>
@@ -1095,7 +1095,7 @@ function InventoryPanel({ products }: { products: StockProduct[] }) {
                   >
                     <div>
                       <p className="text-sm font-medium">{session.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(session.startedAt), "MMM d, yyyy 'at' h:mm a")} · {session.totalItems ?? 0} products</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(session.startedAt), "dd/MM/yyyy 'at' h:mm a")} · {session.totalItems ?? 0} products</p>
                       {session.notes && <p className="text-xs text-muted-foreground/70 italic mt-0.5">{session.notes}</p>}
                     </div>
                     {session.totalDiscrepancies !== null && session.status === "completed" && (
@@ -1327,7 +1327,7 @@ export function Accounting() {
                             <div>
                               <p className="text-sm font-medium">{entry.description}</p>
                               <div className="flex items-center gap-2 mt-0.5">
-                                <p className="text-xs text-muted-foreground">{format(new Date(entry.date), "MMM d, yyyy")}</p>
+                                <p className="text-xs text-muted-foreground">{format(new Date(entry.date), "dd/MM/yyyy")}</p>
                                 {entry.reference && <Badge variant="outline" className="text-xs border-muted-foreground/30 text-muted-foreground">{entry.reference}</Badge>}
                                 <Badge variant="outline" className="text-xs border-muted-foreground/30 text-muted-foreground capitalize">{entry.type}</Badge>
                               </div>

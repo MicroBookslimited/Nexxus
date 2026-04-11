@@ -399,7 +399,7 @@ function TransferHistory({ refresh }: { refresh: number }) {
           </div>
           <div className="text-right shrink-0">
             <Badge variant="outline" className="text-xs border-blue-500/40 text-blue-500">{t.quantity} units</Badge>
-            <p className="text-xs text-muted-foreground mt-1">{format(new Date(t.createdAt), "MMM d, h:mm a")}</p>
+            <p className="text-xs text-muted-foreground mt-1">{format(new Date(t.createdAt), "dd/MM, h:mm a")}</p>
           </div>
         </div>
       ))}
@@ -602,7 +602,7 @@ export function Locations() {
                         <Package className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                         <div>
                           <p className="text-xs text-muted-foreground">Created</p>
-                          <p className="text-sm font-medium mt-0.5">{format(new Date(selectedLoc.createdAt), "PPP")}</p>
+                          <p className="text-sm font-medium mt-0.5">{format(new Date(selectedLoc.createdAt), "dd/MM/yyyy")}</p>
                         </div>
                       </div>
                     </div>

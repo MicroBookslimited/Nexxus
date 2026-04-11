@@ -80,10 +80,10 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   const fmtNum = (n: number) => Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
-  const dateStr   = createdAt.toLocaleString("en-US", {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-    hour12: false,
+  const dateStr   = createdAt.toLocaleString("en-JM", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "numeric", minute: "2-digit",
+    hour12: true,
   });
 
   // Last 3 digits of order number (the prominent pickup number)
@@ -354,9 +354,10 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   const fmtNum = (n: number) => Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
-  const dateStr   = createdAt.toLocaleString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
+  const dateStr   = createdAt.toLocaleString("en-JM", {
+    day: "2-digit", month: "2-digit", year: "numeric",
     hour: "numeric", minute: "2-digit",
+    hour12: true,
   });
 
   const orderNum  = String(order.orderNumber);

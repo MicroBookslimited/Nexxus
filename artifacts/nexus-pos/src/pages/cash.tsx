@@ -401,13 +401,14 @@ type SessionDetail = {
 function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
   const fmt = (n: number) => `$${Math.abs(n).toFixed(2)}`;
   const variance = (d.session.actualCash ?? 0) - d.expectedCash;
-  const openedAt = new Date(d.session.openedAt).toLocaleString();
-  const closedAt = d.session.closedAt ? new Date(d.session.closedAt).toLocaleString() : "—";
+  const fmtJM = (dt: string | Date) => new Date(dt).toLocaleString("en-JM", { day: "2-digit", month: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+  const openedAt = fmtJM(d.session.openedAt);
+  const closedAt = d.session.closedAt ? fmtJM(d.session.closedAt) : "—";
 
   const orderRows = withDetail
     ? d.orders.map((o) => `
         <tr>
-          <td>${new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</td>
+          <td>${new Date(o.createdAt).toLocaleTimeString("en-JM", { hour: "numeric", minute: "2-digit", hour12: true })}</td>
           <td>${o.orderNumber}</td>
           <td style="text-transform:capitalize">${o.paymentMethod}</td>
           <td style="text-align:right">${fmt(o.total)}</td>
@@ -957,7 +958,7 @@ function SessionHistoryItem({ sessionId, staffFilter }: { sessionId: number; sta
       <div className="flex-1 min-w-0">
         <p className="font-medium truncate">{session.staffName}</p>
         <p className="text-xs text-muted-foreground">
-          {format(new Date(session.openedAt), "MMM d, h:mm a")}
+          {format(new Date(session.openedAt), "dd/MM, h:mm a")}
           {session.closedAt && ` → ${format(new Date(session.closedAt), "h:mm a")}`}
         </p>
       </div>

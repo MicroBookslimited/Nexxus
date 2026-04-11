@@ -71,13 +71,13 @@ function fmt(n: number) {
 }
 
 function formatDate(d: string | Date) {
-  return new Date(d).toLocaleString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
+  return new Date(d).toLocaleString("en-JM", {
+    day: "2-digit", month: "2-digit", year: "numeric",
     hour: "numeric", minute: "2-digit", hour12: true,
   });
 }
 function formatTime(d: string | Date) {
-  return new Date(d).toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  return new Date(d).toLocaleString("en-JM", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 /* ───── Receipt HTML (Loyverse / Lavu style) ───── */
