@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, KeyboardEvent } from "react";
+import { CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayMessage } from "@/lib/customer-display-channel";
 import { motion, AnimatePresence } from "framer-motion";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt } from "@/lib/receipt";
 import {
@@ -654,6 +655,59 @@ export function POS() {
     setDeliveryDirections("");
     setNumpadValue("");
   };
+
+  /* ─── Customer Display BroadcastChannel publisher ─── */
+  const cdChannelRef = useRef<BroadcastChannel | null>(null);
+
+  useEffect(() => {
+    const ch = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
+    cdChannelRef.current = ch;
+    ch.postMessage({ type: "idle" } satisfies CustomerDisplayMessage);
+    const onUnload = () => ch.postMessage({ type: "idle" } satisfies CustomerDisplayMessage);
+    window.addEventListener("beforeunload", onUnload);
+    return () => {
+      window.removeEventListener("beforeunload", onUnload);
+      ch.postMessage({ type: "idle" } satisfies CustomerDisplayMessage);
+      ch.close();
+      cdChannelRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const ch = cdChannelRef.current;
+    if (!ch) return;
+    if (receiptOrder) {
+      const cashTendered = receiptOrder.cashTendered != null && receiptOrder.cashTendered > 0
+        ? receiptOrder.cashTendered
+        : undefined;
+      ch.postMessage({
+        type: "complete",
+        orderNumber: receiptOrder.orderNumber,
+        paymentMethod: receiptOrder.paymentMethod,
+        total: receiptOrder.total,
+        cashTendered,
+        currency: baseCurrency,
+      } satisfies CustomerDisplayMessage);
+    } else if (cart.length === 0) {
+      ch.postMessage({ type: "idle" } satisfies CustomerDisplayMessage);
+    } else {
+      ch.postMessage({
+        type: "cart",
+        items: cart.map((item) => ({
+          productName: item.productName,
+          quantity: item.quantity,
+          effectivePrice: item.effectivePrice,
+          itemDiscount: item.itemDiscount,
+        })),
+        subtotal,
+        cartDiscountValue,
+        loyaltyDiscountValue,
+        tax,
+        total,
+        currency: baseCurrency,
+      } satisfies CustomerDisplayMessage);
+    }
+  }, [receiptOrder, cart, subtotal, cartDiscountValue, loyaltyDiscountValue, tax, total, baseCurrency]);
 
   const buildOrderNotes = () => {
     if (orderMode !== "delivery") return notes || undefined;

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, ListOrdered, Package, Users, BarChart2,
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
-  Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck,
+  Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import logoUrl from "@assets/CE921A75-1E79-4B12-9F18-6809B5113B30_1775830070572.png";
@@ -231,6 +231,17 @@ export function Layout({ children }: { children: ReactNode }) {
             title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           >
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+
+          {/* Open Customer Display */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-muted-foreground hover:text-primary hidden sm:flex"
+            onClick={() => window.open("/customer-display/", "nexus-customer-display", "width=1280,height=720,menubar=no,toolbar=no,location=no,status=no")}
+            title="Open Customer Display (second screen)"
+          >
+            <Monitor className="h-4 w-4" />
           </Button>
 
           {fsSupported && (
