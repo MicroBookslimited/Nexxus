@@ -246,12 +246,28 @@ function InventoryPanel({ loc, products }: { loc: Location; products: Product[] 
 /* ─── Stock Transfer Modal ─── */
 function TransferModal({ locations, products, onClose, onSaved }: { locations: Location[]; products: Product[]; onClose: () => void; onSaved: () => void }) {
   const { toast } = useToast();
-  const [form, setForm] = useState({ fromLocationId: "", toLocationId: "", productId: "", quantity: "1", notes: "" });
+  const NONE = "__none__";
+  const [form, setForm] = useState({ fromLocationId: NONE, toLocationId: NONE, productId: "", quantity: "1", notes: "" });
   const [saving, setSaving] = useState(false);
+  const [sourceStock, setSourceStock] = useState<number | null>(null);
+
+  const fromId = form.fromLocationId !== NONE ? form.fromLocationId : "";
+  const toId = form.toLocationId !== NONE ? form.toLocationId : "";
+
+  // Fetch available stock at source branch when both are selected
+  useEffect(() => {
+    if (!fromId || !form.productId) { setSourceStock(null); return; }
+    api<InventoryItem[]>(`/locations/${fromId}/inventory`)
+      .then(inv => {
+        const item = inv.find(i => String(i.productId) === form.productId);
+        setSourceStock(item ? item.stockCount : 0);
+      })
+      .catch(() => setSourceStock(null));
+  }, [fromId, form.productId]);
 
   async function save() {
     if (!form.productId) { toast({ title: "Select a product", variant: "destructive" }); return; }
-    if (!form.fromLocationId && !form.toLocationId) { toast({ title: "Select at least one branch", variant: "destructive" }); return; }
+    if (!fromId && !toId) { toast({ title: "Select at least one branch", variant: "destructive" }); return; }
     const qty = parseInt(form.quantity, 10);
     if (isNaN(qty) || qty < 1) { toast({ title: "Quantity must be at least 1", variant: "destructive" }); return; }
     setSaving(true);
@@ -259,8 +275,8 @@ function TransferModal({ locations, products, onClose, onSaved }: { locations: L
       await api(`/stock-transfers`, {
         method: "POST",
         body: JSON.stringify({
-          fromLocationId: form.fromLocationId ? parseInt(form.fromLocationId, 10) : undefined,
-          toLocationId: form.toLocationId ? parseInt(form.toLocationId, 10) : undefined,
+          fromLocationId: fromId ? parseInt(fromId, 10) : undefined,
+          toLocationId: toId ? parseInt(toId, 10) : undefined,
           productId: parseInt(form.productId, 10),
           quantity: qty,
           notes: form.notes || undefined,
@@ -289,7 +305,7 @@ function TransferModal({ locations, products, onClose, onSaved }: { locations: L
               <Select value={form.fromLocationId} onValueChange={v => setForm(p => ({ ...p, fromLocationId: v }))}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Source (optional)" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">— External / None —</SelectItem>
+                  <SelectItem value="__none__">— External / None —</SelectItem>
                   {locations.filter(l => l.isActive).map(l => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -299,7 +315,7 @@ function TransferModal({ locations, products, onClose, onSaved }: { locations: L
               <Select value={form.toLocationId} onValueChange={v => setForm(p => ({ ...p, toLocationId: v }))}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Destination (optional)" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">— External / None —</SelectItem>
+                  <SelectItem value="__none__">— External / None —</SelectItem>
                   {locations.filter(l => l.isActive).map(l => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -314,9 +330,21 @@ function TransferModal({ locations, products, onClose, onSaved }: { locations: L
               </SelectContent>
             </Select>
           </div>
+          {fromId && form.productId && sourceStock !== null && (
+            <div className={cn(
+              "flex items-center gap-1.5 text-xs px-3 py-2 rounded-md",
+              sourceStock === 0
+                ? "bg-destructive/10 text-destructive"
+                : "bg-primary/10 text-primary"
+            )}>
+              <Package className="h-3 w-3 shrink-0" />
+              Available at source: <strong>{sourceStock} units</strong>
+              {sourceStock === 0 && <span className="ml-1">— set stock in Inventory tab first</span>}
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>Quantity *</Label>
-            <Input type="number" min={1} value={form.quantity} onChange={e => setForm(p => ({ ...p, quantity: e.target.value }))} className="h-9" />
+            <Input type="number" min={1} max={sourceStock ?? undefined} value={form.quantity} onChange={e => setForm(p => ({ ...p, quantity: e.target.value }))} className="h-9" />
           </div>
           <div className="space-y-1.5">
             <Label>Notes</Label>
