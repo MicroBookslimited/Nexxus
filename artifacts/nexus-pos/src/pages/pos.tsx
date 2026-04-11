@@ -1479,13 +1479,13 @@ export function POS() {
             ) : (
               <div className="space-y-0.5 text-xs">
                 {cart.map((item) => (
-                  <div key={item.cartKey} className="flex justify-between text-muted-foreground">
+                  <div key={item.cartKey} className="flex justify-between text-foreground">
                     <span className="truncate max-w-[150px]">{item.quantity}× {item.productName}</span>
                     <span className="font-mono shrink-0 ml-1">{fmtNum(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
                   </div>
                 ))}
                 <div className="pt-1.5 mt-1 border-t border-border space-y-0.5">
-                  <div className="flex justify-between text-muted-foreground">
+                  <div className="flex justify-between text-foreground/80">
                     <span>Subtotal</span><span className="font-mono">{fmtNum(subtotal)}</span>
                   </div>
                   {cartDiscountValue > 0 && (
@@ -1498,7 +1498,7 @@ export function POS() {
                       <span>Loyalty</span><span className="font-mono">-{fmtNum(loyaltyDiscountValue)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-muted-foreground">
+                  <div className="flex justify-between text-foreground/80">
                     <span>GCT {taxPct > 0 ? `(${taxPct}%)` : ""}</span><span className="font-mono">{fmtNum(tax)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-sm pt-1 border-t border-border">
@@ -1512,7 +1512,7 @@ export function POS() {
                   )}
                   {paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0 && (
                     <>
-                      <div className="flex justify-between text-muted-foreground">
+                      <div className="flex justify-between text-foreground/80">
                         <span>Tendered</span><span className="font-mono">{fmtNum(parseFloat(numpadValue))}</span>
                       </div>
                       <div className={`flex justify-between font-semibold ${parseFloat(numpadValue) >= total ? "text-emerald-400" : "text-red-400"}`}>
