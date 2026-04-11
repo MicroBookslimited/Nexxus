@@ -760,14 +760,33 @@ export function POS() {
         orderType: orderMode,
         locationId: sessionLocationId ?? undefined,
       };
+      const offlineNum = `OFF-${Date.now().toString(36).toUpperCase()}`;
       enqueueRequest({
         url: "/api/orders",
         method: "POST",
         body: orderPayload,
         headers: { "Content-Type": "application/json" },
         label: `Sale ${formatCurrency(total, baseCurrency)}`,
+        displayData: {
+          orderNumber: offlineNum,
+          total,
+          subtotal,
+          tax,
+          discountValue: cartDiscountValue + loyaltyDiscountValue,
+          paymentMethod,
+          items: cart.map((item) => ({
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPrice: item.effectivePrice,
+            lineTotal: item.effectivePrice * item.quantity - item.itemDiscount,
+          })),
+          notes: buildOrderNotes() ?? undefined,
+          cashTendered: paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0
+            ? parseFloat(numpadValue) : undefined,
+          splitCardAmount: paymentMethod === "split" ? splitCardAmount : undefined,
+          splitCashAmount: paymentMethod === "split" ? splitCashAmount : undefined,
+        },
       });
-      const offlineNum = `OFF-${Date.now().toString(36).toUpperCase()}`;
       const cashTendered = paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0
         ? parseFloat(numpadValue) : undefined;
       const offlineReceipt = {

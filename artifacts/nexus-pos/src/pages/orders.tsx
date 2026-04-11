@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings } from "@workspace/api-client-react";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt } from "@/lib/receipt";
@@ -11,7 +11,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, ChevronUp, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert, RotateCcw, Printer, CalendarDays, X } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert, RotateCcw, Printer, CalendarDays, X, WifiOff } from "lucide-react";
+import { getQueue, type QueuedRequest } from "@/lib/offline-queue";
 import { PinPad } from "@/components/PinPad";
 import { 
   AlertDialog,
@@ -53,12 +54,26 @@ function getPreset(preset: string): { from: string; to: string } {
   return { from: "", to: "" };
 }
 
+function getOfflineOrders(): QueuedRequest[] {
+  return getQueue().filter(
+    (r) => r.url === "/api/orders" && r.method === "POST" && r.displayData
+  );
+}
+
 export function Orders() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
+  const [expandedOfflineId, setExpandedOfflineId] = useState<string | null>(null);
+  const [offlineOrders, setOfflineOrders] = useState<QueuedRequest[]>(getOfflineOrders);
+
+  useEffect(() => {
+    const refresh = () => setOfflineOrders(getOfflineOrders());
+    window.addEventListener("nexus:queue-changed", refresh);
+    return () => window.removeEventListener("nexus:queue-changed", refresh);
+  }, []);
   
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [orderToVoid, setOrderToVoid] = useState<number | null>(null);
@@ -373,6 +388,110 @@ export function Orders() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {offlineOrders.map((req) => {
+                const d = req.displayData!;
+                const isExpanded = expandedOfflineId === req.id;
+                return (
+                  <React.Fragment key={req.id}>
+                    <TableRow
+                      className={`cursor-pointer border-l-2 border-l-amber-500 ${isExpanded ? "bg-amber-500/5" : "hover:bg-amber-500/5"}`}
+                      onClick={() => setExpandedOfflineId(prev => prev === req.id ? null : req.id)}
+                    >
+                      <TableCell className="pl-4 text-muted-foreground">
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </TableCell>
+                      <TableCell className="font-medium font-mono">{d.orderNumber}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {format(new Date(req.timestamp), "MMM d, yyyy h:mm a")}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 border gap-1 pr-2">
+                          <WifiOff className="h-3 w-3" />
+                          Pending Sync
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {d.items.length} item{d.items.length !== 1 ? "s" : ""}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-medium">
+                        {formatCurrency(d.total)}
+                      </TableCell>
+                      <TableCell className="text-right pr-6" />
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow className="bg-amber-500/5 hover:bg-amber-500/5">
+                        <TableCell colSpan={7} className="p-0 border-b border-amber-500/20">
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="p-6 grid grid-cols-2 gap-8">
+                              <div>
+                                <h4 className="font-semibold mb-3">Order Items</h4>
+                                <div className="space-y-2">
+                                  {d.items.map((item, i) => (
+                                    <div key={i} className="text-sm flex justify-between">
+                                      <span className="text-muted-foreground">{item.quantity}x {item.productName}</span>
+                                      <span className="font-mono">{formatCurrency(item.lineTotal)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <Separator className="my-2" />
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Subtotal</span>
+                                  <span className="font-mono">{formatCurrency(d.subtotal)}</span>
+                                </div>
+                                {d.discountValue > 0 && (
+                                  <div className="flex justify-between text-sm text-amber-500">
+                                    <span>Discount</span>
+                                    <span className="font-mono">-{formatCurrency(d.discountValue)}</span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Tax</span>
+                                  <span className="font-mono">{formatCurrency(d.tax)}</span>
+                                </div>
+                                <div className="flex justify-between font-bold text-sm mt-1">
+                                  <span>Total</span>
+                                  <span className="font-mono">{formatCurrency(d.total)}</span>
+                                </div>
+                              </div>
+                              <div className="space-y-4">
+                                <div>
+                                  <h4 className="font-semibold mb-1 text-sm">Payment Method</h4>
+                                  <p className="text-sm text-muted-foreground capitalize">
+                                    {d.paymentMethod === "split"
+                                      ? `Split (Card: ${formatCurrency(d.splitCardAmount ?? 0)}, Cash: ${formatCurrency(d.splitCashAmount ?? 0)})`
+                                      : d.paymentMethod}
+                                  </p>
+                                </div>
+                                {d.cashTendered && (
+                                  <div>
+                                    <h4 className="font-semibold mb-1 text-sm">Cash Tendered</h4>
+                                    <p className="text-sm text-muted-foreground">{formatCurrency(d.cashTendered)}</p>
+                                  </div>
+                                )}
+                                {d.notes && (
+                                  <div>
+                                    <h4 className="font-semibold mb-1 text-sm">Notes</h4>
+                                    <p className="text-sm text-muted-foreground">{d.notes}</p>
+                                  </div>
+                                )}
+                                <div className="mt-4 p-3 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+                                  <WifiOff className="h-3 w-3 inline mr-1.5 mb-0.5" />
+                                  This order was saved offline and will sync automatically when the connection is restored.
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
+                );
+              })}
               {isLoading ? (
                 [...Array(5)].map((_, i) => (
                   <TableRow key={i}>

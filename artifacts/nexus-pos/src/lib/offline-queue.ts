@@ -2,6 +2,27 @@ import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
 const QUEUE_KEY = "nexus_offline_queue";
 
+export interface OfflineOrderItem {
+  productName: string;
+  quantity: number;
+  lineTotal: number;
+  unitPrice: number;
+}
+
+export interface OfflineOrderDisplayData {
+  orderNumber: string;
+  total: number;
+  subtotal: number;
+  tax: number;
+  discountValue: number;
+  paymentMethod: string;
+  items: OfflineOrderItem[];
+  notes?: string;
+  cashTendered?: number;
+  splitCardAmount?: number;
+  splitCashAmount?: number;
+}
+
 export interface QueuedRequest {
   id: string;
   url: string;
@@ -10,6 +31,7 @@ export interface QueuedRequest {
   headers: Record<string, string>;
   timestamp: number;
   label: string;
+  displayData?: OfflineOrderDisplayData;
 }
 
 export function getQueue(): QueuedRequest[] {
