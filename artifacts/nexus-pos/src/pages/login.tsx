@@ -114,12 +114,8 @@ export function Login() {
     const token = localStorage.getItem(TENANT_TOKEN_KEY);
     if (!token) return;
     saasMe()
-      .then(({ tenant }) => {
-        if (tenant.onboardingComplete) {
-          setLocation("/dashboard");
-        } else {
-          setLocation("/signup");
-        }
+      .then(() => {
+        setLocation("/dashboard");
       })
       .catch(() => {
         localStorage.removeItem(TENANT_TOKEN_KEY);

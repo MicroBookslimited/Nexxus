@@ -1025,9 +1025,6 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                           <span className="text-[#475569] text-xs">·</span>
                           <span className="text-[#94a3b8] text-xs">{u.businessName}</span>
                           <StatusBadge status={u.subscriptionStatus ?? "trial"} />
-                          {!u.onboardingComplete && (
-                            <span className="text-[9px] font-bold uppercase tracking-wide bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded-full">Setup Incomplete</span>
-                          )}
                         </div>
                         <div className="text-xs text-[#475569] mt-0.5 flex items-center gap-3">
                           <span>{u.email}</span>
@@ -1046,7 +1043,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                             try {
                               const { token } = await superadminImpersonate(u.id);
                               localStorage.setItem(TENANT_TOKEN_KEY, token);
-                              window.location.href = "/app/";
+                              window.location.href = "/app/dashboard";
                             } catch (e: unknown) {
                               alert(e instanceof Error ? e.message : "Failed to impersonate");
                               setImpersonating(null);

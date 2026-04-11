@@ -224,7 +224,7 @@ export interface TransferProofRow {
 export interface UserRow {
   id: number; businessName: string; ownerName: string; email: string;
   phone?: string; country?: string; status: string;
-  onboardingComplete: boolean; createdAt: string;
+  onboardingComplete: boolean; onboardingStep: number; createdAt: string;
   subscriptionStatus?: string; planName?: string; billingCycle?: string;
 }
 

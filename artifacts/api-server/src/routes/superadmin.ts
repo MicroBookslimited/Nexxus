@@ -542,6 +542,7 @@ router.get("/superadmin/users", async (req, res): Promise<void> => {
       country: tenantsTable.country,
       status: tenantsTable.status,
       onboardingComplete: tenantsTable.onboardingComplete,
+      onboardingStep: tenantsTable.onboardingStep,
       createdAt: tenantsTable.createdAt,
       subscriptionStatus: subscriptionsTable.status,
       planName: subscriptionPlansTable.name,
