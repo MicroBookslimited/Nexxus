@@ -435,7 +435,7 @@ export function Kitchen() {
       </div>
 
       {/* Order board */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center h-60 text-muted-foreground text-sm">Loading orders…</div>
         ) : !visibleOrders.length ? (
@@ -455,7 +455,7 @@ export function Kitchen() {
         ) : (
           <div className="grid grid-cols-3 gap-0 h-full">
             {/* Pending */}
-            <div className="border-r border-border flex flex-col h-full">
+            <div className="border-r border-border flex flex-col overflow-hidden">
               <div className="px-4 py-3 bg-amber-500/5 border-b border-amber-500/20 shrink-0">
                 <p className="text-sm font-semibold text-amber-400 flex items-center gap-2">
                   <Clock className="h-4 w-4" /> Pending ({pending.length})
@@ -469,7 +469,7 @@ export function Kitchen() {
             </div>
 
             {/* Preparing */}
-            <div className="border-r border-border flex flex-col h-full">
+            <div className="border-r border-border flex flex-col overflow-hidden">
               <div className="px-4 py-3 bg-blue-500/5 border-b border-blue-500/20 shrink-0">
                 <p className="text-sm font-semibold text-blue-400 flex items-center gap-2">
                   <ChefHat className="h-4 w-4" /> Preparing ({preparing.length})
@@ -483,7 +483,7 @@ export function Kitchen() {
             </div>
 
             {/* Ready */}
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col overflow-hidden">
               <div className="px-4 py-3 bg-emerald-500/5 border-b border-emerald-500/20 shrink-0">
                 <p className="text-sm font-semibold text-emerald-400 flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4" /> Ready ({ready.length})
