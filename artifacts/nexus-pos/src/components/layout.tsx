@@ -5,7 +5,7 @@ import {
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
-  FlaskConical, Factory,
+  FlaskConical, Factory, Beaker,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import logoUrl from "@assets/CE921A75-1E79-4B12-9F18-6809B5113B30_1775830070572.png";
@@ -16,7 +16,25 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useStaff } from "@/contexts/StaffContext";
 import { PinPad } from "@/components/PinPad";
 
-const NAV_ITEMS = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+  permission: string | null;
+  children?: never;
+};
+
+type NavGroup = {
+  href?: never;
+  label: string;
+  icon: React.ElementType;
+  permission: string | null;
+  children: NavItem[];
+};
+
+type NavEntry = NavItem | NavGroup;
+
+const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard",    label: "Dashboard",   icon: LayoutDashboard, permission: null },
   { href: "/pos",          label: "POS",          icon: ShoppingCart,    permission: "pos.sale" },
   { href: "/tables",       label: "Tables",       icon: UtensilsCrossed, permission: "orders.view" },
@@ -27,9 +45,16 @@ const NAV_ITEMS = [
   { href: "/customers",    label: "Customers",    icon: Users,           permission: "customers.view" },
   { href: "/staff",        label: "Staff",        icon: UserCog,         permission: "staff.view" },
   { href: "/locations",    label: "Locations",    icon: MapPin,          permission: "inventory.manage" },
-  { href: "/ingredients",  label: "Ingredients",  icon: FlaskConical,    permission: "inventory.manage" },
-  { href: "/recipes",      label: "Recipes",      icon: BookOpen,        permission: "inventory.manage" },
-  { href: "/production",   label: "Production",   icon: Factory,         permission: "inventory.manage" },
+  {
+    label: "Production",
+    icon: Beaker,
+    permission: "inventory.manage",
+    children: [
+      { href: "/ingredients", label: "Ingredients", icon: FlaskConical, permission: "inventory.manage" },
+      { href: "/recipes",     label: "Recipes",     icon: BookOpen,     permission: "inventory.manage" },
+      { href: "/production",  label: "Production",  icon: Factory,      permission: "inventory.manage" },
+    ],
+  },
   { href: "/accounting",   label: "Accounting",   icon: Calculator,      permission: "reports.view" },
   { href: "/ar",           label: "Receivables",  icon: BookOpen,        permission: "reports.view" },
   { href: "/reports",      label: "Reports",      icon: BarChart2,       permission: "reports.view" },
@@ -62,6 +87,15 @@ function useCountdown(targetDate: Date | null) {
   return timeLeft;
 }
 
+function isGroup(entry: NavEntry): entry is NavGroup {
+  return Array.isArray((entry as NavGroup).children);
+}
+
+/** Check if any child of a group matches the current location */
+function groupActive(group: NavGroup, location: string) {
+  return group.children.some(c => location.startsWith(c.href));
+}
+
 export function Layout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -71,6 +105,26 @@ export function Layout({ children }: { children: ReactNode }) {
   const { theme, toggleTheme } = useTheme();
   const { staff, setStaff, can, clearStaff } = useStaff();
   const [switchUserOpen, setSwitchUserOpen] = useState(false);
+
+  // Tracks which group labels are expanded (desktop dropdown & mobile accordion)
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    // Auto-open the group that contains the current page
+    const initial = new Set<string>();
+    NAV_ITEMS.forEach(entry => {
+      if (isGroup(entry) && entry.children.some(c => location.startsWith(c.href))) {
+        initial.add(entry.label);
+      }
+    });
+    return initial;
+  });
+
+  const toggleGroup = (label: string) => {
+    setOpenGroups(prev => {
+      const next = new Set(prev);
+      next.has(label) ? next.delete(label) : next.add(label);
+      return next;
+    });
+  };
 
   const [expiryDate, setExpiryDate] = useState<Date | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -137,9 +191,19 @@ export function Layout({ children }: { children: ReactNode }) {
   const isWarning = daysLeft <= 7;
   const pad = (n: number) => String(n).padStart(2, "0");
 
-  const visibleNav = NAV_ITEMS.filter(i => !i.permission || can(i.permission));
-  const mobilePrimary = visibleNav.filter(i => MOBILE_PRIMARY.includes(i.href));
-  const mobileSecondary = visibleNav.filter(i => !MOBILE_PRIMARY.includes(i.href));
+  // Filter entries: for groups, filter children too
+  const canSeeEntry = (entry: NavEntry): boolean => {
+    if (!entry.permission || can(entry.permission)) {
+      if (isGroup(entry)) return entry.children.some(c => !c.permission || can(c.permission));
+      return true;
+    }
+    return false;
+  };
+
+  const visibleNav = NAV_ITEMS.filter(canSeeEntry);
+  const flatItems = visibleNav.flatMap(e => isGroup(e) ? e.children : [e]);
+  const mobilePrimary = flatItems.filter(i => MOBILE_PRIMARY.includes(i.href));
+  const mobileSecondary = flatItems.filter(i => !MOBILE_PRIMARY.includes(i.href));
 
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground overflow-hidden">
@@ -154,12 +218,56 @@ export function Layout({ children }: { children: ReactNode }) {
 
         {/* ── DESKTOP NAV (≥1280px): icon + label ── */}
         <nav className="hidden xl:flex items-center gap-0 overflow-x-auto no-scrollbar mx-2 flex-1">
-          {visibleNav.map((item) => {
-            const isActive = location.startsWith(item.href);
+          {visibleNav.map((entry) => {
+            if (isGroup(entry)) {
+              const active = groupActive(entry, location);
+              const open = openGroups.has(entry.label);
+              return (
+                <div key={entry.label} className="relative">
+                  <button
+                    onClick={() => toggleGroup(entry.label)}
+                    className={cn(
+                      "flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0",
+                      active
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+                    )}
+                  >
+                    <entry.icon className="h-3.5 w-3.5 shrink-0" />
+                    {entry.label}
+                    <ChevronDown className={cn("h-3 w-3 ml-0.5 transition-transform", open && "rotate-180")} />
+                  </button>
+                  {open && (
+                    <div className="absolute left-0 top-full mt-1 z-50 min-w-[140px] rounded-lg border border-border bg-card shadow-xl overflow-hidden">
+                      {entry.children.filter(c => !c.permission || can(c.permission)).map(child => {
+                        const childActive = location.startsWith(child.href);
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            className={cn(
+                              "flex items-center gap-2 px-3 py-2 text-[11px] font-medium transition-colors",
+                              childActive
+                                ? "bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+                            )}
+                          >
+                            <child.icon className="h-3.5 w-3.5 shrink-0" />
+                            {child.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            // Flat item
+            const isActive = location.startsWith(entry.href);
             return (
               <Link
-                key={item.href}
-                href={item.href}
+                key={entry.href}
+                href={entry.href}
                 className={cn(
                   "flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0",
                   isActive
@@ -167,8 +275,8 @@ export function Layout({ children }: { children: ReactNode }) {
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
                 )}
               >
-                <item.icon className="h-3.5 w-3.5 shrink-0" />
-                {item.label}
+                <entry.icon className="h-3.5 w-3.5 shrink-0" />
+                {entry.label}
               </Link>
             );
           })}
@@ -176,13 +284,56 @@ export function Layout({ children }: { children: ReactNode }) {
 
         {/* ── TABLET NAV (768-1279px): icon-only with tooltip ── */}
         <nav className="hidden md:flex xl:hidden items-center gap-0 overflow-x-auto no-scrollbar mx-2 flex-1 justify-center">
-          {visibleNav.map((item) => {
-            const isActive = location.startsWith(item.href);
+          {visibleNav.map((entry) => {
+            if (isGroup(entry)) {
+              const active = groupActive(entry, location);
+              const open = openGroups.has(entry.label);
+              return (
+                <div key={entry.label} className="relative">
+                  <button
+                    onClick={() => toggleGroup(entry.label)}
+                    title={entry.label}
+                    className={cn(
+                      "flex items-center justify-center w-8 h-9 rounded-md transition-all shrink-0",
+                      active
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+                    )}
+                  >
+                    <entry.icon className="h-4 w-4" />
+                  </button>
+                  {open && (
+                    <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 min-w-[140px] rounded-lg border border-border bg-card shadow-xl overflow-hidden">
+                      {entry.children.filter(c => !c.permission || can(c.permission)).map(child => {
+                        const childActive = location.startsWith(child.href);
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            className={cn(
+                              "flex items-center gap-2 px-3 py-2 text-[11px] font-medium transition-colors",
+                              childActive
+                                ? "bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+                            )}
+                          >
+                            <child.icon className="h-3.5 w-3.5 shrink-0" />
+                            {child.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            // Flat item
+            const isActive = location.startsWith(entry.href);
             return (
               <Link
-                key={item.href}
-                href={item.href}
-                title={item.label}
+                key={entry.href}
+                href={entry.href}
+                title={entry.label}
                 className={cn(
                   "flex items-center justify-center w-8 h-9 rounded-md transition-all shrink-0",
                   isActive
@@ -190,7 +341,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
                 )}
               >
-                <item.icon className="h-4 w-4" />
+                <entry.icon className="h-4 w-4" />
               </Link>
             );
           })}
@@ -316,12 +467,56 @@ export function Layout({ children }: { children: ReactNode }) {
 
             {/* Nav items */}
             <nav className="flex-1 overflow-y-auto py-3 px-2">
-              {visibleNav.map((item) => {
-                const isActive = location.startsWith(item.href);
+              {visibleNav.map((entry) => {
+                if (isGroup(entry)) {
+                  const active = groupActive(entry, location);
+                  const open = openGroups.has(entry.label);
+                  return (
+                    <div key={entry.label}>
+                      <button
+                        onClick={() => toggleGroup(entry.label)}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all mb-0.5",
+                          active
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+                        )}
+                      >
+                        <entry.icon className="h-4 w-4 shrink-0" />
+                        <span className="flex-1 text-left">{entry.label}</span>
+                        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+                      </button>
+                      {open && (
+                        <div className="ml-4 mb-1 pl-3 border-l border-border space-y-0.5">
+                          {entry.children.filter(c => !c.permission || can(c.permission)).map(child => {
+                            const childActive = location.startsWith(child.href);
+                            return (
+                              <Link
+                                key={child.href}
+                                href={child.href}
+                                className={cn(
+                                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+                                  childActive
+                                    ? "bg-primary/10 text-primary"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+                                )}
+                              >
+                                <child.icon className="h-4 w-4 shrink-0" />
+                                {child.label}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                // Flat item
+                const isActive = location.startsWith(entry.href);
                 return (
                   <Link
-                    key={item.href}
-                    href={item.href}
+                    key={entry.href}
+                    href={entry.href}
                     className={cn(
                       "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all mb-0.5",
                       isActive
@@ -329,8 +524,8 @@ export function Layout({ children }: { children: ReactNode }) {
                         : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
                     )}
                   >
-                    <item.icon className="h-4.5 w-4.5 shrink-0" />
-                    {item.label}
+                    <entry.icon className="h-4 w-4 shrink-0" />
+                    {entry.label}
                   </Link>
                 );
               })}
