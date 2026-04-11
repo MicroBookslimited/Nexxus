@@ -79,6 +79,10 @@ function formatCurrency(val: number, currency = "JMD") {
     return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(val);
   }
 }
+// Plain number (no currency prefix) — used on every line except Total
+function fmtNum(val: number) {
+  return Math.abs(val).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 function choiceLabel(choices: ChoiceItem[]) {
   return choices.map((c) => c.optionName).join(", ");
@@ -1477,25 +1481,25 @@ export function POS() {
                 {cart.map((item) => (
                   <div key={item.cartKey} className="flex justify-between text-muted-foreground">
                     <span className="truncate max-w-[150px]">{item.quantity}× {item.productName}</span>
-                    <span className="font-mono shrink-0 ml-1">{formatCurrency(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
+                    <span className="font-mono shrink-0 ml-1">{fmtNum(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
                   </div>
                 ))}
                 <div className="pt-1.5 mt-1 border-t border-border space-y-0.5">
                   <div className="flex justify-between text-muted-foreground">
-                    <span>Subtotal</span><span className="font-mono">{formatCurrency(subtotal)}</span>
+                    <span>Subtotal</span><span className="font-mono">{fmtNum(subtotal)}</span>
                   </div>
                   {cartDiscountValue > 0 && (
                     <div className="flex justify-between text-amber-400">
-                      <span>Discount</span><span className="font-mono">-{formatCurrency(cartDiscountValue)}</span>
+                      <span>Discount</span><span className="font-mono">-{fmtNum(cartDiscountValue)}</span>
                     </div>
                   )}
                   {loyaltyDiscountValue > 0 && (
                     <div className="flex justify-between text-amber-400">
-                      <span>Loyalty</span><span className="font-mono">-{formatCurrency(loyaltyDiscountValue)}</span>
+                      <span>Loyalty</span><span className="font-mono">-{fmtNum(loyaltyDiscountValue)}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-muted-foreground">
-                    <span>GCT {taxPct > 0 ? `(${taxPct}%)` : ""}</span><span className="font-mono">{formatCurrency(tax)}</span>
+                    <span>GCT {taxPct > 0 ? `(${taxPct}%)` : ""}</span><span className="font-mono">{fmtNum(tax)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-sm pt-1 border-t border-border">
                     <span>Total</span><span className="font-mono text-primary">{formatCurrency(total, baseCurrency)}</span>
@@ -1509,11 +1513,11 @@ export function POS() {
                   {paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0 && (
                     <>
                       <div className="flex justify-between text-muted-foreground">
-                        <span>Tendered</span><span className="font-mono">{formatCurrency(parseFloat(numpadValue))}</span>
+                        <span>Tendered</span><span className="font-mono">{fmtNum(parseFloat(numpadValue))}</span>
                       </div>
                       <div className={`flex justify-between font-semibold ${parseFloat(numpadValue) >= total ? "text-emerald-400" : "text-red-400"}`}>
                         <span>{parseFloat(numpadValue) >= total ? "Change" : "Short"}</span>
-                        <span className="font-mono">{formatCurrency(Math.abs(parseFloat(numpadValue) - total))}</span>
+                        <span className="font-mono">{fmtNum(Math.abs(parseFloat(numpadValue) - total))}</span>
                       </div>
                     </>
                   )}
@@ -1778,7 +1782,7 @@ export function POS() {
                   <div key={item.id}>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{item.productName} × {item.quantity}</span>
-                      <span className="font-mono">{formatCurrency(item.lineTotal)}</span>
+                      <span className="font-mono">{fmtNum(item.lineTotal)}</span>
                     </div>
                     {item.variantChoices && item.variantChoices.length > 0 && (
                       <p className="text-xs text-primary/70 pl-2">↳ {(item.variantChoices as ChoiceItem[]).map((c) => c.optionName).join(", ")}</p>
@@ -1793,17 +1797,17 @@ export function POS() {
               <div className="border-t border-dashed border-border pt-2 space-y-1">
                 <div className="flex justify-between text-muted-foreground">
                   <span>Subtotal</span>
-                  <span className="font-mono">{formatCurrency(receiptOrder.subtotal)}</span>
+                  <span className="font-mono">{fmtNum(receiptOrder.subtotal)}</span>
                 </div>
                 {receiptOrder.discountValue && receiptOrder.discountValue > 0 && (
                   <div className="flex justify-between text-amber-400">
                     <span>Discount</span>
-                    <span className="font-mono">-{formatCurrency(receiptOrder.discountValue)}</span>
+                    <span className="font-mono">-{fmtNum(receiptOrder.discountValue)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-muted-foreground">
                   <span>Tax</span>
-                  <span className="font-mono">{formatCurrency(receiptOrder.tax)}</span>
+                  <span className="font-mono">{fmtNum(receiptOrder.tax)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-base pt-1 border-t border-border">
                   <span>Total</span>
@@ -1822,11 +1826,11 @@ export function POS() {
                   <>
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Card</span>
-                      <span className="font-mono">{formatCurrency(receiptOrder.splitCardAmount ?? 0)}</span>
+                      <span className="font-mono">{fmtNum(receiptOrder.splitCardAmount ?? 0)}</span>
                     </div>
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Cash</span>
-                      <span className="font-mono">{formatCurrency(receiptOrder.splitCashAmount ?? 0)}</span>
+                      <span className="font-mono">{fmtNum(receiptOrder.splitCashAmount ?? 0)}</span>
                     </div>
                   </>
                 ) : (
@@ -1839,11 +1843,11 @@ export function POS() {
                   <>
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Cash Tendered</span>
-                      <span className="font-mono">{formatCurrency(receiptOrder.cashTendered)}</span>
+                      <span className="font-mono">{fmtNum(receiptOrder.cashTendered)}</span>
                     </div>
                     <div className="flex justify-between text-xs font-semibold text-emerald-400">
                       <span>Change Due</span>
-                      <span className="font-mono">{formatCurrency(Math.max(0, receiptOrder.cashTendered - receiptOrder.total))}</span>
+                      <span className="font-mono">{fmtNum(Math.max(0, receiptOrder.cashTendered - receiptOrder.total))}</span>
                     </div>
                   </>
                 )}

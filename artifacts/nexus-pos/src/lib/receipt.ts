@@ -68,6 +68,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   const subFontSize   = is58mm ? "9px"  : "10px";
   const bodyPadding   = is58mm ? "6px 7px 16px" : "8px 10px 18px";
 
+  // With currency prefix — only used on Total / Amount Due lines
   const fmt = (n: number, cur = baseCurrency) => {
     try {
       return new Intl.NumberFormat("en-US", { style: "currency", currency: cur }).format(Math.abs(n));
@@ -75,6 +76,8 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       return `${cur} ${Math.abs(n).toFixed(2)}`;
     }
   };
+  // Plain number — used everywhere else (line items, subtotal, tax, etc.)
+  const fmtNum = (n: number) => Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
   const dateStr   = createdAt.toLocaleString("en-US", {
@@ -89,7 +92,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
 
   // ── Items ─────────────────────────────────────────────────────────────────
   const itemsHtml = order.items.map(item => {
-    let html = `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)}</span><span class="nowrap">${fmt(item.lineTotal)}</span></div>`;
+    let html = `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)}</span><span class="nowrap">${fmtNum(item.lineTotal)}</span></div>`;
     for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
       html += `<div class="mod-line">&nbsp;&#8627; ${escHtml(v.optionName)}</div>`;
     }
@@ -104,14 +107,14 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   if (order.paymentMethod === "split") {
     paymentHtml = `
       <div class="row sub-row"><span>Payment</span><span class="nowrap">SPLIT</span></div>
-      <div class="row sub-row"><span>&nbsp;&nbsp;Card</span><span class="nowrap">${fmt(order.splitCardAmount ?? 0)}</span></div>
-      <div class="row sub-row"><span>&nbsp;&nbsp;Cash</span><span class="nowrap">${fmt(order.splitCashAmount ?? 0)}</span></div>`;
+      <div class="row sub-row"><span>&nbsp;&nbsp;Card</span><span class="nowrap">${fmtNum(order.splitCardAmount ?? 0)}</span></div>
+      <div class="row sub-row"><span>&nbsp;&nbsp;Cash</span><span class="nowrap">${fmtNum(order.splitCashAmount ?? 0)}</span></div>`;
   } else {
     paymentHtml = `<div class="row sub-row"><span>Payment</span><span class="nowrap">${escHtml((order.paymentMethod ?? "—").toUpperCase())}</span></div>`;
     if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
       paymentHtml += `
-        <div class="row sub-row"><span>Tendered</span><span class="nowrap">${fmt(order.cashTendered)}</span></div>
-        <div class="row sub-row"><span>Change</span><span class="nowrap">${fmt(Math.max(0, order.cashTendered - order.total))}</span></div>`;
+        <div class="row sub-row"><span>Tendered</span><span class="nowrap">${fmtNum(order.cashTendered)}</span></div>
+        <div class="row sub-row"><span>Change</span><span class="nowrap">${fmtNum(Math.max(0, order.cashTendered - order.total))}</span></div>`;
     }
   }
 
@@ -119,7 +122,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   const refundedHtml  = order.status === "refunded"
     ? `<div class="refunded">&#9733; REFUNDED &#9733;</div>` : "";
   const discountHtml  = (order.discountValue ?? 0) > 0
-    ? `<div class="row sub-row"><span>Discount</span><span class="nowrap discount">-${fmt(order.discountValue ?? 0)}</span></div>` : "";
+    ? `<div class="row sub-row"><span>Discount</span><span class="nowrap discount">-${fmtNum(order.discountValue ?? 0)}</span></div>` : "";
   const secondaryHtml = secondaryCurrency && exchangeRate > 0
     ? `<div class="row sub-row"><span>&asymp;&nbsp;${secondaryCurrency}</span><span class="nowrap">${fmt(order.total * exchangeRate, secondaryCurrency)}</span></div>` : "";
   const notesHtml     = order.notes
@@ -296,10 +299,10 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
 
   ${dividerHtml}
 
-  <div class="row sub-row"><span>Subtotal:</span><span class="nowrap">${fmt(order.subtotal)}</span></div>
+  <div class="row sub-row"><span>Subtotal:</span><span class="nowrap">${fmtNum(order.subtotal)}</span></div>
   ${discountHtml}
-  <div class="row sub-row"><span>${taxName} (${taxRate}%):</span><span class="nowrap">${fmt(order.tax)}</span></div>
-  <div class="row sub-row"><span>Total:</span><span class="nowrap">${fmt(order.total)}</span></div>
+  <div class="row sub-row"><span>${taxName} (${taxRate}%):</span><span class="nowrap">${fmtNum(order.tax)}</span></div>
+  <div class="total-row"><span>Total:</span><span>${fmt(order.total)}</span></div>
   ${secondaryHtml}
 
   ${dividerHtml}
@@ -339,6 +342,7 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   const taxName       = settings.tax_name         || "GCT";
   const receiptFooter = settings.receipt_footer   || "Thank you for your business!";
 
+  // With currency prefix — only on the Total line
   const fmt = (n: number) => {
     try {
       return new Intl.NumberFormat("en-US", { style: "currency", currency: baseCurrency }).format(Math.abs(n));
@@ -346,6 +350,8 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
       return `${baseCurrency} ${Math.abs(n).toFixed(2)}`;
     }
   };
+  // Plain number — used on every other line
+  const fmtNum = (n: number) => Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
   const dateStr   = createdAt.toLocaleString("en-US", {
@@ -363,7 +369,7 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   lines.push(`─────────────────────`);
 
   for (const item of order.items) {
-    lines.push(`${item.quantity}× ${item.productName}  ${fmt(item.lineTotal)}`);
+    lines.push(`${item.quantity}× ${item.productName}  ${fmtNum(item.lineTotal)}`);
     for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
       lines.push(`   ↳ ${v.optionName}`);
     }
@@ -373,24 +379,24 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   }
 
   lines.push(`─────────────────────`);
-  lines.push(`Subtotal:   ${fmt(order.subtotal)}`);
+  lines.push(`Subtotal:   ${fmtNum(order.subtotal)}`);
   if ((order.discountValue ?? 0) > 0) {
-    lines.push(`Discount:  -${fmt(order.discountValue ?? 0)}`);
+    lines.push(`Discount:  -${fmtNum(order.discountValue ?? 0)}`);
   }
-  lines.push(`${taxName} (${taxRate}%): ${fmt(order.tax)}`);
+  lines.push(`${taxName} (${taxRate}%): ${fmtNum(order.tax)}`);
   lines.push(`─────────────────────`);
   lines.push(`*Total:     ${fmt(order.total)}*`);
   lines.push(`─────────────────────`);
 
   if (order.paymentMethod === "split") {
     lines.push(`Payment:   SPLIT`);
-    lines.push(`  Card:    ${fmt(order.splitCardAmount ?? 0)}`);
-    lines.push(`  Cash:    ${fmt(order.splitCashAmount ?? 0)}`);
+    lines.push(`  Card:    ${fmtNum(order.splitCardAmount ?? 0)}`);
+    lines.push(`  Cash:    ${fmtNum(order.splitCashAmount ?? 0)}`);
   } else {
     lines.push(`Payment:   ${(order.paymentMethod ?? "—").toUpperCase()}`);
     if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
-      lines.push(`Tendered:  ${fmt(order.cashTendered)}`);
-      lines.push(`Change:    ${fmt(Math.max(0, order.cashTendered - order.total))}`);
+      lines.push(`Tendered:  ${fmtNum(order.cashTendered)}`);
+      lines.push(`Change:    ${fmtNum(Math.max(0, order.cashTendered - order.total))}`);
     }
   }
 
