@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { Resend } from "resend";
+import { SendMailClient } from "zeptomail";
 
 const router: IRouter = Router();
 
@@ -193,12 +193,14 @@ router.post("/saas/forgot-password", async (req, res): Promise<void> => {
   const resetLink = `${appBase}/app/reset-password?token=${resetToken}`;
 
   try {
-    const resend = new Resend(process.env["RESEND_API_KEY"]);
-    await resend.emails.send({
-      from: "NEXXUS POS <onboarding@resend.dev>",
-      to: tenant.email,
+    const zeptoToken = process.env["ZEPTOMAIL_TOKEN"];
+    if (!zeptoToken) throw new Error("ZEPTOMAIL_TOKEN not configured");
+    const zepto = new SendMailClient({ url: "api.zeptomail.com/", token: zeptoToken });
+    await zepto.sendMail({
+      from: { address: "noreply@microbookspos.com", name: "NEXXUS POS" },
+      to: [{ email_address: { address: tenant.email } }],
       subject: "Reset your NEXXUS POS password",
-      html: `
+      htmlbody: `
         <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#0f1729;padding:32px;border-radius:12px;color:#f1f5f9">
           <h1 style="font-size:22px;margin:0 0 8px">Reset your password</h1>
           <p style="color:#94a3b8;margin:0 0 24px">We received a request to reset the password for your NEXXUS POS account (${tenant.email}).</p>

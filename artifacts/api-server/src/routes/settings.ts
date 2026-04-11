@@ -14,8 +14,8 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
 }
 
 const DEFAULTS: Record<string, string> = {
-  email_provider: "resend",
-  from_email: "onboarding@resend.dev",
+  email_provider: "zeptomail",
+  from_email: "noreply@microbookspos.com",
   from_name: "NEXXUS POS",
   business_name: "NEXXUS POS",
   business_address: "",
