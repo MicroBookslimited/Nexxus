@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable } from "@workspace/db";
 import { getSetting } from "./settings";
 import {
   CreateOrderBody,
@@ -301,6 +301,36 @@ router.post("/orders", async (req, res): Promise<void> => {
             eq(locationInventoryTable.productId, item.productId),
           )
         );
+    }
+
+    // Deduct ingredients from stock if this product has a recipe (BOM)
+    const [recipe] = await db.select().from(recipesTable)
+      .where(and(eq(recipesTable.productId, item.productId), eq(recipesTable.tenantId, tenantId)));
+
+    if (recipe) {
+      const rIngredients = await db
+        .select({
+          ingredientId: recipeIngredientsTable.ingredientId,
+          quantity: recipeIngredientsTable.quantity,
+        })
+        .from(recipeIngredientsTable)
+        .where(eq(recipeIngredientsTable.recipeId, recipe.id));
+
+      for (const ri of rIngredients) {
+        const toDeduct = (ri.quantity / recipe.yieldQuantity) * item.quantity;
+        await db.update(ingredientsTable)
+          .set({ stockQuantity: sql`GREATEST(0, ${ingredientsTable.stockQuantity} - ${toDeduct})`, updatedAt: new Date() })
+          .where(eq(ingredientsTable.id, ri.ingredientId));
+
+        await db.insert(ingredientUsageLogsTable).values({
+          tenantId,
+          ingredientId: ri.ingredientId,
+          quantity: toDeduct,
+          reason: "sale",
+          referenceId: order.id,
+          referenceType: "order",
+        });
+      }
     }
   }
 

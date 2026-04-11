@@ -24,6 +24,9 @@ import locationsRouter from "./locations";
 import accountingRouter from "./accounting";
 import publicMenuRouter from "./public-menu";
 import arRouter from "./ar";
+import ingredientsRouter from "./ingredients";
+import recipesRouter from "./recipes";
+import productionRouter from "./production";
 
 const router: IRouter = Router();
 
@@ -52,5 +55,8 @@ router.use(locationsRouter);
 router.use(accountingRouter);
 router.use(publicMenuRouter);
 router.use(arRouter);
+router.use(ingredientsRouter);
+router.use(recipesRouter);
+router.use(productionRouter);
 
 export default router;

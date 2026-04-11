@@ -11,3 +11,4 @@ export * from "./roles";
 export * from "./locations";
 export * from "./accounting";
 export * from "./ar";
+export * from "./ingredients";
