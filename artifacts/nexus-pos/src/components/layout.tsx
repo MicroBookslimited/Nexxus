@@ -5,6 +5,7 @@ import {
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
+  FlaskConical, Factory,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import logoUrl from "@assets/CE921A75-1E79-4B12-9F18-6809B5113B30_1775830070572.png";
@@ -26,6 +27,9 @@ const NAV_ITEMS = [
   { href: "/customers",    label: "Customers",    icon: Users,           permission: "customers.view" },
   { href: "/staff",        label: "Staff",        icon: UserCog,         permission: "staff.view" },
   { href: "/locations",    label: "Locations",    icon: MapPin,          permission: "inventory.manage" },
+  { href: "/ingredients",  label: "Ingredients",  icon: FlaskConical,    permission: "inventory.manage" },
+  { href: "/recipes",      label: "Recipes",      icon: BookOpen,        permission: "inventory.manage" },
+  { href: "/production",   label: "Production",   icon: Factory,         permission: "inventory.manage" },
   { href: "/accounting",   label: "Accounting",   icon: Calculator,      permission: "reports.view" },
   { href: "/ar",           label: "Receivables",  icon: BookOpen,        permission: "reports.view" },
   { href: "/reports",      label: "Reports",      icon: BarChart2,       permission: "reports.view" },

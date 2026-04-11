@@ -28,6 +28,9 @@ import { ResetPassword } from "@/pages/reset-password";
 import { Locations } from "@/pages/locations";
 import { Accounting } from "@/pages/accounting";
 import { AccountsReceivable } from "@/pages/ar";
+import { Ingredients } from "@/pages/ingredients";
+import { Recipes } from "@/pages/recipes";
+import { Production } from "@/pages/production";
 import { Layout, PermissionGate } from "@/components/layout";
 
 
@@ -69,6 +72,9 @@ function Router() {
       <Route path="/locations"><ProtectedRoute component={Locations} permission="inventory.manage" /></Route>
       <Route path="/accounting"><ProtectedRoute component={Accounting} permission="reports.view" /></Route>
       <Route path="/ar"><ProtectedRoute component={AccountsReceivable} permission="reports.view" /></Route>
+      <Route path="/ingredients"><ProtectedRoute component={Ingredients} permission="inventory.manage" /></Route>
+      <Route path="/recipes"><ProtectedRoute component={Recipes} permission="inventory.manage" /></Route>
+      <Route path="/production"><ProtectedRoute component={Production} permission="inventory.manage" /></Route>
       <Route path="/cash"><ProtectedRoute component={CashManagement} permission="cash.open_session" /></Route>
       <Route path="/settings"><ProtectedRoute component={AdminSettings} permission="settings.view" /></Route>
       <Route path="/subscription"><ProtectedRoute component={SubscriptionPage} permission="settings.manage" /></Route>
