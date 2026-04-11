@@ -3,6 +3,7 @@ import {
   db, subscriptionsTable, subscriptionPlansTable, tenantsTable,
   bankAccountSettingsTable, bankTransferProofsTable,
 } from "@workspace/db";
+import { recordResellerCommission } from "./reseller";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
@@ -120,6 +121,8 @@ router.post("/billing/paypal/capture-order", async (req, res): Promise<void> => 
         if (parsed.data.billingCycle === "annual") { periodEnd.setFullYear(periodEnd.getFullYear() + 1); }
         else { periodEnd.setMonth(periodEnd.getMonth() + 1); }
 
+        const amount = parsed.data.billingCycle === "annual" ? plan.priceAnnual : plan.priceMonthly;
+
         const [existing] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.tenantId, tenant.tenantId));
         if (existing) {
           await db.update(subscriptionsTable).set({
@@ -133,6 +136,7 @@ router.post("/billing/paypal/capture-order", async (req, res): Promise<void> => 
           });
         }
         await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, tenant.tenantId));
+        await recordResellerCommission(tenant.tenantId, plan.id, amount);
       }
     }
 
@@ -207,6 +211,7 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
         });
       }
       await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, tenant.tenantId));
+      await recordResellerCommission(tenant.tenantId, plan.id, amount);
     }
 
     res.json({ approved: data.Approved ?? false, transactionId: data.TransactionIdentifier, responseCode: data.IsoResponseCode ?? data.ResponseCode, redirectData: data.RedirectData });

@@ -30,6 +30,7 @@ export const tenantsTable = pgTable("tenants", {
   passwordHash: text("password_hash").notNull(),
   onboardingStep: integer("onboarding_step").notNull().default(1),
   onboardingComplete: boolean("onboarding_complete").notNull().default(false),
+  resellerId: integer("reseller_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

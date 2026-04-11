@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/reseller/"
+title = "NEXXUS POS — Reseller Portal"
+version = "1.0.0"
+id = "artifacts/nexus-reseller"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/reseller/" ]
+localPort = 23780
+
+[services.development]
+run = "pnpm --filter @workspace/nexus-reseller run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/nexus-reseller", "run", "build" ]
+publicDir = "artifacts/nexus-reseller/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23780"
+BASE_PATH = "/reseller/"

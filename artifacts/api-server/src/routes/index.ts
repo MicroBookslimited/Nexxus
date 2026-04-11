@@ -27,6 +27,7 @@ import arRouter from "./ar";
 import ingredientsRouter from "./ingredients";
 import recipesRouter from "./recipes";
 import productionRouter from "./production";
+import resellerRouter from "./reseller";
 
 const router: IRouter = Router();
 
@@ -58,5 +59,6 @@ router.use(arRouter);
 router.use(ingredientsRouter);
 router.use(recipesRouter);
 router.use(productionRouter);
+router.use(resellerRouter);
 
 export default router;

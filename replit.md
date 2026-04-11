@@ -168,6 +168,28 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - `staff` — Staff members with name, PIN (hashed), role, isActive
 - `purchases` — Stock purchase records with productId, quantity, unitCost, totalCost, notes; creating a purchase auto-increments product stockCount
 
+### NEXXUS Reseller Portal (`artifacts/nexus-reseller`)
+- **Type**: React + Vite web app
+- **Preview path**: `/reseller/`
+- **Purpose**: Dedicated portal for channel resellers/partners to manage their referrals and commissions
+- **Auth**: Separate JWT-based auth (type="reseller"), token stored as `reseller_token` in localStorage
+- **Pages**:
+  - `/reseller/login` — Reseller sign-in
+  - `/reseller/signup` — New reseller registration
+  - `/reseller/dashboard` — Stats overview (total referrals, lifetime earnings, this month, pending payouts), referral code with copy button, monthly earnings breakdown, commission rate display
+  - `/reseller/referrals` — Table of all referred tenants with subscription status
+  - `/reseller/commissions` — Commission history with period, base amount, rate, earned amount, status
+  - `/reseller/payouts` — Payout history + "Request Payout" button to bundle all pending commissions
+  - `/reseller/profile` — Edit name, company, phone, payment details; view read-only account info
+- **Commission system**:
+  - Default rate: 30% recurring per month
+  - `recordResellerCommission()` helper called on every PayPal/PowerTranz payment capture
+  - Referral codes auto-generated on signup (`NAME-NANOID6` format)
+  - No self-referral (resellers and tenants are separate user types)
+  - Dedup check prevents double-commission per reseller+tenant+month
+- **DB tables**: `resellers`, `reseller_commissions`, `reseller_payouts`; `resellerId` FK on `tenants`
+- **Admin API**: `/admin/resellers`, `/admin/reseller-payouts`, `/admin/reseller-commissions/generate` (superadmin JWT required)
+
 ## Business Rules
 
 - Tax rate: 10% (server-side and frontend)

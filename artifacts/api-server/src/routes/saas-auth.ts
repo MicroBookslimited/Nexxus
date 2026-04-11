@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, tenantsTable, subscriptionsTable, subscriptionPlansTable } from "@workspace/db";
+import { db, tenantsTable, subscriptionsTable, subscriptionPlansTable, resellersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import bcryptjs from "bcryptjs";
@@ -33,6 +33,7 @@ const RegisterBody = z.object({
   password: z.string().min(8),
   phone: z.string().optional(),
   country: z.string().optional(),
+  referralCode: z.string().optional(),
 });
 
 const LoginBody = z.object({
@@ -47,12 +48,22 @@ router.post("/saas/register", async (req, res): Promise<void> => {
     return;
   }
 
-  const { businessName, ownerName, email, password, phone, country } = parsed.data;
+  const { businessName, ownerName, email, password, phone, country, referralCode } = parsed.data;
 
   const [existing] = await db.select().from(tenantsTable).where(eq(tenantsTable.email, email));
   if (existing) {
     res.status(409).json({ error: "An account with this email already exists" });
     return;
+  }
+
+  // Resolve referral code → reseller id (fraud check: code must be valid and active)
+  let resellerId: number | undefined;
+  if (referralCode) {
+    const [reseller] = await db.select({ id: resellersTable.id, status: resellersTable.status })
+      .from(resellersTable).where(eq(resellersTable.referralCode, referralCode.toUpperCase()));
+    if (reseller && reseller.status === "active") {
+      resellerId = reseller.id;
+    }
   }
 
   const passwordHash = await bcryptjs.hash(password, 12);
@@ -69,6 +80,7 @@ router.post("/saas/register", async (req, res): Promise<void> => {
       status: "active",
       onboardingStep: 2,
       onboardingComplete: false,
+      resellerId,
     })
     .returning();
 
