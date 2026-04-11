@@ -99,11 +99,39 @@ router.post("/reseller/login", async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
 
-  const [reseller] = await db.select().from(resellersTable).where(eq(resellersTable.email, parsed.data.email));
+  const { email, password } = parsed.data;
+
+  // Allow superadmin credentials to access the reseller portal.
+  // If no reseller account exists for the superadmin email, auto-create one.
+  const adminEmail = process.env["SUPERADMIN_EMAIL"] ?? "admin@nexuspos.com";
+  const adminPassword = process.env["SUPERADMIN_PASSWORD"] ?? "NexusAdmin2024!";
+  if (email === adminEmail && password === adminPassword) {
+    let [adminReseller] = await db.select().from(resellersTable).where(eq(resellersTable.email, adminEmail));
+    if (!adminReseller) {
+      const passwordHash = await bcryptjs.hash(adminPassword, 12);
+      [adminReseller] = await db.insert(resellersTable).values({
+        name: "Platform Admin",
+        email: adminEmail,
+        passwordHash,
+        companyName: "MicroBooks",
+        referralCode: "PLATFORM-ADMIN",
+        commissionRate: 0,
+        status: "active",
+      }).returning();
+    }
+    const token = signResellerToken(adminReseller.id, adminReseller.email);
+    res.json({
+      token,
+      reseller: { id: adminReseller.id, name: adminReseller.name, email: adminReseller.email, referralCode: adminReseller.referralCode, commissionRate: adminReseller.commissionRate },
+    });
+    return;
+  }
+
+  const [reseller] = await db.select().from(resellersTable).where(eq(resellersTable.email, email));
   if (!reseller) { res.status(401).json({ error: "Invalid email or password" }); return; }
   if (reseller.status !== "active") { res.status(403).json({ error: "Your account has been suspended" }); return; }
 
-  const valid = await bcryptjs.compare(parsed.data.password, reseller.passwordHash);
+  const valid = await bcryptjs.compare(password, reseller.passwordHash);
   if (!valid) { res.status(401).json({ error: "Invalid email or password" }); return; }
 
   const token = signResellerToken(reseller.id, reseller.email);
