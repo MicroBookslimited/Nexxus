@@ -16,6 +16,7 @@ export type CartMessage = {
   tax: number;
   total: number;
   currency: string;
+  businessName?: string;
 };
 
 export type CompleteMessage = {
@@ -25,10 +26,12 @@ export type CompleteMessage = {
   total: number;
   cashTendered?: number;
   currency: string;
+  businessName?: string;
 };
 
 export type IdleMessage = {
   type: "idle";
+  businessName?: string;
 };
 
 export type CustomerDisplayMessage = CartMessage | CompleteMessage | IdleMessage;

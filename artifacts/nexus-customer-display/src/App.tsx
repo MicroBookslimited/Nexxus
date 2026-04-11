@@ -309,6 +309,7 @@ export default function App() {
 
     ch.onmessage = (event: MessageEvent<CustomerDisplayMessage>) => {
       const msg = event.data;
+      if (msg.businessName) setBusinessName(msg.businessName);
       if (msg.type === "idle") {
         setView({ kind: "idle" });
       } else if (msg.type === "cart") {
@@ -319,19 +320,6 @@ export default function App() {
     };
 
     return () => { ch.close(); channelRef.current = null; };
-  }, []);
-
-  useEffect(() => {
-    const base = import.meta.env.BASE_URL || "/customer-display/";
-    const apiBase = base.startsWith("/") ? "" : "/";
-    fetch(`${apiBase}/api/settings`, {
-      headers: { "Content-Type": "application/json" },
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.business_name) setBusinessName(data.business_name);
-      })
-      .catch(() => {});
   }, []);
 
   return (

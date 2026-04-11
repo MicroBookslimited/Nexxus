@@ -676,6 +676,7 @@ export function POS() {
   useEffect(() => {
     const ch = cdChannelRef.current;
     if (!ch) return;
+    const businessName = settings?.business_name ?? undefined;
     if (receiptOrder) {
       const cashTendered = receiptOrder.cashTendered != null && receiptOrder.cashTendered > 0
         ? receiptOrder.cashTendered
@@ -687,9 +688,10 @@ export function POS() {
         total: receiptOrder.total,
         cashTendered,
         currency: baseCurrency,
+        businessName,
       } satisfies CustomerDisplayMessage);
     } else if (cart.length === 0) {
-      ch.postMessage({ type: "idle" } satisfies CustomerDisplayMessage);
+      ch.postMessage({ type: "idle", businessName } satisfies CustomerDisplayMessage);
     } else {
       ch.postMessage({
         type: "cart",
@@ -705,9 +707,10 @@ export function POS() {
         tax,
         total,
         currency: baseCurrency,
+        businessName,
       } satisfies CustomerDisplayMessage);
     }
-  }, [receiptOrder, cart, subtotal, cartDiscountValue, loyaltyDiscountValue, tax, total, baseCurrency]);
+  }, [receiptOrder, cart, subtotal, cartDiscountValue, loyaltyDiscountValue, tax, total, baseCurrency, settings?.business_name]);
 
   const buildOrderNotes = () => {
     if (orderMode !== "delivery") return notes || undefined;
