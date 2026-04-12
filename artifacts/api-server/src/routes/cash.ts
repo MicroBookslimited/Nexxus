@@ -36,12 +36,26 @@ const CloseSessionBody = z.object({
   denominationBreakdown: z.string().optional(),
 });
 
-function computeSales(orders: { paymentMethod: string | null; total: number | null }[]) {
-  const cashSales = orders.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const cardSales = orders.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const splitSales = orders.filter((r) => r.paymentMethod === "split").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const creditSales = orders.filter((r) => r.paymentMethod === "credit").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  return { cashSales, cardSales, splitSales, creditSales, totalSales: cashSales + cardSales + splitSales + creditSales };
+function computeSales(orders: { paymentMethod: string | null; total: number | null; status: string | null }[]) {
+  const completed = orders.filter((r) => r.status !== "refunded" && r.status !== "voided");
+  const refunded  = orders.filter((r) => r.status === "refunded");
+
+  const cashSales   = completed.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const cardSales   = completed.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const splitSales  = completed.filter((r) => r.paymentMethod === "split").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const creditSales = completed.filter((r) => r.paymentMethod === "credit").reduce((s, r) => s + Number(r.total ?? 0), 0);
+
+  const refundedCash  = refunded.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const refundedCard  = refunded.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const refundedOther = refunded.filter((r) => r.paymentMethod !== "cash" && r.paymentMethod !== "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const totalRefunds  = refundedCash + refundedCard + refundedOther;
+  const voidedCount   = orders.filter((r) => r.status === "voided").length;
+
+  return {
+    cashSales, cardSales, splitSales, creditSales,
+    totalSales: cashSales + cardSales + splitSales + creditSales,
+    refundedCash, refundedCard, refundedOther, totalRefunds, voidedCount,
+  };
 }
 
 async function computeCreditOrders(tenantId: number, from: Date, to: Date) {
@@ -146,7 +160,7 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
 
   const salesSummary = computeSales(orderRows);
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
-  const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts;
+  const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts - salesSummary.refundedCash;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, new Date());
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, new Date());
 
@@ -197,7 +211,7 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
 
   const salesSummary = computeSales(orderRows);
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
-  const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts;
+  const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts - salesSummary.refundedCash;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, closedAt);
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, closedAt);
 
