@@ -42,7 +42,7 @@ async function getPowerTranzConfig() {
   const spPassword = (await getSetting("powertranz_sppassword", 0)) || process.env["POWERTRANZ_SPPASSWORD"] || "";
   const env = (await getSetting("powertranz_env", 0)) || process.env["POWERTRANZ_ENV"] || "staging";
   const enabled = (await getSetting("powertranz_enabled", 0)) || "true";
-  const base = env === "production" ? "https://gateway.powertranz.com" : "https://staging.powertranz.com";
+  const base = env === "production" ? "https://gateway.ptranz.com" : "https://staging.ptranz.com";
   return { spId, spPassword, base, enabled: enabled === "true" };
 }
 
