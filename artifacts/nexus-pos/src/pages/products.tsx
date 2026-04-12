@@ -1319,6 +1319,9 @@ export function Products() {
           onSuccess: () => {
             toast({ title: "Product updated" });
             queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+            setDialogOpen(false);
+            setEditingProduct(null);
+            setForm(emptyForm());
           },
           onError: () => toast({ title: "Update failed", variant: "destructive" }),
         },
@@ -1327,11 +1330,12 @@ export function Products() {
       createProduct.mutate(
         { data: payload },
         {
-          onSuccess: (newProduct) => {
+          onSuccess: () => {
             toast({ title: "Product created" });
             queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-            setEditingProduct(newProduct);
-            setDialogTab("variants");
+            setDialogOpen(false);
+            setEditingProduct(null);
+            setForm(emptyForm());
           },
           onError: () => toast({ title: "Create failed", variant: "destructive" }),
         },
