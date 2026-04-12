@@ -30,15 +30,44 @@
       iframe[src*="chatfuel"],
       div[id*="chatfuel"],
       div[class*="chatfuel"],
+      div[id*="cf-"],
+      div[class*="cf-"],
       #cf-widget-container,
-      .cf-widget-container {
+      .cf-widget-container,
+      [data-chatfuel],
+      .chatfuel-widget,
+      #chatfuel-widget {
         left: 20px !important;
         right: auto !important;
+        bottom: 20px !important;
+        position: fixed !important;
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Reposition Chatfuel widget to bottom-left after it injects itself
+      (function () {
+        function reposition(el) {
+          el.style.setProperty('left',   '20px',  'important');
+          el.style.setProperty('right',  'auto',  'important');
+          el.style.setProperty('bottom', '20px',  'important');
+          el.style.setProperty('position', 'fixed', 'important');
+        }
+        function scanAndFix() {
+          document.querySelectorAll(
+            'iframe[src*="chatfuel"], div[id*="chatfuel"], div[class*="chatfuel"], ' +
+            'div[id*="cf-"], div[class*="cf-"], #cf-widget-container, .cf-widget-container'
+          ).forEach(reposition);
+        }
+        const observer = new MutationObserver(scanAndFix);
+        observer.observe(document.body, { childList: true, subtree: true });
+        // Also run after a short delay for slow-loading widgets
+        setTimeout(scanAndFix, 2000);
+        setTimeout(scanAndFix, 5000);
+      })();
+    </script>
   </body>
 </html>
