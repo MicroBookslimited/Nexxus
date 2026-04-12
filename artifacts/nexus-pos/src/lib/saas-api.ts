@@ -59,7 +59,7 @@ export const capturePayPalOrder = (orderId: string, planSlug: string, billingCyc
   });
 
 export const initiatePowerTranz = (data: { planSlug: string; billingCycle: "monthly" | "annual"; cardNumber: string; cardExpiry: string; cardCvv: string; cardholderName: string; returnUrl: string }) =>
-  api<{ approved: boolean; transactionId?: string; responseCode?: string }>("/billing/powertranz/initiate", {
+  api<{ approved: boolean; transactionId?: string; responseCode?: string; rrn?: string; authCode?: string; responseMessage?: string }>("/billing/powertranz/initiate", {
     method: "POST", body: JSON.stringify(data), headers: tenantAuthHeaders(),
   });
 

@@ -90,20 +90,57 @@ export function SubscriptionPage() {
     });
   }, [showPayment, paymentMethod, selectedPlan, billingCycle, paypalRendered]);
 
+  function formatCardNumber(raw: string) {
+    const digits = raw.replace(/\D/g, "").slice(0, 16);
+    return digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
+  }
+
+  function formatExpiry(raw: string) {
+    const digits = raw.replace(/\D/g, "").slice(0, 4);
+    if (digits.length >= 3) return `${digits.slice(0, 2)} / ${digits.slice(2)}`;
+    return digits;
+  }
+
+  const DECLINE_CODES: Record<string, string> = {
+    "05": "Card declined — please contact your bank.",
+    "14": "Invalid card number.",
+    "51": "Insufficient funds.",
+    "54": "Card expired.",
+    "57": "Transaction not permitted.",
+    "61": "Exceeds withdrawal limit.",
+    "65": "Exceeds activity limit.",
+    "75": "PIN tries exceeded.",
+    "82": "Invalid CVV.",
+    "91": "Issuer unavailable — try again.",
+    "96": "System error — try again.",
+  };
+
   async function handlePowerTranz() {
     if (!selectedPlan) return;
-    if (!card.number || !card.expiry || !card.cvv || !card.name) { setError("Please fill in all card details."); return; }
+    const rawNumber = card.number.replace(/\s/g, "");
+    if (!rawNumber || rawNumber.length < 13) { setError("Please enter a valid card number."); return; }
+    if (!card.expiry || !/^\d{2}\s*\/\s*\d{2}$/.test(card.expiry)) { setError("Please enter expiry in MM / YY format."); return; }
+    if (!card.cvv || card.cvv.length < 3) { setError("Please enter your CVV."); return; }
+    if (!card.name.trim()) { setError("Please enter the cardholder name."); return; }
     setError(""); setIsProcessing(true);
     try {
       const res = await initiatePowerTranz({ planSlug: selectedPlan.slug, billingCycle, cardNumber: card.number, cardExpiry: card.expiry, cardCvv: card.cvv, cardholderName: card.name, returnUrl: window.location.href });
       if (res.approved) {
-        setSuccess(`Successfully subscribed to ${selectedPlan.name}!`);
+        const ref = res.rrn ? ` · RRN: ${res.rrn}` : res.transactionId ? ` · Ref: ${res.transactionId}` : "";
+        setSuccess(`Successfully subscribed to ${selectedPlan.name}!${ref}`);
         setShowPayment(false);
+        setCard({ number: "", expiry: "", cvv: "", name: "" });
         await reload();
       } else {
-        setError(`Payment declined (code: ${res.responseCode ?? "unknown"}).`);
+        const code = res.responseCode ?? "unknown";
+        const gatewayMsg = res.responseMessage ? ` — ${res.responseMessage}` : "";
+        const msg = DECLINE_CODES[code] ?? `Payment declined (code: ${code}${gatewayMsg}).`;
+        setError(msg);
       }
-    } catch (e) { setError(String(e)); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg.startsWith("PowerTranz") ? msg : `Payment failed: ${msg}`);
+    }
     finally { setIsProcessing(false); }
   }
 
@@ -349,20 +386,23 @@ export function SubscriptionPage() {
               </div>
               <div>
                 <label className="block text-sm text-[#94a3b8] mb-1">Card Number</label>
-                <input value={card.number} onChange={e => setCard(c => ({ ...c, number: e.target.value }))}
-                  className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono"
-                  placeholder="4111 1111 1111 1111" maxLength={19} />
+                <input value={card.number}
+                  onChange={e => setCard(c => ({ ...c, number: formatCardNumber(e.target.value) }))}
+                  className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono tracking-widest"
+                  placeholder="4111 1111 1111 1111" maxLength={19} inputMode="numeric" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-[#94a3b8] mb-1">Expiry</label>
-                  <input value={card.expiry} onChange={e => setCard(c => ({ ...c, expiry: e.target.value }))}
-                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono" placeholder="MM / YY" maxLength={7} />
+                  <input value={card.expiry}
+                    onChange={e => setCard(c => ({ ...c, expiry: formatExpiry(e.target.value) }))}
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono" placeholder="MM / YY" maxLength={7} inputMode="numeric" />
                 </div>
                 <div>
                   <label className="block text-sm text-[#94a3b8] mb-1">CVV</label>
-                  <input value={card.cvv} onChange={e => setCard(c => ({ ...c, cvv: e.target.value }))}
-                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono" placeholder="123" maxLength={4} type="password" />
+                  <input value={card.cvv}
+                    onChange={e => setCard(c => ({ ...c, cvv: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono" placeholder="123" maxLength={4} type="password" inputMode="numeric" />
                 </div>
               </div>
               <button onClick={handlePowerTranz} disabled={isProcessing}

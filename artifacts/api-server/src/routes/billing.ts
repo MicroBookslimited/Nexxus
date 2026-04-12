@@ -195,7 +195,13 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
       body: JSON.stringify(payload),
     });
 
-    const data = await resp.json() as { Approved?: boolean; TransactionIdentifier?: string; ResponseCode?: string; IsoResponseCode?: string; RrN?: string; RedirectData?: string };
+    const data = await resp.json() as { Approved?: boolean; TransactionIdentifier?: string; ResponseCode?: string; IsoResponseCode?: string; RrN?: string; RedirectData?: string; ResponseMessage?: string; AuthorizationCode?: string };
+
+    console.log("[PowerTranz]", JSON.stringify({
+      transactionId: data.TransactionIdentifier, approved: data.Approved,
+      isoCode: data.IsoResponseCode, responseCode: data.ResponseCode,
+      rrn: data.RrN, authCode: data.AuthorizationCode, message: data.ResponseMessage,
+    }));
 
     if (data.Approved) {
       const now = new Date();
@@ -219,7 +225,7 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
       await recordResellerCommission(tenant.tenantId, plan.id, amount);
     }
 
-    res.json({ approved: data.Approved ?? false, transactionId: data.TransactionIdentifier, responseCode: data.IsoResponseCode ?? data.ResponseCode, redirectData: data.RedirectData });
+    res.json({ approved: data.Approved ?? false, transactionId: data.TransactionIdentifier, responseCode: data.IsoResponseCode ?? data.ResponseCode, rrn: data.RrN, authCode: data.AuthorizationCode, responseMessage: data.ResponseMessage, redirectData: data.RedirectData });
   } catch (err) {
     res.status(500).json({ error: "PowerTranz request failed", details: String(err) });
   }
