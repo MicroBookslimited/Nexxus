@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { signup, setToken } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import { Zap, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 export default function SignupPage() {
   const [, navigate] = useLocation();
@@ -41,10 +41,12 @@ export default function SignupPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-primary/20 ring-1 ring-primary/30">
-              <Zap className="w-6 h-6 text-primary" />
-            </div>
+          <div className="flex justify-center mb-5">
+            <img
+              src="/nexxus-logo.png"
+              alt="NEXXUS POS"
+              className="h-16 w-auto object-contain"
+            />
           </div>
           <h1 className="text-2xl font-bold text-foreground">Become a Reseller</h1>
           <p className="text-muted-foreground mt-1 text-sm">Earn 30% recurring commission on every referral</p>
