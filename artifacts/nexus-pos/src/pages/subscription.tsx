@@ -24,6 +24,7 @@ export function SubscriptionPage() {
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PayMethod>("paypal");
+  const [card, setCard] = useState({ number: "", expiry: "", cvv: "", name: "" });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -92,6 +93,17 @@ export function SubscriptionPage() {
     });
   }, [showPayment, paymentMethod, selectedPlan, billingCycle, paypalRendered]);
 
+  function formatCardNumber(raw: string) {
+    const digits = raw.replace(/\D/g, "").slice(0, 16);
+    return digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
+  }
+
+  function formatExpiry(raw: string) {
+    const digits = raw.replace(/\D/g, "").slice(0, 4);
+    if (digits.length >= 3) return `${digits.slice(0, 2)} / ${digits.slice(2)}`;
+    return digits;
+  }
+
   const DECLINE_CODES: Record<string, string> = {
     "05": "Card declined — please contact your bank.",
     "14": "Invalid card number.",
@@ -132,8 +144,15 @@ export function SubscriptionPage() {
     container.innerHTML = "";
     const iframe = document.createElement("iframe");
     iframe.style.cssText = "width:100%;height:100%;border:none;background:#fff;";
-    iframe.srcdoc = threeDsData.redirectData;
+    iframe.setAttribute("sandbox", "allow-scripts allow-forms allow-same-origin allow-top-navigation allow-popups");
     container.appendChild(iframe);
+    // Use contentDocument.write instead of srcdoc so the auto-submit script runs in a proper origin context
+    const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(threeDsData.redirectData);
+      doc.close();
+    }
 
     // Fallback poll in case postMessage is blocked
     const pollTimer = setInterval(async () => {
@@ -153,13 +172,23 @@ export function SubscriptionPage() {
 
   async function handlePowerTranz() {
     if (!selectedPlan) return;
+    const rawNumber = card.number.replace(/\s/g, "");
+    if (!rawNumber || rawNumber.length < 13) { setError("Please enter a valid card number."); return; }
+    if (!card.expiry || !/^\d{2}\s*\/\s*\d{2}$/.test(card.expiry)) { setError("Please enter expiry in MM / YY format."); return; }
+    if (!card.cvv || card.cvv.length < 3) { setError("Please enter your CVV."); return; }
+    if (!card.name.trim()) { setError("Please enter the cardholder name."); return; }
     setError(""); setIsProcessing(true);
-    let needsHpp = false;
+    let needs3ds = false;
     try {
-      const res = await initiatePowerTranz({ planSlug: selectedPlan.slug, billingCycle, returnUrl: window.location.href });
+      const res = await initiatePowerTranz({
+        planSlug: selectedPlan.slug, billingCycle,
+        cardNumber: card.number, cardExpiry: card.expiry,
+        cardCvv: card.cvv, cardholderName: card.name,
+        returnUrl: window.location.href,
+      });
 
       if (res.step === "3ds" && res.spiToken && res.redirectData) {
-        needsHpp = true;
+        needs3ds = true;
         setThreeDsData({ spiToken: res.spiToken, redirectData: res.redirectData });
         return;
       }
@@ -168,6 +197,7 @@ export function SubscriptionPage() {
         const ref = res.rrn ? ` · RRN: ${res.rrn}` : res.transactionId ? ` · Ref: ${res.transactionId}` : "";
         setSuccess(`Successfully subscribed to ${selectedPlan.name}!${ref}`);
         setShowPayment(false);
+        setCard({ number: "", expiry: "", cvv: "", name: "" });
         await reload();
         return;
       }
@@ -180,7 +210,7 @@ export function SubscriptionPage() {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg.startsWith("PowerTranz") ? msg : `Payment failed: ${msg}`);
     } finally {
-      if (!needsHpp) setIsProcessing(false);
+      if (!needs3ds) setIsProcessing(false);
     }
   }
 
@@ -237,22 +267,22 @@ export function SubscriptionPage() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
 
-      {/* Secure Payment Modal (HPP) */}
+      {/* 3DS Authentication Modal */}
       {threeDsData && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <div className="bg-[#1a2332] border border-[#2a3a55] rounded-xl overflow-hidden w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a3a55]">
               <div className="flex items-center gap-2 text-white font-semibold">
                 <Shield size={18} className="text-[#3b82f6]" />
-                Secure Card Payment
+                Secure 3D Authentication
               </div>
               <button
-                onClick={() => { setThreeDsData(null); setIsProcessing(false); setError("Payment cancelled. Please try again."); }}
+                onClick={() => { setThreeDsData(null); setIsProcessing(false); setError("Authentication cancelled. Please try again."); }}
                 className="text-[#94a3b8] hover:text-white transition-colors"
               ><X size={18} /></button>
             </div>
-            <p className="text-[#94a3b8] text-xs px-5 py-2 bg-[#0f1729]">Enter your card details securely below. Your payment is processed by PowerTranz and is PCI-DSS compliant.</p>
-            <div ref={threeDsContainerRef} className="w-full" style={{ height: "520px" }} />
+            <p className="text-[#94a3b8] text-xs px-5 py-2 bg-[#0f1729]">Your bank may ask you to verify this payment. Complete the steps below to proceed.</p>
+            <div ref={threeDsContainerRef} className="w-full" style={{ height: "480px" }} />
           </div>
         </div>
       )}
@@ -436,25 +466,41 @@ export function SubscriptionPage() {
             </div>
           )}
 
-          {/* Card — HPP (Hosted Payment Page) */}
+          {/* Card */}
           {paymentMethod === "powertranz" && (
             <div className="space-y-4">
               {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm">{error}</div>}
-              <div className="bg-[#0f1729] border border-[#2a3a55] rounded-xl p-5 text-center space-y-3">
-                <div className="flex items-center justify-center gap-2 text-[#3b82f6]">
-                  <Shield size={20} />
-                  <span className="font-semibold text-white">PCI-DSS Secure Payment</span>
+              <div>
+                <label className="block text-sm text-[#94a3b8] mb-1">Cardholder Name</label>
+                <input value={card.name} onChange={e => setCard(c => ({ ...c, name: e.target.value }))}
+                  className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none" placeholder="John Smith" />
+              </div>
+              <div>
+                <label className="block text-sm text-[#94a3b8] mb-1">Card Number</label>
+                <input value={card.number}
+                  onChange={e => setCard(c => ({ ...c, number: formatCardNumber(e.target.value) }))}
+                  className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono tracking-widest"
+                  placeholder="4111 1111 1111 1111" maxLength={19} inputMode="numeric" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-[#94a3b8] mb-1">Expiry (MM / YY)</label>
+                  <input value={card.expiry}
+                    onChange={e => setCard(c => ({ ...c, expiry: formatExpiry(e.target.value) }))}
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono" placeholder="12 / 31" maxLength={7} inputMode="numeric" />
                 </div>
-                <p className="text-[#94a3b8] text-sm">Click below to securely enter your card details on PowerTranz's hosted payment page.</p>
-                <div className="flex items-center justify-center gap-4 text-[#475569] text-xs">
-                  <span>Visa</span><span>Mastercard</span><span>AMEX</span>
+                <div>
+                  <label className="block text-sm text-[#94a3b8] mb-1">CVV</label>
+                  <input value={card.cvv}
+                    onChange={e => setCard(c => ({ ...c, cvv: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono" placeholder="123" maxLength={4} type="password" inputMode="numeric" />
                 </div>
               </div>
               <button onClick={handlePowerTranz} disabled={isProcessing}
                 className="w-full bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
-                {isProcessing ? <><RefreshCw size={16} className="animate-spin" /> Opening secure page…</> : <><Zap size={16} /> Pay Securely with Card</>}
+                {isProcessing ? <><RefreshCw size={16} className="animate-spin" /> Processing…</> : <><Zap size={16} /> Pay Now</>}
               </button>
-              <p className="text-xs text-center text-[#475569]">Your card details are entered directly on PowerTranz's secure server — we never see them.</p>
+              <p className="text-xs text-center text-[#475569]">Secured by PowerTranz · 3D Secure enabled</p>
             </div>
           )}
 

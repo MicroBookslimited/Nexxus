@@ -59,7 +59,7 @@ export const capturePayPalOrder = (orderId: string, planSlug: string, billingCyc
     method: "POST", body: JSON.stringify({ orderId, planSlug, billingCycle }), headers: tenantAuthHeaders(),
   });
 
-export const initiatePowerTranz = (data: { planSlug: string; billingCycle: "monthly" | "annual"; returnUrl: string }) =>
+export const initiatePowerTranz = (data: { planSlug: string; billingCycle: "monthly" | "annual"; cardNumber: string; cardExpiry: string; cardCvv: string; cardholderName: string; returnUrl: string }) =>
   api<{ step: "3ds" | "approved" | "declined"; spiToken?: string; redirectData?: string; approved?: boolean; transactionId?: string; rrn?: string; authCode?: string; responseCode?: string; responseMessage?: string }>("/billing/powertranz/initiate", {
     method: "POST", body: JSON.stringify(data), headers: tenantAuthHeaders(),
   });
