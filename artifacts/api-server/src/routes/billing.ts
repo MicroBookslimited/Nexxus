@@ -191,6 +191,11 @@ async function callPowerTranz(endpoint: string, body: object): Promise<{ raw: st
     body: JSON.stringify(body),
   });
   const raw = await resp.text();
+  const safeSent = JSON.parse(JSON.stringify(body));
+  if (safeSent?.Source?.CardPan) safeSent.Source.CardPan = `****${String(safeSent.Source.CardPan).slice(-4)}`;
+  if (safeSent?.Source?.CardCvv) safeSent.Source.CardCvv = "***";
+  if (safeSent?.Source?.CardSecurityCode) safeSent.Source.CardSecurityCode = "***";
+  console.log(`[PowerTranz] ${endpoint} sent:`, JSON.stringify(safeSent).slice(0, 600));
   console.log(`[PowerTranz] ${endpoint} HTTP ${resp.status}:`, raw.slice(0, 600));
   let data: Record<string, unknown> = {};
   try { data = JSON.parse(raw); } catch { /* non-JSON */ }
@@ -237,17 +242,17 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
       ThreeDSecure: true,
       Source: {
         CardPan: parsed.data.cardNumber.replace(/\s/g, ""),
-        CardSecurityCode: parsed.data.cardCvv,
+        CardCvv: parsed.data.cardCvv,
         CardExpiration: expiryDate,
         CardholderName: parsed.data.cardholderName,
       },
       OrderIdentifier: `NXPOS-${tenant.tenantId}-${Date.now()}`,
       ExtendedData: {
         ThreeDSecure: {
-          ChallengeWindowSize: 4,
-          MerchantResponseURL: merchantResponseUrl,
+          ChallengeWindowSize: "05",
           ChallengeIndicator: "01",
         },
+        MerchantResponseUrl: merchantResponseUrl,
       },
     });
 
