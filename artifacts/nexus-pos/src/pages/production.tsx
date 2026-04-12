@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   useListProductionBatches, useCreateProductionBatch, useCompleteProductionBatch,
@@ -6,7 +6,6 @@ import {
   type ProductionBatch, type CreateBatchInput,
 } from "@workspace/api-client-react";
 import { useListProducts } from "@workspace/api-client-react";
-import { useListIngredients } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,12 +14,89 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Search, Plus, Trash2, Factory, CheckCircle2, Clock, ChevronDown, ChevronUp, X, Package } from "lucide-react";
+import { Search, Plus, Trash2, Factory, CheckCircle2, Clock, ChevronDown, ChevronUp, X, ChevronsUpDown } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+
+type Product = { id: number; name: string };
+
+function ProductCombobox({ value, onChange, products }: {
+  value: number | null;
+  onChange: (id: number) => void;
+  products: Product[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return products.filter(p => p.name.toLowerCase().includes(q)).slice(0, 50);
+  }, [products, search]);
+
+  const selected = products.find(p => p.id === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen(o => !o); setSearch(""); }}
+        className="flex w-full items-center justify-between h-8 rounded-md border border-input bg-background px-2 text-sm text-left transition-colors hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
+      >
+        <span className={cn("truncate", !selected && "text-muted-foreground")}>
+          {selected ? selected.name : "Select product…"}
+        </span>
+        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground ml-1" />
+      </button>
+      {open && (
+        <div className="absolute z-[9999] top-full mt-1 w-full min-w-[220px] rounded-md border border-border bg-popover shadow-lg overflow-hidden">
+          <div className="p-1.5 border-b border-border">
+            <input
+              autoFocus
+              className="w-full h-7 rounded px-2 text-xs bg-background border border-input focus:outline-none focus:ring-1 focus:ring-ring"
+              placeholder="Search products…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-4 text-xs text-muted-foreground text-center">No products found</p>
+            ) : filtered.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                className={cn(
+                  "w-full text-left px-3 py-1.5 text-xs hover:bg-accent transition-colors",
+                  p.id === value && "bg-primary/10 text-primary font-medium",
+                )}
+                onMouseDown={e => {
+                  e.preventDefault();
+                  onChange(p.id);
+                  setOpen(false);
+                  setSearch("");
+                }}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatCost(val: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(val);
@@ -267,14 +343,11 @@ export function Production() {
                 <div key={idx} className="grid grid-cols-[1fr_100px_auto] gap-2 items-end">
                   <div className="space-y-1">
                     {idx === 0 && <Label className="text-xs text-muted-foreground">Product</Label>}
-                    <Select value={String(item.productId ?? "")} onValueChange={v => updateItem(idx, "productId", parseInt(v))}>
-                      <SelectTrigger className="h-8 text-sm">
-                        <SelectValue placeholder="Select product…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {products.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <ProductCombobox
+                      value={item.productId}
+                      onChange={id => updateItem(idx, "productId", id)}
+                      products={products}
+                    />
                   </div>
                   <div className="space-y-1">
                     {idx === 0 && <Label className="text-xs text-muted-foreground">Quantity</Label>}

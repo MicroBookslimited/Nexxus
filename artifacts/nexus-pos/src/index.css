@@ -227,3 +227,34 @@
 .animate-fade-in    { animation: fade-in  0.4s ease-out both; }
 .animate-slide-in   { animation: slide-in 0.3s ease-out both; }
 .animate-scale-in   { animation: scale-in 0.4s ease-out both; }
+
+/* ── FORCE LIGHT MODE (store page) ─────────────────────── */
+.force-light {
+  --button-outline: rgba(0,0,0,.10);
+  --badge-outline: rgba(0,0,0,.05);
+  --opaque-button-border-intensity: -8;
+  --elevate-1: rgba(0,0,0,.03);
+  --elevate-2: rgba(0,0,0,.08);
+  --background: 210 20% 97%;
+  --foreground: 222 47% 11%;
+  --border: 214 20% 80%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --card-border: 214 20% 80%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 217 91% 55%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 20% 93%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 210 20% 93%;
+  --muted-foreground: 215 16% 45%;
+  --accent: 210 20% 93%;
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 210 20% 93%;
+  --ring: 217 91% 55%;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}

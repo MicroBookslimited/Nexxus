@@ -60,7 +60,6 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/accounting",   label: "Accounting",   icon: Calculator,      permission: "reports.view" },
   { href: "/ar",           label: "Receivables",  icon: BookOpen,        permission: "reports.view" },
   { href: "/reports",      label: "Reports",      icon: BarChart2,       permission: "reports.view" },
-  { href: "/settings",     label: "Settings",     icon: Settings,        permission: "settings.view" },
   { href: "/store",        label: "Store",        icon: Store,           permission: null },
   { href: "/subscription", label: "Plan",         icon: CreditCard,      permission: "settings.manage" },
 ];
@@ -300,7 +299,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <img src={logoUrl} alt="NEXXUS POS" className="h-8 w-auto" />
         </div>
 
-        {/* ── DESKTOP NAV (≥1280px): icon + label ── */}
+        {/* ── DESKTOP NAV (≥1280px): dynamic — active shows label, inactive icon-only ── */}
         <nav className="hidden xl:flex items-center gap-0 overflow-x-auto no-scrollbar mx-2 flex-1">
           {visibleNav.map((entry) => {
             if (isGroup(entry)) {
@@ -311,6 +310,7 @@ export function Layout({ children }: { children: ReactNode }) {
                   key={entry.label}
                   entry={entry}
                   active={active}
+                  iconOnly={!active}
                   open={open}
                   onOpenChange={(o) => o ? setOpenGroups(new Set([entry.label])) : setOpenGroups(new Set())}
                   can={can}
@@ -323,15 +323,16 @@ export function Layout({ children }: { children: ReactNode }) {
               <Link
                 key={entry.href}
                 href={entry.href}
+                title={entry.label}
                 className={cn(
-                  "flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0",
+                  "flex items-center gap-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0",
                   isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+                    ? "bg-primary/10 text-primary px-2 py-1.5"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60 px-2 py-1.5 w-8 justify-center",
                 )}
               >
                 <entry.icon className="h-3.5 w-3.5 shrink-0" />
-                {entry.label}
+                {isActive && entry.label}
               </Link>
             );
           })}
@@ -394,6 +395,22 @@ export function Layout({ children }: { children: ReactNode }) {
               <span className="text-[9px] text-muted-foreground hidden lg:inline">({staff.role})</span>
             </div>
           )}
+          {/* Settings */}
+          {can("settings.view") && (
+            <Link
+              href="/settings"
+              title="Settings"
+              className={cn(
+                "flex items-center justify-center h-8 w-8 rounded-md transition-colors",
+                location.startsWith("/settings")
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:text-primary",
+              )}
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
+          )}
+
           {/* Switch User */}
           <Button
             size="icon"

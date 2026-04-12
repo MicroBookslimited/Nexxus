@@ -584,7 +584,7 @@ export default function StorePage() {
   }
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col h-full">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col h-full force-light">
 
       {/* ── Header ── */}
       <div className="shrink-0 px-4 sm:px-6 pt-5 pb-4 border-b border-border bg-card/50">
