@@ -63,4 +63,15 @@ router.use(productionRouter);
 router.use(resellerRouter);
 router.use(superadminEmailRouter);
 
+/* TEMPORARY — remove after noting the IP for ZeptoMail whitelist */
+router.get("/server-outbound-ip", async (_req, res) => {
+  try {
+    const r = await fetch("https://api.ipify.org?format=json");
+    const data = await r.json() as { ip: string };
+    res.json({ outbound_ip: data.ip });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to fetch IP" });
+  }
+});
+
 export default router;
