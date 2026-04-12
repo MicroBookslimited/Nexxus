@@ -164,7 +164,8 @@ router.post("/staff/authenticate", async (req, res): Promise<void> => {
 
   if (!match) { res.status(401).json({ error: "Invalid PIN" }); return; }
 
-  if (requiredRoles && requiredRoles.length > 0 && !requiredRoles.includes(match.role)) {
+  if (requiredRoles && requiredRoles.length > 0 &&
+      !requiredRoles.map(r => r.toLowerCase()).includes((match.role ?? "").toLowerCase())) {
     res.status(403).json({ error: "Insufficient role", role: match.role });
     return;
   }

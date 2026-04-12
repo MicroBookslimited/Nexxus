@@ -64,9 +64,9 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   const template          = settings.receipt_template   || "classic";
 
   const is58mm        = receiptSize === "58mm";
-  const baseFontSize  = is58mm ? "10px" : "11px";
-  const subFontSize   = is58mm ? "9px"  : "10px";
-  const bodyPadding   = is58mm ? "6px 7px 16px" : "8px 10px 18px";
+  const baseFontSize  = is58mm ? "12px" : "12px";
+  const subFontSize   = is58mm ? "10px" : "10px";
+  const bodyPadding   = is58mm ? "4px 6px 14px" : "6px 8px 16px";
 
   // With currency prefix — only used on Total / Amount Due lines
   const fmt = (n: number, cur = baseCurrency) => {
@@ -152,7 +152,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     classic: {
       headerAlign: "center",
       bizWeight: "900",
-      bizSize: is58mm ? "15px" : "17px",
+      bizSize: is58mm ? "16px" : "17px",
       bizTransform: "none",
       bizTracking: "0.5px",
       divider: "dashed",
@@ -267,19 +267,20 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       letter-spacing: ${tpl.bizTracking};
       margin-bottom: 3px;
     }
-    .info-block { font-size: ${baseFontSize}; line-height: 1.55; margin-bottom: 2px; }
-    .sub-text { font-size: ${subFontSize}; color: #555; }
+    .info-block { font-size: ${baseFontSize}; line-height: 1.5; margin-bottom: 2px; }
+    .sub-text { font-size: ${subFontSize}; color: #333; }
     .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; margin: 1px 0; }
-    .item-row { margin: 2px 0; }
+    .item-row { margin: 2px 0; font-weight: 700; }
     .item-name { flex: 1; }
     .sub-row { font-size: ${subFontSize}; }
     .nowrap { white-space: nowrap; }
-    .mod-line { padding-left: 12px; font-size: ${subFontSize}; color: #666; }
-    .divider-dashed { border-top: 1px dashed #888; margin: 5px 0; }
-    .divider-solid  { border-top: 2px solid #000; margin: 5px 0; }
-    .divider-thin   { border-top: 1px solid #aaa; margin: 5px 0; }
-    .total-row { display: flex; justify-content: space-between; font-weight: 900; margin: 2px 0; }
-    .amount-due-row { display: flex; justify-content: space-between; font-size: ${is58mm ? "13px" : "14px"}; font-weight: 900; margin: 4px 0 2px; }
+    .mod-line { padding-left: 10px; font-size: ${subFontSize}; color: #444; }
+    .divider-dashed { border-top: 1px dashed #555; margin: 4px 0; }
+    .divider-solid  { border-top: 2px solid #000; margin: 4px 0; }
+    .divider-thin   { border-top: 1px solid #666; margin: 4px 0; }
+    .total-row { display: flex; justify-content: space-between; font-weight: 900; margin: 2px 0; font-size: ${is58mm ? "13px" : "13px"}; }
+    .amount-due-row { display: flex; justify-content: space-between; align-items: baseline; font-size: ${is58mm ? "14px" : "15px"}; font-weight: 900; margin: 4px 0 2px; }
+    .amount-due-row span { white-space: nowrap; }
     .discount { color: #c00; }
     .refunded { color: red; font-weight: bold; text-align: center; font-size: 12px; border: 1px solid red; padding: 3px; margin: 4px 0; letter-spacing: 1px; }
     .note { font-size: ${subFontSize}; font-style: italic; margin: 3px 0; }
