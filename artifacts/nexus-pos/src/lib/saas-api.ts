@@ -60,9 +60,12 @@ export const capturePayPalOrder = (orderId: string, planSlug: string, billingCyc
   });
 
 export const initiatePowerTranz = (data: { planSlug: string; billingCycle: "monthly" | "annual"; cardNumber: string; cardExpiry: string; cardCvv: string; cardholderName: string; returnUrl: string }) =>
-  api<{ approved: boolean; transactionId?: string; responseCode?: string; rrn?: string; authCode?: string; responseMessage?: string }>("/billing/powertranz/initiate", {
+  api<{ step: "3ds" | "approved" | "declined"; spiToken?: string; redirectData?: string; approved?: boolean; transactionId?: string; rrn?: string; authCode?: string; responseCode?: string; responseMessage?: string }>("/billing/powertranz/initiate", {
     method: "POST", body: JSON.stringify(data), headers: tenantAuthHeaders(),
   });
+
+export const getPowerTranz3dsStatus = (spiToken: string) =>
+  api<{ status: "pending" | "approved" | "declined" | "not_found"; planName?: string; rrn?: string; message?: string }>(`/billing/powertranz/3ds-status?spiToken=${encodeURIComponent(spiToken)}`);
 
 export const getBankAccounts = () =>
   api<BankAccount[]>("/billing/bank-accounts", { headers: tenantAuthHeaders() });

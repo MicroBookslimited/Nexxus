@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   Check, CreditCard, Zap, Calendar, AlertTriangle,
-  ArrowUpRight, RefreshCw, Upload, Banknote, X, FileCheck, Clock,
+  ArrowUpRight, RefreshCw, Upload, Banknote, X, FileCheck, Clock, Shield,
 } from "lucide-react";
 import {
   TENANT_TOKEN_KEY, saasMe, getPlans, createPayPalOrder, capturePayPalOrder,
-  initiatePowerTranz, getBankAccounts, submitBankTransferProof, getMyBankTransferProofs,
+  initiatePowerTranz, getPowerTranz3dsStatus, getBankAccounts, submitBankTransferProof, getMyBankTransferProofs,
   type Plan, type Tenant, type Subscription, type BankAccount, type BankTransferProofRow,
 } from "@/lib/saas-api";
 import { loadScript } from "@paypal/paypal-js";
@@ -37,6 +37,9 @@ export function SubscriptionPage() {
   const [transferNotes, setTransferNotes] = useState("");
   const [proofFile, setProofFile] = useState<{ name: string; type: string; data: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [threeDsData, setThreeDsData] = useState<{ spiToken: string; redirectData: string } | null>(null);
+  const threeDsContainerRef = useRef<HTMLDivElement>(null);
 
   async function reload() {
     const me = await saasMe();
@@ -115,6 +118,52 @@ export function SubscriptionPage() {
     "96": "System error — try again.",
   };
 
+  const handle3dsMessage = useCallback(async (event: MessageEvent) => {
+    if (event.data?.type !== "POWERTRANZ_3DS") return;
+    const { status, message, planName, rrn } = event.data;
+    setThreeDsData(null);
+    setIsProcessing(false);
+    if (status === "approved") {
+      const rrnSuffix = rrn ? ` · RRN: ${rrn}` : "";
+      setSuccess(`Successfully subscribed to ${planName ?? selectedPlan?.name ?? "plan"}!${rrnSuffix}`);
+      setShowPayment(false);
+      setCard({ number: "", expiry: "", cvv: "", name: "" });
+      await reload();
+    } else {
+      setError(message || "Payment declined. Please try another card.");
+    }
+  }, [selectedPlan, reload]);
+
+  useEffect(() => {
+    window.addEventListener("message", handle3dsMessage);
+    return () => window.removeEventListener("message", handle3dsMessage);
+  }, [handle3dsMessage]);
+
+  useEffect(() => {
+    if (!threeDsData || !threeDsContainerRef.current) return;
+    const container = threeDsContainerRef.current;
+    container.innerHTML = "";
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "width:100%;height:100%;border:none;background:#fff;";
+    iframe.srcdoc = threeDsData.redirectData;
+    container.appendChild(iframe);
+
+    // Fallback poll in case postMessage is blocked
+    const pollTimer = setInterval(async () => {
+      try {
+        const s = await getPowerTranz3dsStatus(threeDsData.spiToken);
+        if (s.status === "approved") {
+          clearInterval(pollTimer);
+          window.dispatchEvent(new MessageEvent("message", { data: { type: "POWERTRANZ_3DS", status: "approved", planName: s.planName, rrn: s.rrn } }));
+        } else if (s.status === "declined") {
+          clearInterval(pollTimer);
+          window.dispatchEvent(new MessageEvent("message", { data: { type: "POWERTRANZ_3DS", status: "declined", message: s.message || "Payment declined." } }));
+        }
+      } catch { /* ignore poll errors */ }
+    }, 3000);
+    return () => clearInterval(pollTimer);
+  }, [threeDsData]);
+
   async function handlePowerTranz() {
     if (!selectedPlan) return;
     const rawNumber = card.number.replace(/\s/g, "");
@@ -123,25 +172,35 @@ export function SubscriptionPage() {
     if (!card.cvv || card.cvv.length < 3) { setError("Please enter your CVV."); return; }
     if (!card.name.trim()) { setError("Please enter the cardholder name."); return; }
     setError(""); setIsProcessing(true);
+    let needs3ds = false;
     try {
       const res = await initiatePowerTranz({ planSlug: selectedPlan.slug, billingCycle, cardNumber: card.number, cardExpiry: card.expiry, cardCvv: card.cvv, cardholderName: card.name, returnUrl: window.location.href });
-      if (res.approved) {
+
+      if (res.step === "3ds" && res.spiToken && res.redirectData) {
+        needs3ds = true;
+        setThreeDsData({ spiToken: res.spiToken, redirectData: res.redirectData });
+        return;
+      }
+
+      if (res.step === "approved") {
         const ref = res.rrn ? ` · RRN: ${res.rrn}` : res.transactionId ? ` · Ref: ${res.transactionId}` : "";
         setSuccess(`Successfully subscribed to ${selectedPlan.name}!${ref}`);
         setShowPayment(false);
         setCard({ number: "", expiry: "", cvv: "", name: "" });
         await reload();
-      } else {
-        const code = res.responseCode ?? "unknown";
-        const gatewayMsg = res.responseMessage ? ` — ${res.responseMessage}` : "";
-        const msg = DECLINE_CODES[code] ?? `Payment declined (code: ${code}${gatewayMsg}).`;
-        setError(msg);
+        return;
       }
+
+      const code = res.responseCode ?? "unknown";
+      const gatewayMsg = res.responseMessage ? ` — ${res.responseMessage}` : "";
+      const msg = DECLINE_CODES[code] ?? `Payment declined (code: ${code}${gatewayMsg}).`;
+      setError(msg);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg.startsWith("PowerTranz") ? msg : `Payment failed: ${msg}`);
+    } finally {
+      if (!needs3ds) setIsProcessing(false);
     }
-    finally { setIsProcessing(false); }
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -196,6 +255,27 @@ export function SubscriptionPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
+
+      {/* 3DS Authentication Modal */}
+      {threeDsData && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-[#1a2332] border border-[#2a3a55] rounded-xl overflow-hidden w-full max-w-lg shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a3a55]">
+              <div className="flex items-center gap-2 text-white font-semibold">
+                <Shield size={18} className="text-[#3b82f6]" />
+                Secure 3D Authentication
+              </div>
+              <button
+                onClick={() => { setThreeDsData(null); setIsProcessing(false); setError("Authentication cancelled. Please try again."); }}
+                className="text-[#94a3b8] hover:text-white transition-colors"
+              ><X size={18} /></button>
+            </div>
+            <p className="text-[#94a3b8] text-xs px-5 py-2 bg-[#0f1729]">Your bank may ask you to verify this payment. Complete the steps below to proceed.</p>
+            <div ref={threeDsContainerRef} className="w-full" style={{ height: "480px" }} />
+          </div>
+        </div>
+      )}
+
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Subscription</h1>
         <p className="text-[#94a3b8] text-sm">Manage your NEXXUS POS plan and billing</p>

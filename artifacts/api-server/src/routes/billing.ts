@@ -151,7 +151,53 @@ router.post("/billing/paypal/capture-order", async (req, res): Promise<void> => 
   }
 });
 
-/* ─── PowerTranz: Initiate Payment ─── */
+/* ─── PowerTranz: Pending 3DS Store (in-memory, 10-min TTL) ─── */
+interface Pending3DS {
+  tenantId: number; planId: number; billingCycle: string; amount: number; planName: string;
+  status: "pending" | "approved" | "declined";
+  txId?: string; rrn?: string; message?: string;
+}
+const pending3DS = new Map<string, Pending3DS>();
+
+async function activateSubscription(tenantId: number, planId: number, billingCycle: string, txId?: string) {
+  const now = new Date(); const periodEnd = new Date(now);
+  if (billingCycle === "annual") periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+  else periodEnd.setMonth(periodEnd.getMonth() + 1);
+  const [existing] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.tenantId, tenantId));
+  if (existing) {
+    await db.update(subscriptionsTable).set({
+      planId, status: "active", provider: "powertranz", providerOrderId: txId,
+      billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd, updatedAt: now,
+    }).where(eq(subscriptionsTable.tenantId, tenantId));
+  } else {
+    await db.insert(subscriptionsTable).values({
+      tenantId, planId, status: "active", provider: "powertranz",
+      providerOrderId: txId, billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd,
+    });
+  }
+  await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, tenantId));
+}
+
+async function callPowerTranz(endpoint: string, body: object): Promise<{ raw: string; status: number; data: Record<string, unknown> }> {
+  const { spId, spPassword, base } = await getPowerTranzConfig();
+  const resp = await fetch(`${base}${endpoint}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Accept": "application/json",
+      "PowerTranz-PowerTranzId": spId,
+      "PowerTranz-PowerTranzPassword": spPassword,
+    },
+    body: JSON.stringify(body),
+  });
+  const raw = await resp.text();
+  console.log(`[PowerTranz] ${endpoint} HTTP ${resp.status}:`, raw.slice(0, 600));
+  let data: Record<string, unknown> = {};
+  try { data = JSON.parse(raw); } catch { /* non-JSON */ }
+  return { raw, status: resp.status, data };
+}
+
+/* ─── PowerTranz: Initiate Payment (Step 1 of 3DS flow) ─── */
 const PowerTranzBody = z.object({
   planSlug: z.string(),
   billingCycle: z.enum(["monthly", "annual"]),
@@ -169,8 +215,8 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
   const parsed = PowerTranzBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid request", details: parsed.error.issues }); return; }
 
-  const { spId, spPassword, base: POWERTRANZ_BASE, enabled } = await getPowerTranzConfig();
-  if (!spId || !spPassword) { res.status(503).json({ error: "PowerTranz not configured. Please add your credentials in the Superadmin → Gateway Settings panel." }); return; }
+  const { spId, spPassword, enabled } = await getPowerTranzConfig();
+  if (!spId || !spPassword) { res.status(503).json({ error: "PowerTranz not configured. Add credentials in Superadmin → Gateway Settings." }); return; }
   if (!enabled) { res.status(503).json({ error: "PowerTranz card payments are currently disabled." }); return; }
 
   const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.slug, parsed.data.planSlug));
@@ -178,68 +224,110 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
 
   const amount = parsed.data.billingCycle === "annual" ? plan.priceAnnual : plan.priceMonthly;
   const [mm, yy] = parsed.data.cardExpiry.split("/").map((s) => s.trim());
-  const expiryDate = `20${yy}${mm}`;
+  const expiryDate = `${yy}${mm}`;
+  const origin = new URL(parsed.data.returnUrl).origin;
+  const merchantResponseUrl = `${origin}/api/billing/powertranz/3ds-callback`;
 
   try {
-    const payload = {
-      TransactionIdentifier: `NXPOS-${tenant.tenantId}-${Date.now()}`,
-      TotalAmount: amount, CurrencyCode: "840", ThreeDSecure: false,
-      Source: { CardPan: parsed.data.cardNumber.replace(/\s/g, ""), CardCvv: parsed.data.cardCvv, CardExpiration: expiryDate, CardholderName: parsed.data.cardholderName },
-      OrderIdentifier: `NXPOS-${tenant.tenantId}`, AddressMatch: false,
-      ExtendedData: { ThreeDSecure: { AuthenticationIndicator: "0" } },
-    };
-
-    console.log("[PowerTranz] sending to", `${POWERTRANZ_BASE}/api/paymentrequest`);
-    const resp = await fetch(`${POWERTRANZ_BASE}/api/paymentrequest`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", PowerTranz_Id: spId, PowerTranz_Password: spPassword },
-      body: JSON.stringify(payload),
+    const txId = crypto.randomUUID();
+    const { data } = await callPowerTranz("/api/spi/sale", {
+      TransactionIdentifier: txId,
+      TotalAmount: Number(amount),
+      CurrencyCode: "840",
+      ThreeDSecure: true,
+      Source: {
+        CardPan: parsed.data.cardNumber.replace(/\s/g, ""),
+        CardSecurityCode: parsed.data.cardCvv,
+        CardExpiration: expiryDate,
+        CardholderName: parsed.data.cardholderName,
+      },
+      OrderIdentifier: `NXPOS-${tenant.tenantId}-${Date.now()}`,
+      ExtendedData: {
+        ThreeDSecure: {
+          ChallengeWindowSize: 4,
+          MerchantResponseURL: merchantResponseUrl,
+          ChallengeIndicator: "01",
+        },
+      },
     });
 
-    const rawText = await resp.text();
-    console.log("[PowerTranz] HTTP", resp.status, rawText.slice(0, 500));
+    const isoCode = data.IsoResponseCode as string | undefined;
+    const spiToken = data.SpiToken as string | undefined;
 
-    if (!resp.ok && !rawText.trim().startsWith("{")) {
-      res.status(502).json({ error: `PowerTranz gateway error (HTTP ${resp.status})`, details: rawText.slice(0, 300) });
+    // SP4 = 3DS flow initiated — return SpiToken + RedirectData to frontend
+    if (isoCode === "SP4" && spiToken && data.RedirectData) {
+      pending3DS.set(spiToken, {
+        tenantId: tenant.tenantId, planId: plan.id,
+        billingCycle: parsed.data.billingCycle, amount: Number(amount),
+        planName: plan.name, status: "pending",
+      });
+      setTimeout(() => pending3DS.delete(spiToken!), 10 * 60 * 1000);
+      res.json({ step: "3ds", spiToken, redirectData: data.RedirectData });
       return;
     }
 
-    let data: { Approved?: boolean; TransactionIdentifier?: string; ResponseCode?: string; IsoResponseCode?: string; RrN?: string; RedirectData?: string; ResponseMessage?: string; AuthorizationCode?: string };
-    try { data = JSON.parse(rawText); }
-    catch { res.status(502).json({ error: "PowerTranz returned non-JSON response", details: rawText.slice(0, 300) }); return; }
-
-    console.log("[PowerTranz]", JSON.stringify({
-      transactionId: data.TransactionIdentifier, approved: data.Approved,
-      isoCode: data.IsoResponseCode, responseCode: data.ResponseCode,
-      rrn: data.RrN, authCode: data.AuthorizationCode, message: data.ResponseMessage,
-    }));
-
+    // Direct approval (frictionless)
     if (data.Approved) {
-      const now = new Date();
-      const periodEnd = new Date(now);
-      if (parsed.data.billingCycle === "annual") { periodEnd.setFullYear(periodEnd.getFullYear() + 1); }
-      else { periodEnd.setMonth(periodEnd.getMonth() + 1); }
-
-      const [existing] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.tenantId, tenant.tenantId));
-      if (existing) {
-        await db.update(subscriptionsTable).set({
-          planId: plan.id, status: "active", provider: "powertranz", providerOrderId: data.TransactionIdentifier,
-          billingCycle: parsed.data.billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd, updatedAt: now,
-        }).where(eq(subscriptionsTable.tenantId, tenant.tenantId));
-      } else {
-        await db.insert(subscriptionsTable).values({
-          tenantId: tenant.tenantId, planId: plan.id, status: "active", provider: "powertranz",
-          providerOrderId: data.TransactionIdentifier, billingCycle: parsed.data.billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd,
-        });
-      }
-      await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, tenant.tenantId));
+      await activateSubscription(tenant.tenantId, plan.id, parsed.data.billingCycle, data.TransactionIdentifier as string);
       await recordResellerCommission(tenant.tenantId, plan.id, amount);
+      res.json({ step: "approved", approved: true, transactionId: data.TransactionIdentifier, rrn: data.RrN, authCode: data.AuthorizationCode });
+      return;
     }
 
-    res.json({ approved: data.Approved ?? false, transactionId: data.TransactionIdentifier, responseCode: data.IsoResponseCode ?? data.ResponseCode, rrn: data.RrN, authCode: data.AuthorizationCode, responseMessage: data.ResponseMessage, redirectData: data.RedirectData });
+    // Declined / validation error
+    const errors = data.Errors as Array<{ Code: string; Message: string }> | undefined;
+    res.json({
+      step: "declined", approved: false,
+      responseCode: isoCode ?? data.ResponseCode ?? "unknown",
+      responseMessage: (data.ResponseMessage as string) ?? errors?.[0]?.Message ?? "Payment declined",
+    });
   } catch (err) {
+    console.error("[PowerTranz] initiate error:", err);
     res.status(500).json({ error: "PowerTranz request failed", details: String(err) });
   }
+});
+
+/* ─── PowerTranz: 3DS Callback (iframe redirect target, Step 2) ─── */
+router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> => {
+  console.log("[PowerTranz 3DS callback] body keys:", Object.keys(req.body || {}));
+  const spiToken = (req.body?.SpiToken ?? req.body?.spiToken ?? req.query?.SpiToken ?? req.query?.spiToken) as string | undefined;
+
+  const closeScript = (status: string, message: string, extra = "") =>
+    `<html><body><script>try{window.top.postMessage({type:"POWERTRANZ_3DS",status:${JSON.stringify(status)},message:${JSON.stringify(message)}${extra}},"*");}catch(e){}</script><p>${message}</p></body></html>`;
+
+  if (!spiToken) { res.send(closeScript("error", "No SpiToken received. Please try again.")); return; }
+
+  const pending = pending3DS.get(spiToken);
+  if (!pending) { res.send(closeScript("error", "Transaction expired or not found. Please try again.")); return; }
+
+  try {
+    const { data } = await callPowerTranz("/api/spi/payment", { SpiToken: spiToken });
+
+    if (data.Approved) {
+      await activateSubscription(pending.tenantId, pending.planId, pending.billingCycle, data.TransactionIdentifier as string);
+      await recordResellerCommission(pending.tenantId, pending.planId, pending.amount);
+      pending3DS.set(spiToken, { ...pending, status: "approved", txId: data.TransactionIdentifier as string, rrn: data.RrN as string });
+      setTimeout(() => pending3DS.delete(spiToken), 5 * 60 * 1000);
+      const rrn = data.RrN ? ` · RRN: ${data.RrN}` : "";
+      res.send(closeScript("approved", `Payment approved!${rrn}`, `,planName:${JSON.stringify(pending.planName)}`));
+    } else {
+      const msg = (data.ResponseMessage as string) ?? "Payment was declined";
+      pending3DS.set(spiToken, { ...pending, status: "declined", message: msg });
+      res.send(closeScript("declined", msg, `,responseCode:${JSON.stringify(data.IsoResponseCode ?? data.ResponseCode ?? "")}`));
+    }
+  } catch (err) {
+    console.error("[PowerTranz] 3ds-callback error:", err);
+    pending3DS.set(spiToken, { ...pending, status: "declined", message: String(err) });
+    res.send(closeScript("error", "Payment processing error. Please try again."));
+  }
+});
+
+/* ─── PowerTranz: 3DS Status Poll ─── */
+router.get("/billing/powertranz/3ds-status", (req, res) => {
+  const spiToken = req.query.spiToken as string;
+  const p = pending3DS.get(spiToken);
+  if (!p) { res.json({ status: "not_found" }); return; }
+  res.json({ status: p.status, planName: p.planName, rrn: p.rrn, message: p.message });
 });
 
 /* ─── Bank Accounts (public for tenants) ─── */
