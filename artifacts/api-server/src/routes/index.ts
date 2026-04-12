@@ -29,6 +29,7 @@ import recipesRouter from "./recipes";
 import productionRouter from "./production";
 import resellerRouter from "./reseller";
 import superadminEmailRouter from "./superadmin-email";
+import storeRouter from "./store";
 
 const router: IRouter = Router();
 
@@ -62,6 +63,6 @@ router.use(recipesRouter);
 router.use(productionRouter);
 router.use(resellerRouter);
 router.use(superadminEmailRouter);
-
+router.use(storeRouter);
 
 export default router;

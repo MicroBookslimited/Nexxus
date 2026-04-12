@@ -5,7 +5,7 @@ import {
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
-  FlaskConical, Factory,
+  FlaskConical, Factory, Store,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -61,6 +61,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/ar",           label: "Receivables",  icon: BookOpen,        permission: "reports.view" },
   { href: "/reports",      label: "Reports",      icon: BarChart2,       permission: "reports.view" },
   { href: "/settings",     label: "Settings",     icon: Settings,        permission: "settings.view" },
+  { href: "/store",        label: "Store",        icon: Store,           permission: null },
   { href: "/subscription", label: "Plan",         icon: CreditCard,      permission: "settings.manage" },
 ];
 
