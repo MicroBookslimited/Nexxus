@@ -206,10 +206,6 @@ async function callPowerTranz(endpoint: string, body: object): Promise<{ raw: st
 const PowerTranzBody = z.object({
   planSlug: z.string(),
   billingCycle: z.enum(["monthly", "annual"]),
-  cardNumber: z.string(),
-  cardExpiry: z.string(),
-  cardCvv: z.string(),
-  cardholderName: z.string(),
   returnUrl: z.string().url(),
 });
 
@@ -228,8 +224,6 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
   if (!plan) { res.status(404).json({ error: "Plan not found" }); return; }
 
   const amount = parsed.data.billingCycle === "annual" ? plan.priceAnnual : plan.priceMonthly;
-  const [mm, yy] = parsed.data.cardExpiry.split("/").map((s) => s.trim());
-  const expiryDate = `${yy}${mm}`;
   const origin = new URL(parsed.data.returnUrl).origin;
   const merchantResponseUrl = `${origin}/api/billing/powertranz/3ds-callback`;
 
@@ -240,12 +234,6 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
       TotalAmount: Number(amount),
       CurrencyCode: "840",
       ThreeDSecure: true,
-      Source: {
-        CardPan: parsed.data.cardNumber.replace(/\s/g, ""),
-        CardCvv: parsed.data.cardCvv,
-        CardExpiration: expiryDate,
-        CardholderName: parsed.data.cardholderName,
-      },
       OrderIdentifier: `NXPOS-${tenant.tenantId}-${Date.now()}`,
       ExtendedData: {
         ThreeDSecure: {
