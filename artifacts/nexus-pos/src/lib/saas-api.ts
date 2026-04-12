@@ -136,6 +136,22 @@ export const superadminReviewTransferProof = (id: number, status: "approved" | "
     method: "PATCH", body: JSON.stringify({ status, reviewNotes }), headers: superadminAuthHeaders(),
   });
 
+export type GatewaySettings = {
+  powertranz_spid: string;
+  powertranz_sppassword: string;
+  powertranz_sppassword_set?: string;
+  powertranz_env: string;
+  powertranz_enabled: string;
+};
+
+export const superadminGetGatewaySettings = () =>
+  api<GatewaySettings>("/superadmin/gateway", { headers: superadminAuthHeaders() });
+
+export const superadminUpdateGatewaySettings = (data: Partial<GatewaySettings>) =>
+  api<{ success: boolean }>("/superadmin/gateway", {
+    method: "PATCH", body: JSON.stringify(data), headers: superadminAuthHeaders(),
+  });
+
 /* ─── Password Reset ─── */
 export const saasForgotPassword = (email: string) =>
   api<{ success: boolean }>("/saas/forgot-password", { method: "POST", body: JSON.stringify({ email }) });

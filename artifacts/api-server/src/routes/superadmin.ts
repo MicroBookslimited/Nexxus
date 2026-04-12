@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
 import {
   db, tenantsTable, subscriptionsTable, subscriptionPlansTable,
-  bankAccountSettingsTable, bankTransferProofsTable,
+  bankAccountSettingsTable, bankTransferProofsTable, appSettingsTable,
 } from "@workspace/db";
 import { eq, desc, count, sql, ilike, or } from "drizzle-orm";
+import { getSetting } from "./settings";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
 import bcryptjs from "bcryptjs";
@@ -563,6 +564,47 @@ router.get("/superadmin/users", async (req, res): Promise<void> => {
     .orderBy(desc(tenantsTable.createdAt));
 
   res.json(users);
+});
+
+/* ─── Gateway Settings ─── */
+const GATEWAY_KEYS = ["powertranz_spid", "powertranz_sppassword", "powertranz_env", "powertranz_enabled"] as const;
+
+router.get("/superadmin/gateway", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res as never)) return;
+  const result: Record<string, string> = {};
+  for (const key of GATEWAY_KEYS) {
+    result[key] = await getSetting(key, 0);
+  }
+  if (result["powertranz_sppassword"]) {
+    result["powertranz_sppassword_set"] = "true";
+    result["powertranz_sppassword"] = "";
+  }
+  res.json(result);
+});
+
+const GatewayBody = z.object({
+  powertranz_spid: z.string().optional(),
+  powertranz_sppassword: z.string().optional(),
+  powertranz_env: z.enum(["staging", "production"]).optional(),
+  powertranz_enabled: z.string().optional(),
+});
+
+router.patch("/superadmin/gateway", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res as never)) return;
+  const parsed = GatewayBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid body" }); return; }
+
+  const data = parsed.data;
+  for (const key of GATEWAY_KEYS) {
+    const val = data[key as keyof typeof data];
+    if (val !== undefined && val !== "") {
+      const dbKey = `0:${key}`;
+      await db.insert(appSettingsTable)
+        .values({ key: dbKey, tenantId: 0, value: val, updatedAt: new Date() })
+        .onConflictDoUpdate({ target: appSettingsTable.key, set: { value: val, updatedAt: new Date() } });
+    }
+  }
+  res.json({ success: true });
 });
 
 export default router;

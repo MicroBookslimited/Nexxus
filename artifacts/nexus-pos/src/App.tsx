@@ -80,6 +80,12 @@ function SectionDispatch() {
     );
   }
 
+  // Standalone pages that live outside the /app Wouter base
+  if (path.startsWith("/superadmin")) return <Superadmin />;
+  if (path.startsWith("/signup"))     return <Onboarding />;
+  if (path.startsWith("/reset-password")) return <ResetPassword />;
+  if (path.startsWith("/verify-email"))   return <VerifyEmail />;
+
   if (path.startsWith("/app")) {
     return <POSApp />;
   }

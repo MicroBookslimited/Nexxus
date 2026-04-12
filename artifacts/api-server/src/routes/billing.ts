@@ -7,6 +7,7 @@ import { recordResellerCommission } from "./reseller";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
+import { getSetting } from "./settings";
 
 const router: IRouter = Router();
 
@@ -36,10 +37,14 @@ async function getPayPalToken(): Promise<string> {
 }
 
 /* ─── PowerTranz helpers ─── */
-const POWERTRANZ_BASE =
-  process.env["POWERTRANZ_ENV"] === "production"
-    ? "https://gateway.powertranz.com"
-    : "https://staging.powertranz.com";
+async function getPowerTranzConfig() {
+  const spId = (await getSetting("powertranz_spid", 0)) || process.env["POWERTRANZ_SPID"] || "";
+  const spPassword = (await getSetting("powertranz_sppassword", 0)) || process.env["POWERTRANZ_SPPASSWORD"] || "";
+  const env = (await getSetting("powertranz_env", 0)) || process.env["POWERTRANZ_ENV"] || "staging";
+  const enabled = (await getSetting("powertranz_enabled", 0)) || "true";
+  const base = env === "production" ? "https://gateway.powertranz.com" : "https://staging.powertranz.com";
+  return { spId, spPassword, base, enabled: enabled === "true" };
+}
 
 function getTenantFromAuth(req: { headers: { authorization?: string } }) {
   const auth = req.headers.authorization;
@@ -164,9 +169,9 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
   const parsed = PowerTranzBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid request", details: parsed.error.issues }); return; }
 
-  const spId = process.env["POWERTRANZ_SPID"];
-  const spPassword = process.env["POWERTRANZ_SPPASSWORD"];
-  if (!spId || !spPassword) { res.status(503).json({ error: "PowerTranz not configured. Please set POWERTRANZ_SPID and POWERTRANZ_SPPASSWORD." }); return; }
+  const { spId, spPassword, base: POWERTRANZ_BASE, enabled } = await getPowerTranzConfig();
+  if (!spId || !spPassword) { res.status(503).json({ error: "PowerTranz not configured. Please add your credentials in the Superadmin → Gateway Settings panel." }); return; }
+  if (!enabled) { res.status(503).json({ error: "PowerTranz card payments are currently disabled." }); return; }
 
   const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.slug, parsed.data.planSlug));
   if (!plan) { res.status(404).json({ error: "Plan not found" }); return; }

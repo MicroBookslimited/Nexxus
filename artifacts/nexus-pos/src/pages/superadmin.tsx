@@ -5,6 +5,7 @@ import {
   Eye, X, AlertTriangle, Plus, Building2, Banknote, FileCheck,
   LayoutDashboard, Settings, Pencil, Trash2, Download, ChevronRight,
   LogIn, KeyRound, Check, Package, ToggleLeft, ToggleRight, Mail,
+  Cpu, Globe,
 } from "lucide-react";
 import { EmailTab } from "./superadmin-email-tab";
 import {
@@ -15,7 +16,8 @@ import {
   superadminGetTransferProofs, superadminReviewTransferProof,
   superadminGetUsers, superadminImpersonate, superadminResetPassword,
   superadminGetPlans, superadminCreatePlan, superadminUpdatePlan, superadminDeletePlan,
-  type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow,
+  superadminGetGatewaySettings, superadminUpdateGatewaySettings,
+  type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow, type GatewaySettings,
 } from "@/lib/saas-api";
 
 type Stats = {
@@ -24,7 +26,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "users" | "tenants" | "payments" | "plans" | "email" | "settings";
+type Tab = "overview" | "users" | "tenants" | "payments" | "plans" | "email" | "gateway" | "settings";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -787,6 +789,13 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [editingPlan, setEditingPlan] = useState<Plan | null | "new">(null);
   const [plansLoading, setPlansLoading] = useState(false);
 
+  const [gatewaySettings, setGatewaySettings] = useState<GatewaySettings | null>(null);
+  const [gatewayLoading, setGatewayLoading] = useState(false);
+  const [gatewayForm, setGatewayForm] = useState({ spid: "", sppassword: "", env: "staging", enabled: "true" });
+  const [gatewaySaving, setGatewaySaving] = useState(false);
+  const [gatewaySaved, setGatewaySaved] = useState(false);
+  const [gatewayError, setGatewayError] = useState("");
+
   function isAuthError(e: unknown): boolean {
     return (e instanceof Error) && (
       e.message.includes("Invalid superadmin token") ||
@@ -847,11 +856,27 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     finally { setPlansLoading(false); }
   }, [onLogout]);
 
+  const loadGateway = useCallback(async () => {
+    setGatewayLoading(true);
+    try {
+      const gs = await superadminGetGatewaySettings();
+      setGatewaySettings(gs);
+      setGatewayForm({
+        spid: gs.powertranz_spid ?? "",
+        sppassword: "",
+        env: gs.powertranz_env || "staging",
+        enabled: gs.powertranz_enabled || "true",
+      });
+    } catch (e) { if (isAuthError(e)) onLogout(); }
+    finally { setGatewayLoading(false); }
+  }, [onLogout]);
+
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { if (tab === "settings") loadBankAccounts(); }, [tab, loadBankAccounts]);
   useEffect(() => { if (tab === "payments") loadProofs(); }, [tab, loadProofs]);
   useEffect(() => { if (tab === "users") loadUsers(); }, [tab, loadUsers]);
   useEffect(() => { if (tab === "plans") loadPlans(); }, [tab, loadPlans]);
+  useEffect(() => { if (tab === "gateway") loadGateway(); }, [tab, loadGateway]);
 
   useEffect(() => {
     let list = tenants;
@@ -872,6 +897,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     { id: "payments", label: "Payments", icon: Banknote, badge: stats?.pendingProofs || undefined },
     { id: "plans", label: "Plans", icon: Package },
     { id: "email", label: "Email", icon: Mail },
+    { id: "gateway", label: "Gateway", icon: CreditCard },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
@@ -1311,6 +1337,171 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
 
         {/* ── EMAIL ── */}
         {tab === "email" && <EmailTab />}
+
+        {/* ── GATEWAY ── */}
+        {tab === "gateway" && (
+          <>
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-white">Payment Gateway</h1>
+              <p className="text-[#94a3b8] text-sm">Configure PowerTranz card payment processing for subscriptions</p>
+            </div>
+
+            {gatewayLoading ? (
+              <div className="p-8 text-center text-[#475569]"><RefreshCw size={20} className="animate-spin mx-auto mb-2" />Loading…</div>
+            ) : (
+              <div className="space-y-6">
+                {/* Status banner */}
+                {gatewaySettings && (
+                  <div className={`rounded-xl p-4 flex items-center gap-3 border ${
+                    gatewaySettings.powertranz_spid && gatewaySettings.powertranz_sppassword_set === "true"
+                      ? "bg-green-500/10 border-green-500/30"
+                      : "bg-amber-500/10 border-amber-500/30"
+                  }`}>
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                      gatewaySettings.powertranz_spid && gatewaySettings.powertranz_sppassword_set === "true" ? "bg-green-500/20" : "bg-amber-500/20"
+                    }`}>
+                      {gatewaySettings.powertranz_spid && gatewaySettings.powertranz_sppassword_set === "true"
+                        ? <CheckCircle size={16} className="text-green-400" />
+                        : <AlertTriangle size={16} className="text-amber-400" />}
+                    </div>
+                    <div>
+                      <div className={`font-semibold text-sm ${gatewaySettings.powertranz_spid && gatewaySettings.powertranz_sppassword_set === "true" ? "text-green-400" : "text-amber-400"}`}>
+                        {gatewaySettings.powertranz_spid && gatewaySettings.powertranz_sppassword_set === "true"
+                          ? "PowerTranz configured and active"
+                          : "PowerTranz credentials not yet configured"}
+                      </div>
+                      <div className="text-xs text-[#94a3b8] mt-0.5">
+                        {gatewaySettings.powertranz_spid && gatewaySettings.powertranz_sppassword_set === "true"
+                          ? `SP ID: ${gatewaySettings.powertranz_spid} · Environment: ${gatewaySettings.powertranz_env || "staging"} · ${gatewaySettings.powertranz_enabled === "true" ? "Enabled" : "Disabled"}`
+                          : "Enter your PowerTranz SP ID and SP Password below to enable card payments."}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PowerTranz Config Card */}
+                <div className="bg-[#1a2332] border border-[#2a3a55] rounded-xl overflow-hidden">
+                  <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2a3a55]">
+                    <div className="w-9 h-9 bg-[#3b82f6]/10 rounded-lg flex items-center justify-center">
+                      <Cpu size={18} className="text-[#3b82f6]" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white">PowerTranz Gateway</div>
+                      <div className="text-xs text-[#94a3b8]">Caribbean-focused card processing — obtain credentials from PowerTranz portal</div>
+                    </div>
+                  </div>
+
+                  <div className="p-6 space-y-5">
+                    {gatewayError && (
+                      <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm">{gatewayError}</div>
+                    )}
+                    {gatewaySaved && (
+                      <div className="bg-green-500/10 border border-green-500/30 rounded-lg px-4 py-3 text-green-400 text-sm flex items-center gap-2">
+                        <Check size={14} /> Gateway settings saved successfully.
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div>
+                        <label className="block text-sm text-[#94a3b8] mb-1.5">SP ID</label>
+                        <input
+                          value={gatewayForm.spid}
+                          onChange={e => setGatewayForm(f => ({ ...f, spid: e.target.value }))}
+                          className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono text-sm"
+                          placeholder="Your PowerTranz SP ID"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-[#94a3b8] mb-1.5 flex items-center gap-1">
+                          SP Password
+                          {gatewaySettings?.powertranz_sppassword_set === "true" && (
+                            <span className="text-xs text-green-400 font-normal ml-1">(currently set — leave blank to keep)</span>
+                          )}
+                        </label>
+                        <input
+                          type="password"
+                          value={gatewayForm.sppassword}
+                          onChange={e => setGatewayForm(f => ({ ...f, sppassword: e.target.value }))}
+                          className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none font-mono text-sm"
+                          placeholder={gatewaySettings?.powertranz_sppassword_set === "true" ? "••••••••  (unchanged)" : "Your PowerTranz SP Password"}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div>
+                        <label className="block text-sm text-[#94a3b8] mb-1.5 flex items-center gap-1"><Globe size={13} /> Environment</label>
+                        <div className="flex gap-2">
+                          {(["staging", "production"] as const).map(env => (
+                            <button key={env} onClick={() => setGatewayForm(f => ({ ...f, env }))}
+                              className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-all ${
+                                gatewayForm.env === env
+                                  ? env === "production" ? "border-green-500 bg-green-500/10 text-green-400" : "border-amber-500 bg-amber-500/10 text-amber-400"
+                                  : "border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/50"
+                              }`}>
+                              {env === "production" ? "Production" : "Staging / Test"}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-[#475569] mt-1.5">
+                          {gatewayForm.env === "production" ? "gateway.powertranz.com — live charges" : "staging.powertranz.com — test cards only"}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm text-[#94a3b8] mb-1.5 flex items-center gap-1"><CreditCard size={13} /> Card Payments</label>
+                        <button onClick={() => setGatewayForm(f => ({ ...f, enabled: f.enabled === "true" ? "false" : "true" }))}
+                          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border transition-all text-sm font-medium ${
+                            gatewayForm.enabled === "true" ? "border-green-500/50 bg-green-500/10 text-green-400" : "border-[#2a3a55] text-[#94a3b8]"
+                          }`}>
+                          {gatewayForm.enabled === "true" ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                          {gatewayForm.enabled === "true" ? "Enabled" : "Disabled"}
+                        </button>
+                        <p className="text-xs text-[#475569] mt-1.5">Toggle to temporarily disable card checkout without removing credentials</p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        onClick={async () => {
+                          setGatewayError(""); setGatewaySaved(false); setGatewaySaving(true);
+                          try {
+                            const payload: Record<string, string> = {
+                              powertranz_spid: gatewayForm.spid,
+                              powertranz_env: gatewayForm.env,
+                              powertranz_enabled: gatewayForm.enabled,
+                            };
+                            if (gatewayForm.sppassword) payload["powertranz_sppassword"] = gatewayForm.sppassword;
+                            await superadminUpdateGatewaySettings(payload);
+                            setGatewaySaved(true);
+                            await loadGateway();
+                            setTimeout(() => setGatewaySaved(false), 3000);
+                          } catch (e) {
+                            setGatewayError(e instanceof Error ? e.message : "Failed to save gateway settings");
+                          } finally { setGatewaySaving(false); }
+                        }}
+                        disabled={gatewaySaving}
+                        className="bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold px-8 py-2.5 rounded-lg transition-colors disabled:opacity-60 flex items-center gap-2">
+                        {gatewaySaving ? <><RefreshCw size={14} className="animate-spin" /> Saving…</> : <><Check size={14} /> Save Gateway Settings</>}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info card */}
+                <div className="bg-[#1a2332] border border-[#2a3a55] rounded-xl p-5">
+                  <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2"><KeyRound size={14} className="text-[#3b82f6]" /> Where to get your credentials</h3>
+                  <ol className="space-y-2 text-sm text-[#94a3b8] list-decimal list-inside">
+                    <li>Log into your <span className="text-white font-medium">PowerTranz Merchant Portal</span></li>
+                    <li>Navigate to <span className="text-white font-medium">Settings → API Credentials</span></li>
+                    <li>Copy your <span className="text-white font-medium">SP ID</span> and <span className="text-white font-medium">SP Password</span></li>
+                    <li>Use <span className="text-amber-400 font-medium">Staging</span> for testing, then switch to <span className="text-green-400 font-medium">Production</span> when ready to go live</li>
+                  </ol>
+                  <p className="text-xs text-[#475569] mt-3">PowerTranz supports Visa, Mastercard, and major Caribbean card networks.</p>
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
         {/* ── SETTINGS ── */}
         {tab === "settings" && (
