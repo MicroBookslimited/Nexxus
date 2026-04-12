@@ -33,6 +33,7 @@ const CloseSessionBody = z.object({
   actualCard: z.number().min(0),
   actualOther: z.number().min(0).optional(),
   closingNotes: z.string().optional(),
+  denominationBreakdown: z.string().optional(),
 });
 
 function computeSales(orders: { paymentMethod: string | null; total: number | null }[]) {
@@ -293,6 +294,7 @@ router.post("/cash/sessions/:id/close", async (req, res): Promise<void> => {
       actualCard: parsed.data.actualCard,
       actualOther: parsed.data.actualOther ?? 0,
       closingNotes: parsed.data.closingNotes ?? null,
+      denominationBreakdown: parsed.data.denominationBreakdown ?? null,
     })
     .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)))
     .returning();

@@ -23,6 +23,7 @@ import {
   Coins, DollarSign, TrendingUp, TrendingDown, CreditCard, Banknote,
   SplitSquareHorizontal, Plus, CheckCircle2, History,
   ArrowDownLeft, UserCheck, ArrowLeft, Mail, BookOpen, ShoppingBag, MapPin,
+  ListChecks, ChevronRight, SkipForward,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -262,7 +263,57 @@ function AddPayoutDialog({
   );
 }
 
+/* ─── Cash Denomination Breakdown ─── */
+const JMD_BILLS = [
+  { value: 5000, label: "$5,000" },
+  { value: 2000, label: "$2,000" },
+  { value: 1000, label: "$1,000" },
+  { value: 500,  label: "$500"   },
+  { value: 100,  label: "$100"   },
+  { value: 50,   label: "$50"    },
+];
+const JMD_COINS = [
+  { value: 20,   label: "$20"    },
+  { value: 10,   label: "$10"    },
+  { value: 5,    label: "$5"     },
+  { value: 1,    label: "$1"     },
+  { value: 0.50, label: "50¢"   },
+  { value: 0.25, label: "25¢"   },
+  { value: 0.10, label: "10¢"   },
+];
+
+function DenomRow({
+  denom,
+  qty,
+  onChange,
+}: {
+  denom: { value: number; label: string };
+  qty: number;
+  onChange: (v: number) => void;
+}) {
+  const subtotal = denom.value * qty;
+  return (
+    <div className="grid grid-cols-[56px_1fr_72px] items-center gap-2">
+      <span className="text-xs font-mono font-semibold text-right text-foreground/90">{denom.label}</span>
+      <Input
+        type="number"
+        min="0"
+        step="1"
+        value={qty === 0 ? "" : qty}
+        onChange={(e) => onChange(Math.max(0, parseInt(e.target.value) || 0))}
+        placeholder="0"
+        className="h-8 text-center font-mono text-sm px-2"
+      />
+      <span className={cn("text-xs font-mono text-right", subtotal > 0 ? "text-emerald-400" : "text-muted-foreground/40")}>
+        {subtotal > 0 ? `$${subtotal.toFixed(subtotal % 1 === 0 ? 0 : 2)}` : "—"}
+      </span>
+    </div>
+  );
+}
+
 /* ─── Close Shift Dialog ─── */
+type CloseStep = "choice" | "breakdown" | "confirm";
+
 function CloseShiftDialog({
   open,
   sessionId,
@@ -278,6 +329,9 @@ function CloseShiftDialog({
   onClose: () => void;
   onClosed: (closedSessionId: number) => void;
 }) {
+  const [step, setStep] = useState<CloseStep>("choice");
+  const [billQtys, setBillQtys] = useState<Record<number, number>>({});
+  const [coinQtys, setCoinQtys] = useState<Record<number, number>>({});
   const [actualCash, setActualCash] = useState("");
   const [actualCard, setActualCard] = useState(() => salesSummary.cardSales.toFixed(2));
   const [notes, setNotes] = useState("");
@@ -285,23 +339,58 @@ function CloseShiftDialog({
   const queryClient = useQueryClient();
   const closeSession = useCloseCashSession();
 
+  /* reset when dialog opens/closes */
+  useEffect(() => {
+    if (open) {
+      setStep("choice");
+      setBillQtys({});
+      setCoinQtys({});
+      setActualCash("");
+      setActualCard(salesSummary.cardSales.toFixed(2));
+      setNotes("");
+    }
+  }, [open]);
+
+  const breakdownTotal = [
+    ...JMD_BILLS.map((d) => d.value * (billQtys[d.value] ?? 0)),
+    ...JMD_COINS.map((d) => d.value * (coinQtys[d.value] ?? 0)),
+  ].reduce((a, b) => a + b, 0);
+
   const parsedCash = parseFloat(actualCash) || 0;
   const parsedCard = parseFloat(actualCard) || 0;
   const cashVariance = parsedCash - expectedCash;
   const cardVariance = parsedCard - salesSummary.cardSales;
 
-  const handleClose = () => {
+  const handleBreakdownNext = () => {
+    setActualCash(breakdownTotal.toFixed(2));
+    setStep("confirm");
+  };
+
+  const buildBreakdownJson = () => {
+    const bills: Record<string, number> = {};
+    const coins: Record<string, number> = {};
+    JMD_BILLS.forEach((d) => { if ((billQtys[d.value] ?? 0) > 0) bills[d.label] = billQtys[d.value]; });
+    JMD_COINS.forEach((d) => { if ((coinQtys[d.value] ?? 0) > 0) coins[d.label] = coinQtys[d.value]; });
+    return JSON.stringify({ bills, coins, total: breakdownTotal });
+  };
+
+  const handleClose = (withBreakdown: boolean) => {
     if (actualCash === "") return;
     closeSession.mutate(
-      { id: sessionId, data: { actualCash: parsedCash, actualCard: parsedCard, closingNotes: notes || undefined } },
+      {
+        id: sessionId,
+        data: {
+          actualCash: parsedCash,
+          actualCard: parsedCard,
+          closingNotes: notes || undefined,
+          denominationBreakdown: withBreakdown ? buildBreakdownJson() : undefined,
+        },
+      },
       {
         onSuccess: () => {
           toast({ title: "Shift closed", description: "End-of-day report saved successfully." });
           queryClient.removeQueries({ queryKey: ["/api/cash/sessions/current"] });
           queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
-          setActualCash("");
-          setActualCard("");
-          setNotes("");
           onClosed(sessionId);
         },
         onError: () => toast({ title: "Error", description: "Could not close session", variant: "destructive" }),
@@ -311,71 +400,184 @@ function CloseShiftDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className={cn("transition-all duration-200", step === "breakdown" ? "sm:max-w-xl" : "sm:max-w-lg")}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
             Close Shift
+            {step !== "choice" && (
+              <button
+                type="button"
+                onClick={() => setStep(step === "confirm" ? "breakdown" : "choice")}
+                className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 font-normal"
+              >
+                <ArrowLeft className="h-3 w-3" /> Back
+              </button>
+            )}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-1">
-          <p className="text-xs text-muted-foreground">Count your drawer and enter the actual amounts collected. Discrepancies will be recorded.</p>
 
-          {/* Expected amounts summary */}
-          <div className="rounded-lg bg-muted/30 border border-border p-3 space-y-2 text-sm">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expected from System</p>
-            <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><Banknote className="h-3.5 w-3.5" />Cash sales</span><span className="font-mono">{formatCurrency(salesSummary.cashSales)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" />Card sales</span><span className="font-mono">{formatCurrency(salesSummary.cardSales)}</span></div>
-            {salesSummary.splitSales > 0 && (
-              <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><SplitSquareHorizontal className="h-3.5 w-3.5" />Split sales</span><span className="font-mono">{formatCurrency(salesSummary.splitSales)}</span></div>
-            )}
+        {/* ── Step 1: Choice ── */}
+        {step === "choice" && (
+          <div className="space-y-4 py-1">
+            <p className="text-sm text-muted-foreground">
+              Would you like to count and record each denomination in the drawer, or enter the total cash directly?
+            </p>
+            <div className="rounded-lg bg-muted/30 border border-border p-3 space-y-1.5 text-sm">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expected from System</p>
+              <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><Banknote className="h-3.5 w-3.5" />Cash sales</span><span className="font-mono">{formatCurrency(salesSummary.cashSales)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" />Card sales</span><span className="font-mono">{formatCurrency(salesSummary.cardSales)}</span></div>
+              {salesSummary.splitSales > 0 && <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><SplitSquareHorizontal className="h-3.5 w-3.5" />Split sales</span><span className="font-mono">{formatCurrency(salesSummary.splitSales)}</span></div>}
+              <Separator />
+              <div className="flex justify-between font-semibold"><span>Expected cash in drawer</span><span className="font-mono text-primary">{formatCurrency(expectedCash)}</span></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setStep("breakdown")}
+                className="flex flex-col items-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary/60 transition-colors p-4 text-left"
+              >
+                <ListChecks className="h-7 w-7 text-primary" />
+                <span className="text-sm font-semibold text-primary">Cash Breakdown</span>
+                <span className="text-xs text-muted-foreground text-center leading-snug">Count each bill &amp; coin denomination</span>
+                <ChevronRight className="h-4 w-4 text-primary mt-auto" />
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActualCash(""); setStep("confirm"); }}
+                className="flex flex-col items-center gap-2 rounded-xl border-2 border-border hover:border-primary/30 hover:bg-muted/40 transition-colors p-4 text-left"
+              >
+                <DollarSign className="h-7 w-7 text-muted-foreground" />
+                <span className="text-sm font-semibold">Enter Total Directly</span>
+                <span className="text-xs text-muted-foreground text-center leading-snug">Type the total cash counted</span>
+                <SkipForward className="h-4 w-4 text-muted-foreground mt-auto" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 2: Denomination Breakdown ── */}
+        {step === "breakdown" && (
+          <div className="space-y-3 py-1">
+            <p className="text-xs text-muted-foreground">Enter the quantity of each bill and coin in the drawer.</p>
+            <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+              {/* Bills column */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                  <Banknote className="h-3 w-3" />Bills
+                </p>
+                {JMD_BILLS.map((d) => (
+                  <DenomRow
+                    key={d.value}
+                    denom={d}
+                    qty={billQtys[d.value] ?? 0}
+                    onChange={(v) => setBillQtys((prev) => ({ ...prev, [d.value]: v }))}
+                  />
+                ))}
+              </div>
+              {/* Coins column */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                  <Coins className="h-3 w-3" />Coins
+                </p>
+                {JMD_COINS.map((d) => (
+                  <DenomRow
+                    key={d.value}
+                    denom={d}
+                    qty={coinQtys[d.value] ?? 0}
+                    onChange={(v) => setCoinQtys((prev) => ({ ...prev, [d.value]: v }))}
+                  />
+                ))}
+              </div>
+            </div>
             <Separator />
-            <div className="flex justify-between font-semibold"><span>Expected cash in drawer</span><span className="font-mono text-primary">{formatCurrency(expectedCash)}</span></div>
-          </div>
-
-          {/* Actual counts */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5"><Banknote className="h-3.5 w-3.5 text-emerald-400" />Actual Cash Counted</Label>
-              <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input type="number" min="0" step="0.01" className="pl-8 font-mono" value={actualCash} onChange={(e) => setActualCash(e.target.value)} placeholder="0.00" />
-              </div>
-              {actualCash !== "" && (
-                <p className={cn("text-xs font-mono", cashVariance === 0 ? "text-emerald-400" : cashVariance > 0 ? "text-blue-400" : "text-red-400")}>
-                  {cashVariance >= 0 ? "+" : ""}{formatCurrency(cashVariance)} variance
-                </p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5 text-blue-400" />Actual Card Total</Label>
-              <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input type="number" min="0" step="0.01" className="pl-8 font-mono" value={actualCard} onChange={(e) => setActualCard(e.target.value)} placeholder="0.00" />
-              </div>
-              {actualCard !== "" && (
-                <p className={cn("text-xs font-mono", cardVariance === 0 ? "text-emerald-400" : cardVariance > 0 ? "text-blue-400" : "text-red-400")}>
-                  {cardVariance >= 0 ? "+" : ""}{formatCurrency(cardVariance)} variance
-                </p>
-              )}
+            <div className="flex items-center justify-between px-1">
+              <span className="text-sm font-semibold">Total Counted</span>
+              <span className={cn("text-lg font-bold font-mono", breakdownTotal > 0 ? "text-emerald-400" : "text-muted-foreground")}>
+                {formatCurrency(breakdownTotal)}
+              </span>
             </div>
           </div>
+        )}
 
-          <div className="space-y-1.5">
-            <Label>Notes (optional)</Label>
-            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any discrepancies or notes for the manager…" />
+        {/* ── Step 3: Confirm & Close ── */}
+        {step === "confirm" && (
+          <div className="space-y-4 py-1">
+            <p className="text-xs text-muted-foreground">Review the amounts and add any notes before closing the shift.</p>
+
+            {/* Expected summary */}
+            <div className="rounded-lg bg-muted/30 border border-border p-3 space-y-1.5 text-sm">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expected from System</p>
+              <div className="flex justify-between"><span className="text-muted-foreground">Expected cash</span><span className="font-mono">{formatCurrency(expectedCash)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Card sales</span><span className="font-mono">{formatCurrency(salesSummary.cardSales)}</span></div>
+            </div>
+
+            {/* Actual counts */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Banknote className="h-3.5 w-3.5 text-emerald-400" />
+                  Actual Cash Counted
+                  {step === "confirm" && actualCash && parseFloat(actualCash) === breakdownTotal && breakdownTotal > 0 && (
+                    <span className="text-[10px] text-primary ml-auto">from breakdown</span>
+                  )}
+                </Label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="number" min="0" step="0.01"
+                    className="pl-8 font-mono"
+                    value={actualCash}
+                    onChange={(e) => setActualCash(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+                {actualCash !== "" && (
+                  <p className={cn("text-xs font-mono", cashVariance === 0 ? "text-emerald-400" : cashVariance > 0 ? "text-blue-400" : "text-red-400")}>
+                    {cashVariance >= 0 ? "+" : ""}{formatCurrency(cashVariance)} variance
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs"><CreditCard className="h-3.5 w-3.5 text-blue-400" />Actual Card Total</Label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input type="number" min="0" step="0.01" className="pl-8 font-mono" value={actualCard} onChange={(e) => setActualCard(e.target.value)} placeholder="0.00" />
+                </div>
+                {actualCard !== "" && (
+                  <p className={cn("text-xs font-mono", cardVariance === 0 ? "text-emerald-400" : cardVariance > 0 ? "text-blue-400" : "text-red-400")}>
+                    {cardVariance >= 0 ? "+" : ""}{formatCurrency(cardVariance)} variance
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Notes (optional)</Label>
+              <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any discrepancies or notes for the manager…" />
+            </div>
           </div>
-        </div>
+        )}
+
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button
-            onClick={handleClose}
-            disabled={actualCash === "" || closeSession.isPending}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-          >
-            <CheckCircle2 className="h-4 w-4 mr-2" />
-            Close Shift
+          <Button variant="outline" onClick={step === "choice" ? onClose : () => setStep(step === "confirm" ? (breakdownTotal > 0 ? "breakdown" : "choice") : "choice")}>
+            {step === "choice" ? "Cancel" : <><ArrowLeft className="h-3.5 w-3.5 mr-1" />Back</>}
           </Button>
+          {step === "breakdown" && (
+            <Button onClick={handleBreakdownNext} className="bg-primary hover:bg-primary/90 text-white">
+              Continue <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          )}
+          {step === "confirm" && (
+            <Button
+              onClick={() => handleClose(breakdownTotal > 0)}
+              disabled={actualCash === "" || closeSession.isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              Close Shift
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -388,7 +590,7 @@ type ItemSummaryRow = { productName: string; totalQty: number; totalRevenue: num
 type CreditOrderRow = { orderNumber: string; total: number; customerName: string | null; customerPhone: string | null; arId: number | null; amountPaid: number | null; arStatus: string | null; createdAt: string };
 
 type SessionDetail = {
-  session: { staffName: string; openedAt: string; closedAt?: string | null; openingCash: number; actualCash?: number | null; actualCard?: number | null; closingNotes?: string | null };
+  session: { staffName: string; openedAt: string; closedAt?: string | null; openingCash: number; actualCash?: number | null; actualCard?: number | null; closingNotes?: string | null; denominationBreakdown?: string | null };
   payouts: { reason: string; amount: number; staffName: string; createdAt: string }[];
   orders: { orderNumber: string; total: number; paymentMethod: string; createdAt: string }[];
   salesSummary: { cashSales: number; cardSales: number; splitSales: number; creditSales?: number; totalSales: number };
@@ -445,6 +647,21 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
       ${d.payouts.map((p) => `<div style="display:flex;justify-content:space-between"><span>${p.reason}</span><span>-${fmt(p.amount)}</span></div>`).join("")}
       ` : ""}
       ${d.session.closingNotes ? `<div style="margin-top:6px;font-size:11px;color:#444">Notes: ${d.session.closingNotes}</div>` : ""}
+      ${(() => {
+        if (!d.session.denominationBreakdown) return "";
+        try {
+          const bd = JSON.parse(d.session.denominationBreakdown) as { bills?: Record<string, number>; coins?: Record<string, number>; total?: number };
+          const rows = [
+            ...Object.entries(bd.bills ?? {}).map(([k, v]) => `<div style="display:flex;justify-content:space-between"><span>${k} × ${v}</span><span>$${(parseFloat(k.replace(/[^0-9.]/g, "")) * v).toFixed(0)}</span></div>`),
+            ...Object.entries(bd.coins ?? {}).map(([k, v]) => `<div style="display:flex;justify-content:space-between"><span>${k} × ${v}</span><span>$${(parseFloat(k.replace(/[^0-9.]/g, "")) * v).toFixed(2)}</span></div>`),
+          ];
+          return rows.length > 0 ? `
+          <div style="border-top:1px dashed #000;margin:8px 0"></div>
+          <b>Cash Denomination Breakdown</b>
+          ${rows.join("")}
+          <div style="display:flex;justify-content:space-between;font-weight:bold;margin-top:4px"><span>Breakdown Total:</span><span>$${Number(bd.total ?? 0).toFixed(2)}</span></div>` : "";
+        } catch { return ""; }
+      })()}
       ${d.itemSummary && d.itemSummary.length > 0 ? `
       <div style="border-top:1px dashed #000;margin:8px 0"></div>
       <b>Items Sold</b>

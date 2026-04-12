@@ -16,6 +16,7 @@ export const cashSessionsTable = pgTable("cash_sessions", {
   actualCard: real("actual_card"),
   actualOther: real("actual_other"),
   closingNotes: text("closing_notes"),
+  denominationBreakdown: text("denomination_breakdown"),
 });
 
 export const cashPayoutsTable = pgTable("cash_payouts", {

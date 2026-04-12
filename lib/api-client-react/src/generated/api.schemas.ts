@@ -686,6 +686,7 @@ export interface CloseCashSessionBody {
   actualCard: number;
   actualOther?: number;
   closingNotes?: string;
+  denominationBreakdown?: string;
 }
 
 /**
