@@ -22,6 +22,7 @@ type NavItem = {
   href: string;
   label: string;
   icon: React.ElementType;
+  color: string;
   permission: string | null;
   children?: never;
 };
@@ -30,6 +31,7 @@ type NavGroup = {
   href?: never;
   label: string;
   icon: React.ElementType;
+  color: string;
   permission: string | null;
   children: NavItem[];
 };
@@ -37,31 +39,32 @@ type NavGroup = {
 type NavEntry = NavItem | NavGroup;
 
 const NAV_ITEMS: NavEntry[] = [
-  { href: "/dashboard",    label: "Dashboard",   icon: LayoutDashboard, permission: null },
-  { href: "/pos",          label: "POS",          icon: ShoppingCart,    permission: "pos.sale" },
-  { href: "/tables",       label: "Tables",       icon: UtensilsCrossed, permission: "orders.view" },
-  { href: "/kitchen",      label: "Kitchen",      icon: ChefHat,         permission: "kitchen.view" },
-  { href: "/orders",       label: "Orders",       icon: ListOrdered,     permission: "orders.view" },
-  { href: "/cash",         label: "Cash",         icon: Coins,           permission: "cash.open_session" },
-  { href: "/products",     label: "Products",     icon: Package,         permission: "inventory.view" },
-  { href: "/customers",    label: "Customers",    icon: Users,           permission: "customers.view" },
-  { href: "/staff",        label: "Staff",        icon: UserCog,         permission: "staff.view" },
-  { href: "/locations",    label: "Locations",    icon: MapPin,          permission: "inventory.manage" },
+  { href: "/dashboard",    label: "Dashboard",   icon: LayoutDashboard, color: "text-sky-400",     permission: null },
+  { href: "/pos",          label: "POS",          icon: ShoppingCart,    color: "text-emerald-400", permission: "pos.sale" },
+  { href: "/tables",       label: "Tables",       icon: UtensilsCrossed, color: "text-orange-400",  permission: "orders.view" },
+  { href: "/kitchen",      label: "Kitchen",      icon: ChefHat,         color: "text-red-400",     permission: "kitchen.view" },
+  { href: "/orders",       label: "Orders",       icon: ListOrdered,     color: "text-purple-400",  permission: "orders.view" },
+  { href: "/cash",         label: "Cash",         icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session" },
+  { href: "/products",     label: "Products",     icon: Package,         color: "text-teal-400",    permission: "inventory.view" },
+  { href: "/customers",    label: "Customers",    icon: Users,           color: "text-pink-400",    permission: "customers.view" },
+  { href: "/staff",        label: "Staff",        icon: UserCog,         color: "text-indigo-400",  permission: "staff.view" },
+  { href: "/locations",    label: "Locations",    icon: MapPin,          color: "text-rose-400",    permission: "inventory.manage" },
   {
     label: "Production",
     icon: FlaskConical,
+    color: "text-lime-400",
     permission: "inventory.manage",
     children: [
-      { href: "/ingredients", label: "Ingredients", icon: FlaskConical, permission: "inventory.manage" },
-      { href: "/recipes",     label: "Recipes",     icon: BookOpen,     permission: "inventory.manage" },
-      { href: "/production",  label: "Production",  icon: Factory,      permission: "inventory.manage" },
+      { href: "/ingredients", label: "Ingredients", icon: FlaskConical, color: "text-lime-400",   permission: "inventory.manage" },
+      { href: "/recipes",     label: "Recipes",     icon: BookOpen,     color: "text-green-400",  permission: "inventory.manage" },
+      { href: "/production",  label: "Production",  icon: Factory,      color: "text-lime-400",   permission: "inventory.manage" },
     ],
   },
-  { href: "/accounting",   label: "Accounting",   icon: Calculator,      permission: "reports.view" },
-  { href: "/ar",           label: "Receivables",  icon: BookOpen,        permission: "reports.view" },
-  { href: "/reports",      label: "Reports",      icon: BarChart2,       permission: "reports.view" },
-  { href: "/store",        label: "Store",        icon: Store,           permission: null },
-  { href: "/subscription", label: "Plan",         icon: CreditCard,      permission: "settings.manage" },
+  { href: "/accounting",   label: "Accounting",   icon: Calculator,      color: "text-cyan-400",    permission: "reports.view" },
+  { href: "/ar",           label: "Receivables",  icon: BookOpen,        color: "text-violet-400",  permission: "reports.view" },
+  { href: "/reports",      label: "Reports",      icon: BarChart2,       color: "text-amber-400",   permission: "reports.view" },
+  { href: "/store",        label: "Store",        icon: Store,           color: "text-fuchsia-400", permission: null },
+  { href: "/subscription", label: "Plan",         icon: CreditCard,      color: "text-green-400",   permission: "settings.manage" },
 ];
 
 const MOBILE_PRIMARY = ["/dashboard", "/pos", "/orders", "/customers"];
@@ -114,23 +117,19 @@ function NavGroupButton({ entry, iconOnly, active, open, onOpenChange, can, loca
             title={entry.label}
             className={cn(
               "flex items-center justify-center w-10 h-9 rounded-md transition-all shrink-0 outline-none",
-              active
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+              active ? "bg-white/10" : "hover:bg-secondary/60",
             )}
           >
-            <entry.icon className="h-5 w-5" />
+            <entry.icon className={cn("h-5 w-5 drop-shadow-sm", entry.color)} />
           </button>
         ) : (
           <button
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0 outline-none",
-              active
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+              "flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-all whitespace-nowrap shrink-0 outline-none",
+              active ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
             )}
           >
-            <entry.icon className="h-5 w-5 shrink-0" />
+            <entry.icon className={cn("h-5 w-5 shrink-0 drop-shadow-sm", entry.color)} />
             {entry.label}
             <ChevronDown className={cn("h-3.5 w-3.5 ml-0.5 transition-transform", open && "rotate-180")} />
           </button>
@@ -153,12 +152,12 @@ function NavGroupButton({ entry, iconOnly, active, open, onOpenChange, can, loca
                 className={cn(
                   "flex items-center gap-2 px-3 py-2.5 text-[11px] font-medium transition-colors cursor-pointer outline-none select-none",
                   childActive
-                    ? "bg-primary/10 text-primary"
+                    ? "bg-white/10 text-foreground"
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary/60 focus:text-foreground focus:bg-secondary/60",
                 )}
               >
                 <Link href={child.href}>
-                  <child.icon className="h-3.5 w-3.5 shrink-0" />
+                  <child.icon className={cn("h-4 w-4 shrink-0", child.color)} />
                   {child.label}
                 </Link>
               </DropdownMenu.Item>
@@ -325,13 +324,13 @@ export function Layout({ children }: { children: ReactNode }) {
                 href={entry.href}
                 title={entry.label}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0",
+                  "flex items-center gap-1.5 rounded-md text-[11px] font-semibold transition-all whitespace-nowrap shrink-0",
                   isActive
-                    ? "bg-primary/10 text-primary px-2 py-1.5"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60 px-2 py-1.5 w-10 justify-center",
+                    ? "bg-white/10 text-foreground px-2 py-1.5"
+                    : "hover:bg-secondary/60 px-2 py-1.5 w-10 justify-center",
                 )}
               >
-                <entry.icon className="h-5 w-5 shrink-0" />
+                <entry.icon className={cn("h-5 w-5 shrink-0 drop-shadow-sm", entry.color)} />
                 {isActive && entry.label}
               </Link>
             );
@@ -365,12 +364,10 @@ export function Layout({ children }: { children: ReactNode }) {
                 title={entry.label}
                 className={cn(
                   "flex items-center justify-center w-10 h-9 rounded-md transition-all shrink-0",
-                  isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+                  isActive ? "bg-white/10" : "hover:bg-secondary/60",
                 )}
               >
-                <entry.icon className="h-5 w-5" />
+                <entry.icon className={cn("h-5 w-5 drop-shadow-sm", entry.color)} />
               </Link>
             );
           })}
@@ -523,11 +520,11 @@ export function Layout({ children }: { children: ReactNode }) {
                         className={cn(
                           "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all mb-0.5",
                           active
-                            ? "bg-primary/10 text-primary"
+                            ? "bg-white/10 text-foreground"
                             : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
                         )}
                       >
-                        <entry.icon className="h-4 w-4 shrink-0" />
+                        <entry.icon className={cn("h-4 w-4 shrink-0", entry.color)} />
                         <span className="flex-1 text-left">{entry.label}</span>
                         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
                       </button>
@@ -542,11 +539,11 @@ export function Layout({ children }: { children: ReactNode }) {
                                 className={cn(
                                   "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all",
                                   childActive
-                                    ? "bg-primary/10 text-primary"
+                                    ? "bg-white/10 text-foreground"
                                     : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
                                 )}
                               >
-                                <child.icon className="h-4 w-4 shrink-0" />
+                                <child.icon className={cn("h-4 w-4 shrink-0", child.color)} />
                                 {child.label}
                               </Link>
                             );
@@ -565,11 +562,11 @@ export function Layout({ children }: { children: ReactNode }) {
                     className={cn(
                       "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all mb-0.5",
                       isActive
-                        ? "bg-primary/10 text-primary"
+                        ? "bg-white/10 text-foreground"
                         : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
                     )}
                   >
-                    <entry.icon className="h-4 w-4 shrink-0" />
+                    <entry.icon className={cn("h-4 w-4 shrink-0", entry.color)} />
                     {entry.label}
                   </Link>
                 );
@@ -665,10 +662,10 @@ export function Layout({ children }: { children: ReactNode }) {
               href={item.href}
               className={cn(
                 "flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors",
-                isActive ? "text-primary" : "text-muted-foreground"
+                isActive ? "text-foreground" : "text-muted-foreground"
               )}
             >
-              <item.icon className={cn("h-5 w-5", isActive && "text-primary")} />
+              <item.icon className={cn("h-5 w-5", item.color)} />
               <span>{item.label}</span>
             </Link>
           );
