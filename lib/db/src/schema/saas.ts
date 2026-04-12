@@ -70,6 +70,31 @@ export const bankAccountSettingsTable = pgTable("bank_account_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const emailTemplatesTable = pgTable("email_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  eventKey: text("event_key").notNull(),
+  subject: text("subject").notNull(),
+  htmlBody: text("html_body").notNull(),
+  textBody: text("text_body").notNull().default(""),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const emailLogsTable = pgTable("email_logs", {
+  id: serial("id").primaryKey(),
+  templateId: integer("template_id").references(() => emailTemplatesTable.id),
+  eventKey: text("event_key").notNull(),
+  toEmail: text("to_email").notNull(),
+  subject: text("subject").notNull(),
+  status: text("status").notNull().default("pending"),
+  messageId: text("message_id"),
+  errorMessage: text("error_message"),
+  variables: text("variables"),
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const bankTransferProofsTable = pgTable("bank_transfer_proofs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id),

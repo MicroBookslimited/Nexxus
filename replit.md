@@ -1,207 +1,36 @@
-# Workspace
+# Overview
 
-## Overview
+This project is a pnpm workspace monorepo written in TypeScript, designed to build a comprehensive Point of Sale (POS) system called NEXXUS POS. It aims to unify various business functionalities into a single application, including customer display, online ordering, reseller management, and advanced accounting. The system provides a robust solution for businesses to manage sales, inventory, staff, and customer relationships across multiple locations, with a focus on ease of use and scalability.
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+NEXXUS POS, branded "Your Business, Connected." and powered by MicroBooks, targets small to medium-sized businesses looking for an integrated platform to streamline their operations. Key capabilities include a full-featured POS terminal, kitchen display system, multi-location inventory management, detailed accounting modules (Chart of Accounts, Journal Entries, P&L, Balance Sheet), staff management with role-based access, and a customer loyalty program. The platform also features a dedicated reseller portal to foster channel partnerships and drive growth.
 
-## Stack
+# User Preferences
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+I want iterative development. I want to be asked before you make any major changes to the codebase. I prefer clear and concise explanations.
 
-## Key Commands
+# System Architecture
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+The project is structured as a pnpm workspace monorepo, utilizing Node.js 24 and TypeScript 5.9. The frontend is a React + Vite web application (`artifacts/nexus-pos`) that consolidates all user-facing sections (landing, customer display, menu, reseller portal, and the main POS app) into a single, unified application. Navigation is managed by top-level `App.tsx` dispatching to lazy-loaded components based on URL prefixes, with each section managing its own router. The UI adopts a dark navy and electric blue theme.
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+The backend is an Express 5 REST API (`artifacts/api-server`) that handles all business logic, data persistence, and integrations. It exposes a rich set of API endpoints for product management, order processing, customer management, staff operations, multi-location inventory, accounting, and reporting. Data is stored in a PostgreSQL database and managed using Drizzle ORM. API requests and responses are validated using Zod, and API hooks are generated from an OpenAPI spec using Orval.
 
-## Artifacts
+Key architectural features include:
+- **Unified Frontend**: A single React application serves all user roles and functionalities, improving maintainability and user experience.
+- **Modular Backend**: A RESTful API design with distinct endpoints for various business domains ensures scalability and clear separation of concerns.
+- **SaaS Layer**: Includes robust authentication using JWT for tenants and superadmins, and integrated payment processing via PayPal and PowerTranz. Subscription plans are managed within this layer.
+- **Accounting Module**: Implements double-entry bookkeeping principles, providing a comprehensive Chart of Accounts, Journal Entries, and standard financial reports (P&L, Balance Sheet, Trial Balance). It also supports QuickBooks integration for seamless financial data synchronization.
+- **Inventory Management**: Features real-time stock deduction, multi-location inventory tracking, stock transfers, and detailed stock adjustment/counting functionalities.
+- **Reseller System**: A dedicated portal and associated backend logic manage reseller sign-ups, referrals, commission tracking (30% recurring), and payout requests, with safeguards against self-referral and double-commissioning.
+- **Email Automation System**: Full template management with DB-backed `email_templates` and `email_logs` tables. Supports 5 event triggers (user_signup, payment_success, payment_failed, trial_expiring, password_reset) with `{{variable}}` interpolation, CRUD via `/superadmin/email/*` endpoints, test-send with variable overrides, and a full log viewer. Managed from the "Email" tab in the Super Admin panel.
+- **Database Schema**: Designed to support all core functionalities, including `products`, `orders`, `customers`, `staff`, `locations`, `dining_tables`, `accounts`, `journal_entries`, `resellers`, `email_templates`, `email_logs`, and related entities, with appropriate foreign key relationships.
+- **Business Rules**: Enforced server-side, including a 10% tax rate, loyalty point accrual (1 point per $10 spent) and redemption (100 points = $1.00 discount), and configurable low-stock thresholds.
 
-### NEXXUS POS — Unified App (`artifacts/nexus-pos`)
-- **Type**: React + Vite web app (single app, all sections)
-- **Preview path**: `/` (owns all routes: `/`, `/app/`, `/customer-display/`, `/menu/`, `/reseller/`)
-- **Architecture**: Top-level `App.tsx` dispatches to lazy-loaded section components based on `window.location.pathname` prefix. Each section manages its own router. The 4 old separate apps (nexus-landing, nexus-customer-display, nexus-menu, nexus-reseller) have been consolidated here.
-- **Sections**:
-  - `src/sections/landing/` → Landing page served at `/`
-  - `src/sections/customer-display/` → Customer Display served at `/customer-display`
-  - `src/sections/menu/` → Customer Menu served at `/menu`
-  - `src/sections/reseller/` → Reseller Portal served at `/reseller`
-  - POS app (existing `src/pages/`) served at `/app/`
-- **Brand**: NEXXUS POS — "Your Business, Connected." Powered by MicroBooks
-- **Theme**: Dark navy (#0f1729) / electric blue (#3b82f6)
-- **POS Pages** (under `/app/`):
-  - `/login` — Branded login screen
-  - `/dashboard` — Business overview with Recharts charts (revenue, top products, payment methods, category breakdown)
-  - `/pos` — Main POS with product grid, cart, discounts, notes, hold/recall, split payments, barcode scanning, receipt modal, customer selector, loyalty points redemption, table selector (dine-in)
-  - `/tables` — Floor plan / Restaurant Table Management (add/edit/delete tables, color-coded, status badges: available/occupied/reserved)
-  - `/kitchen` — Kitchen Display System (KDS) with 3-column kanban (Pending → Preparing → Ready), auto-refreshes every 15s
-  - `/orders` — Order history with status filtering, void/refund support
-  - `/products` — Full product CRUD (add/edit/delete, search, category filter, variants, modifiers)
-  - `/customers` — Customer management with loyalty points, order history, search
-  - `/staff` — Staff Management (add/edit/deactivate, roles: admin/manager/cashier/kitchen, PIN-based auth, branch assignment per staff member)
-  - `/locations` — Multi-Location / Branch Management (create/edit/deactivate branches, per-branch inventory, stock transfer between branches, transfer history)
-  - `/accounting` — Full Accounting Module with 6 tabs:
-    - **Overview**: KPI cards (revenue, expenses, net income, tax collected) by week/month/year
-    - **Chart of Accounts**: 22 default accounts, full CRUD, type-filtered (asset/liability/equity/revenue/expense)
-    - **Journal Entries**: Double-entry bookkeeping, create manual entries, void entries, DR/CR line display
-    - **Reports**: P&L Statement, Balance Sheet, Trial Balance with date range pickers and presets
-    - **Inventory**: Stock Adjustments (adjust products up/down with reason tracking, optional journal entry), Stock Count sessions (physical count vs system count, apply discrepancies, optional journal entry)
-    - **QuickBooks**: OAuth 2.0 connection, sync POS orders as QB Sales Receipts, disconnect flow
-  - `/cash` — Cash Management (open shift with opening cash, record mid-shift payouts, close shift with end-of-day reconciliation, variance reporting, shift history sidebar, EOD report modal with Print Summary / Print with Sales Detail)
-  - `/reports` — Business reports with date range presets, hourly chart, KPIs, CSV export
-  - `/settings` — Admin Settings (Business Info, Receipt Settings, Email Provider selection)
-  - `/subscription` — Subscription management page (plan cards, PayPal + PowerTranz payment)
-  - `/signup` — 5-step SaaS onboarding wizard (Account → Business → Plan → Payment → Launch)
-  - `/superadmin` — Super Admin Panel (separate login, tenant management, stats, plan override)
+# External Dependencies
 
-### API Server (`artifacts/api-server`)
-- **Type**: Express 5 REST API
-- **Routes**:
-  - `GET/POST /api/products` — Product catalog
-  - `GET/PUT/DELETE /api/products/:id` — Single product
-  - `GET/POST /api/orders` — Orders (auto-deducts stock, updates customer stats/loyalty)
-  - `GET/PATCH /api/orders/:id` — Single order
-  - `GET/POST /api/held-orders` — Hold/recall cart
-  - `DELETE /api/held-orders/:id` — Remove held order
-  - `GET /api/dashboard/summary` — Business stats
-  - `GET /api/dashboard/recent-orders` — Recent orders feed
-  - `GET /api/dashboard/sales-by-category` — Category breakdown
-  - `GET /api/dashboard/daily-sales` — 7-day revenue series
-  - `GET /api/dashboard/top-products` — Top products by revenue
-  - `GET /api/dashboard/payment-methods` — Payment method breakdown
-  - `GET /api/dashboard/low-stock` — Products at or below stock threshold
-  - `GET/POST /api/customers` — Customer CRUD
-  - `GET/PUT/DELETE /api/customers/:id` — Single customer
-  - `GET /api/customers/:id/orders` — Customer order history
-  - `GET /api/reports/summary` — Period summary (revenue, orders, AOV, top product, etc.)
-  - `GET /api/reports/hourly` — Hourly sales breakdown for a given date
-  - `GET /api/reports/export` — CSV export of orders for a date range
-  - `GET/POST /api/tables` — Dining table CRUD
-  - `PATCH/DELETE /api/tables/:id` — Update/delete table
-  - `GET /api/kitchen` — Pending kitchen orders (pending/preparing/ready)
-  - `PATCH /api/kitchen/:id/status` — Advance kitchen order status
-  - `GET/POST /api/staff` — Staff accounts CRUD
-  - `PATCH/DELETE /api/staff/:id` — Update/deactivate staff
-  - `POST /api/staff/verify-pin` — PIN authentication
-  - `GET /api/staff/:id/locations` — Get branch assignments for a staff member
-  - `PUT /api/staff/:id/locations` — Set branch assignments (with primaryLocationId)
-  - `GET/POST /api/locations` — Branch CRUD
-  - `PATCH/DELETE /api/locations/:id` — Update/deactivate branch
-  - `GET/PUT /api/locations/:id/inventory` — Per-branch inventory management
-  - `POST /api/locations/:id/inventory/init` — Seed all products into branch inventory
-  - `GET /api/locations/:id/staff` — Staff assigned to a branch
-  - `GET /api/stock-transfers` — Transfer history
-  - `POST /api/stock-transfers` — Create stock transfer (deducts from source, adds to destination)
-  - `GET /api/purchases?productId=X` — List purchase records (optionally filtered by product)
-  - `POST /api/purchases` — Record a stock purchase (auto-increments product stockCount, sets inStock=true)
-  - `DELETE /api/purchases/:id` — Delete a purchase record
-  - `GET /api/accounting/accounts` — Chart of accounts (seeds 22 defaults on first call)
-  - `POST /api/accounting/accounts` — Create account
-  - `PATCH/DELETE /api/accounting/accounts/:id` — Update/deactivate account
-  - `GET /api/accounting/journal-entries` — List journal entries with lines
-  - `POST /api/accounting/journal-entries` — Create journal entry (double-entry validated)
-  - `DELETE /api/accounting/journal-entries/:id` — Void journal entry
-  - `GET /api/accounting/reports/profit-loss` — P&L report (from/to query params)
-  - `GET /api/accounting/reports/balance-sheet` — Balance sheet (as_of param)
-  - `GET /api/accounting/reports/trial-balance` — Trial balance (as_of param)
-  - `GET /api/accounting/overview` — KPI summary (period=week|month|year)
-  - `GET /api/accounting/quickbooks/status` — QB connection status
-  - `GET /api/accounting/quickbooks/auth` — Start QB OAuth flow (redirect)
-  - `GET /api/accounting/quickbooks/callback` — QB OAuth callback
-  - `POST /api/accounting/quickbooks/disconnect` — Disconnect QB
-  - `POST /api/accounting/quickbooks/sync` — Sync orders to QB (days param)
-  - `GET /api/accounting/stock-adjustments` — List stock adjustments
-  - `POST /api/accounting/stock-adjustments` — Create adjustment (updates product stockCount, optional JE)
-  - `GET /api/accounting/stock-counts` — List stock count sessions
-  - `POST /api/accounting/stock-counts` — Create stock count session (snapshots all products)
-  - `GET /api/accounting/stock-counts/:id` — Get session with all items
-  - `PATCH /api/accounting/stock-counts/:id/items/:itemId` — Update physical count for an item
-  - `POST /api/accounting/stock-counts/:id/apply` — Apply count (updates stock, optional JE)
-  - `DELETE /api/accounting/stock-counts/:id` — Void a session
-
-### Customer Menu & Online Ordering (consolidated into `artifacts/nexus-pos`)
-- **Route prefix**: `/menu/`
-- **Purpose**: Customer-facing menu, online ordering, kiosk mode
-- **Usage**: `/menu/?slug=<tenant-slug>` or `?slug=...&mode=kiosk` or `?mode=online`
-- **Features**: Category filter, product search, cart, customization dialog (variants/modifiers), checkout, order confirmation
-- **Public API Endpoints** (no auth required):
-  - `GET /api/public/menu/:slug` — Products + categories for tenant
-  - `GET /api/public/settings/:slug` — Business name, tax rate, currency settings
-  - `POST /api/public/orders/:slug` — Place customer order (online/kiosk)
-- **QR Code**: Admin Settings page shows QR code + links for menu/kiosk/online URLs (downloadable SVG)
-
-## SaaS Layer
-
-### Authentication
-- Tenant auth uses JWT (signed with `SESSION_SECRET`). Token stored in `localStorage` as `nexus_tenant_token`.
-- Superadmin auth uses JWT with `type: "superadmin"`. Token stored as `nexus_superadmin_token`.
-- Default superadmin creds: `SUPERADMIN_EMAIL` (default: admin@nexuspos.com) / `SUPERADMIN_PASSWORD` (default: NexusAdmin2024!)
-
-### Payment Providers
-- **PayPal**: Backend uses PayPal Orders API v2. Frontend uses `@paypal/paypal-js` Smart Buttons.
-  - Requires: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (server), `VITE_PAYPAL_CLIENT_ID` (frontend)
-  - Set `PAYPAL_ENV=production` for live mode (default: sandbox)
-- **PowerTranz**: Direct REST API card payment (popular in Caribbean).
-  - Requires: `POWERTRANZ_SPID`, `POWERTRANZ_SPPASSWORD`
-  - Set `POWERTRANZ_ENV=production` for live endpoint (default: staging)
-
-### Subscription Plans (seeded automatically)
-- **Starter** $29/mo | $290/yr — 5 staff, 100 products, 1 location
-- **Professional** $79/mo | $790/yr — 15 staff, 500 products, 3 locations
-- **Enterprise** $199/mo | $1990/yr — unlimited
-
-## Database Schema
-
-- `products` — Product catalog with name, price, category, stock, barcode, hasVariants, hasModifiers
-- `product_variants` — Variant groups/options with price adjustments
-- `product_modifiers` — Modifier groups/options with price adjustments
-- `orders` — Order records with status, totals, payment method, discount, notes, customerId, tableId, staffId, orderType, loyaltyPointsRedeemed, loyaltyDiscount
-- `order_items` — Line items with variantChoices, modifierChoices (JSON)
-- `held_orders` — Temporarily held carts (serialized JSON)
-- `customers` — Customer profiles with name, email, phone, loyaltyPoints, totalSpent, orderCount
-- `dining_tables` — Restaurant tables with name, capacity, status, color, position, currentOrderId
-- `staff` — Staff members with name, PIN (hashed), role, isActive
-- `purchases` — Stock purchase records with productId, quantity, unitCost, totalCost, notes; creating a purchase auto-increments product stockCount
-
-### NEXXUS Reseller Portal (consolidated into `artifacts/nexus-pos`)
-- **Route prefix**: `/reseller/`
-- **Purpose**: Dedicated portal for channel resellers/partners to manage their referrals and commissions
-- **Auth**: Separate JWT-based auth (type="reseller"), token stored as `reseller_token` in localStorage
-- **Pages**:
-  - `/reseller/login` — Reseller sign-in
-  - `/reseller/signup` — New reseller registration
-  - `/reseller/dashboard` — Stats overview (total referrals, lifetime earnings, this month, pending payouts), referral code with copy button, monthly earnings breakdown, commission rate display
-  - `/reseller/referrals` — Table of all referred tenants with subscription status
-  - `/reseller/commissions` — Commission history with period, base amount, rate, earned amount, status
-  - `/reseller/payouts` — Payout history + "Request Payout" button to bundle all pending commissions
-  - `/reseller/profile` — Edit name, company, phone, payment details; view read-only account info
-- **Commission system**:
-  - Default rate: 30% recurring per month
-  - `recordResellerCommission()` helper called on every PayPal/PowerTranz payment capture
-  - Referral codes auto-generated on signup (`NAME-NANOID6` format)
-  - No self-referral (resellers and tenants are separate user types)
-  - Dedup check prevents double-commission per reseller+tenant+month
-- **DB tables**: `resellers`, `reseller_commissions`, `reseller_payouts`; `resellerId` FK on `tenants`
-- **Admin API**: `/admin/resellers`, `/admin/reseller-payouts`, `/admin/reseller-commissions/generate` (superadmin JWT required)
-
-## Business Rules
-
-- Tax rate: 10% (server-side and frontend)
-- Loyalty earn: 1 point per $10 spent, awarded on order completion
-- Loyalty redeem: 100 points = $1.00 discount; deducted from customer balance on checkout
-- Low-stock threshold: configurable via `?threshold=N` (default 10)
-- Stock auto-deducted from products on order completion
-- Customer stats (totalSpent, orderCount, loyaltyPoints) updated on every order
-- Staff roles: admin, manager, cashier, kitchen — PIN-based (4-6 digits)
-- Order types: counter (default), dine-in, takeout
+- **Database**: PostgreSQL (with Drizzle ORM)
+- **API Codegen**: Orval (generates from OpenAPI spec)
+- **Payment Gateways**:
+  - PayPal (using PayPal Orders API v2 and `@paypal/paypal-js` for Smart Buttons)
+  - PowerTranz (direct REST API integration)
+- **Financial Integration**: QuickBooks (via OAuth 2.0 for syncing orders as Sales Receipts)
+- **Charting Library**: Recharts (for dashboard visualizations)

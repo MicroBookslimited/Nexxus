@@ -28,6 +28,7 @@ import ingredientsRouter from "./ingredients";
 import recipesRouter from "./recipes";
 import productionRouter from "./production";
 import resellerRouter from "./reseller";
+import superadminEmailRouter from "./superadmin-email";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use(ingredientsRouter);
 router.use(recipesRouter);
 router.use(productionRouter);
 router.use(resellerRouter);
+router.use(superadminEmailRouter);
 
 export default router;

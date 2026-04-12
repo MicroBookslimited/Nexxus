@@ -176,6 +176,33 @@ export const superadminResetPassword = (tenantId: number, newPassword: string) =
     method: "POST", body: JSON.stringify({ newPassword }), headers: superadminAuthHeaders(),
   });
 
+/* ─── Email Templates ─── */
+export const superadminGetEmailTemplates = () =>
+  api<EmailTemplate[]>("/superadmin/email/templates", { headers: superadminAuthHeaders() });
+
+export const superadminCreateEmailTemplate = (data: EmailTemplateInput) =>
+  api<EmailTemplate>("/superadmin/email/templates", { method: "POST", body: JSON.stringify(data), headers: superadminAuthHeaders() });
+
+export const superadminUpdateEmailTemplate = (id: number, data: Partial<EmailTemplateInput>) =>
+  api<EmailTemplate>(`/superadmin/email/templates/${id}`, { method: "PUT", body: JSON.stringify(data), headers: superadminAuthHeaders() });
+
+export const superadminDeleteEmailTemplate = (id: number) =>
+  api<{ success: boolean }>(`/superadmin/email/templates/${id}`, { method: "DELETE", headers: superadminAuthHeaders() });
+
+export const superadminToggleEmailTemplate = (id: number) =>
+  api<EmailTemplate>(`/superadmin/email/templates/${id}/toggle`, { method: "PATCH", headers: superadminAuthHeaders() });
+
+export const superadminTestEmailTemplate = (id: number, to: string, variables: Record<string, string>) =>
+  api<{ success: boolean; messageId?: string }>(`/superadmin/email/templates/${id}/test`, {
+    method: "POST", body: JSON.stringify({ to, variables }), headers: superadminAuthHeaders(),
+  });
+
+export const superadminGetEmailDefaultTemplate = (eventKey: string) =>
+  api<{ name: string; subject: string; htmlBody: string; textBody: string }>(`/superadmin/email/defaults/${eventKey}`, { headers: superadminAuthHeaders() });
+
+export const superadminGetEmailLogs = (limit = 100, offset = 0) =>
+  api<EmailLog[]>(`/superadmin/email/logs?limit=${limit}&offset=${offset}`, { headers: superadminAuthHeaders() });
+
 /* ─── Types ─── */
 export interface Tenant {
   id: number; businessName: string; ownerName: string; email: string; phone?: string;
@@ -235,4 +262,40 @@ export interface RoleRow {
 
 export interface PermissionDef {
   key: string; label: string; category: string;
+}
+
+export type EventKey = "user_signup" | "payment_success" | "payment_failed" | "trial_expiring" | "password_reset";
+
+export interface EmailTemplate {
+  id: number;
+  name: string;
+  eventKey: EventKey;
+  subject: string;
+  htmlBody: string;
+  textBody: string;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmailTemplateInput {
+  name: string;
+  eventKey: EventKey;
+  subject: string;
+  htmlBody: string;
+  textBody: string;
+  isEnabled?: boolean;
+}
+
+export interface EmailLog {
+  id: number;
+  templateId: number | null;
+  eventKey: string;
+  toEmail: string;
+  subject: string;
+  status: string;
+  messageId: string | null;
+  errorMessage: string | null;
+  variables: string | null;
+  sentAt: string;
 }

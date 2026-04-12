@@ -4,8 +4,9 @@ import {
   RefreshCw, LogOut, Zap, Shield, CheckCircle, XCircle, Clock,
   Eye, X, AlertTriangle, Plus, Building2, Banknote, FileCheck,
   LayoutDashboard, Settings, Pencil, Trash2, Download, ChevronRight,
-  LogIn, KeyRound, Check, Package, ToggleLeft, ToggleRight,
+  LogIn, KeyRound, Check, Package, ToggleLeft, ToggleRight, Mail,
 } from "lucide-react";
+import { EmailTab } from "./superadmin-email-tab";
 import {
   SUPERADMIN_TOKEN_KEY, TENANT_TOKEN_KEY,
   superadminLogin, superadminStats, superadminTenants,
@@ -23,7 +24,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "users" | "tenants" | "payments" | "plans" | "settings";
+type Tab = "overview" | "users" | "tenants" | "payments" | "plans" | "email" | "settings";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -870,6 +871,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     { id: "tenants", label: "Businesses", icon: Building2 },
     { id: "payments", label: "Payments", icon: Banknote, badge: stats?.pendingProofs || undefined },
     { id: "plans", label: "Plans", icon: Package },
+    { id: "email", label: "Email", icon: Mail },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
@@ -1306,6 +1308,9 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
             )}
           </>
         )}
+
+        {/* ── EMAIL ── */}
+        {tab === "email" && <EmailTab />}
 
         {/* ── SETTINGS ── */}
         {tab === "settings" && (
