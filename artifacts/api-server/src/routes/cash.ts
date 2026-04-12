@@ -45,16 +45,21 @@ function computeSales(orders: { paymentMethod: string | null; total: number | nu
   const splitSales  = completed.filter((r) => r.paymentMethod === "split").reduce((s, r) => s + Number(r.total ?? 0), 0);
   const creditSales = completed.filter((r) => r.paymentMethod === "credit").reduce((s, r) => s + Number(r.total ?? 0), 0);
 
+  const voided = orders.filter((r) => r.status === "voided");
+
   const refundedCash  = refunded.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + Number(r.total ?? 0), 0);
   const refundedCard  = refunded.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
   const refundedOther = refunded.filter((r) => r.paymentMethod !== "cash" && r.paymentMethod !== "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
   const totalRefunds  = refundedCash + refundedCard + refundedOther;
-  const voidedCount   = orders.filter((r) => r.status === "voided").length;
+
+  const voidedCount = voided.length;
+  const voidedTotal = voided.reduce((s, r) => s + Number(r.total ?? 0), 0);
 
   return {
     cashSales, cardSales, splitSales, creditSales,
     totalSales: cashSales + cardSales + splitSales + creditSales,
-    refundedCash, refundedCard, refundedOther, totalRefunds, voidedCount,
+    refundedCash, refundedCard, refundedOther, totalRefunds,
+    voidedCount, voidedTotal,
   };
 }
 

@@ -325,7 +325,7 @@ function CloseShiftDialog({
   open: boolean;
   sessionId: number;
   expectedCash: number;
-  salesSummary: { cashSales: number; cardSales: number; splitSales: number; creditSales?: number; totalSales: number; refundedCash?: number; refundedCard?: number; totalRefunds?: number; voidedCount?: number };
+  salesSummary: { cashSales: number; cardSales: number; splitSales: number; creditSales?: number; totalSales: number; refundedCash?: number; refundedCard?: number; totalRefunds?: number; voidedCount?: number; voidedTotal?: number };
   onClose: () => void;
   onClosed: (closedSessionId: number) => void;
 }) {
@@ -430,6 +430,9 @@ function CloseShiftDialog({
               {salesSummary.splitSales > 0 && <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><SplitSquareHorizontal className="h-3.5 w-3.5" />Split sales</span><span className="font-mono">{formatCurrency(salesSummary.splitSales)}</span></div>}
               {(salesSummary.totalRefunds ?? 0) > 0 && (
                 <div className="flex justify-between text-red-400"><span className="flex items-center gap-1"><ArrowDownLeft className="h-3.5 w-3.5" />Refunds</span><span className="font-mono">-{formatCurrency(salesSummary.totalRefunds ?? 0)}</span></div>
+              )}
+              {(salesSummary.voidedCount ?? 0) > 0 && (
+                <div className="flex justify-between text-orange-400"><span className="flex items-center gap-1"><ArrowDownLeft className="h-3.5 w-3.5" />Voids ({salesSummary.voidedCount})</span><span className="font-mono">{formatCurrency(salesSummary.voidedTotal ?? 0)}</span></div>
               )}
               <Separator />
               <div className="flex justify-between font-semibold"><span>Expected cash in drawer</span><span className="font-mono text-primary">{formatCurrency(expectedCash)}</span></div>
@@ -596,7 +599,7 @@ type SessionDetail = {
   session: { staffName: string; openedAt: string; closedAt?: string | null; openingCash: number; actualCash?: number | null; actualCard?: number | null; closingNotes?: string | null; denominationBreakdown?: string | null };
   payouts: { reason: string; amount: number; staffName: string; createdAt: string }[];
   orders: { orderNumber: string; total: number; paymentMethod: string; createdAt: string }[];
-  salesSummary: { cashSales: number; cardSales: number; splitSales: number; creditSales?: number; totalSales: number; refundedCash?: number; refundedCard?: number; totalRefunds?: number; voidedCount?: number };
+  salesSummary: { cashSales: number; cardSales: number; splitSales: number; creditSales?: number; totalSales: number; refundedCash?: number; refundedCard?: number; totalRefunds?: number; voidedCount?: number; voidedTotal?: number };
   expectedCash: number;
   totalPayouts: number;
   itemSummary?: ItemSummaryRow[];
@@ -635,6 +638,7 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
       ${d.salesSummary.splitSales > 0 ? `<div style="display:flex;justify-content:space-between"><span>Split sales:</span><span>${fmt(d.salesSummary.splitSales)}</span></div>` : ""}
       ${(d.salesSummary.creditSales ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between"><span>Credit sales:</span><span>${fmt(d.salesSummary.creditSales ?? 0)}</span></div>` : ""}
       ${(d.salesSummary.totalRefunds ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between;color:#c00"><span>Refunds:</span><span>-${fmt(d.salesSummary.totalRefunds ?? 0)}</span></div>` : ""}
+      ${(d.salesSummary.voidedCount ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between;color:#b45309"><span>Voids (${d.salesSummary.voidedCount}):</span><span>${fmt(d.salesSummary.voidedTotal ?? 0)}</span></div>` : ""}
       <div style="display:flex;justify-content:space-between;font-weight:bold"><span>Total sales:</span><span>${fmt(d.salesSummary.totalSales)}</span></div>
       <div style="border-top:1px dashed #000;margin:8px 0"></div>
       <b>Cash Reconciliation</b>
@@ -807,6 +811,7 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
             {salesSummary.splitSales > 0 && <div className="flex justify-between"><span className="flex items-center gap-1.5 text-muted-foreground"><SplitSquareHorizontal className="h-3.5 w-3.5 text-purple-400" />Split</span><span className="font-mono font-medium">{formatCurrency(salesSummary.splitSales)}</span></div>}
             {(salesSummary.creditSales ?? 0) > 0 && <div className="flex justify-between"><span className="flex items-center gap-1.5 text-muted-foreground"><BookOpen className="h-3.5 w-3.5 text-amber-400" />Credit</span><span className="font-mono font-medium text-amber-400">{formatCurrency(salesSummary.creditSales ?? 0)}</span></div>}
             {(salesSummary.totalRefunds ?? 0) > 0 && <div className="flex justify-between"><span className="flex items-center gap-1.5 text-red-400"><ArrowDownLeft className="h-3.5 w-3.5" />Refunds</span><span className="font-mono font-medium text-red-400">−{formatCurrency(salesSummary.totalRefunds ?? 0)}</span></div>}
+            {(salesSummary.voidedCount ?? 0) > 0 && <div className="flex justify-between"><span className="flex items-center gap-1.5 text-orange-400"><ArrowDownLeft className="h-3.5 w-3.5" />Voids ({salesSummary.voidedCount})</span><span className="font-mono font-medium text-orange-400">{formatCurrency(salesSummary.voidedTotal ?? 0)}</span></div>}
             <Separator />
             <div className="flex justify-between font-bold"><span>Total Sales</span><span className="font-mono text-primary">{formatCurrency(salesSummary.totalSales)}</span></div>
           </div>
