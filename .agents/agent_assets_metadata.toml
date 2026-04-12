@@ -6,3 +6,9 @@ id = "2Jjx5EOYhZW2kzZ40RpsV"
 uri = "file://NEXXUS_POS_User_Manual.pdf"
 type = "pdf"
 title = "NEXXUS POS — User Manual"
+
+[[outputs]]
+id = "DFKAuTMBxxKzzSsuHvyCm"
+uri = "file://exports/PowerTranz-FAC-Integration-Manual.pdf"
+type = "pdf"
+title = "PowerTranz / FAC Integration Manual"
