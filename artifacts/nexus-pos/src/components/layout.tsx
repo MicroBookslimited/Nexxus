@@ -113,26 +113,26 @@ function NavGroupButton({ entry, iconOnly, active, open, onOpenChange, can, loca
           <button
             title={entry.label}
             className={cn(
-              "flex items-center justify-center w-8 h-9 rounded-md transition-all shrink-0 outline-none",
+              "flex items-center justify-center w-10 h-9 rounded-md transition-all shrink-0 outline-none",
               active
                 ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
             )}
           >
-            <entry.icon className="h-4 w-4" />
+            <entry.icon className="h-5 w-5" />
           </button>
         ) : (
           <button
             className={cn(
-              "flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0 outline-none",
+              "flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0 outline-none",
               active
                 ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
             )}
           >
-            <entry.icon className="h-3.5 w-3.5 shrink-0" />
+            <entry.icon className="h-5 w-5 shrink-0" />
             {entry.label}
-            <ChevronDown className={cn("h-3 w-3 ml-0.5 transition-transform", open && "rotate-180")} />
+            <ChevronDown className={cn("h-3.5 w-3.5 ml-0.5 transition-transform", open && "rotate-180")} />
           </button>
         )}
       </DropdownMenu.Trigger>
@@ -325,13 +325,13 @@ export function Layout({ children }: { children: ReactNode }) {
                 href={entry.href}
                 title={entry.label}
                 className={cn(
-                  "flex items-center gap-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0",
+                  "flex items-center gap-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap shrink-0",
                   isActive
                     ? "bg-primary/10 text-primary px-2 py-1.5"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60 px-2 py-1.5 w-8 justify-center",
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60 px-2 py-1.5 w-10 justify-center",
                 )}
               >
-                <entry.icon className="h-3.5 w-3.5 shrink-0" />
+                <entry.icon className="h-5 w-5 shrink-0" />
                 {isActive && entry.label}
               </Link>
             );
@@ -364,13 +364,13 @@ export function Layout({ children }: { children: ReactNode }) {
                 href={entry.href}
                 title={entry.label}
                 className={cn(
-                  "flex items-center justify-center w-8 h-9 rounded-md transition-all shrink-0",
+                  "flex items-center justify-center w-10 h-9 rounded-md transition-all shrink-0",
                   isActive
                     ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
                 )}
               >
-                <entry.icon className="h-4 w-4" />
+                <entry.icon className="h-5 w-5" />
               </Link>
             );
           })}
