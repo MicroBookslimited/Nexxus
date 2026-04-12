@@ -49,17 +49,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/customers",    label: "Customers",    icon: Users,           color: "text-pink-400",    permission: "customers.view" },
   { href: "/staff",        label: "Staff",        icon: UserCog,         color: "text-indigo-400",  permission: "staff.view" },
   { href: "/locations",    label: "Locations",    icon: MapPin,          color: "text-rose-400",    permission: "inventory.manage" },
-  {
-    label: "Production",
-    icon: FlaskConical,
-    color: "text-lime-400",
-    permission: "inventory.manage",
-    children: [
-      { href: "/ingredients", label: "Ingredients", icon: FlaskConical, color: "text-lime-400",   permission: "inventory.manage" },
-      { href: "/recipes",     label: "Recipes",     icon: BookOpen,     color: "text-green-400",  permission: "inventory.manage" },
-      { href: "/production",  label: "Production",  icon: Factory,      color: "text-lime-400",   permission: "inventory.manage" },
-    ],
-  },
+  { href: "/production",   label: "Production",   icon: FlaskConical,    color: "text-lime-400",    permission: "inventory.manage" },
   { href: "/accounting",   label: "Accounting",   icon: Calculator,      color: "text-cyan-400",    permission: "reports.view" },
   { href: "/ar",           label: "Receivables",  icon: BookOpen,        color: "text-violet-400",  permission: "reports.view" },
   { href: "/reports",      label: "Reports",      icon: BarChart2,       color: "text-amber-400",   permission: "reports.view" },

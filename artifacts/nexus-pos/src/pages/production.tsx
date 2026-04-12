@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   useListProductionBatches, useCreateProductionBatch, useCompleteProductionBatch,
   useDeleteProductionBatch, useUpdateBatchItemQty,
-  type ProductionBatch, type CreateBatchInput,
+  type CreateBatchInput,
 } from "@workspace/api-client-react";
 import { useListProducts } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -16,9 +16,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Search, Plus, Trash2, Factory, CheckCircle2, Clock, ChevronDown, ChevronUp, X, ChevronsUpDown } from "lucide-react";
+import { Search, Plus, Trash2, Factory, CheckCircle2, Clock, ChevronDown, ChevronUp, X, ChevronsUpDown, FlaskConical, BookOpen } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { Ingredients } from "./ingredients";
+import { Recipes } from "./recipes";
+
+type Tab = "ingredients" | "recipes" | "batches";
+
+const TABS: { id: Tab; label: string; icon: React.ElementType; color: string }[] = [
+  { id: "ingredients", label: "Ingredients",  icon: FlaskConical, color: "text-lime-400" },
+  { id: "recipes",     label: "Recipes",      icon: BookOpen,     color: "text-green-400" },
+  { id: "batches",     label: "Batches",       icon: Factory,      color: "text-teal-400" },
+];
 
 type Product = { id: number; name: string };
 
@@ -103,12 +113,12 @@ function formatCost(val: number) {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  draft: { label: "Draft", color: "bg-secondary text-secondary-foreground", icon: Clock },
-  completed: { label: "Completed", color: "bg-emerald-500/20 text-emerald-400", icon: CheckCircle2 },
-  cancelled: { label: "Cancelled", color: "bg-destructive/20 text-destructive", icon: X },
+  draft:     { label: "Draft",     color: "bg-secondary text-secondary-foreground",   icon: Clock },
+  completed: { label: "Completed", color: "bg-emerald-500/20 text-emerald-400",       icon: CheckCircle2 },
+  cancelled: { label: "Cancelled", color: "bg-destructive/20 text-destructive",       icon: X },
 };
 
-export function Production() {
+function BatchesTab() {
   const { data: batches = [], isLoading } = useListProductionBatches();
   const { data: products = [] } = useListProducts();
   const createBatch = useCreateProductionBatch();
@@ -146,14 +156,9 @@ export function Production() {
   async function handleCreate() {
     const validItems = newBatch.items.filter(i => i.productId !== null && i.quantityPlanned > 0);
     if (validItems.length === 0) return;
-
     const payload: CreateBatchInput = {
       notes: newBatch.notes || undefined,
-      items: validItems.map(i => ({
-        productId: i.productId!,
-        quantityPlanned: i.quantityPlanned,
-        unit: i.unit,
-      })),
+      items: validItems.map(i => ({ productId: i.productId!, quantityPlanned: i.quantityPlanned, unit: i.unit })),
     };
     await createBatch.mutateAsync(payload);
     toast({ title: "Production batch created" });
@@ -179,9 +184,9 @@ export function Production() {
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 h-full overflow-y-auto">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Factory className="h-6 w-6 text-primary" /> Production
-          </h1>
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <Factory className="h-5 w-5 text-teal-400" /> Production Batches
+          </h2>
           <p className="text-muted-foreground text-sm mt-0.5">Create batch production runs to manufacture finished products</p>
         </div>
         <Button onClick={() => setCreateOpen(true)} size="sm">
@@ -328,9 +333,7 @@ export function Production() {
               <Label>Notes</Label>
               <Textarea rows={2} value={newBatch.notes} onChange={e => setNewBatch(p => ({ ...p, notes: e.target.value }))} placeholder="Optional batch notes…" />
             </div>
-
             <Separator />
-
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-base">Products to Produce</Label>
@@ -338,7 +341,6 @@ export function Production() {
                   <Plus className="h-3.5 w-3.5 mr-1" /> Add Product
                 </Button>
               </div>
-
               {newBatch.items.map((item, idx) => (
                 <div key={idx} className="grid grid-cols-[1fr_100px_auto] gap-2 items-end">
                   <div className="space-y-1">
@@ -379,7 +381,6 @@ export function Production() {
         </DialogContent>
       </Dialog>
 
-      {/* Complete confirm */}
       <AlertDialog open={!!completeId} onOpenChange={open => !open && setCompleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -395,7 +396,6 @@ export function Production() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete confirm */}
       <AlertDialog open={!!deleteId} onOpenChange={open => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -408,6 +408,46 @@ export function Production() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+export function Production() {
+  const [activeTab, setActiveTab] = useState<Tab>("ingredients");
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Tab bar */}
+      <div className="shrink-0 flex items-center gap-1 px-4 sm:px-6 pt-4 border-b border-border pb-0">
+        <div className="flex items-center gap-1 -mb-px">
+          {TABS.map(tab => {
+            const Icon = tab.icon;
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-t-md border-b-2 transition-all",
+                  active
+                    ? "border-primary text-foreground bg-primary/5"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/40",
+                )}
+              >
+                <Icon className={cn("h-4 w-4", active ? tab.color : "text-muted-foreground")} />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-hidden">
+        {activeTab === "ingredients" && <Ingredients />}
+        {activeTab === "recipes"     && <Recipes />}
+        {activeTab === "batches"     && <BatchesTab />}
+      </div>
     </div>
   );
 }
