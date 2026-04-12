@@ -32,6 +32,7 @@ import { AccountsReceivable } from "@/pages/ar";
 import { Ingredients } from "@/pages/ingredients";
 import { Recipes } from "@/pages/recipes";
 import { Production } from "@/pages/production";
+import { MyHardware } from "@/pages/my-hardware";
 import StorePage from "@/pages/store";
 import { Layout, PermissionGate } from "@/components/layout";
 
@@ -142,6 +143,7 @@ function POSRouter() {
       <Route path="/ingredients"><ProtectedRoute component={Ingredients} permission="inventory.manage" /></Route>
       <Route path="/recipes"><ProtectedRoute component={Recipes} permission="inventory.manage" /></Route>
       <Route path="/production"><ProtectedRoute component={Production} permission="inventory.manage" /></Route>
+      <Route path="/hardware"><ProtectedRoute component={MyHardware} permission="settings.view" /></Route>
       <Route path="/cash"><ProtectedRoute component={CashManagement} permission="cash.open_session" /></Route>
       <Route path="/store"><ProtectedRoute component={StorePage} /></Route>
       <Route path="/settings"><ProtectedRoute component={AdminSettings} permission="settings.view" /></Route>
