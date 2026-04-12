@@ -1297,7 +1297,7 @@ export function Products() {
     setDialogOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = (andClose = false) => {
     if (!form.name.trim() || !form.price || !form.category) {
       toast({ title: "Name, price and category are required.", variant: "destructive" });
       return;
@@ -1319,9 +1319,7 @@ export function Products() {
           onSuccess: () => {
             toast({ title: "Product updated" });
             queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-            setDialogOpen(false);
-            setEditingProduct(null);
-            setForm(emptyForm());
+            if (andClose) { setDialogOpen(false); setEditingProduct(null); setForm(emptyForm()); }
           },
           onError: () => toast({ title: "Update failed", variant: "destructive" }),
         },
@@ -1330,12 +1328,11 @@ export function Products() {
       createProduct.mutate(
         { data: payload },
         {
-          onSuccess: () => {
+          onSuccess: (newProduct) => {
             toast({ title: "Product created" });
             queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-            setDialogOpen(false);
-            setEditingProduct(null);
-            setForm(emptyForm());
+            if (andClose) { setDialogOpen(false); setEditingProduct(null); setForm(emptyForm()); }
+            else { setEditingProduct(newProduct); setDialogTab("variants"); }
           },
           onError: () => toast({ title: "Create failed", variant: "destructive" }),
         },
@@ -2131,8 +2128,11 @@ export function Products() {
                 </div>
                 <DialogFooter className="pt-2">
                   <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                  <Button onClick={handleSave} disabled={createProduct.isPending || updateProduct.isPending}>
-                    {editingProduct ? "Save Changes" : "Create & Continue"}
+                  <Button variant="secondary" onClick={() => handleSave(false)} disabled={createProduct.isPending || updateProduct.isPending}>
+                    {editingProduct ? "Save" : "Save & Continue"}
+                  </Button>
+                  <Button onClick={() => handleSave(true)} disabled={createProduct.isPending || updateProduct.isPending}>
+                    Save & Close
                   </Button>
                 </DialogFooter>
               </TabsContent>
