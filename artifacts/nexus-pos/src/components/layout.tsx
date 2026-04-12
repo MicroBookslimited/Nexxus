@@ -149,6 +149,7 @@ function NavGroupButton({ entry, iconOnly, active, open, onOpenChange, can, loca
               <DropdownMenu.Item
                 key={child.href}
                 asChild
+                onSelect={() => onOpenChange(false)}
                 className={cn(
                   "flex items-center gap-2 px-3 py-2.5 text-[11px] font-medium transition-colors cursor-pointer outline-none select-none",
                   childActive
@@ -156,10 +157,10 @@ function NavGroupButton({ entry, iconOnly, active, open, onOpenChange, can, loca
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary/60 focus:text-foreground focus:bg-secondary/60",
                 )}
               >
-                <a href={`/app${child.href}`}>
+                <Link href={child.href}>
                   <child.icon className="h-3.5 w-3.5 shrink-0" />
                   {child.label}
-                </a>
+                </Link>
               </DropdownMenu.Item>
             );
           })}
@@ -185,16 +186,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const [switchUserOpen, setSwitchUserOpen] = useState(false);
 
   // Tracks which group labels are expanded (desktop dropdown & mobile accordion)
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
-    // Auto-open the group that contains the current page
-    const initial = new Set<string>();
-    NAV_ITEMS.forEach(entry => {
-      if (isGroup(entry) && entry.children.some(c => location.startsWith(c.href))) {
-        initial.add(entry.label);
-      }
-    });
-    return initial;
-  });
+  // Always start closed — the header nav dropdown uses Radix controlled state,
+  // and starting "open" on page load causes the menu to auto-pop, hiding the icon.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
   const toggleGroup = (label: string) => {
     setOpenGroups(prev => {
