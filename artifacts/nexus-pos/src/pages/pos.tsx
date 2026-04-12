@@ -1759,6 +1759,17 @@ export function POS() {
       {/* Receipt Modal */}
       <Dialog open={!!receiptOrder} onOpenChange={(o) => !o && setReceiptOrder(null)}>
         <DialogContent className="sm:max-w-sm">
+          {/* Business details at top of dialog */}
+          <div className="text-center pb-3 border-b border-border">
+            <p className="font-bold text-base">{settings?.business_name || "NEXXUS POS"}</p>
+            {settings?.business_address && (
+              <p className="text-xs text-muted-foreground mt-0.5">{settings.business_address}</p>
+            )}
+            {settings?.business_phone && (
+              <p className="text-xs text-muted-foreground">{settings.business_phone}</p>
+            )}
+          </div>
+
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-400">
               <CheckCircle2 className="h-5 w-5" />
@@ -1774,9 +1785,7 @@ export function POS() {
                 </div>
               )}
               <div className="text-center py-2 border-b border-border">
-                <p className="font-bold text-base">NEXXUS POS</p>
-                <p className="text-xs text-muted-foreground">Your Business, Connected.</p>
-                <p className="text-xs text-muted-foreground mt-1">{format(new Date(receiptOrder.createdAt), "dd/MM/yyyy, h:mm a")}</p>
+                <p className="text-xs text-muted-foreground">{format(new Date(receiptOrder.createdAt), "dd/MM/yyyy, h:mm a")}</p>
                 <p className="font-mono text-xs mt-1">{receiptOrder.orderNumber}</p>
               </div>
 
