@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { Resend } from "resend";
 import { SendMailClient } from "zeptomail";
+import nodemailer from "nodemailer";
 import { db, ordersTable, orderItemsTable, cashSessionsTable, cashPayoutsTable, productsTable } from "@workspace/db";
 import { eq, and, gte, lte, isNotNull, desc, sql, asc } from "drizzle-orm";
 import { z } from "zod";
@@ -19,51 +19,60 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
 
 const ZEPTOMAIL_API_URL = "api.zeptomail.com/";
 
-type EmailProvider = "resend" | "zeptomail";
-
-async function getActiveProvider(): Promise<EmailProvider> {
-  const pref = await getSetting("email_provider");
-  return pref === "zeptomail" ? "zeptomail" : "resend";
-}
-
-async function getFromDetails(): Promise<{ fromAddress: string; fromName: string }> {
+async function getFromDetails(tenantId = 0): Promise<{ fromAddress: string; fromName: string }> {
   const [fromAddress, fromName] = await Promise.all([
-    getSetting("from_email"),
-    getSetting("from_name"),
+    getSetting("from_email", tenantId),
+    getSetting("from_name", tenantId),
   ]);
   return {
-    fromAddress: fromAddress || "onboarding@resend.dev",
+    fromAddress: fromAddress || "noreply@microbookspos.com",
     fromName: fromName || "NEXXUS POS",
   };
 }
 
-async function sendEmail(opts: { to: string; subject: string; html: string; fromName: string; fromAddress: string }): Promise<{ messageId?: string }> {
-  const provider = await getActiveProvider();
+/**
+ * Send an email via the appropriate provider.
+ * Default: ZeptoMail (system-wide, using ZEPTOMAIL_TOKEN env var).
+ * If the tenant has configured custom SMTP (email_provider = "smtp"), uses nodemailer instead.
+ */
+async function sendEmail(opts: {
+  to: string;
+  subject: string;
+  html: string;
+  fromName: string;
+  fromAddress: string;
+  tenantId?: number;
+}): Promise<{ messageId?: string }> {
+  const tenantId = opts.tenantId ?? 0;
+  const provider = await getSetting("email_provider", tenantId);
 
-  if (provider === "zeptomail") {
-    const token = process.env["ZEPTOMAIL_TOKEN"];
-    if (!token) throw new Error("ZEPTOMAIL_TOKEN is not configured");
-    const zepto = new SendMailClient({ url: ZEPTOMAIL_API_URL, token });
-    const response = await zepto.sendMail({
-      from: { address: opts.fromAddress, name: opts.fromName },
-      to: [{ email_address: { address: opts.to } }],
-      subject: opts.subject,
-      htmlbody: opts.html,
+  if (provider === "smtp") {
+    const s = await getAllSettings(tenantId);
+    const host = s["smtp_host"] ?? "";
+    if (!host) throw new Error("Custom SMTP host is not configured. Please add your SMTP settings.");
+    const transport = nodemailer.createTransport({
+      host,
+      port: parseInt(s["smtp_port"] ?? "587", 10),
+      secure: s["smtp_secure"] === "true",
+      auth: s["smtp_user"] ? { user: s["smtp_user"], pass: s["smtp_pass"] ?? "" } : undefined,
     });
-    return { messageId: (response as { data?: { message_id?: string } })?.data?.message_id };
-  } else {
-    const key = process.env["RESEND_API_KEY"];
-    if (!key) throw new Error("RESEND_API_KEY is not configured");
-    const resend = new Resend(key);
-    const { data, error } = await resend.emails.send({
-      from: `${opts.fromName} <${opts.fromAddress}>`,
-      to: [opts.to],
-      subject: opts.subject,
-      html: opts.html,
-    });
-    if (error) throw new Error(error.message);
-    return { messageId: data?.id };
+    const from = s["smtp_from"]
+      ? `${s["smtp_from_name"] || opts.fromName} <${s["smtp_from"]}>`
+      : `${opts.fromName} <${opts.fromAddress}>`;
+    const info = await transport.sendMail({ from, to: opts.to, subject: opts.subject, html: opts.html });
+    return { messageId: info.messageId };
   }
+
+  const token = process.env["ZEPTOMAIL_TOKEN"];
+  if (!token) throw new Error("Email service is not configured. Please contact your administrator to set up ZEPTOMAIL_TOKEN.");
+  const zepto = new SendMailClient({ url: ZEPTOMAIL_API_URL, token });
+  const response = await zepto.sendMail({
+    from: { address: opts.fromAddress, name: opts.fromName },
+    to: [{ email_address: { address: opts.to } }],
+    subject: opts.subject,
+    htmlbody: opts.html,
+  });
+  return { messageId: (response as { data?: { message_id?: string } })?.data?.message_id };
 }
 
 function fmt(n: number) {
@@ -550,7 +559,7 @@ router.post("/email/receipt", async (req, res): Promise<void> => {
   };
 
   const html = buildReceiptEmailHtml(orderData);
-  const { fromAddress, fromName } = await getFromDetails();
+  const { fromAddress, fromName } = await getFromDetails(tenantId);
 
   try {
     const result = await sendEmail({
@@ -559,6 +568,7 @@ router.post("/email/receipt", async (req, res): Promise<void> => {
       html,
       fromName,
       fromAddress,
+      tenantId,
     });
     res.json({ success: true, messageId: result.messageId });
   } catch (err) {
@@ -648,7 +658,7 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
 
   const dateLabel = new Date(session.openedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
-  const { fromAddress: eodFrom, fromName: eodFromName } = await getFromDetails();
+  const { fromAddress: eodFrom, fromName: eodFromName } = await getFromDetails(tenantId);
 
   try {
     const result = await sendEmail({
@@ -657,6 +667,7 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
       html,
       fromName: eodFromName,
       fromAddress: eodFrom,
+      tenantId,
     });
     res.json({ success: true, messageId: result.messageId });
   } catch (err) {

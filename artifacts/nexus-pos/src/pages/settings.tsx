@@ -14,68 +14,21 @@ import { cn } from "@/lib/utils";
 import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { QRCodeSVG } from "qrcode.react";
 
-function ProviderCard({
-  id,
-  title,
-  description,
-  configured,
-  selected,
-  onSelect,
-}: {
-  id: string;
-  title: string;
-  description: string;
-  configured: boolean;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        "w-full text-left rounded-lg border p-4 transition-all",
-        selected
-          ? "border-primary bg-primary/5 ring-1 ring-primary"
-          : "border-border hover:border-muted-foreground/50 bg-card"
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-semibold text-sm">{title}</span>
-            {selected && (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary text-primary-foreground uppercase tracking-wide">
-                Active
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">{description}</p>
-        </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          {configured ? (
-            <span className="flex items-center gap-1 text-xs text-green-500 font-medium">
-              <CheckCircle2 className="h-3.5 w-3.5" />API key set
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-xs text-amber-500 font-medium">
-              <AlertCircle className="h-3.5 w-3.5" />Not configured
-            </span>
-          )}
-        </div>
-      </div>
-    </button>
-  );
-}
 
 export function AdminSettings() {
   const { data: settings, isLoading } = useGetSettings();
   const updateSettings = useUpdateSettings();
   const { toast } = useToast();
 
-  const [emailProvider, setEmailProvider] = useState<"resend" | "zeptomail">("resend");
-  const [fromEmail, setFromEmail] = useState("onboarding@resend.dev");
+  const [emailProvider, setEmailProvider] = useState<"system" | "smtp">("system");
   const [fromName, setFromName] = useState("NEXXUS POS");
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("587");
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpFrom, setSmtpFrom] = useState("");
+  const [smtpFromName, setSmtpFromName] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
   const [businessPhone, setBusinessPhone] = useState("");
@@ -106,9 +59,16 @@ export function AdminSettings() {
 
   useEffect(() => {
     if (!settings) return;
-    setEmailProvider((settings.email_provider as "resend" | "zeptomail") ?? "resend");
-    setFromEmail(settings.from_email ?? "onboarding@resend.dev");
+    const raw = settings.email_provider ?? "system";
+    setEmailProvider(raw === "smtp" ? "smtp" : "system");
     setFromName(settings.from_name ?? "NEXXUS POS");
+    setSmtpHost(settings.smtp_host ?? "");
+    setSmtpPort(settings.smtp_port ?? "587");
+    setSmtpSecure(settings.smtp_secure === "true");
+    setSmtpUser(settings.smtp_user ?? "");
+    setSmtpPass(settings.smtp_pass ?? "");
+    setSmtpFrom(settings.smtp_from ?? "");
+    setSmtpFromName(settings.smtp_from_name ?? "");
     setBusinessName(settings.business_name ?? "NEXXUS POS");
     setBusinessAddress(settings.business_address ?? "");
     setBusinessPhone(settings.business_phone ?? "");
@@ -136,8 +96,14 @@ export function AdminSettings() {
       {
         data: {
           email_provider: emailProvider,
-          from_email: fromEmail.trim(),
           from_name: fromName.trim() || "NEXXUS POS",
+          smtp_host: smtpHost.trim(),
+          smtp_port: smtpPort.trim() || "587",
+          smtp_secure: smtpSecure ? "true" : "false",
+          smtp_user: smtpUser.trim(),
+          smtp_pass: smtpPass,
+          smtp_from: smtpFrom.trim(),
+          smtp_from_name: smtpFromName.trim(),
           business_name: businessName,
           business_address: businessAddress,
           business_phone: businessPhone,
@@ -181,9 +147,6 @@ export function AdminSettings() {
       setSendingTest(false);
     }
   }
-
-  const resendConfigured = !!import.meta.env.VITE_RESEND_CONFIGURED || true;
-  const zeptomailConfigured = false;
 
   if (isLoading) {
     return (
@@ -524,83 +487,148 @@ export function AdminSettings() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Mail className="h-4 w-4 text-primary" />
-            Email Provider
+            Email Settings
           </CardTitle>
           <CardDescription>
-            Choose which service sends your receipts and end-of-day reports
+            Choose how receipts, end-of-day reports, and notifications are sent
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <ProviderCard
-            id="resend"
-            title="Resend"
-            description="Modern email API. Fast delivery, excellent deliverability. Great for transactional emails."
-            configured={resendConfigured}
-            selected={emailProvider === "resend"}
-            onSelect={() => { setEmailProvider("resend"); markDirty(); }}
-          />
-          <ProviderCard
-            id="zeptomail"
-            title="ZeptoMail"
-            description="Transactional email service by Zoho. Reliable for high-volume business email sending."
-            configured={zeptomailConfigured}
-            selected={emailProvider === "zeptomail"}
-            onSelect={() => { setEmailProvider("zeptomail"); markDirty(); }}
-          />
-
-          <div className="rounded-lg bg-muted/40 border border-border p-3 text-xs text-muted-foreground space-y-1 mt-2">
-            <p className="font-medium text-foreground">API Key Status</p>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
-              <span><strong>Resend:</strong> API key is configured and ready</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-3 w-3 text-amber-500 shrink-0" />
-              <span><strong>ZeptoMail:</strong> Set <code className="bg-muted px-1 rounded">ZEPTOMAIL_TOKEN</code> in Secrets to enable</span>
-            </div>
-          </div>
-
-          {/* Sender address */}
-          <div className="space-y-3 pt-1">
-            <div>
-              <p className="text-sm font-medium mb-0.5">Sender Details</p>
-              <p className="text-xs text-muted-foreground">
-                The name and address your customers see when they receive emails.
-                Use <code className="bg-muted px-1 rounded text-[11px]">onboarding@resend.dev</code> for testing,
-                or set a verified domain address for production.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="from-name">From Name</Label>
-                <Input
-                  id="from-name"
-                  value={fromName}
-                  onChange={(e) => { setFromName(e.target.value); markDirty(); }}
-                  placeholder="NEXXUS POS"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="from-email">From Email</Label>
-                <Input
-                  id="from-email"
-                  type="email"
-                  value={fromEmail}
-                  onChange={(e) => { setFromEmail(e.target.value); markDirty(); }}
-                  placeholder="onboarding@resend.dev"
-                />
-              </div>
-            </div>
-            {fromEmail && !fromEmail.endsWith("@resend.dev") && (
-              <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-600 dark:text-amber-400">
-                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span>
-                  Custom domains must be verified in your Resend dashboard before emails will deliver.
-                  If emails aren't sending, switch to <strong>onboarding@resend.dev</strong> for testing.
-                </span>
-              </div>
+          {/* System email option */}
+          <button
+            type="button"
+            onClick={() => { setEmailProvider("system"); markDirty(); }}
+            className={cn(
+              "w-full text-left rounded-lg border p-4 transition-all",
+              emailProvider === "system"
+                ? "border-primary bg-primary/5 ring-1 ring-primary"
+                : "border-border hover:border-muted-foreground/50 bg-card"
             )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-semibold text-sm">NEXXUS POS System Email</span>
+                  {emailProvider === "system" && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary text-primary-foreground uppercase tracking-wide">
+                      Active
+                    </span>
+                  )}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-500 font-semibold uppercase tracking-wide">
+                    Recommended
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Emails sent via NEXXUS POS infrastructure from <code className="bg-muted px-1 rounded">noreply@microbookspos.com</code>. No configuration required.
+                </p>
+              </div>
+              <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
+            </div>
+          </button>
+
+          {/* Custom SMTP option */}
+          <button
+            type="button"
+            onClick={() => { setEmailProvider("smtp"); markDirty(); }}
+            className={cn(
+              "w-full text-left rounded-lg border p-4 transition-all",
+              emailProvider === "smtp"
+                ? "border-primary bg-primary/5 ring-1 ring-primary"
+                : "border-border hover:border-muted-foreground/50 bg-card"
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-semibold text-sm">Custom SMTP</span>
+                  {emailProvider === "smtp" && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary text-primary-foreground uppercase tracking-wide">
+                      Active
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Use your own email server (Gmail, SendGrid, Mailgun, etc.) for complete branding control.
+                </p>
+              </div>
+              {smtpHost ? (
+                <span className="flex items-center gap-1 text-xs text-green-500 font-medium shrink-0">
+                  <CheckCircle2 className="h-3.5 w-3.5" />Configured
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground font-medium shrink-0">
+                  <AlertCircle className="h-3.5 w-3.5" />Not set
+                </span>
+              )}
+            </div>
+          </button>
+
+          {/* Display name (shown for both modes) */}
+          <div className="space-y-1.5 pt-1">
+            <Label htmlFor="from-name">Display Name</Label>
+            <Input
+              id="from-name"
+              value={fromName}
+              onChange={(e) => { setFromName(e.target.value); markDirty(); }}
+              placeholder="NEXXUS POS"
+            />
+            <p className="text-xs text-muted-foreground">The sender name your customers see in their inbox</p>
           </div>
+
+          {/* SMTP fields — only shown when smtp is selected */}
+          {emailProvider === "smtp" && (
+            <div className="space-y-3 rounded-lg border border-border p-4 bg-muted/20 mt-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">SMTP Configuration</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2 space-y-1.5">
+                  <Label htmlFor="smtp-host">SMTP Host</Label>
+                  <Input id="smtp-host" value={smtpHost} onChange={(e) => { setSmtpHost(e.target.value); markDirty(); }} placeholder="smtp.gmail.com" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtp-port">Port</Label>
+                  <Input id="smtp-port" value={smtpPort} onChange={(e) => { setSmtpPort(e.target.value); markDirty(); }} placeholder="587" />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={smtpSecure}
+                  onClick={() => { setSmtpSecure(!smtpSecure); markDirty(); }}
+                  className={cn("relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors", smtpSecure ? "bg-primary" : "bg-muted")}
+                >
+                  <span className={cn("pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform", smtpSecure ? "translate-x-4" : "translate-x-0")} />
+                </button>
+                <span className="text-sm">Use SSL/TLS (port 465)</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtp-user">Username / Email</Label>
+                  <Input id="smtp-user" value={smtpUser} onChange={(e) => { setSmtpUser(e.target.value); markDirty(); }} placeholder="you@yourdomain.com" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtp-pass">Password / App Password</Label>
+                  <Input id="smtp-pass" type="password" value={smtpPass} onChange={(e) => { setSmtpPass(e.target.value); markDirty(); }} placeholder="••••••••" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtp-from">From Email Address</Label>
+                  <Input id="smtp-from" type="email" value={smtpFrom} onChange={(e) => { setSmtpFrom(e.target.value); markDirty(); }} placeholder="hello@yourdomain.com" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtp-from-name">From Name (override)</Label>
+                  <Input id="smtp-from-name" value={smtpFromName} onChange={(e) => { setSmtpFromName(e.target.value); markDirty(); }} placeholder={fromName || "NEXXUS POS"} />
+                </div>
+              </div>
+              {!smtpHost && (
+                <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-600 dark:text-amber-400">
+                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>Enter your SMTP host above to enable custom email sending. Emails will fall through to the system provider until SMTP is configured.</span>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
