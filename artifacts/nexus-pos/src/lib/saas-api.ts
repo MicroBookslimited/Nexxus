@@ -18,8 +18,9 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
     ...restOptions,
   });
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: resp.statusText })) as { error?: string };
-    throw new Error(err.error ?? resp.statusText);
+    const err = await resp.json().catch(() => ({ error: resp.statusText })) as { error?: string; details?: string };
+    const msg = [err.error, err.details].filter(Boolean).join(" — ");
+    throw new Error(msg || resp.statusText);
   }
   return resp.json() as Promise<T>;
 }

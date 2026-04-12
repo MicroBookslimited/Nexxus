@@ -189,13 +189,24 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
       ExtendedData: { ThreeDSecure: { AuthenticationIndicator: "0" } },
     };
 
+    console.log("[PowerTranz] sending to", `${POWERTRANZ_BASE}/api/paymentrequest`);
     const resp = await fetch(`${POWERTRANZ_BASE}/api/paymentrequest`, {
       method: "POST",
       headers: { "Content-Type": "application/json", PowerTranz_Id: spId, PowerTranz_Password: spPassword },
       body: JSON.stringify(payload),
     });
 
-    const data = await resp.json() as { Approved?: boolean; TransactionIdentifier?: string; ResponseCode?: string; IsoResponseCode?: string; RrN?: string; RedirectData?: string; ResponseMessage?: string; AuthorizationCode?: string };
+    const rawText = await resp.text();
+    console.log("[PowerTranz] HTTP", resp.status, rawText.slice(0, 500));
+
+    if (!resp.ok && !rawText.trim().startsWith("{")) {
+      res.status(502).json({ error: `PowerTranz gateway error (HTTP ${resp.status})`, details: rawText.slice(0, 300) });
+      return;
+    }
+
+    let data: { Approved?: boolean; TransactionIdentifier?: string; ResponseCode?: string; IsoResponseCode?: string; RrN?: string; RedirectData?: string; ResponseMessage?: string; AuthorizationCode?: string };
+    try { data = JSON.parse(rawText); }
+    catch { res.status(502).json({ error: "PowerTranz returned non-JSON response", details: rawText.slice(0, 300) }); return; }
 
     console.log("[PowerTranz]", JSON.stringify({
       transactionId: data.TransactionIdentifier, approved: data.Approved,
