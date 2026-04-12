@@ -1,0 +1,656 @@
+{
+	"info": {
+		"_postman_id": "061dfdcd-690f-4393-bf0a-4f70243d9b91",
+		"name": "FAC test",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "20684978"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"accept": true,
+					"accept-encoding": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "PowerTranz-PowerTranzId",
+						"value": "{{PT_ID}}",
+						"type": "default"
+					},
+					{
+						"key": "PowerTranz-PowerTranzPassword",
+						"value": "{{PT_PASSWORD}}",
+						"type": "default"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json; charset=utf-8",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Host",
+						"value": "staging.ptranz.com",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Content-Length",
+						"value": "TBD",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Expect",
+						"value": "100-continue",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Connection",
+						"value": "Keep-Alive",
+						"type": "default",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"TransactionIdentifier\": \"{{$guid}}\",\r\n    \"TotalAmount\": {{amount}},\r\n    \"CurrencyCode\": {{CURRENCY}},\r\n    \"ThreeDSecure\": true,\r\n    \"Source\": {\r\n        \"CardPan\": \"{{card}}\",\r\n        \"CardCvv\": \"323\",\r\n        \"CardExpiration\": \"2310\",\r\n        \"CardholderName\": \"John Doe\"\r\n    },\r\n    \"OrderIdentifier\": \"{{OrderIdentifier}}\",\r\n    \"BillingAddress\": {\r\n        \"FirstName\": \"John\",\r\n        \"LastName\": \"Smith\",\r\n        \"Line1\": \"1200 Whitewall Blvd.\",\r\n        \"Line2\": \"Unit 15\",\r\n        \"City\": \"Boston\",\r\n        \"State\": \"NY\",\r\n        \"PostalCode\": \"200341\",\r\n        \"CountryCode\": \"840\",\r\n        \"EmailAddress\": \"john.smith@gmail.com\",\r\n        \"PhoneNumber\": \"211-345-6790\"\r\n    },\r\n    \"AddressMatch\": false,\r\n    \"ExtendedData\": {\r\n        \"ThreeDSecure\": {\r\n            \"ChallengeWindowSize\": 4,\r\n            \"ChallengeIndicator\": \"02\"\r\n        },\r\n        \"MerchantResponseUrl\": \"{{MERCHANT_URL}}\"\r\n    }\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://staging.ptranz.com/Api/spi/auth",
+					"protocol": "https",
+					"host": [
+						"staging",
+						"ptranz",
+						"com"
+					],
+					"path": [
+						"Api",
+						"spi",
+						"auth"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Capture",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"accept": true,
+					"accept-encoding": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "PowerTranz-PowerTranzId",
+						"value": "{{PT_ID}}",
+						"type": "default"
+					},
+					{
+						"key": "PowerTranz-PowerTranzPassword",
+						"value": "{{PT_PASSWORD}}",
+						"type": "default"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json; charset=utf-8",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Host",
+						"value": "staging.ptranz.com",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Content-Length",
+						"value": "TBD",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Expect",
+						"value": "100-continue",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Connection",
+						"value": "Keep-Alive",
+						"type": "default",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"TransactionIdentifier\": \"{{GUID}}\",\r\n    \"TotalAmount\": {{amount}},\r\n    \"ExternalIdentifier\": \"#MerchantGenerated#\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://staging.ptranz.com/api/capture",
+					"protocol": "https",
+					"host": [
+						"staging",
+						"ptranz",
+						"com"
+					],
+					"path": [
+						"api",
+						"capture"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Void",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"accept": true,
+					"accept-encoding": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "PowerTranz-PowerTranzId",
+						"value": "{{PT_ID}}",
+						"type": "default"
+					},
+					{
+						"key": "PowerTranz-PowerTranzPassword",
+						"value": "{{PT_PASSWORD}}",
+						"type": "default"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json; charset=utf-8",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Host",
+						"value": "staging.ptranz.com",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Content-Length",
+						"value": "TBD",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Expect",
+						"value": "100-continue",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Connection",
+						"value": "Keep-Alive",
+						"type": "default",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n \"TransactionIdentifier\": \"239eb003-5a33-440a-9376-0908496427ad\",\r\n \"ExternalIdentifier\": \"null\",\r\n \"TerminalCode\": \"\",\r\n \"TerminalSerialNumber\": \"\",\r\n \"AutoReversal\": false\r\n}\r\n\r\n\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://staging.ptranz.com/api/void",
+					"protocol": "https",
+					"host": [
+						"staging",
+						"ptranz",
+						"com"
+					],
+					"path": [
+						"api",
+						"void"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Riskmgmt",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"accept": true,
+					"accept-encoding": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "PowerTranz-PowerTranzId",
+						"value": "{{PT_ID}}",
+						"type": "default"
+					},
+					{
+						"key": "PowerTranz-PowerTranzPassword",
+						"value": "{{PT_PASSWORD}}",
+						"type": "default"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json; charset=utf-8",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Host",
+						"value": "staging.ptranz.com",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Content-Length",
+						"value": "TBD",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Expect",
+						"value": "100-continue",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Connection",
+						"value": "Keep-Alive",
+						"type": "default",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"TransactionIdentifier\": \"{{$guid}}\",\r\n    \"TotalAmount\": 1,\r\n    \"CurrencyCode\": \"840\",\r\n    \"ThreeDSecure\": true,\r\n    \"Tokenize\":true,\r\n    \"Source\": {\r\n        \"CardPan\": \"5100270000000023\",\r\n        \"CardCvv\": \"323\",\r\n        \"CardExpiration\": \"2310\",\r\n        \"CardholderName\": \"John Doe\"\r\n    },\r\n    \"OrderIdentifier\": \"INT-{{$guid}}-Orc 336\",\r\n    \"BillingAddress\": {\r\n        \"FirstName\": \"John\",\r\n        \"LastName\": \"Smith\",\r\n        \"Line1\": \"1200 Whitewall Blvd.\",\r\n        \"Line2\": \"Unit 15\",\r\n        \"City\": \"Boston\",\r\n        \"State\": \"NY\",\r\n        \"PostalCode\": \"200341\",\r\n        \"CountryCode\": \"840\",\r\n        \"EmailAddress\": \"john.smith@gmail.com\",\r\n        \"PhoneNumber\": \"211-345-6790\"\r\n    },\r\n    \"AddressMatch\": false,\r\n    \"ExtendedData\": {\r\n        \"ThreeDSecure\": {\r\n            \"ChallengeWindowSize\": 4,\r\n            \"ChallengeIndicator\": \"01\"\r\n        },\r\n        \"MerchantResponseUrl\": \"{{MERCHANT_URL}}\"\r\n    }\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://staging.ptranz.com/api/spi/riskmgmt",
+					"protocol": "https",
+					"host": [
+						"staging",
+						"ptranz",
+						"com"
+					],
+					"path": [
+						"api",
+						"spi",
+						"riskmgmt"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Payment",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"content-type": true,
+					"accept": true,
+					"user-agent": true,
+					"accept-encoding": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "PowerTranz-PowerTranzId",
+						"value": "",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "PowerTranz-PowerTranzPassword",
+						"value": "",
+						"type": "text",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "\"{{SPI_TOKEN}}\"",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://staging.ptranz.com/Api/spi/payment",
+					"protocol": "https",
+					"host": [
+						"staging",
+						"ptranz",
+						"com"
+					],
+					"path": [
+						"Api",
+						"spi",
+						"payment"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Tokenization",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"accept": true,
+					"accept-encoding": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "PowerTranz-PowerTranzId",
+						"value": "8880XXXX",
+						"type": "default"
+					},
+					{
+						"key": "PowerTranz-PowerTranzPassword",
+						"value": "Password",
+						"type": "default"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json; charset=utf-8",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Host",
+						"value": "staging.ptranz.com",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Content-Length",
+						"value": "TBD",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Expect",
+						"value": "100-continue",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Connection",
+						"value": "Keep-Alive",
+						"type": "default",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n'Tokenize':true,\r\n'CurrencyCode':'840',\r\n'Source': {\r\n'CardPresent': false,\r\n'Debit': false,\r\n'CardPan': '4012000000020071',\r\n'CardCvv': null,\r\n'CardExpiration': '2403',\r\n},\r\n'ExternalIdentifier': '9928fea8-5e7b-48ec-8f79-7890006b5e21','OrderIdentifier':'1d2ddbb3-c556-4349-b3ef-a30bc2be850b'}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://staging.ptranz.com/api/RiskMgmt",
+					"protocol": "https",
+					"host": [
+						"staging",
+						"ptranz",
+						"com"
+					],
+					"path": [
+						"api",
+						"RiskMgmt"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Sale",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"content-type": true,
+					"accept": true,
+					"user-agent": true,
+					"accept-encoding": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "PowerTranz-PowerTranzId",
+						"value": "{{PT_ID}}",
+						"type": "text"
+					},
+					{
+						"key": "PowerTranz-PowerTranzPassword",
+						"value": "{{PT_PASSWORD}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"TransactionIdentifier\": \"{{$guid}}\",\r\n    \"TotalAmount\": {{amountSale}},\r\n    \"CurrencyCode\": \"{{CURRENCY}}\",\r\n    \"ThreeDSecure\": true,\r\n    \"Source\": {\r\n        \"CardPan\": \"{{card}}\",\r\n        \"CardCvv\": \"323\",\r\n        \"CardExpiration\": \"2510\",\r\n        \"CardholderName\": \"John Doe\"\r\n    },\r\n    \"OrderIdentifier\": \"INT-{{$guid}}-Orc 336\",\r\n    \"BillingAddress\": {\r\n        \"FirstName\": \"John\",\r\n        \"LastName\": \"Smith\",\r\n        \"Line1\": \"1200 Whitewall Blvd.\",\r\n        \"Line2\": \"Unit 15\",\r\n        \"City\": \"Boston\",\r\n        \"State\": \"NY\",\r\n        \"PostalCode\": \"200341\",\r\n        \"CountryCode\": \"840\",\r\n        \"EmailAddress\": \"john.smith@gmail.com\",\r\n        \"PhoneNumber\": \"211-345-6790\"\r\n    },\r\n    \"AddressMatch\": false,\r\n    \"ExtendedData\": {\r\n        \"ThreeDSecure\": {\r\n            \"ChallengeWindowSize\": 4,\r\n            \"ChallengeIndicator\": \"01\"\r\n        },\r\n        \"MerchantResponseUrl\": \"{{MERCHANT_URL}}\"\r\n    }\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://staging.ptranz.com/Api/spi/Sale",
+					"protocol": "https",
+					"host": [
+						"staging",
+						"ptranz",
+						"com"
+					],
+					"path": [
+						"Api",
+						"spi",
+						"Sale"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "HPP",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"accept-encoding": true,
+					"content-type": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "PowerTranz-PowerTranzPassword",
+						"value": "xxxxx",
+						"type": "text"
+					},
+					{
+						"key": "PowerTranz-PowerTranzId",
+						"value": "888xxxx",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json; charset=UTF-8",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"TransactionIdentifier\": \"{{$guid}}\",\r\n    \"TotalAmount\": \"1000\",\r\n    \"CurrencyCode\": \"188\",\r\n    \"ThreeDSecure\": true,\r\n    \"source\": {},\r\n    \"OrderIdentifier\": \"{{$guid}}\",\r\n    \"ExtendedData\": {\r\n        \"threeDSecure\": {\r\n            \"challengeWindowSize\": \"4\",\r\n            \"challengeIndicator\": \"01\"\r\n        },\r\n        \"MERCHANTRESPONSEURL\": \"https://ecm.firstatlanticcommerce.com/TestPages/MerchantCheckout/Parser/HttpRequestParser\",\r\n        \"HOSTEDPAGE\": {\r\n            \"PAGESET\": \"HPPTest\",\r\n            \"PAGENAME\": \"HPPTest\"\r\n        }\r\n    }\r\n}"
+				},
+				"url": {
+					"raw": "https://staging.ptranz.com/api/spi/sale",
+					"protocol": "https",
+					"host": [
+						"staging",
+						"ptranz",
+						"com"
+					],
+					"path": [
+						"api",
+						"spi",
+						"sale"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Refund",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"accept": true,
+					"accept-encoding": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "PowerTranz-PowerTranzId",
+						"value": "8880XXXX",
+						"type": "default"
+					},
+					{
+						"key": "PowerTranz-PowerTranzPassword",
+						"value": "xxxxxxxxxxxx",
+						"type": "default"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json; charset=utf-8",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Host",
+						"value": "staging.ptranz.com",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Content-Length",
+						"value": "TBD",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Expect",
+						"value": "100-continue",
+						"type": "default",
+						"disabled": true
+					},
+					{
+						"key": "Connection",
+						"value": "Keep-Alive",
+						"type": "default",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n\"Refund\": true,\r\n \"TransactionIdentifier\": \"6a41d228-f38b-4baf-93b3-66e5ca830be0\",\r\n \"TotalAmount\": 1,\r\n \"CurrencyCode\": \"840\",\r\n \"Source\": {\r\n \"CardPresent\": false,\r\n \"CardEmvFallback\": false,\r\n \"ManualEntry\": false,\r\n \"Debit\": false,\r\n \"Contactless\": false,\r\n \"CardPan\": \"\",\r\n \"MaskedPan\": \"\"\r\n },\r\n \"TerminalCode\": \"\",\r\n \"TerminalSerialNumber\": \"\",\r\n \"ExternalIdentifier\": \"#ComercioGenerated#\",\r\n \"AddressMatch\": false\r\n}\r\n\r\n\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://staging.ptranz.com/api/refund",
+					"protocol": "https",
+					"host": [
+						"staging",
+						"ptranz",
+						"com"
+					],
+					"path": [
+						"api",
+						"refund"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "PT_ID",
+			"value": "88804147"
+		},
+		{
+			"key": "PT_PASSWORD",
+			"value": "xtNPHj3oGjzjnmAkF7LlyKBxyig5Q9ysgVj8BzOk"
+		}
+	]
+}

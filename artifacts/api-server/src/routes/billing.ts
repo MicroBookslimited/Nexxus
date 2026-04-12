@@ -178,8 +178,9 @@ async function activateSubscription(tenantId: number, planId: number, billingCyc
   await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, tenantId));
 }
 
-async function callPowerTranz(endpoint: string, body: object): Promise<{ raw: string; status: number; data: Record<string, unknown> }> {
+async function callPowerTranz(endpoint: string, body: object | string): Promise<{ raw: string; status: number; data: Record<string, unknown> }> {
   const { spId, spPassword, base } = await getPowerTranzConfig();
+  const bodyStr = JSON.stringify(body);
   const resp = await fetch(`${base}${endpoint}`, {
     method: "POST",
     headers: {
@@ -188,14 +189,18 @@ async function callPowerTranz(endpoint: string, body: object): Promise<{ raw: st
       "PowerTranz-PowerTranzId": spId,
       "PowerTranz-PowerTranzPassword": spPassword,
     },
-    body: JSON.stringify(body),
+    body: bodyStr,
   });
   const raw = await resp.text();
-  const safeSent = JSON.parse(JSON.stringify(body));
-  if (safeSent?.Source?.CardPan) safeSent.Source.CardPan = `****${String(safeSent.Source.CardPan).slice(-4)}`;
-  if (safeSent?.Source?.CardCvv) safeSent.Source.CardCvv = "***";
-  if (safeSent?.Source?.CardSecurityCode) safeSent.Source.CardSecurityCode = "***";
-  console.log(`[PowerTranz] ${endpoint} sent:`, JSON.stringify(safeSent).slice(0, 600));
+  if (typeof body === "object") {
+    const safeSent = JSON.parse(JSON.stringify(body));
+    if (safeSent?.Source?.CardPan) safeSent.Source.CardPan = `****${String(safeSent.Source.CardPan).slice(-4)}`;
+    if (safeSent?.Source?.CardCvv) safeSent.Source.CardCvv = "***";
+    if (safeSent?.Source?.CardSecurityCode) safeSent.Source.CardSecurityCode = "***";
+    console.log(`[PowerTranz] ${endpoint} sent:`, JSON.stringify(safeSent).slice(0, 600));
+  } else {
+    console.log(`[PowerTranz] ${endpoint} sent: (raw string token)`);
+  }
   console.log(`[PowerTranz] ${endpoint} HTTP ${resp.status}:`, raw.slice(0, 600));
   let data: Record<string, unknown> = {};
   try { data = JSON.parse(raw); } catch { /* non-JSON */ }
@@ -307,7 +312,8 @@ router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> 
   if (!pending) { res.send(closeScript("error", "Transaction expired or not found. Please try again.")); return; }
 
   try {
-    const { data } = await callPowerTranz("/api/spi/payment", { SpiToken: spiToken });
+    // Payment step: body must be the raw SpiToken string, not a JSON object
+    const { data } = await callPowerTranz("/api/spi/payment", spiToken);
 
     if (data.Approved) {
       await activateSubscription(pending.tenantId, pending.planId, pending.billingCycle, data.TransactionIdentifier as string);
