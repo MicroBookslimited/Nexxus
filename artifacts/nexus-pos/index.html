@@ -17,12 +17,25 @@
         var script = document.createElement('script');
         script.dataset.bot = "683486140bc14de8bd770258";
         script.dataset.zindex = "99999";
+        script.dataset.position = "left";
+        script.dataset.alignment = "left";
         script.src = "https://panel.chatfuel.com/widgets/chat-widget/chat-widget.js";
         script.async = true;
         script.defer = true;
         document.getElementsByTagName('head')[0].appendChild(script);
       })()
     </script>
+    <style>
+      /* Force Chatfuel widget to bottom-left */
+      iframe[src*="chatfuel"],
+      div[id*="chatfuel"],
+      div[class*="chatfuel"],
+      #cf-widget-container,
+      .cf-widget-container {
+        left: 20px !important;
+        right: auto !important;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

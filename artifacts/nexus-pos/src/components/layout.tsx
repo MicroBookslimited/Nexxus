@@ -400,11 +400,11 @@ export function Layout({ children }: { children: ReactNode }) {
               className={cn(
                 "flex items-center justify-center h-8 w-8 rounded-md transition-colors",
                 location.startsWith("/settings")
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:text-primary",
+                  ? "bg-orange-400/15 text-orange-400"
+                  : "text-orange-400 hover:bg-orange-400/10",
               )}
             >
-              <Settings className="h-4 w-4" />
+              <Settings className="h-4 w-4 drop-shadow-sm" />
             </Link>
           )}
 
@@ -412,44 +412,48 @@ export function Layout({ children }: { children: ReactNode }) {
           <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8 text-muted-foreground hover:text-primary transition-colors"
+            className="h-8 w-8 text-violet-400 hover:text-violet-300 hover:bg-violet-400/10 transition-colors"
             onClick={() => setSwitchUserOpen(true)}
             title="Switch staff user"
           >
-            <UserCheck className="h-4 w-4" />
+            <UserCheck className="h-4 w-4 drop-shadow-sm" />
           </Button>
 
           {/* Theme toggle */}
           <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground hidden sm:flex"
+            className="h-8 w-8 hidden sm:flex hover:bg-secondary/60 transition-colors"
             onClick={toggleTheme}
             title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           >
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {theme === "dark"
+              ? <Sun className="h-4 w-4 text-yellow-400 drop-shadow-sm" />
+              : <Moon className="h-4 w-4 text-blue-400 drop-shadow-sm" />}
           </Button>
 
           {/* Open Customer Display */}
           <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8 text-muted-foreground hover:text-primary hidden sm:flex"
+            className="h-8 w-8 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-400/10 hidden sm:flex transition-colors"
             onClick={() => window.open("/customer-display/", "nexus-customer-display", "width=1280,height=720,menubar=no,toolbar=no,location=no,status=no")}
             title="Open Customer Display (second screen)"
           >
-            <Monitor className="h-4 w-4" />
+            <Monitor className="h-4 w-4 drop-shadow-sm" />
           </Button>
 
           {fsSupported && (
             <Button
               size="icon"
               variant="ghost"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground hidden sm:flex"
+              className="h-8 w-8 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-400/10 hidden sm:flex transition-colors"
               onClick={toggleFullscreen}
               title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
             >
-              {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+              {isFullscreen
+                ? <Minimize className="h-4 w-4 drop-shadow-sm" />
+                : <Maximize className="h-4 w-4 drop-shadow-sm" />}
             </Button>
           )}
 
@@ -459,8 +463,8 @@ export function Layout({ children }: { children: ReactNode }) {
               onClick={() => setProfileOpen(!profileOpen)}
               className="flex items-center gap-1 rounded-lg px-1.5 py-1.5 hover:bg-secondary/60 transition-colors"
             >
-              <div className="h-7 w-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center">
-                <span className="text-[10px] font-bold text-primary">A</span>
+              <div className="h-7 w-7 rounded-full bg-gradient-to-br from-fuchsia-500 to-indigo-500 border border-fuchsia-400/40 flex items-center justify-center shadow-sm">
+                <span className="text-[10px] font-bold text-white">A</span>
               </div>
               <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform hidden sm:block", profileOpen && "rotate-180")} />
             </button>
