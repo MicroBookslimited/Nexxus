@@ -127,10 +127,10 @@ export function Dashboard() {
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-8 space-y-8"
+      className="p-4 sm:p-8 space-y-5 sm:space-y-8"
     >
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Dashboard</h2>
         <p className="text-muted-foreground mt-1">
           {canViewReports ? "Overview of your business performance." : "Welcome back. Here's what's happening today."}
         </p>

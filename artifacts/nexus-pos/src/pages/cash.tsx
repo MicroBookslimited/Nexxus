@@ -1012,9 +1012,9 @@ function ActiveSessionPanel({ staffName, onShiftClosed }: { staffName: string; o
   const { session, payouts, salesSummary, expectedCash, totalPayouts } = data;
 
   return (
-    <div className="flex-1 overflow-auto p-6 space-y-5">
+    <div className="flex-1 overflow-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
       {/* Session header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />

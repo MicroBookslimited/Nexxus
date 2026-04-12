@@ -1221,7 +1221,7 @@ export function Accounting() {
           </div>
 
           {/* Overview */}
-          <TabsContent value="overview" className="flex-1 overflow-y-auto p-6 m-0">
+          <TabsContent value="overview" className="flex-1 overflow-y-auto p-4 sm:p-6 m-0">
             <div className="space-y-6 max-w-4xl">
               <div className="flex gap-2">
                 {["week", "month", "year"].map(p => (
@@ -1266,7 +1266,7 @@ export function Accounting() {
           </TabsContent>
 
           {/* Chart of Accounts */}
-          <TabsContent value="accounts" className="flex-1 overflow-y-auto p-6 m-0">
+          <TabsContent value="accounts" className="flex-1 overflow-y-auto p-4 sm:p-6 m-0">
             <div className="max-w-3xl space-y-3">
               <div className="flex gap-2 flex-wrap">
                 {["all", "asset", "liability", "equity", "revenue", "expense"].map(t => (
@@ -1308,7 +1308,7 @@ export function Accounting() {
           </TabsContent>
 
           {/* Journal Entries */}
-          <TabsContent value="journal" className="flex-1 overflow-y-auto p-6 m-0">
+          <TabsContent value="journal" className="flex-1 overflow-y-auto p-4 sm:p-6 m-0">
             <div className="max-w-4xl space-y-3">
               {entries.length === 0 ? (
                 <div className="text-center py-16">
@@ -1361,7 +1361,7 @@ export function Accounting() {
           </TabsContent>
 
           {/* Reports */}
-          <TabsContent value="reports" className="flex-1 overflow-y-auto p-6 m-0">
+          <TabsContent value="reports" className="flex-1 overflow-y-auto p-4 sm:p-6 m-0">
             <div className="space-y-4">
               <div className="flex gap-2">
                 <Button size="sm" variant={reportType === "pl" ? "default" : "outline"} className="h-8 text-xs" onClick={() => setReportType("pl")}>Profit & Loss</Button>
@@ -1375,12 +1375,12 @@ export function Accounting() {
           </TabsContent>
 
           {/* Inventory */}
-          <TabsContent value="inventory" className="flex-1 overflow-y-auto p-6 m-0">
+          <TabsContent value="inventory" className="flex-1 overflow-y-auto p-4 sm:p-6 m-0">
             <InventoryPanel products={products} />
           </TabsContent>
 
           {/* QuickBooks */}
-          <TabsContent value="quickbooks" className="flex-1 overflow-y-auto p-6 m-0">
+          <TabsContent value="quickbooks" className="flex-1 overflow-y-auto p-4 sm:p-6 m-0">
             <QuickBooksPanel />
           </TabsContent>
         </Tabs>

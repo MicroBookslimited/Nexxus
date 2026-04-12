@@ -157,22 +157,22 @@ export function Customers() {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-8 space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Customers</h2>
-          <p className="text-muted-foreground mt-1">Manage your customer profiles and loyalty.</p>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Customers</h2>
+          <p className="text-muted-foreground mt-1 text-sm">Manage your customer profiles and loyalty.</p>
         </div>
-        <Button onClick={openAdd} className="gap-2">
+        <Button onClick={openAdd} className="gap-2 self-start sm:self-auto">
           <Plus className="h-4 w-4" />
           Add Customer
         </Button>
       </div>
 
-      <div className="relative max-w-sm">
+      <div className="relative w-full sm:max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          className="pl-9"
+          className="pl-9 w-full"
           placeholder="Search customers..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}

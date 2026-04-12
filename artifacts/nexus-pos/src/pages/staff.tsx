@@ -372,7 +372,7 @@ export function Staff() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-6 space-y-6">
+      <div className="flex-1 overflow-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
         {isLoading ? (
           <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">Loading staff…</div>
         ) : !staff?.length ? (

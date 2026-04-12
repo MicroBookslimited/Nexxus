@@ -292,22 +292,22 @@ export function Orders() {
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-8 space-y-6"
+      className="p-4 sm:p-8 space-y-4 sm:space-y-6"
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Order History</h2>
-          <p className="text-muted-foreground mt-1">View and manage all transactions.</p>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Order History</h2>
+          <p className="text-muted-foreground mt-1 text-sm">View and manage all transactions.</p>
         </div>
         
         <div className="flex gap-2 items-center flex-wrap">
-          <div className="relative w-52">
+          <div className="relative w-full sm:w-52">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
               placeholder="Search order number..." 
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="pl-8"
+              className="pl-8 w-full"
             />
           </div>
 

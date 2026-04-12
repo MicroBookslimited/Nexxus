@@ -1355,13 +1355,13 @@ export function Products() {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-8 space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Products</h2>
-          <p className="text-muted-foreground mt-1">Manage your product catalog, variants, and stock purchases.</p>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Products</h2>
+          <p className="text-muted-foreground mt-1 text-sm">Manage your product catalog, variants, and stock purchases.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Page tab toggle */}
           <div className="flex items-center rounded-md border border-border overflow-hidden">
             <button
@@ -1415,9 +1415,9 @@ export function Products() {
 
       {pageTab === "products" && (
       <div className="flex gap-3 flex-wrap items-center">
-        <div className="relative max-w-xs">
+        <div className="relative flex-1 min-w-[160px] sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder="Search products…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <Input className="pl-9 w-full" placeholder="Search products…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
         <div className="flex gap-2 flex-wrap flex-1">
           <Button size="sm" variant={!categoryFilter ? "default" : "outline"} onClick={() => setCategoryFilter(null)}>All</Button>
@@ -1534,8 +1534,9 @@ export function Products() {
       ) : (
         /* ── LIST VIEW ── */
         <div className="rounded-xl border border-border overflow-hidden">
+          <div className="overflow-x-auto">
           {/* Header row */}
-          <div className="grid grid-cols-[1fr_120px_100px_140px_100px_120px] gap-4 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          <div className="grid grid-cols-[minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide min-w-[680px]">
             <span>Product</span>
             <span>Category</span>
             <span className="text-right">Price</span>
@@ -1554,7 +1555,7 @@ export function Products() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ delay: i * 0.02 }}
-                className={`grid grid-cols-[1fr_120px_100px_140px_100px_120px] gap-4 px-4 py-3 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors group`}
+                className={`grid grid-cols-[minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-3 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors group min-w-[680px]`}
               >
                 {/* Name + description */}
                 <div className="min-w-0">
@@ -1624,6 +1625,7 @@ export function Products() {
             );
             })}
           </AnimatePresence>
+          </div>{/* end overflow-x-auto */}
         </div>
       ))}
 

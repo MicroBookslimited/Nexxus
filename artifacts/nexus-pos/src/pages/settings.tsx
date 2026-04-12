@@ -157,11 +157,11 @@ export function AdminSettings() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 sm:py-8 space-y-6 sm:space-y-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Settings className="h-6 w-6 text-primary" />
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Settings className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
             Admin Settings
           </h1>
           <p className="text-sm text-muted-foreground mt-1">Configure your POS system preferences</p>
@@ -169,7 +169,7 @@ export function AdminSettings() {
         <Button
           onClick={handleSave}
           disabled={!dirty || updateSettings.isPending}
-          className="min-w-[100px]"
+          className="min-w-[100px] self-start sm:self-auto"
         >
           {updateSettings.isPending ? "Saving…" : "Save Changes"}
         </Button>

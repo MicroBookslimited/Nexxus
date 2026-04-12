@@ -1313,10 +1313,10 @@ export function Reports() {
   const range = getRange(preset, customFrom, customTo);
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-6 space-y-5">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Reports</h2>
-        <p className="text-muted-foreground mt-1">11 comprehensive reports across all areas of your business.</p>
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Reports</h2>
+        <p className="text-muted-foreground mt-1 text-sm">11 comprehensive reports across all areas of your business.</p>
       </div>
 
       {TABS_WITH_RANGE.has(activeTab) && (
