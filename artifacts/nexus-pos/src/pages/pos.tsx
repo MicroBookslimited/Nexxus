@@ -362,6 +362,7 @@ export function POS() {
   const secondaryCurrency = settings?.secondary_currency || "";
   const exchangeRate = parseFloat(settings?.currency_rate || "0");
   const taxRate = parseFloat(settings?.tax_rate || "15") / 100;
+  const allowOverselling = settings?.allow_overselling === "true";
   const taxPct = Math.round(taxRate * 100);
 
   const { data: heldOrders } = useListHeldOrders();
@@ -1108,8 +1109,8 @@ export function POS() {
                     return (
                       <motion.div key={product.id} whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.02 }}>
                         <div
-                          onClick={() => !product.inStock ? undefined : handleProductTap(product)}
-                          className={`relative cursor-pointer rounded-xl border ${palette.bg} ${palette.accent} aspect-square p-2 flex flex-col justify-between transition-all duration-150 ${!product.inStock ? "opacity-40 grayscale cursor-not-allowed" : "hover:brightness-110 hover:shadow-lg hover:shadow-black/30 active:scale-95"}`}
+                          onClick={() => (!product.inStock && !allowOverselling) ? undefined : handleProductTap(product)}
+                          className={`relative cursor-pointer rounded-xl border ${palette.bg} ${palette.accent} aspect-square p-2 flex flex-col justify-between transition-all duration-150 ${(!product.inStock && !allowOverselling) ? "opacity-40 grayscale cursor-not-allowed" : "hover:brightness-110 hover:shadow-lg hover:shadow-black/30 active:scale-95"}`}
                         >
                           <div className={`absolute top-2 right-2 h-1.5 w-1.5 rounded-full ${palette.dot} opacity-70`} />
                           <div className="pr-3">
@@ -1123,7 +1124,9 @@ export function POS() {
                                 <Settings2 className="h-3 w-3 text-white/60" />
                               )}
                               {!product.inStock ? (
-                                <span className="text-[9px] font-semibold bg-red-500/40 text-red-200 px-1 py-0.5 rounded leading-none">Out of stock</span>
+                                <span className="text-[9px] font-semibold bg-red-500/40 text-red-200 px-1 py-0.5 rounded leading-none">
+                                  {allowOverselling ? `${product.stockCount} left` : "Out of stock"}
+                                </span>
                               ) : product.stockCount > 0 ? (
                                 <span className={`text-[9px] font-semibold px-1 py-0.5 rounded leading-none ${product.stockCount <= 5 ? "bg-amber-500/40 text-amber-100" : "bg-black/30 text-white/70"}`}>
                                   {product.stockCount} left

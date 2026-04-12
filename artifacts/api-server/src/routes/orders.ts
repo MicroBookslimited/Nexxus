@@ -216,6 +216,7 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   const taxRateValue = await getSetting("tax_rate", tenantId);
   const taxRate = parseFloat(taxRateValue || "15") / 100;
+  const allowOverselling = (await getSetting("allow_overselling", tenantId)) === "true";
   const tax = Math.round(discountedSubtotal * taxRate * 100) / 100;
   const total = Math.round((discountedSubtotal + tax) * 100) / 100;
 
@@ -285,16 +286,27 @@ router.post("/orders", async (req, res): Promise<void> => {
   for (const item of resolvedItems) {
     await db
       .update(productsTable)
-      .set({
-        stockCount: sql`GREATEST(0, ${productsTable.stockCount} - ${item.quantity})`,
-        inStock: sql`CASE WHEN ${productsTable.stockCount} - ${item.quantity} <= 0 THEN false ELSE ${productsTable.inStock} END`,
-      })
+      .set(
+        allowOverselling
+          ? {
+              stockCount: sql`${productsTable.stockCount} - ${item.quantity}`,
+            }
+          : {
+              stockCount: sql`GREATEST(0, ${productsTable.stockCount} - ${item.quantity})`,
+              inStock: sql`CASE WHEN ${productsTable.stockCount} - ${item.quantity} <= 0 THEN false ELSE ${productsTable.inStock} END`,
+            }
+      )
       .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
 
     if (parsed.data.locationId) {
       await db
         .update(locationInventoryTable)
-        .set({ stockCount: sql`GREATEST(0, ${locationInventoryTable.stockCount} - ${item.quantity})`, updatedAt: new Date() })
+        .set({
+          stockCount: allowOverselling
+            ? sql`${locationInventoryTable.stockCount} - ${item.quantity}`
+            : sql`GREATEST(0, ${locationInventoryTable.stockCount} - ${item.quantity})`,
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(locationInventoryTable.locationId, parsed.data.locationId),

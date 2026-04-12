@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign, Bell, Send,
   ShieldCheck, Plus, Trash2, ChevronDown, ChevronRight, Edit2, Check, X, QrCode, Copy, Download, ExternalLink,
+  Boxes,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY } from "@/lib/saas-api";
@@ -89,6 +90,7 @@ export function AdminSettings() {
   const [digestEmail, setDigestEmail] = useState("");
   const [digestHour, setDigestHour] = useState("7");
   const [lowStockThreshold, setLowStockThreshold] = useState("5");
+  const [allowOverselling, setAllowOverselling] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [tenantSlug, setTenantSlug] = useState<string>("");
@@ -121,6 +123,7 @@ export function AdminSettings() {
     setDigestEmail(settings.daily_digest_email ?? "");
     setDigestHour(settings.daily_digest_hour ?? "7");
     setLowStockThreshold(settings.low_stock_threshold ?? "5");
+    setAllowOverselling(settings.allow_overselling === "true");
     setDirty(false);
   }, [settings]);
 
@@ -149,6 +152,7 @@ export function AdminSettings() {
           daily_digest_email: digestEmail.trim(),
           daily_digest_hour: digestHour,
           low_stock_threshold: lowStockThreshold,
+          allow_overselling: allowOverselling ? "true" : "false",
         },
       },
       {
@@ -709,6 +713,54 @@ export function AdminSettings() {
               <li>• Items that are out of stock or running low</li>
             </ul>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Inventory */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Boxes className="h-4 w-4 text-primary" />
+            Inventory
+          </CardTitle>
+          <CardDescription>
+            Control how your POS handles stock levels and out-of-stock products
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Allow Overselling</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                When enabled, stock is allowed to go negative and out-of-stock items remain selectable on the POS
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={allowOverselling}
+              onClick={() => { setAllowOverselling(!allowOverselling); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                allowOverselling ? "bg-primary" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                allowOverselling ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+          {allowOverselling && (
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-700 dark:text-amber-400 space-y-1">
+              <p className="font-medium">Overselling is active</p>
+              <ul className="space-y-0.5 ml-2">
+                <li>• Products can be sold even when stock reaches zero</li>
+                <li>• Stock counts will go negative — review regularly to reorder in time</li>
+                <li>• Out-of-stock items will still show an "Out of stock" badge but remain tappable</li>
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
 
