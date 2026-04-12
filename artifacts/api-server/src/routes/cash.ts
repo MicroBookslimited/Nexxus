@@ -37,13 +37,16 @@ const CloseSessionBody = z.object({
 });
 
 function computeSales(orders: { paymentMethod: string | null; total: number | null; status: string | null }[]) {
-  const completed = orders.filter((r) => r.status !== "refunded" && r.status !== "voided");
+  // Voided orders never completed — exclude from all sales.
+  // Refunded orders DID complete as sales first, so include them in gross sales
+  // and also track them separately as refunds (net = 0 for that order).
+  const notVoided = orders.filter((r) => r.status !== "voided");
   const refunded  = orders.filter((r) => r.status === "refunded");
 
-  const cashSales   = completed.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const cardSales   = completed.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const splitSales  = completed.filter((r) => r.paymentMethod === "split").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const creditSales = completed.filter((r) => r.paymentMethod === "credit").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const cashSales   = notVoided.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const cardSales   = notVoided.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const splitSales  = notVoided.filter((r) => r.paymentMethod === "split").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const creditSales = notVoided.filter((r) => r.paymentMethod === "credit").reduce((s, r) => s + Number(r.total ?? 0), 0);
 
   const voided = orders.filter((r) => r.status === "voided");
 
