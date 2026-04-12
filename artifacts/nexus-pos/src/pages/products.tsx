@@ -122,7 +122,7 @@ function formatCurrency(v: number) {
 
 /* ─── Variant editor ─── */
 function VariantEditor({ productId }: { productId: number }) {
-  const { data: serverGroups } = useGetProductVariants({ id: productId });
+  const { data: serverGroups } = useGetProductVariants(productId);
   const saveVariants = useSaveProductVariants();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -262,7 +262,7 @@ function VariantEditor({ productId }: { productId: number }) {
 
 /* ─── Modifier editor ─── */
 function ModifierEditor({ productId }: { productId: number }) {
-  const { data: serverGroups } = useGetProductModifiers({ id: productId });
+  const { data: serverGroups } = useGetProductModifiers(productId);
   const saveModifiers = useSaveProductModifiers();
   const queryClient = useQueryClient();
   const { toast } = useToast();

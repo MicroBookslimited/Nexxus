@@ -118,7 +118,7 @@ function CustomizeDialog({
   onConfirm: (variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[]) => void;
 }) {
   const { data: customization, isLoading } = useGetProductCustomization(
-    { id: productId },
+    productId,
     { query: { enabled: open } },
   );
 
