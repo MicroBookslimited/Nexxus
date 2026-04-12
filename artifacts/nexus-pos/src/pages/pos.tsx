@@ -362,6 +362,7 @@ export function POS() {
   const secondaryCurrency = settings?.secondary_currency || "";
   const exchangeRate = parseFloat(settings?.currency_rate || "0");
   const taxRate = parseFloat(settings?.tax_rate || "15") / 100;
+  const taxMode = (settings?.tax_mode as "exclusive" | "inclusive") ?? "exclusive";
   const allowOverselling = settings?.allow_overselling === "true";
   const taxPct = Math.round(taxRate * 100);
 
@@ -625,8 +626,10 @@ export function POS() {
   const loyaltyDiscountValue = clampedPoints > 0 ? clampedPoints / 100 : 0;
 
   const discountedSubtotal = Math.max(0, subtotal - cartDiscountValue - loyaltyDiscountValue);
-  const tax = discountedSubtotal * taxRate;
-  const total = discountedSubtotal + tax;
+  const tax = taxMode === "inclusive"
+    ? discountedSubtotal * taxRate / (1 + taxRate)
+    : discountedSubtotal * taxRate;
+  const total = taxMode === "inclusive" ? discountedSubtotal : discountedSubtotal + tax;
 
   const handleSplitClick = () => {
     setPaymentMethod("split");
@@ -1502,7 +1505,7 @@ export function POS() {
                     </div>
                   )}
                   <div className="flex justify-between text-foreground/80">
-                    <span>GCT {taxPct > 0 ? `(${taxPct}%)` : ""}</span><span className="font-mono">{fmtNum(tax)}</span>
+                    <span>GCT {taxPct > 0 ? `(${taxPct}%)` : ""}{taxMode === "inclusive" ? " incl." : ""}</span><span className="font-mono">{fmtNum(tax)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-sm pt-1 border-t border-border">
                     <span>Total</span><span className="font-mono text-primary">{formatCurrency(total, baseCurrency)}</span>

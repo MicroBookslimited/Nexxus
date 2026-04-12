@@ -33,6 +33,7 @@ export function AdminSettings() {
   const [businessAddress, setBusinessAddress] = useState("");
   const [businessPhone, setBusinessPhone] = useState("");
   const [taxRate, setTaxRate] = useState("");
+  const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
   const [receiptFooter, setReceiptFooter] = useState("");
   const [receiptSize, setReceiptSize] = useState<"58mm" | "80mm">("80mm");
   const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold">("classic");
@@ -73,6 +74,7 @@ export function AdminSettings() {
     setBusinessAddress(settings.business_address ?? "");
     setBusinessPhone(settings.business_phone ?? "");
     setTaxRate(settings.tax_rate ?? "15");
+    setTaxMode((settings.tax_mode as "exclusive" | "inclusive") ?? "exclusive");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
     setReceiptSize((settings.receipt_size as "58mm" | "80mm") ?? "80mm");
     setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold") ?? "classic");
@@ -108,6 +110,7 @@ export function AdminSettings() {
           business_address: businessAddress,
           business_phone: businessPhone,
           tax_rate: taxRate,
+          tax_mode: taxMode,
           receipt_footer: receiptFooter,
           receipt_size: receiptSize,
           receipt_template: receiptTemplate,
@@ -243,6 +246,32 @@ export function AdminSettings() {
                 className="w-28"
               />
               <span className="text-sm text-muted-foreground">%</span>
+            </div>
+          </div>
+
+          {/* Tax Mode */}
+          <div className="space-y-2">
+            <Label>Tax Mode</Label>
+            <div className="flex gap-3">
+              {([
+                { value: "exclusive", label: "Tax Exclusive", desc: "Tax added on top of item price" },
+                { value: "inclusive", label: "Tax Inclusive", desc: "Tax already included in item price" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => { setTaxMode(opt.value); markDirty(); }}
+                  className={cn(
+                    "flex-1 rounded-lg border p-3 text-left transition-all",
+                    taxMode === opt.value
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border hover:border-muted-foreground/50",
+                  )}
+                >
+                  <p className="text-sm font-medium">{opt.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                </button>
+              ))}
             </div>
           </div>
 
