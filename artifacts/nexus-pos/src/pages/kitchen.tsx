@@ -7,7 +7,7 @@ import {
   useUpdateKdsScreen,
   useDeleteKdsScreen,
 } from "@workspace/api-client-react";
-import type { KitchenOrder, KdsScreen } from "@workspace/api-zod";
+import type { KitchenOrder as KitchenOrderBase, KdsScreen } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,8 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
+
+type KitchenOrder = KitchenOrderBase & { orderStatus?: string };
 
 const TARGET_MINUTES = 15;
 
@@ -79,9 +81,31 @@ function KitchenCard({
   const { display: countdown, isOverdue, isWarning } = useCountdown(order.createdAt);
   const items = filteredItems ?? order.items;
   const isCompleted = order.status === "ready";
+  const isVoided = order.orderStatus === "voided";
+  const isRefunded = order.orderStatus === "refunded";
+  const isCancelled = isVoided || isRefunded;
 
   return (
-    <div className={cn("rounded-xl bg-card border border-border flex flex-col shadow-sm transition-all", config.headerColor)}>
+    <div className={cn("relative rounded-xl bg-card border flex flex-col shadow-sm transition-all",
+      isCancelled ? "border-red-500/50 opacity-80" : "border-border",
+      isCancelled ? "" : config.headerColor,
+    )}>
+      {/* Cancelled stamp overlay */}
+      {isCancelled && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl pointer-events-none overflow-hidden">
+          <div className={cn(
+            "rotate-[-30deg] text-center select-none",
+          )}>
+            <p className={cn(
+              "text-5xl font-black tracking-widest uppercase border-4 px-4 py-2 rounded-lg",
+              isVoided ? "text-orange-500 border-orange-500/70" : "text-red-500 border-red-500/70",
+            )}>
+              {isVoided ? "VOID" : "REFUNDED"}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="p-4 border-b border-border shrink-0">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -153,7 +177,7 @@ function KitchenCard({
         ))}
       </div>
 
-      {config.next && (
+      {config.next && !isCancelled && (
         <div className="p-3 border-t border-border">
           <Button
             className="w-full h-9 text-sm"

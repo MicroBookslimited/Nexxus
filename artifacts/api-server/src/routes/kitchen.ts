@@ -46,8 +46,13 @@ router.get("/kitchen", async (req, res): Promise<void> => {
     .where(and(
       eq(ordersTable.tenantId, tenantId),
       or(
-        // New orders: use kitchenStatus field
+        // New orders: use kitchenStatus field (active or cancelled-but-was-sent)
         inArray(ordersTable.kitchenStatus, ["pending", "preparing", "ready"]),
+        // Voided/refunded orders that had already been sent to the kitchen
+        and(
+          inArray(ordersTable.status, ["voided", "refunded"]),
+          inArray(ordersTable.kitchenStatus, ["pending", "preparing", "ready", "completed"]),
+        ),
         // Backward compat: old orders without kitchenStatus that are still active
         and(
           isNull(ordersTable.kitchenStatus),
@@ -80,6 +85,7 @@ router.get("/kitchen", async (req, res): Promise<void> => {
         id: order.id,
         orderNumber: order.orderNumber,
         status: order.kitchenStatus ?? (order.status === "open" ? "pending" : order.status),
+        orderStatus: order.status,
         tableId: order.tableId ?? undefined,
         tableName: order.tableId ? (tableNameMap.get(order.tableId) ?? undefined) : undefined,
         orderType: order.orderType ?? "counter",
