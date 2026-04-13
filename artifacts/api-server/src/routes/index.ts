@@ -31,6 +31,7 @@ import resellerRouter from "./reseller";
 import superadminEmailRouter from "./superadmin-email";
 import storeRouter from "./store";
 import hardwareRouter from "./hardware";
+import vendorsRouter from "./vendors";
 
 const router: IRouter = Router();
 
@@ -66,5 +67,6 @@ router.use(resellerRouter);
 router.use(superadminEmailRouter);
 router.use(storeRouter);
 router.use(hardwareRouter);
+router.use(vendorsRouter);
 
 export default router;
