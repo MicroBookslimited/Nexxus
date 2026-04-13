@@ -1075,37 +1075,40 @@ export function POS() {
   }
 
   return (
-    <>
-      {/* Staff session badge */}
+    <div className="flex flex-col h-full">
+      {/* Staff session bar — sits below the layout header, never overlaps nav buttons */}
       {sessionStaff && (
-        <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
-          {posLocations.length > 0 && (
-            <div className="flex items-center gap-1 bg-muted/60 border border-border/50 rounded-md px-2 py-1">
-              <MapPin className="h-3 w-3 text-primary shrink-0" />
-              <select
-                value={sessionLocationId ?? ""}
-                onChange={e => setSessionLocationId(e.target.value ? Number(e.target.value) : null)}
-                className="text-xs bg-transparent border-none outline-none text-foreground cursor-pointer max-w-[120px]"
-              >
-                <option value="">All Branches</option>
-                {posLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            </div>
-          )}
-          <span className="text-xs text-muted-foreground">
-            Logged in: <span className="font-semibold text-foreground">{sessionStaff.name}</span>
-          </span>
+        <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border bg-card/60">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0 animate-pulse" />
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              Logged in: <span className="font-semibold text-foreground">{sessionStaff.name}</span>
+            </span>
+            {posLocations.length > 0 && (
+              <div className="flex items-center gap-1 bg-muted/60 border border-border/50 rounded-md px-2 py-0.5 ml-1">
+                <MapPin className="h-3 w-3 text-primary shrink-0" />
+                <select
+                  value={sessionLocationId ?? ""}
+                  onChange={e => setSessionLocationId(e.target.value ? Number(e.target.value) : null)}
+                  className="text-xs bg-transparent border-none outline-none text-foreground cursor-pointer max-w-[120px]"
+                >
+                  <option value="">All Branches</option>
+                  {posLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
           <button
             title="Lock register"
             onClick={() => { setLocked(true); clearStaff(); setSessionLocationId(null); }}
-            className="flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/25 hover:border-amber-400 hover:text-amber-300 active:scale-95 transition-all duration-150"
+            className="shrink-0 flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/25 hover:border-amber-400 hover:text-amber-300 active:scale-95 transition-all duration-150"
           >
             <LockKeyhole className="h-3.5 w-3.5" />
             Lock
           </button>
         </div>
       )}
-      <div className="flex h-full">
+      <div className="flex flex-1 min-h-0">
         {/* Product grid */}
         <div className="flex-1 flex flex-col min-w-0 border-r border-border">
           {/* Search & filters */}
@@ -2207,6 +2210,6 @@ export function POS() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
