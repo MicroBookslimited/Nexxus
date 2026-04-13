@@ -37,6 +37,7 @@ const DEFAULTS: Record<string, string> = {
   daily_digest_email: "",
   daily_digest_hour: "7",
   low_stock_threshold: "5",
+  allow_overselling: "false",
   product_categories: '["Beverages","Food","Bakery","Merchandise","Other"]',
 };
 

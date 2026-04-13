@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useGetSettings, useUpdateSettings } from "@workspace/api-client-react";
+import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +20,7 @@ export function AdminSettings() {
   const { data: settings, isLoading } = useGetSettings();
   const updateSettings = useUpdateSettings();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [emailProvider, setEmailProvider] = useState<"system" | "smtp">("system");
   const [fromName, setFromName] = useState("NEXXUS POS");
@@ -129,9 +131,13 @@ export function AdminSettings() {
         },
       },
       {
-        onSuccess: () => {
+        onSuccess: (updatedSettings) => {
           toast({ title: "Settings saved", description: "Your changes have been applied." });
           setDirty(false);
+          // Immediately push the server's response into the query cache so every
+          // page using useGetSettings (POS, dashboard, etc.) sees the new values
+          // without waiting for a background refetch.
+          queryClient.setQueryData(getGetSettingsQueryKey(), updatedSettings);
         },
         onError: () => toast({ title: "Save failed", description: "Could not save settings.", variant: "destructive" }),
       }
