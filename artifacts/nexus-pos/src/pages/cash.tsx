@@ -23,7 +23,7 @@ import {
   Coins, DollarSign, TrendingUp, TrendingDown, CreditCard, Banknote,
   SplitSquareHorizontal, Plus, CheckCircle2, History,
   ArrowDownLeft, UserCheck, ArrowLeft, Mail, BookOpen, ShoppingBag, MapPin,
-  ListChecks, ChevronRight, SkipForward,
+  ListChecks, ChevronRight, SkipForward, AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -1239,7 +1239,7 @@ export function CashManagement() {
   const { can, staff: sessionStaff } = useStaff();
   const canViewAllHistory = can("reports.view");
 
-  const { data: current, isLoading: loadingCurrent, isError: noSession } = useGetCurrentCashSession({
+  const { data: current, isLoading: loadingCurrent, isError: noSession, refetch: refetchCurrent } = useGetCurrentCashSession({
     query: { retry: false },
   });
   const { data: sessions } = useListCashSessions();
@@ -1247,6 +1247,8 @@ export function CashManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [eodSessionId, setEodSessionId] = useState<number | null>(null);
+  const [sessionConflict, setSessionConflict] = useState(false);
+  const [forceClosing, setForceClosing] = useState(false);
 
   const hasOpenSession = !!current?.session;
   const closedSessions = (sessions ?? []).filter((s) => s.status === "closed").slice(0, 20);
@@ -1259,19 +1261,50 @@ export function CashManagement() {
       {
         onSuccess: () => {
           toast({ title: "Shift opened", description: `Opening cash: ${formatCurrency(openingCash)}` });
+          setSessionConflict(false);
           queryClient.removeQueries({ queryKey: ["/api/cash/sessions/current"] });
           queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
         },
         onError: (err: any) => {
           if (err?.response?.status === 409) {
-            toast({ title: "Session already open", description: "Another shift is currently open.", variant: "destructive" });
-            queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions/current"] });
+            setSessionConflict(true);
+            // Immediately refetch so the open session shows in the UI if it exists
+            queryClient.removeQueries({ queryKey: ["/api/cash/sessions/current"] });
+            refetchCurrent();
           } else {
             toast({ title: "Error", description: "Could not open shift", variant: "destructive" });
           }
         },
       },
     );
+  };
+
+  const handleForceClose = async () => {
+    if (!can("cash.close_session")) {
+      toast({ title: "Permission denied", description: "Only managers can force-close a session.", variant: "destructive" });
+      return;
+    }
+    setForceClosing(true);
+    try {
+      const token = localStorage.getItem("nexus_tenant_token");
+      const resp = await fetch("/api/cash/sessions/force-close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (resp.ok) {
+        toast({ title: "Stuck session cleared", description: "You can now open a new shift." });
+        setSessionConflict(false);
+        queryClient.removeQueries({ queryKey: ["/api/cash/sessions/current"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        toast({ title: "Could not clear session", description: (err as any).error ?? "Please try again.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Network error", description: "Please try again.", variant: "destructive" });
+    } finally {
+      setForceClosing(false);
+    }
   };
 
   return (
@@ -1298,6 +1331,34 @@ export function CashManagement() {
       <div className="flex-1 flex overflow-hidden">
         {/* Main content area */}
         <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Stuck session conflict banner */}
+          {sessionConflict && !hasOpenSession && (
+            <div className="shrink-0 mx-4 mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+              <div className="flex items-start gap-2.5 flex-1">
+                <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-300">Stuck session detected</p>
+                  <p className="text-xs text-amber-400/80 mt-0.5">
+                    The system has a session marked as open but it isn't loading correctly.
+                    {can("cash.close_session")
+                      ? " As a manager, you can force-close it to clear the way."
+                      : " Ask a manager to force-close it."}
+                  </p>
+                </div>
+              </div>
+              {can("cash.close_session") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-500/40 text-amber-300 hover:bg-amber-500/20 shrink-0"
+                  disabled={forceClosing}
+                  onClick={handleForceClose}
+                >
+                  {forceClosing ? "Clearing…" : "Force Close Stuck Session"}
+                </Button>
+              )}
+            </div>
+          )}
           {loadingCurrent && !noSession ? (
             <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
           ) : hasOpenSession ? (

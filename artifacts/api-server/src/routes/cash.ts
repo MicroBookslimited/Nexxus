@@ -292,6 +292,37 @@ router.post("/cash/sessions/:id/payouts", async (req, res): Promise<void> => {
   res.status(201).json(payout);
 });
 
+/* Force-close any stuck open session for this tenant (manager recovery) */
+router.post("/cash/sessions/force-close", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const [existing] = await db
+    .select()
+    .from(cashSessionsTable)
+    .where(and(eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId)))
+    .orderBy(sql`${cashSessionsTable.openedAt} desc`)
+    .limit(1);
+
+  if (!existing) {
+    res.status(404).json({ error: "No open session found" });
+    return;
+  }
+
+  const [closed] = await db
+    .update(cashSessionsTable)
+    .set({
+      status: "closed",
+      closedAt: new Date(),
+      actualCash: existing.openingCash,
+      closingNotes: "Force-closed by manager to recover stuck session",
+    })
+    .where(and(eq(cashSessionsTable.id, existing.id), eq(cashSessionsTable.tenantId, tenantId)))
+    .returning();
+
+  res.json(closed);
+});
+
 router.post("/cash/sessions/:id/close", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
