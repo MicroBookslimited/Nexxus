@@ -96,7 +96,7 @@ async function computeItemSummary(tenantId: number, from: Date, to: Date) {
   return db
     .select({
       productName: orderItemsTable.productName,
-      sku: productsTable.sku,
+      sku: productsTable.barcode,
       totalQty: sql<number>`cast(sum(${orderItemsTable.quantity}) as int)`.as("total_qty"),
       totalRevenue: sql<number>`sum(${orderItemsTable.lineTotal})`.as("total_revenue"),
     })
@@ -111,7 +111,7 @@ async function computeItemSummary(tenantId: number, from: Date, to: Date) {
         isNotNull(ordersTable.paymentMethod),
       )
     )
-    .groupBy(orderItemsTable.productName, productsTable.sku)
+    .groupBy(orderItemsTable.productName, productsTable.barcode)
     .orderBy(sql`sum(${orderItemsTable.quantity}) desc`);
 }
 
