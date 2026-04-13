@@ -32,7 +32,7 @@ import {
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
-  ClipboardList, BookOpen,
+  ClipboardList, BookOpen, LockKeyhole,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -1096,9 +1096,11 @@ export function POS() {
             Logged in: <span className="font-semibold text-foreground">{sessionStaff.name}</span>
           </span>
           <button
-            className="text-xs text-muted-foreground hover:text-destructive underline-offset-2 hover:underline transition-colors"
+            title="Lock register"
             onClick={() => { setLocked(true); clearStaff(); setSessionLocationId(null); }}
+            className="flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/25 hover:border-amber-400 hover:text-amber-300 active:scale-95 transition-all duration-150"
           >
+            <LockKeyhole className="h-3.5 w-3.5" />
             Lock
           </button>
         </div>
