@@ -591,7 +591,7 @@ function CloseShiftDialog({
 }
 
 /* ─── Print helpers ─── */
-type ItemSummaryRow = { productName: string; sku?: string | null; totalQty: number; totalRevenue: number };
+type ItemSummaryRow = { productName: string; sku?: string | null; totalQty: number; totalRevenue: number; totalTax?: number | null };
 
 type CreditOrderRow = { orderNumber: string; total: number; customerName: string | null; customerPhone: string | null; arId: number | null; amountPaid: number | null; arStatus: string | null; createdAt: string };
 
@@ -680,6 +680,7 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
           <th style="text-align:left;padding:1px 2px">SKU</th>
           <th style="text-align:left;padding:1px 2px">Product</th>
           <th style="text-align:right;padding:1px 2px">Qty</th>
+          <th style="text-align:right;padding:1px 2px">Tax</th>
           <th style="text-align:right;padding:1px 2px">Total</th>
         </tr></thead>
         <tbody>${d.itemSummary.map((r, i) => `
@@ -688,6 +689,7 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
             <td style="padding:1px 2px;font-family:monospace">${r.sku ?? "—"}</td>
             <td style="padding:1px 2px">${r.productName}</td>
             <td style="text-align:right;padding:1px 2px">${r.totalQty.toFixed(2)}</td>
+            <td style="text-align:right;padding:1px 2px">${(r.totalTax ?? 0) > 0 ? `J$${(r.totalTax!).toFixed(2)}` : "—"}</td>
             <td style="text-align:right;padding:1px 2px">J$${Math.abs(r.totalRevenue).toFixed(2)}</td>
           </tr>`).join("")}
           <tr style="border-top:1px solid #000;font-weight:bold">
@@ -695,6 +697,7 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
             <td></td>
             <td></td>
             <td style="text-align:right;padding:2px 2px">${d.itemSummary.reduce((s, r) => s + r.totalQty, 0).toFixed(2)}</td>
+            <td style="text-align:right;padding:2px 2px">J$${d.itemSummary.reduce((s, r) => s + (r.totalTax ?? 0), 0).toFixed(2)}</td>
             <td style="text-align:right;padding:2px 2px">Grand Total: J$${d.itemSummary.reduce((s, r) => s + r.totalRevenue, 0).toFixed(2)}</td>
           </tr>
         </tbody>
@@ -885,6 +888,7 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
                       <th className="text-left font-semibold text-muted-foreground py-1.5 pr-3">SKU</th>
                       <th className="text-left font-semibold text-muted-foreground py-1.5 pr-3">Product</th>
                       <th className="text-right font-semibold text-muted-foreground py-1.5 pr-3">Quantity</th>
+                      <th className="text-right font-semibold text-muted-foreground py-1.5 pr-3">Tax</th>
                       <th className="text-right font-semibold text-muted-foreground py-1.5">Total amount</th>
                     </tr>
                   </thead>
@@ -895,6 +899,11 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
                         <td className="py-1.5 pr-3 font-mono text-muted-foreground">{row.sku ?? "—"}</td>
                         <td className="py-1.5 pr-3 text-foreground">{row.productName}</td>
                         <td className="py-1.5 pr-3 text-right tabular-nums">{row.totalQty.toFixed(2)}</td>
+                        <td className="py-1.5 pr-3 text-right tabular-nums font-mono text-amber-400/80">
+                          {(row.totalTax ?? 0) > 0
+                            ? `J$ ${(row.totalTax!).toLocaleString("en-JM", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : "—"}
+                        </td>
                         <td className="py-1.5 text-right tabular-nums font-mono">
                           J$ {Math.abs(row.totalRevenue).toLocaleString("en-JM", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
@@ -906,6 +915,9 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
                       <td></td>
                       <td className="py-2 pr-3 text-right tabular-nums">
                         {data.itemSummary.reduce((s, r) => s + r.totalQty, 0).toFixed(2)}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums font-mono text-amber-400">
+                        J$ {data.itemSummary.reduce((s, r) => s + (r.totalTax ?? 0), 0).toLocaleString("en-JM", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td className="py-2 text-right tabular-nums font-mono text-primary">
                         Grand Total: J$ {data.itemSummary.reduce((s, r) => s + r.totalRevenue, 0).toLocaleString("en-JM", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

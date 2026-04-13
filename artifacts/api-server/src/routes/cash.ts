@@ -99,6 +99,7 @@ async function computeItemSummary(tenantId: number, from: Date, to: Date) {
       sku: productsTable.barcode,
       totalQty: sql<number>`cast(sum(${orderItemsTable.quantity}) as int)`.as("total_qty"),
       totalRevenue: sql<number>`sum(${orderItemsTable.lineTotal})`.as("total_revenue"),
+      totalTax: sql<number>`sum(${orderItemsTable.lineTotal} / NULLIF(${ordersTable.subtotal}, 0) * COALESCE(${ordersTable.tax}, 0))`.as("total_tax"),
     })
     .from(orderItemsTable)
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
