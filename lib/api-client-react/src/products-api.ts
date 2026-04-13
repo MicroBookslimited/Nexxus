@@ -21,15 +21,21 @@ export type StockHistoryResponse = {
 
 export function useGetProductStockHistory(
   productId: number | null | undefined,
-  options?: { limit?: number },
+  options?: { limit?: number; from?: string; to?: string },
 ) {
-  const limit = options?.limit ?? 100;
+  const limit = options?.limit ?? 500;
+  const from = options?.from ?? "";
+  const to = options?.to ?? "";
   return useQuery<StockHistoryResponse>({
-    queryKey: ["product-stock-history", productId, limit],
-    queryFn: () =>
-      customFetch<StockHistoryResponse>(
-        `/api/products/${productId}/stock-history?limit=${limit}`,
-      ),
+    queryKey: ["product-stock-history", productId, limit, from, to],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      return customFetch<StockHistoryResponse>(
+        `/api/products/${productId}/stock-history?${params.toString()}`,
+      );
+    },
     enabled: !!productId,
     staleTime: 30_000,
   });

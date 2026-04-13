@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, like, and, type SQL, count, desc } from "drizzle-orm";
+import { eq, like, and, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
 import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable } from "@workspace/db";
 import {
   CreateProductBody,
@@ -299,22 +299,41 @@ router.get("/products/:id/stock-history", async (req, res): Promise<void> => {
   const productId = parseInt(req.params.id as string, 10);
   if (isNaN(productId)) { res.status(400).json({ error: "Invalid product id" }); return; }
 
-  const [product] = await db.select({ id: productsTable.id, name: productsTable.name, stockCount: productsTable.stockCount })
+  const [product] = await db.select({ id: productsTable.id, name: productsTable.name, barcode: productsTable.barcode, stockCount: productsTable.stockCount })
     .from(productsTable)
     .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
-  const limit = Math.min(parseInt((req.query.limit as string) ?? "100", 10) || 100, 500);
+  const limit = Math.min(parseInt((req.query.limit as string) ?? "500", 10) || 500, 2000);
+
+  const fromStr = req.query.from as string | undefined;
+  const toStr = req.query.to as string | undefined;
+
+  const conditions: SQL[] = [
+    eq(stockMovementsTable.productId, productId),
+    eq(stockMovementsTable.tenantId, tenantId),
+  ];
+  if (fromStr) {
+    const fromDate = new Date(fromStr);
+    if (!isNaN(fromDate.getTime())) conditions.push(gte(stockMovementsTable.createdAt, fromDate));
+  }
+  if (toStr) {
+    const toDate = new Date(toStr);
+    if (!isNaN(toDate.getTime())) {
+      toDate.setHours(23, 59, 59, 999);
+      conditions.push(lte(stockMovementsTable.createdAt, toDate));
+    }
+  }
 
   const movements = await db
     .select()
     .from(stockMovementsTable)
-    .where(and(eq(stockMovementsTable.productId, productId), eq(stockMovementsTable.tenantId, tenantId)))
-    .orderBy(desc(stockMovementsTable.createdAt))
+    .where(and(...conditions))
+    .orderBy(asc(stockMovementsTable.createdAt))
     .limit(limit);
 
   res.json({
-    product: { id: product.id, name: product.name, currentStock: product.stockCount },
+    product: { id: product.id, name: product.name, sku: product.barcode, currentStock: product.stockCount },
     movements,
   });
 });
