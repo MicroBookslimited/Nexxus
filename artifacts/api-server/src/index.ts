@@ -3,6 +3,51 @@ import { logger } from "./lib/logger";
 import cron from "node-cron";
 import { sendDailyDigest } from "./routes/email";
 import { getSetting } from "./routes/settings";
+import { db } from "@workspace/db";
+import { tenantAdminUsersTable, tenantsTable } from "@workspace/db/schema";
+import { sql, and, eq, notExists } from "drizzle-orm";
+
+async function migratePrimaryAdminUsers() {
+  try {
+    const tenants = await db
+      .select({
+        id: tenantsTable.id,
+        ownerName: tenantsTable.ownerName,
+        email: tenantsTable.email,
+        passwordHash: tenantsTable.passwordHash,
+      })
+      .from(tenantsTable)
+      .where(
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(tenantAdminUsersTable)
+            .where(
+              and(
+                eq(tenantAdminUsersTable.tenantId, tenantsTable.id),
+                eq(tenantAdminUsersTable.isPrimary, true)
+              )
+            )
+        )
+      );
+
+    if (tenants.length > 0) {
+      await db.insert(tenantAdminUsersTable).values(
+        tenants.map((t) => ({
+          tenantId: t.id,
+          name: t.ownerName,
+          email: t.email,
+          passwordHash: t.passwordHash,
+          isPrimary: true,
+          status: "active" as const,
+        }))
+      );
+      logger.info({ count: tenants.length }, "Migrated existing admin tenants to admin users table");
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to migrate primary admin users");
+  }
+}
 
 const rawPort = process.env["PORT"];
 
@@ -18,13 +63,14 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
+app.listen(port, async (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }
 
   logger.info({ port }, "Server listening");
+  await migratePrimaryAdminUsers();
 });
 
 /* ───── Daily Digest Cron ───── */
