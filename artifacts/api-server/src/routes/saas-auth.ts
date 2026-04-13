@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, tenantsTable, subscriptionsTable, subscriptionPlansTable, resellersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, tenantsTable, subscriptionsTable, subscriptionPlansTable, resellersTable, tenantAdminUsersTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -13,15 +13,15 @@ function getJwtSecret(): string {
   return process.env["SESSION_SECRET"] ?? "nexus-pos-secret";
 }
 
-function signToken(tenantId: number, email: string) {
-  return jwt.sign({ tenantId, email, type: "tenant" }, getJwtSecret(), { expiresIn: "7d" });
+function signToken(tenantId: number, email: string, adminUserId?: number, isPrimary?: boolean) {
+  return jwt.sign({ tenantId, email, type: "tenant", adminUserId, isPrimary }, getJwtSecret(), { expiresIn: "7d" });
 }
 
-export function verifyTenantToken(token: string): { tenantId: number; email: string } | null {
+export function verifyTenantToken(token: string): { tenantId: number; email: string; adminUserId?: number; isPrimary?: boolean } | null {
   try {
-    const payload = jwt.verify(token, getJwtSecret()) as { tenantId: number; email: string; type: string };
+    const payload = jwt.verify(token, getJwtSecret()) as { tenantId: number; email: string; type: string; adminUserId?: number; isPrimary?: boolean };
     if (payload.type !== "tenant") return null;
-    return { tenantId: payload.tenantId, email: payload.email };
+    return { tenantId: payload.tenantId, email: payload.email, adminUserId: payload.adminUserId, isPrimary: payload.isPrimary };
   } catch {
     return null;
   }
@@ -140,16 +140,89 @@ router.post("/saas/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.email, parsed.data.email));
+  const { email, password } = parsed.data;
+
+  // 1. Check tenant_admin_users first (supports multi-admin per tenant)
+  const [adminUser] = await db
+    .select()
+    .from(tenantAdminUsersTable)
+    .where(and(eq(tenantAdminUsersTable.email, email), eq(tenantAdminUsersTable.status, "active")));
+
+  if (adminUser) {
+    if (!adminUser.passwordHash) {
+      res.status(401).json({ error: "No password set. Use your invite link to set a password." });
+      return;
+    }
+    const valid = await bcryptjs.compare(password, adminUser.passwordHash);
+    if (!valid) {
+      res.status(401).json({ error: "Invalid email or password" });
+      return;
+    }
+
+    const [tenant] = await db
+      .select()
+      .from(tenantsTable)
+      .where(eq(tenantsTable.id, adminUser.tenantId));
+
+    if (!tenant) {
+      res.status(401).json({ error: "Account not found" });
+      return;
+    }
+
+    const [subscription] = await db
+      .select({ status: subscriptionsTable.status, planId: subscriptionsTable.planId, trialEndsAt: subscriptionsTable.trialEndsAt })
+      .from(subscriptionsTable)
+      .where(eq(subscriptionsTable.tenantId, tenant.id));
+
+    const token = signToken(tenant.id, adminUser.email, adminUser.id, adminUser.isPrimary);
+    res.json({
+      token,
+      tenant: {
+        id: tenant.id,
+        businessName: tenant.businessName,
+        email: adminUser.email,
+        onboardingStep: tenant.onboardingStep,
+        onboardingComplete: tenant.onboardingComplete,
+        emailVerified: tenant.emailVerified,
+      },
+      subscription,
+      adminUser: { id: adminUser.id, name: adminUser.name, email: adminUser.email, isPrimary: adminUser.isPrimary },
+    });
+    return;
+  }
+
+  // 2. Fall back to legacy tenant login (also auto-migrates primary admin record)
+  const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.email, email));
   if (!tenant) {
     res.status(401).json({ error: "Invalid email or password" });
     return;
   }
 
-  const valid = await bcryptjs.compare(parsed.data.password, tenant.passwordHash);
+  const valid = await bcryptjs.compare(password, tenant.passwordHash);
   if (!valid) {
     res.status(401).json({ error: "Invalid email or password" });
     return;
+  }
+
+  // Auto-migrate: create primary admin user record if it doesn't exist yet
+  let primaryAdmin = await db
+    .select()
+    .from(tenantAdminUsersTable)
+    .where(and(eq(tenantAdminUsersTable.tenantId, tenant.id), eq(tenantAdminUsersTable.isPrimary, true)))
+    .then(r => r[0]);
+
+  if (!primaryAdmin) {
+    [primaryAdmin] = await db
+      .insert(tenantAdminUsersTable)
+      .values({
+        tenantId: tenant.id,
+        name: tenant.ownerName,
+        email: tenant.email,
+        passwordHash: tenant.passwordHash,
+        isPrimary: true,
+        status: "active",
+      })
+      .returning();
   }
 
   const [subscription] = await db
@@ -157,7 +230,7 @@ router.post("/saas/login", async (req, res): Promise<void> => {
     .from(subscriptionsTable)
     .where(eq(subscriptionsTable.tenantId, tenant.id));
 
-  const token = signToken(tenant.id, tenant.email);
+  const token = signToken(tenant.id, tenant.email, primaryAdmin?.id, true);
   res.json({
     token,
     tenant: {
@@ -169,6 +242,7 @@ router.post("/saas/login", async (req, res): Promise<void> => {
       emailVerified: tenant.emailVerified,
     },
     subscription,
+    adminUser: { id: primaryAdmin?.id, name: tenant.ownerName, email: tenant.email, isPrimary: true },
   });
 });
 

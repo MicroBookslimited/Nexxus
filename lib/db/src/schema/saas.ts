@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, real, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, real, timestamp, boolean, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const subscriptionPlansTable = pgTable("subscription_plans", {
   id: serial("id").primaryKey(),
@@ -94,6 +94,22 @@ export const emailLogsTable = pgTable("email_logs", {
   variables: text("variables"),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const tenantAdminUsersTable = pgTable("tenant_admin_users", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  passwordHash: text("password_hash"),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  inviteToken: text("invite_token"),
+  inviteExpiresAt: timestamp("invite_expires_at", { withTimezone: true }),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type TenantAdminUser = typeof tenantAdminUsersTable.$inferSelect;
 
 export const bankTransferProofsTable = pgTable("bank_transfer_proofs", {
   id: serial("id").primaryKey(),

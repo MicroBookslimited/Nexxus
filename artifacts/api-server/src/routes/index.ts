@@ -33,6 +33,7 @@ import storeRouter from "./store";
 import hardwareRouter from "./hardware";
 import vendorsRouter from "./vendors";
 import apRouter from "./ap";
+import adminUsersRouter from "./admin-users";
 
 const router: IRouter = Router();
 
@@ -70,5 +71,6 @@ router.use(storeRouter);
 router.use(hardwareRouter);
 router.use(vendorsRouter);
 router.use(apRouter);
+router.use(adminUsersRouter);
 
 export default router;

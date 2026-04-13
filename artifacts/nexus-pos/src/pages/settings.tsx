@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign, Bell, Send,
   ShieldCheck, Plus, Trash2, ChevronDown, ChevronRight, Edit2, Check, X, QrCode, Copy, Download, ExternalLink,
-  Boxes,
+  Boxes, UserCog, KeyRound, Eye, EyeOff, MailOpen, Crown, UserPlus, Loader2, Link,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY } from "@/lib/saas-api";
@@ -909,6 +911,7 @@ export function AdminSettings() {
         </Button>
       </div>
 
+      <AdminUsersSettings />
       <RolesSettings />
     </div>
   );
@@ -1281,6 +1284,352 @@ function CreateRoleForm({ permissions, onCreated, onCancel }: { permissions: Per
         </Button>
       </div>
     </div>
+  );
+}
+
+/* ─── Admin Users Settings ─── */
+type AdminUserRow = {
+  id: number;
+  name: string;
+  email: string;
+  isPrimary: boolean;
+  status: string;
+  hasPassword: boolean;
+  createdAt: string;
+};
+
+function PwInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <Input type={show ? "text" : "password"} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="pr-10" />
+      <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShow(s => !s)}>
+        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+}
+
+async function adminFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = localStorage.getItem(TENANT_TOKEN_KEY);
+  const res = await fetch(path, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+function AdminUsersSettings() {
+  const { toast } = useToast();
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [showAdd, setShowAdd] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [addEmail, setAddEmail] = useState("");
+  const [addMode, setAddMode] = useState<"password" | "invite">("password");
+  const [addPassword, setAddPassword] = useState("");
+  const [addConfirm, setAddConfirm] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+
+  const [pwUserId, setPwUserId] = useState<number | null>(null);
+  const [pwValue, setPwValue] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+
+  function load() {
+    setLoading(true);
+    adminFetch<AdminUserRow[]>("/api/admin-users")
+      .then(setUsers)
+      .catch(() => toast({ variant: "destructive", title: "Failed to load admin users" }))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function handleAdd() {
+    if (!addName.trim() || !addEmail.trim()) { toast({ variant: "destructive", title: "Name and email are required" }); return; }
+    if (addMode === "password") {
+      if (addPassword.length < 8) { toast({ variant: "destructive", title: "Password must be at least 8 characters" }); return; }
+      if (addPassword !== addConfirm) { toast({ variant: "destructive", title: "Passwords don't match" }); return; }
+    }
+    setAddBusy(true);
+    try {
+      const result = await adminFetch<AdminUserRow & { inviteLink?: string }>("/api/admin-users", {
+        method: "POST",
+        body: JSON.stringify({
+          name: addName.trim(),
+          email: addEmail.trim(),
+          password: addMode === "password" ? addPassword : undefined,
+          sendInvite: addMode === "invite",
+        }),
+      });
+      setUsers(prev => [...prev, result]);
+      if (result.inviteLink) setInviteLink(result.inviteLink);
+      toast({ title: "Admin user created", description: addMode === "invite" ? "Invite email sent." : "Password set — they can log in now." });
+      if (addMode === "password") {
+        setShowAdd(false);
+        resetAdd();
+      }
+    } catch (err: unknown) {
+      toast({ variant: "destructive", title: "Failed", description: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      setAddBusy(false);
+    }
+  }
+
+  function resetAdd() {
+    setAddName(""); setAddEmail(""); setAddPassword(""); setAddConfirm("");
+    setAddMode("password"); setInviteLink(null);
+  }
+
+  async function handleSetPassword() {
+    if (pwValue.length < 8) { toast({ variant: "destructive", title: "Password must be at least 8 characters" }); return; }
+    if (pwValue !== pwConfirm) { toast({ variant: "destructive", title: "Passwords don't match" }); return; }
+    setPwBusy(true);
+    try {
+      await adminFetch(`/api/admin-users/${pwUserId}/set-password`, { method: "POST", body: JSON.stringify({ password: pwValue }) });
+      setUsers(prev => prev.map(u => u.id === pwUserId ? { ...u, hasPassword: true, status: "active" } : u));
+      toast({ title: "Password updated" });
+      setPwUserId(null); setPwValue(""); setPwConfirm("");
+    } catch (err: unknown) {
+      toast({ variant: "destructive", title: "Failed", description: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      setPwBusy(false);
+    }
+  }
+
+  async function handleSendInvite(user: AdminUserRow) {
+    try {
+      const result = await adminFetch<{ success: boolean; inviteLink?: string }>(`/api/admin-users/${user.id}/send-invite`, { method: "POST" });
+      setInviteLink(result.inviteLink ?? null);
+      toast({ title: "Invite sent", description: `Invitation sent to ${user.email}` });
+    } catch (err: unknown) {
+      toast({ variant: "destructive", title: "Failed to send invite", description: err instanceof Error ? err.message : "Unknown error" });
+    }
+  }
+
+  async function handleDelete(user: AdminUserRow) {
+    if (!confirm(`Remove ${user.name} (${user.email}) as admin? This cannot be undone.`)) return;
+    try {
+      await adminFetch(`/api/admin-users/${user.id}`, { method: "DELETE" });
+      setUsers(prev => prev.filter(u => u.id !== user.id));
+      toast({ title: "Admin user removed" });
+    } catch (err: unknown) {
+      toast({ variant: "destructive", title: "Failed", description: err instanceof Error ? err.message : "Unknown error" });
+    }
+  }
+
+  function copyLink(link: string) {
+    navigator.clipboard.writeText(link).then(() => toast({ title: "Link copied to clipboard!" }));
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-start gap-3">
+              <UserCog className="h-5 w-5 text-primary mt-0.5" />
+              <div>
+                <CardTitle>Admin Users</CardTitle>
+                <CardDescription>Manage who can log in to this account with email and password. Only primary admin can add or remove other admins.</CardDescription>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => { setShowAdd(true); setInviteLink(null); }} className="gap-1.5 shrink-0">
+              <UserPlus className="h-3.5 w-3.5" /> Add Admin
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {loading && <p className="text-sm text-muted-foreground text-center py-6">Loading admin users…</p>}
+
+          {!loading && users.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">No admin users yet. Click "Add Admin" to get started.</p>
+          )}
+
+          {!loading && users.map(user => (
+            <div key={user.id} className="flex items-center gap-3 rounded-lg border border-border p-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-sm truncate">{user.name}</span>
+                  {user.isPrimary && (
+                    <Badge variant="secondary" className="gap-1 shrink-0 text-amber-400 border-amber-400/30 bg-amber-400/10">
+                      <Crown className="h-3 w-3" /> Primary
+                    </Badge>
+                  )}
+                  {user.status === "invited" && (
+                    <Badge variant="outline" className="text-xs shrink-0">Invite Pending</Badge>
+                  )}
+                  {user.status === "suspended" && (
+                    <Badge variant="destructive" className="text-xs shrink-0">Suspended</Badge>
+                  )}
+                  {!user.hasPassword && user.status !== "invited" && (
+                    <Badge variant="outline" className="text-xs shrink-0 text-amber-400 border-amber-400/30">No Password</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{user.email}</p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button size="sm" variant="ghost" className="h-7 px-2 gap-1 text-xs" onClick={() => { setPwUserId(user.id); setPwValue(""); setPwConfirm(""); }}>
+                  <KeyRound className="h-3.5 w-3.5" /> Set Password
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 px-2 gap-1 text-xs" onClick={() => handleSendInvite(user)}>
+                  <MailOpen className="h-3.5 w-3.5" /> Invite
+                </Button>
+                {!user.isPrimary && (
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(user)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* Add Admin User Dialog */}
+      <Dialog open={showAdd} onOpenChange={open => { if (!open) { setShowAdd(false); if (!inviteLink) resetAdd(); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-primary" />
+              Add Admin User
+            </DialogTitle>
+          </DialogHeader>
+
+          {!inviteLink ? (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>Full Name</Label>
+                <Input value={addName} onChange={e => setAddName(e.target.value)} placeholder="e.g. Jane Smith" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email Address</Label>
+                <Input type="email" value={addEmail} onChange={e => setAddEmail(e.target.value)} placeholder="jane@example.com" />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Setup Method</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["password", "invite"] as const).map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setAddMode(mode)}
+                      className={cn(
+                        "flex flex-col items-start gap-1 p-3 rounded-lg border text-left transition-colors",
+                        addMode === mode ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"
+                      )}
+                    >
+                      {mode === "password" ? <KeyRound className="h-4 w-4 text-primary" /> : <MailOpen className="h-4 w-4 text-primary" />}
+                      <span className="text-sm font-medium">{mode === "password" ? "Set Password" : "Send Invite"}</span>
+                      <span className="text-xs text-muted-foreground">{mode === "password" ? "Set their password now" : "Email them a setup link"}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {addMode === "password" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label>Password</Label>
+                    <PwInput value={addPassword} onChange={setAddPassword} placeholder="At least 8 characters" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Confirm Password</Label>
+                    <PwInput value={addConfirm} onChange={setAddConfirm} placeholder="Re-enter password" />
+                  </div>
+                </>
+              )}
+
+              {addMode === "invite" && (
+                <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-3 text-xs text-blue-300">
+                  An invitation email will be sent to the user. They will follow the link to set their own password. The link expires in 48 hours.
+                </div>
+              )}
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setShowAdd(false); resetAdd(); }}>Cancel</Button>
+                <Button onClick={handleAdd} disabled={addBusy}>
+                  {addBusy ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating…</> : "Add Admin User"}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-4 text-center space-y-2">
+                <CheckCircle2 className="h-8 w-8 text-green-400 mx-auto" />
+                <p className="font-medium text-green-400">Admin user created!</p>
+                <p className="text-xs text-muted-foreground">Share this invite link manually if the email was not delivered:</p>
+              </div>
+              <div className="flex gap-2">
+                <Input value={inviteLink} readOnly className="text-xs font-mono" />
+                <Button size="sm" variant="outline" onClick={() => copyLink(inviteLink!)}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => { setShowAdd(false); resetAdd(); }}>Done</Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Set Password Dialog */}
+      <Dialog open={pwUserId != null} onOpenChange={open => { if (!open) { setPwUserId(null); setPwValue(""); setPwConfirm(""); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-primary" />
+              Set Password
+            </DialogTitle>
+          </DialogHeader>
+          {pwUserId && (() => { const u = users.find(x => x.id === pwUserId); return u ? <p className="text-sm text-muted-foreground -mt-1">Setting password for <strong>{u.name}</strong></p> : null; })()}
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>New Password</Label>
+              <PwInput value={pwValue} onChange={setPwValue} placeholder="At least 8 characters" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Confirm Password</Label>
+              <PwInput value={pwConfirm} onChange={setPwConfirm} placeholder="Re-enter password" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setPwUserId(null); setPwValue(""); setPwConfirm(""); }}>Cancel</Button>
+            <Button onClick={handleSetPassword} disabled={pwBusy}>
+              {pwBusy ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : "Save Password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Link Copy Dialog (standalone display after resend) */}
+      <Dialog open={!!inviteLink && !showAdd} onOpenChange={open => { if (!open) setInviteLink(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Link className="h-5 w-5 text-primary" /> Invite Link</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Share this link with the admin user to let them set their password. It expires in 48 hours.</p>
+          <div className="flex gap-2">
+            <Input value={inviteLink ?? ""} readOnly className="text-xs font-mono" />
+            <Button size="sm" variant="outline" onClick={() => copyLink(inviteLink!)}>
+              <Copy className="h-4 w-4" />
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setInviteLink(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
