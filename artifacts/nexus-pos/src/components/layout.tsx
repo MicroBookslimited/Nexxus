@@ -13,6 +13,7 @@ import logoUrl from "@assets/EB8B578F-2602-4DD8-AB97-D02AF59C49D3_1775943434994.
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TENANT_TOKEN_KEY, saasMe } from "@/lib/saas-api";
+import { clearQueryCache } from "@/lib/query-persister";
 import { EmailVerificationBanner } from "@/components/EmailVerificationBanner";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useStaff } from "@/contexts/StaffContext";
@@ -237,6 +238,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
   const handleSignOut = useCallback(() => {
     localStorage.removeItem(TENANT_TOKEN_KEY);
+    clearQueryCache();
     clearStaff();
     setProfileOpen(false);
     navigate("/login");

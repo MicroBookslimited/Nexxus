@@ -1,7 +1,7 @@
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { QueryClient } from "@tanstack/react-query";
 
-const CACHE_KEY = "nexus_query_cache";
+export const CACHE_KEY = "nexus_query_cache";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,3 +23,9 @@ export const persister = createSyncStoragePersister({
   key: CACHE_KEY,
   throttleTime: 1000,
 });
+
+/** Call on every login/logout to prevent one tenant seeing another tenant's cached data. */
+export function clearQueryCache() {
+  queryClient.clear();
+  localStorage.removeItem(CACHE_KEY);
+}

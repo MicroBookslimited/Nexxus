@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { saasLogin, saasMe, saasForgotPassword, TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { clearQueryCache } from "@/lib/query-persister";
 
 /* ─── Forgot Password Modal ─── */
 function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
@@ -128,6 +129,7 @@ export function Login() {
     setError("");
     setIsLoading(true);
     try {
+      clearQueryCache();
       const { token } = await saasLogin(email, password);
       localStorage.setItem(TENANT_TOKEN_KEY, token);
       setLocation("/dashboard");
