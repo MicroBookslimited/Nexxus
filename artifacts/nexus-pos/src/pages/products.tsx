@@ -18,6 +18,7 @@ import {
   useConfirmPurchaseBill,
   useDeletePurchaseBill,
   useGetSettings,
+  useUpdateSettings,
   useGetProductStockHistory,
   useListVendors,
 } from "@workspace/api-client-react";
@@ -62,10 +63,119 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History } from "lucide-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
-const CATEGORIES = ["Beverages", "Food", "Bakery", "Merchandise", "Other"];
+const DEFAULT_CATEGORIES = ["Beverages", "Food", "Bakery", "Merchandise", "Other"];
+
+function parseCategorySetting(raw: string | undefined): string[] {
+  if (!raw) return DEFAULT_CATEGORIES;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed as string[];
+    return DEFAULT_CATEGORIES;
+  } catch { return DEFAULT_CATEGORIES; }
+}
+
+/* ─── Category Manager Dialog ─── */
+function CategoryManagerDialog({ open, onClose, categories, onSave }: {
+  open: boolean;
+  onClose: () => void;
+  categories: string[];
+  onSave: (updated: string[]) => void;
+}) {
+  const [list, setList] = useState<string[]>([]);
+  const [newCat, setNewCat] = useState("");
+  const { toast } = useToast();
+
+  // Reset local state whenever dialog opens
+  useEffect(() => {
+    if (open) { setList([...categories]); setNewCat(""); }
+  }, [open, categories]);
+
+  const addCategory = () => {
+    const name = newCat.trim();
+    if (!name) return;
+    if (list.some(c => c.toLowerCase() === name.toLowerCase())) {
+      toast({ title: "Category already exists", variant: "destructive" }); return;
+    }
+    setList(prev => [...prev, name]);
+    setNewCat("");
+  };
+
+  const removeCategory = (cat: string) => {
+    setList(prev => prev.filter(c => c !== cat));
+  };
+
+  const moveUp = (i: number) => {
+    if (i === 0) return;
+    setList(prev => { const a = [...prev]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; return a; });
+  };
+
+  const moveDown = (i: number) => {
+    setList(prev => { if (i >= prev.length - 1) return prev; const a = [...prev]; [a[i], a[i + 1]] = [a[i + 1], a[i]]; return a; });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-primary" />
+            Manage Product Categories
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* Add new */}
+          <div className="flex gap-2">
+            <Input
+              placeholder="New category name…"
+              value={newCat}
+              onChange={e => setNewCat(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCategory(); } }}
+              className="flex-1"
+            />
+            <Button onClick={addCategory} disabled={!newCat.trim()} className="gap-1.5 shrink-0">
+              <Plus className="h-4 w-4" />Add
+            </Button>
+          </div>
+
+          {/* List */}
+          <div className="rounded-lg border border-border divide-y divide-border/60 max-h-72 overflow-y-auto">
+            {list.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-6">No categories yet</p>
+            )}
+            {list.map((cat, i) => (
+              <div key={cat} className="flex items-center gap-2 px-3 py-2.5">
+                <span className="flex-1 text-sm font-medium">{cat}</span>
+                <div className="flex items-center gap-0.5">
+                  <button onClick={() => moveUp(i)} disabled={i === 0} className="p-1 rounded hover:bg-secondary/60 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors">
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={() => moveDown(i)} disabled={i === list.length - 1} className="p-1 rounded hover:bg-secondary/60 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={() => removeCategory(cat)} className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors ml-1">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Drag order affects both filter buttons and product form dropdown.</p>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => { onSave(list); onClose(); }} disabled={list.length === 0}>
+            Save Categories
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 const LOW_STOCK_THRESHOLD = 10;
 
 type RestockForm = { quantity: string; unitCost: string; notes: string };
@@ -873,7 +983,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       const stockCount = parseInt(d.stockCount ?? "0") || 0;
       const inStockRaw = (d.inStock ?? "yes").toLowerCase().trim();
       const inStock    = inStockRaw === "yes" || inStockRaw === "true" || inStockRaw === "1";
-      const category   = CATEGORIES.includes(d.category ?? "") ? d.category! : "Other";
+      const category   = d.category?.trim() || "General";
       try {
         await new Promise<void>((resolve, reject) => {
           createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false } },
@@ -1690,6 +1800,8 @@ export function Products() {
   const { toast } = useToast();
   const { data: settings } = useGetSettings();
   const businessName = settings?.business_name || "My Store";
+  const categories = React.useMemo(() => parseCategorySetting(settings?.product_categories), [settings?.product_categories]);
+  const updateSettings = useUpdateSettings();
 
   const createPurchase = useCreatePurchase();
   const { data: purchases } = useListPurchases();
@@ -1710,6 +1822,7 @@ export function Products() {
   const [restockForm, setRestockForm] = useState<RestockForm>(emptyRestockForm());
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [mbposDialogOpen, setMbposDialogOpen] = useState(false);
+  const [catManagerOpen, setCatManagerOpen] = useState(false);
   const [printProduct, setPrintProduct] = useState<LabelProduct | null>(null);
   const [billView, setBillView] = useState<"list" | "new">("list");
   const [viewBillId, setViewBillId] = useState<number | null>(null);
@@ -1855,7 +1968,7 @@ export function Products() {
 
   const openAdd = () => {
     setEditingProduct(null);
-    setForm(emptyForm());
+    setForm({ ...emptyForm(), category: categories[0] ?? "General" });
     setDialogTab("details");
     setDialogOpen(true);
   };
@@ -2003,9 +2116,14 @@ export function Products() {
         </div>
         <div className="flex gap-2 flex-wrap flex-1">
           <Button size="sm" variant={!categoryFilter ? "default" : "outline"} onClick={() => setCategoryFilter(null)}>All</Button>
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <Button key={c} size="sm" variant={categoryFilter === c ? "default" : "outline"} onClick={() => setCategoryFilter(c)}>{c}</Button>
           ))}
+          {canManage && (
+            <Button size="sm" variant="ghost" onClick={() => setCatManagerOpen(true)} className="gap-1 text-muted-foreground hover:text-foreground border border-dashed border-border/60">
+              <Settings2 className="h-3 w-3" />Manage
+            </Button>
+          )}
         </div>
         {/* View toggle */}
         <div className="flex items-center rounded-md border border-border overflow-hidden shrink-0">
@@ -2715,7 +2833,7 @@ export function Products() {
                     <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -2793,6 +2911,25 @@ export function Products() {
         product={printProduct}
         onClose={() => setPrintProduct(null)}
         businessName={businessName}
+      />
+
+      {/* Category Manager dialog */}
+      <CategoryManagerDialog
+        open={catManagerOpen}
+        onClose={() => setCatManagerOpen(false)}
+        categories={categories}
+        onSave={(updated) => {
+          updateSettings.mutate(
+            { data: { product_categories: JSON.stringify(updated) } },
+            {
+              onSuccess: () => {
+                toast({ title: "Categories saved" });
+                queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+              },
+              onError: () => toast({ title: "Failed to save categories", variant: "destructive" }),
+            },
+          );
+        }}
       />
 
       {/* Import Products dialog */}
