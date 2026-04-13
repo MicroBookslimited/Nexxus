@@ -2,6 +2,7 @@ export interface ReceiptSettings {
   business_name?: string;
   business_address?: string;
   business_phone?: string;
+  business_logo_url?: string;
   receipt_footer?: string;
   tax_rate?: string;
   tax_name?: string;
@@ -56,6 +57,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   const exchangeRate      = parseFloat(settings.currency_rate || "0");
   const taxRate           = settings.tax_rate           || "15";
   const taxName           = settings.tax_name           || "GCT";
+  const businessLogoUrl   = settings.business_logo_url  || "";
   const businessName      = settings.business_name      || "NEXXUS POS";
   const businessAddress   = settings.business_address   || "";
   const businessPhone     = settings.business_phone     || "";
@@ -218,7 +220,12 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   const infoAlign = tpl.headerAlign === "center" ? "text-align:center;" : "text-align:left;";
   const orderTypeLabel = order.orderType ? escHtml(order.orderType) : "Sale";
 
+  const logoHtml = businessLogoUrl
+    ? `<div style="text-align:${tpl.headerAlign};margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:60px;max-width:160px;object-fit:contain;" /></div>`
+    : "";
+
   const headerHtml = `
+    ${logoHtml}
     <div class="biz-name" style="text-align:${tpl.headerAlign};">${escHtml(businessName)}</div>
     <div class="info-block" style="${infoAlign}">
       <div>Order #: ${escHtml(orderNum)}</div>

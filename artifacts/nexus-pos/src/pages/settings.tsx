@@ -31,6 +31,8 @@ export function AdminSettings() {
   const [smtpFromName, setSmtpFromName] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
+  const [businessLogoUrl, setBusinessLogoUrl] = useState("");
+  const [logoUploading, setLogoUploading] = useState(false);
   const [businessPhone, setBusinessPhone] = useState("");
   const [taxRate, setTaxRate] = useState("");
   const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
@@ -72,6 +74,7 @@ export function AdminSettings() {
     setSmtpFromName(settings.smtp_from_name ?? "");
     setBusinessName(settings.business_name ?? "NEXXUS POS");
     setBusinessAddress(settings.business_address ?? "");
+    setBusinessLogoUrl(settings.business_logo_url ?? "");
     setBusinessPhone(settings.business_phone ?? "");
     setTaxRate(settings.tax_rate ?? "15");
     setTaxMode((settings.tax_mode as "exclusive" | "inclusive") ?? "exclusive");
@@ -109,6 +112,7 @@ export function AdminSettings() {
           business_name: businessName,
           business_address: businessAddress,
           business_phone: businessPhone,
+          business_logo_url: businessLogoUrl,
           tax_rate: taxRate,
           tax_mode: taxMode,
           receipt_footer: receiptFooter,
@@ -216,6 +220,71 @@ export function AdminSettings() {
               onChange={(e) => { setBusinessAddress(e.target.value); markDirty(); }}
               placeholder="123 Main Street, City, State 00000"
             />
+          </div>
+
+          {/* Business Logo */}
+          <div className="space-y-2">
+            <Label>Business Logo</Label>
+            <p className="text-xs text-muted-foreground">Shown on receipts and the PIN entry screen. Max 1 MB. PNG, JPG, SVG.</p>
+            <div className="flex items-start gap-4 flex-wrap">
+              {/* Preview */}
+              <div className="h-24 w-40 rounded-lg border border-border bg-secondary/30 flex items-center justify-center overflow-hidden shrink-0">
+                {businessLogoUrl ? (
+                  <img src={businessLogoUrl} alt="Business logo" className="max-h-full max-w-full object-contain p-2" />
+                ) : (
+                  <span className="text-xs text-muted-foreground">No logo</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 flex-1 min-w-40">
+                <label
+                  htmlFor="logo-upload"
+                  className={cn(
+                    "inline-flex items-center gap-2 cursor-pointer rounded-md border border-border px-3 py-2 text-sm font-medium transition-colors",
+                    "hover:bg-secondary/60 bg-secondary/30 w-fit",
+                    logoUploading && "opacity-50 pointer-events-none"
+                  )}
+                >
+                  <Download className="h-4 w-4" />
+                  {logoUploading ? "Processing…" : "Upload Logo"}
+                </label>
+                <input
+                  id="logo-upload"
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/gif,image/webp"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 1_500_000) {
+                      toast({ title: "Image too large", description: "Please use an image under 1.5 MB.", variant: "destructive" });
+                      return;
+                    }
+                    setLogoUploading(true);
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      setBusinessLogoUrl(reader.result as string);
+                      markDirty();
+                      setLogoUploading(false);
+                    };
+                    reader.onerror = () => {
+                      toast({ title: "Failed to read image", variant: "destructive" });
+                      setLogoUploading(false);
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+                {businessLogoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => { setBusinessLogoUrl(""); markDirty(); }}
+                    className="inline-flex items-center gap-1.5 text-xs text-destructive hover:text-destructive/80 transition-colors w-fit"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Remove Logo
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>

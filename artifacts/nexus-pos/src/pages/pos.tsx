@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, KeyboardEvent } from "react";
+import nexxusLogoUrl from "@assets/EB8B578F-2602-4DD8-AB97-D02AF59C49D3_1775943434994.png";
 import { CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayMessage } from "@/lib/customer-display-channel";
 import { motion, AnimatePresence } from "framer-motion";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt } from "@/lib/receipt";
@@ -965,19 +966,27 @@ export function POS() {
     deleteHeldOrder.mutate({ id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/held-orders"] }) });
   };
 
+  const businessLogoUrl = settings?.business_logo_url;
+  const businessDisplayName = settings?.business_name;
+
   if (locked) {
     return (
       <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-8 w-full max-w-xs">
           {/* Brand */}
           <div className="flex flex-col items-center gap-2 mb-2">
-            <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="h-8 w-8 text-primary fill-current">
-                <path d="M19 7H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Zm-9 7H6v-2h4v2Zm8-4H6V9h12v1Z" />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight">NEXXUS POS</h1>
-            <p className="text-sm text-muted-foreground">Your Business, Connected.</p>
+            {businessLogoUrl ? (
+              <>
+                <img src={businessLogoUrl} alt={businessDisplayName || "Business Logo"} className="max-h-24 max-w-48 object-contain" />
+                {businessDisplayName && <p className="text-sm text-muted-foreground text-center">{businessDisplayName}</p>}
+                <p className="text-xs text-muted-foreground/60 text-center">Powered by MicroBooks</p>
+              </>
+            ) : (
+              <>
+                <img src={nexxusLogoUrl} alt="NEXXUS POS" className="h-16 w-auto" />
+                <p className="text-sm text-muted-foreground">Your Business, Connected.</p>
+              </>
+            )}
           </div>
 
           <PinPad
@@ -987,9 +996,11 @@ export function POS() {
             pinLength={4}
           />
 
-          <p className="text-xs text-muted-foreground text-center mt-2">
-            Powered by MicroBooks
-          </p>
+          {!businessLogoUrl && (
+            <p className="text-xs text-muted-foreground text-center mt-2">
+              Powered by MicroBooks
+            </p>
+          )}
         </div>
       </div>
     );

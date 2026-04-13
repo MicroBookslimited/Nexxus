@@ -19,6 +19,7 @@ import { useStaff } from "@/contexts/StaffContext";
 import { PinPad } from "@/components/PinPad";
 
 type NavItem = {
+  alwaysShowLabel?: boolean;
   href: string;
   label: string;
   icon: React.ElementType;
@@ -40,11 +41,11 @@ type NavEntry = NavItem | NavGroup;
 
 const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard",    label: "Dashboard",   icon: LayoutDashboard, color: "text-sky-400",     permission: null },
-  { href: "/pos",          label: "POS",          icon: ShoppingCart,    color: "text-emerald-400", permission: "pos.sale" },
+  { href: "/pos",          label: "POS",          icon: ShoppingCart,    color: "text-emerald-400", permission: "pos.sale",           alwaysShowLabel: true },
   { href: "/tables",       label: "Tables",       icon: UtensilsCrossed, color: "text-orange-400",  permission: "orders.view" },
   { href: "/kitchen",      label: "Kitchen",      icon: ChefHat,         color: "text-red-400",     permission: "kitchen.view" },
   { href: "/orders",       label: "Orders",       icon: ListOrdered,     color: "text-purple-400",  permission: "orders.view" },
-  { href: "/cash",         label: "Cash",         icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session" },
+  { href: "/cash",         label: "Cash",         icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session",  alwaysShowLabel: true },
   { href: "/products",     label: "Products",     icon: Package,         color: "text-teal-400",    permission: "inventory.view" },
   { href: "/customers",    label: "Customers",    icon: Users,           color: "text-pink-400",    permission: "customers.view" },
   { href: "/staff",        label: "Staff",        icon: UserCog,         color: "text-indigo-400",  permission: "staff.view" },
@@ -310,6 +311,7 @@ export function Layout({ children }: { children: ReactNode }) {
               );
             }
             const isActive = location.startsWith(entry.href);
+            const showLabel = isActive || entry.alwaysShowLabel;
             return (
               <Link
                 key={entry.href}
@@ -317,13 +319,14 @@ export function Layout({ children }: { children: ReactNode }) {
                 title={entry.label}
                 className={cn(
                   "flex items-center gap-1.5 rounded-md text-[11px] font-semibold transition-all whitespace-nowrap shrink-0",
-                  isActive
+                  showLabel
                     ? "bg-white/10 text-foreground px-2 py-1.5"
                     : "hover:bg-secondary/60 px-2 py-1.5 w-10 justify-center",
+                  !isActive && entry.alwaysShowLabel && "bg-transparent hover:bg-secondary/60",
                 )}
               >
                 <entry.icon className={cn("h-5 w-5 shrink-0 drop-shadow-sm", entry.color)} />
-                {isActive && entry.label}
+                {showLabel && entry.label}
               </Link>
             );
           })}
@@ -349,17 +352,20 @@ export function Layout({ children }: { children: ReactNode }) {
               );
             }
             const isActive = location.startsWith(entry.href);
+            const showLabel = entry.alwaysShowLabel;
             return (
               <Link
                 key={entry.href}
                 href={entry.href}
                 title={entry.label}
                 className={cn(
-                  "flex items-center justify-center w-10 h-9 rounded-md transition-all shrink-0",
+                  "flex items-center gap-1 rounded-md transition-all shrink-0",
+                  showLabel ? "px-2 py-1.5 text-[11px] font-semibold" : "justify-center w-10 h-9",
                   isActive ? "bg-white/10" : "hover:bg-secondary/60",
                 )}
               >
-                <entry.icon className={cn("h-5 w-5 drop-shadow-sm", entry.color)} />
+                <entry.icon className={cn("h-5 w-5 drop-shadow-sm shrink-0", entry.color)} />
+                {showLabel && <span className="text-foreground whitespace-nowrap">{entry.label}</span>}
               </Link>
             );
           })}
