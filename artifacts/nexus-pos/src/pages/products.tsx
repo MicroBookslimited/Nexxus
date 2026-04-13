@@ -18,6 +18,7 @@ import {
   useConfirmPurchaseBill,
   useDeletePurchaseBill,
   useGetSettings,
+  useGetProductStockHistory,
 } from "@workspace/api-client-react";
 import type { GetProductResponse } from "@workspace/api-zod";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
@@ -60,7 +61,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, MapPin, FileSpreadsheet, Upload, FileDown, Printer } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History } from "lucide-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
 const CATEGORIES = ["Beverages", "Food", "Bakery", "Merchandise", "Other"];
@@ -1097,6 +1098,106 @@ function ImportProductsDialog({ open, onClose, onImported }: {
   );
 }
 
+/* ─── Stock History Panel ─── */
+function StockHistoryPanel({ productId }: { productId: number }) {
+  const { data, isLoading } = useGetProductStockHistory(productId);
+
+  function formatDate(iso: string) {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-JM", { day: "2-digit", month: "short", year: "numeric" }) +
+      " " + d.toLocaleTimeString("en-JM", { hour: "2-digit", minute: "2-digit", hour12: true });
+  }
+
+  function typeLabel(type: string) {
+    switch (type) {
+      case "sale": return { label: "Sale", color: "text-red-400", icon: <TrendingDown className="h-3.5 w-3.5" /> };
+      case "restock": return { label: "Restock", color: "text-green-400", icon: <TrendingUp className="h-3.5 w-3.5" /> };
+      case "refund": return { label: "Refund", color: "text-blue-400", icon: <TrendingUp className="h-3.5 w-3.5" /> };
+      case "void": return { label: "Void", color: "text-orange-400", icon: <TrendingUp className="h-3.5 w-3.5" /> };
+      case "purchase_bill": return { label: "Purchase", color: "text-green-400", icon: <TrendingUp className="h-3.5 w-3.5" /> };
+      case "adjustment": return { label: "Adjustment", color: "text-purple-400", icon: <History className="h-3.5 w-3.5" /> };
+      default: return { label: type, color: "text-muted-foreground", icon: <History className="h-3.5 w-3.5" /> };
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2 py-4">
+        {[1,2,3,4].map(i => <Skeleton key={i} className="h-8 w-full" />)}
+      </div>
+    );
+  }
+
+  const movements = data?.movements ?? [];
+  const currentStock = data?.product.currentStock ?? 0;
+  const totalSold = movements.filter(m => m.type === "sale").reduce((s, m) => s + Math.abs(m.quantity), 0);
+  const totalReceived = movements.filter(m => m.type === "restock" || m.type === "purchase_bill").reduce((s, m) => s + m.quantity, 0);
+
+  return (
+    <div className="space-y-3">
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Current Stock</div>
+          <div className="text-lg font-bold text-foreground">{currentStock}</div>
+        </div>
+        <div className="rounded-lg bg-red-500/10 p-2.5 text-center">
+          <div className="text-[10px] text-red-400 uppercase tracking-wide">Total Sold</div>
+          <div className="text-lg font-bold text-red-400">{totalSold}</div>
+        </div>
+        <div className="rounded-lg bg-green-500/10 p-2.5 text-center">
+          <div className="text-[10px] text-green-400 uppercase tracking-wide">Total Received</div>
+          <div className="text-lg font-bold text-green-400">{totalReceived}</div>
+        </div>
+      </div>
+
+      {/* Movement table */}
+      {movements.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          <History className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          No stock movements recorded yet.
+          <div className="text-xs mt-1 opacity-70">Movements will appear here after sales or restocks.</div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border overflow-hidden">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/60">
+              <tr>
+                <th className="text-left px-2.5 py-2 font-medium text-muted-foreground">Date & Time</th>
+                <th className="text-left px-2 py-2 font-medium text-muted-foreground">Type</th>
+                <th className="text-right px-2 py-2 font-medium text-muted-foreground">Change</th>
+                <th className="text-right px-2 py-2 font-medium text-muted-foreground">Balance</th>
+                <th className="text-left px-2 py-2 font-medium text-muted-foreground">Notes</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {movements.map((m) => {
+                const t = typeLabel(m.type);
+                const isPositive = m.quantity > 0;
+                return (
+                  <tr key={m.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-2.5 py-2 text-muted-foreground whitespace-nowrap">{formatDate(m.createdAt)}</td>
+                    <td className="px-2 py-2">
+                      <span className={`flex items-center gap-1 font-medium ${t.color}`}>
+                        {t.icon}{t.label}
+                      </span>
+                    </td>
+                    <td className={`px-2 py-2 text-right font-mono font-semibold ${isPositive ? "text-green-400" : "text-red-400"}`}>
+                      {isPositive ? "+" : ""}{m.quantity}
+                    </td>
+                    <td className="px-2 py-2 text-right font-mono font-medium text-foreground">{m.balanceAfter}</td>
+                    <td className="px-2 py-2 text-muted-foreground truncate max-w-[100px]" title={m.notes ?? ""}>{m.notes ?? "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Products page ─── */
 export function Products() {
   const { can } = useStaff();
@@ -2079,11 +2180,14 @@ export function Products() {
           </DialogHeader>
 
           <Tabs value={dialogTab} onValueChange={setDialogTab} className="flex-1 overflow-hidden flex flex-col">
-            <TabsList className="shrink-0">
+            <TabsList className="shrink-0 flex-wrap h-auto gap-0.5">
               <TabsTrigger value="details">Details</TabsTrigger>
               <TabsTrigger value="variants" disabled={!editingProduct}>Variants</TabsTrigger>
               <TabsTrigger value="modifiers" disabled={!editingProduct}>Modifiers</TabsTrigger>
               <TabsTrigger value="locations" disabled={!editingProduct}>Locations</TabsTrigger>
+              <TabsTrigger value="history" disabled={!editingProduct}>
+                <History className="h-3.5 w-3.5 mr-1" />History
+              </TabsTrigger>
             </TabsList>
 
             <div className="flex-1 overflow-y-auto mt-2 pr-1">
@@ -2147,6 +2251,10 @@ export function Products() {
 
               <TabsContent value="locations" className="mt-0">
                 {editingProduct && <LocationsEditor productId={editingProduct.id} />}
+              </TabsContent>
+
+              <TabsContent value="history" className="mt-0">
+                {editingProduct && <StockHistoryPanel productId={editingProduct.id} />}
               </TabsContent>
             </div>
           </Tabs>

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, like, and, type SQL, count } from "drizzle-orm";
-import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable } from "@workspace/db";
+import { eq, like, and, type SQL, count, desc } from "drizzle-orm";
+import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable } from "@workspace/db";
 import {
   CreateProductBody,
   UpdateProductBody,
@@ -288,6 +288,35 @@ router.put("/products/:id/locations", async (req, res): Promise<void> => {
   }
 
   res.json({ success: true, updated: locations.length });
+});
+
+/* ── Stock History ── */
+
+router.get("/products/:id/stock-history", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const productId = parseInt(req.params.id as string, 10);
+  if (isNaN(productId)) { res.status(400).json({ error: "Invalid product id" }); return; }
+
+  const [product] = await db.select({ id: productsTable.id, name: productsTable.name, stockCount: productsTable.stockCount })
+    .from(productsTable)
+    .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+
+  const limit = Math.min(parseInt((req.query.limit as string) ?? "100", 10) || 100, 500);
+
+  const movements = await db
+    .select()
+    .from(stockMovementsTable)
+    .where(and(eq(stockMovementsTable.productId, productId), eq(stockMovementsTable.tenantId, tenantId)))
+    .orderBy(desc(stockMovementsTable.createdAt))
+    .limit(limit);
+
+  res.json({
+    product: { id: product.id, name: product.name, currentStock: product.stockCount },
+    movements,
+  });
 });
 
 export default router;

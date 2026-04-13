@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq, desc, count } from "drizzle-orm";
-import { db, purchaseBillsTable, purchaseBillItemsTable, productsTable } from "@workspace/db";
+import { db, purchaseBillsTable, purchaseBillItemsTable, productsTable, stockMovementsTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
 
@@ -127,9 +127,20 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
       const [product] = await db.select().from(productsTable)
         .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
       if (product) {
+        const newBalance = product.stockCount + item.quantity;
         await db.update(productsTable)
-          .set({ stockCount: product.stockCount + item.quantity, inStock: true })
+          .set({ stockCount: newBalance, inStock: true })
           .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+        await db.insert(stockMovementsTable).values({
+          tenantId,
+          productId: item.productId,
+          type: "purchase_bill",
+          quantity: item.quantity,
+          balanceAfter: newBalance,
+          referenceType: "purchase_bill",
+          referenceId: bill.id,
+          notes: `Purchase Bill – ${bill.billNumber}`,
+        });
       }
     }
   }
@@ -175,9 +186,20 @@ router.post("/purchase-bills/:id/confirm", async (req, res): Promise<void> => {
     const [product] = await db.select().from(productsTable)
       .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
     if (product) {
+      const newBalance = product.stockCount + item.quantity;
       await db.update(productsTable)
-        .set({ stockCount: product.stockCount + item.quantity, inStock: true })
+        .set({ stockCount: newBalance, inStock: true })
         .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+      await db.insert(stockMovementsTable).values({
+        tenantId,
+        productId: item.productId,
+        type: "purchase_bill",
+        quantity: item.quantity,
+        balanceAfter: newBalance,
+        referenceType: "purchase_bill",
+        referenceId: id,
+        notes: `Purchase Bill confirmed`,
+      });
     }
   }
 

@@ -5,3 +5,4 @@ export type { AuthTokenGetter } from "./custom-fetch";
 export * from "./ingredients-api";
 export * from "./hardware-api";
 export * from "./purchasing-api";
+export * from "./products-api";

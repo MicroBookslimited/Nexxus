@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable } from "@workspace/db";
 import { getSetting } from "./settings";
 import {
   CreateOrderBody,
@@ -298,6 +298,21 @@ router.post("/orders", async (req, res): Promise<void> => {
       )
       .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
 
+    const [afterSale] = await db
+      .select({ stockCount: productsTable.stockCount })
+      .from(productsTable)
+      .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+    await db.insert(stockMovementsTable).values({
+      tenantId,
+      productId: item.productId,
+      type: "sale",
+      quantity: -item.quantity,
+      balanceAfter: afterSale?.stockCount ?? 0,
+      referenceType: "order",
+      referenceId: order.id,
+      notes: `Sale – ${orderNumber}`,
+    });
+
     if (parsed.data.locationId) {
       await db
         .update(locationInventoryTable)
@@ -468,6 +483,21 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           inStock: true,
         })
         .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+
+      const [afterReturn] = await db
+        .select({ stockCount: productsTable.stockCount })
+        .from(productsTable)
+        .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+      await db.insert(stockMovementsTable).values({
+        tenantId,
+        productId: item.productId,
+        type: parsed.data.status === "refunded" ? "refund" : "void",
+        quantity: item.quantity,
+        balanceAfter: afterReturn?.stockCount ?? 0,
+        referenceType: "order",
+        referenceId: order.id,
+        notes: `${parsed.data.status === "refunded" ? "Refund" : "Void"} – Order #${order.id}`,
+      });
     }
   }
 

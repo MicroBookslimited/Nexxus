@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq, desc } from "drizzle-orm";
-import { db, purchasesTable, productsTable } from "@workspace/db";
+import { db, purchasesTable, productsTable, stockMovementsTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
 
@@ -101,6 +101,17 @@ router.post("/purchases", async (req, res): Promise<void> => {
     .update(productsTable)
     .set({ stockCount: newStockCount, inStock: newStockCount > 0 })
     .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+
+  await db.insert(stockMovementsTable).values({
+    tenantId,
+    productId,
+    type: "restock",
+    quantity: quantity,
+    balanceAfter: newStockCount,
+    referenceType: "purchase",
+    referenceId: purchase.id,
+    notes: notes ?? null,
+  });
 
   const enriched = await enrichPurchase(purchase);
   res.status(201).json(enriched);
