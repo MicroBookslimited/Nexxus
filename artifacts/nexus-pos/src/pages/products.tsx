@@ -19,6 +19,7 @@ import {
   useDeletePurchaseBill,
   useGetSettings,
   useGetProductStockHistory,
+  useListVendors,
 } from "@workspace/api-client-react";
 import type { GetProductResponse } from "@workspace/api-zod";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
@@ -1224,6 +1225,7 @@ export function Products() {
   const createBill = useCreatePurchaseBill();
   const confirmBill = useConfirmPurchaseBill();
   const deleteBill = useDeletePurchaseBill();
+  const { data: vendors = [] } = useListVendors();
 
   const [pageTab, setPageTab] = useState<"products" | "purchases">("products");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
@@ -1238,6 +1240,7 @@ export function Products() {
   const [printProduct, setPrintProduct] = useState<LabelProduct | null>(null);
   const [billView, setBillView] = useState<"list" | "new">("list");
   const [viewBillId, setViewBillId] = useState<number | null>(null);
+  const [billSupplierManual, setBillSupplierManual] = useState(false);
   const [billForm, setBillForm] = useState<BillForm>(emptyBillForm());
   const { data: viewBillDetail } = useGetPurchaseBill(
     viewBillId ?? 0,
@@ -1338,6 +1341,7 @@ export function Products() {
           queryClient.invalidateQueries({ queryKey: ["/api/purchase-bills"] });
           setBillView("list");
           setBillForm(emptyBillForm());
+          setBillSupplierManual(false);
           refetchBills();
         },
         onError: () => toast({ title: "Failed to save bill", variant: "destructive" }),
@@ -1767,7 +1771,7 @@ export function Products() {
               {/* Header + action */}
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Purchase Bills</h3>
-                <Button className="gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillView("new"); }}>
+                <Button className="gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillSupplierManual(false); setBillView("new"); }}>
                   <Plus className="h-4 w-4" />New Purchase Bill
                 </Button>
               </div>
@@ -1778,7 +1782,7 @@ export function Products() {
                   <Truck className="h-12 w-12 opacity-30" />
                   <p className="text-lg">No purchase bills yet</p>
                   <p className="text-sm">Create a purchase bill to record deliveries and update inventory for multiple products at once.</p>
-                  <Button variant="outline" className="mt-2 gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillView("new"); }}>
+                  <Button variant="outline" className="mt-2 gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillSupplierManual(false); setBillView("new"); }}>
                     <Plus className="h-4 w-4" />New Purchase Bill
                   </Button>
                 </div>
@@ -1872,11 +1876,40 @@ export function Products() {
                     </div>
                     <div className="grid gap-1.5">
                       <Label className="text-xs text-muted-foreground uppercase tracking-wide">Supplier</Label>
-                      <Input
-                        value={billForm.supplier}
-                        onChange={(e) => setBillForm((f) => ({ ...f, supplier: e.target.value }))}
-                        placeholder="Supplier name"
-                      />
+                      {(billSupplierManual || vendors.length === 0) ? (
+                        <div className="flex gap-1">
+                          <Input
+                            value={billForm.supplier}
+                            onChange={(e) => setBillForm((f) => ({ ...f, supplier: e.target.value }))}
+                            placeholder="Type supplier name"
+                            className="flex-1"
+                          />
+                          {vendors.length > 0 && (
+                            <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
+                              onClick={() => { setBillSupplierManual(false); setBillForm(f => ({ ...f, supplier: "" })); }}>
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <Select
+                          value={billForm.supplier}
+                          onValueChange={(v) => {
+                            if (v === "__manual__") { setBillSupplierManual(true); setBillForm(f => ({ ...f, supplier: "" })); }
+                            else setBillForm((f) => ({ ...f, supplier: v }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select vendor..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {vendors.filter(v => v.isActive).map((v) => (
+                              <SelectItem key={v.id} value={v.name}>{v.name}</SelectItem>
+                            ))}
+                            <SelectItem value="__manual__" className="text-muted-foreground italic">Enter manually...</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                     <div className="grid gap-1.5">
                       <Label className="text-xs text-muted-foreground uppercase tracking-wide">Notes</Label>

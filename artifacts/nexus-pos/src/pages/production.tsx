@@ -16,21 +16,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Search, Plus, Trash2, Factory, CheckCircle2, Clock, ChevronDown, ChevronUp, X, ChevronsUpDown, FlaskConical, BookOpen, Truck, ShoppingCart } from "lucide-react";
+import { Search, Plus, Trash2, Factory, CheckCircle2, Clock, ChevronDown, ChevronUp, X, ChevronsUpDown, FlaskConical, BookOpen, ShoppingCart } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Ingredients } from "./ingredients";
 import { Recipes } from "./recipes";
-import { Vendors } from "./vendors";
 import { RawMaterialPurchases } from "./raw-material-purchases";
 
-type Tab = "ingredients" | "recipes" | "batches" | "vendors" | "purchases";
+type Tab = "ingredients" | "recipes" | "batches" | "purchases";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType; color: string }[] = [
   { id: "ingredients", label: "Ingredients",  icon: FlaskConical, color: "text-lime-400" },
   { id: "recipes",     label: "Recipes",      icon: BookOpen,     color: "text-green-400" },
   { id: "batches",     label: "Batches",      icon: Factory,      color: "text-teal-400" },
-  { id: "vendors",     label: "Vendors",      icon: Truck,        color: "text-sky-400" },
   { id: "purchases",   label: "Purchases",    icon: ShoppingCart, color: "text-violet-400" },
 ];
 
@@ -451,7 +449,6 @@ export function Production() {
         {activeTab === "ingredients" && <Ingredients />}
         {activeTab === "recipes"     && <Recipes />}
         {activeTab === "batches"     && <BatchesTab />}
-        {activeTab === "vendors"     && <Vendors />}
         {activeTab === "purchases"   && <RawMaterialPurchases />}
       </div>
     </div>

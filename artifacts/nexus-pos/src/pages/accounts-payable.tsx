@@ -21,10 +21,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Search, AlertTriangle, CheckCircle2, Clock, ChevronDown, ChevronUp,
   CreditCard, DollarSign, TrendingDown, ArrowDownLeft, FileText, BookOpen,
-  Plus, BarChart3, Landmark, Users,
+  Plus, BarChart3, Landmark, Users, Truck,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
+import { Vendors } from "./vendors";
 
 function fmtC(n: number | null | undefined) {
   return new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", minimumFractionDigits: 2 }).format(n ?? 0);
@@ -626,12 +627,13 @@ function ReportsTab() {
 }
 
 /* ─── Main Page ─── */
-type Tab = "overview" | "payables" | "payments" | "reports";
+type Tab = "overview" | "payables" | "payments" | "reports" | "vendors";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType; color: string }[] = [
   { id: "overview",  label: "Overview",  icon: Landmark,      color: "text-blue-400" },
   { id: "payables",  label: "Payables",  icon: FileText,      color: "text-red-400" },
   { id: "payments",  label: "Payments",  icon: CreditCard,    color: "text-emerald-400" },
+  { id: "vendors",   label: "Vendors",   icon: Truck,         color: "text-sky-400" },
   { id: "reports",   label: "Reports",   icon: BarChart3,     color: "text-amber-400" },
 ];
 
@@ -674,6 +676,7 @@ export function AccountsPayable() {
         {activeTab === "overview"  && <div className="h-full overflow-y-auto"><OverviewTab /></div>}
         {activeTab === "payables"  && <PayablesTab />}
         {activeTab === "payments"  && <PaymentsTab />}
+        {activeTab === "vendors"   && <div className="h-full overflow-y-auto p-4 sm:p-6"><Vendors /></div>}
         {activeTab === "reports"   && <div className="h-full overflow-y-auto"><ReportsTab /></div>}
       </div>
     </div>
