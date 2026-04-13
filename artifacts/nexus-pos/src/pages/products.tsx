@@ -1387,9 +1387,24 @@ function MBPOSImportDialog({ open, onClose, onImported }: {
       const data = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(ws, { header: 1, defval: "" }) as (string | number | boolean | null)[][];
       if (!data.length) { toast({ title: "Empty file", variant: "destructive" }); return; }
 
-      // Skip header row if first cell looks like a header (non-numeric first column)
-      const body = (typeof data[0]?.[0] === "string" && !/^\d/.test(String(data[0][0]))) ? data.slice(1) : data;
-      const rows = body.filter(r => String(r[0] ?? "").trim() !== "").map((r, i) => parseMBPOSRow(r, i + 2));
+      // Find the true header row (the one that contains "Product Name" / "product name" in col 0,
+      // or fall back to the first non-empty row). Skip it plus any additional sub-header rows
+      // (MBPOS exports often add a second row of location-column sub-headers such as
+      // "Add to location", "Remove from location", "WooCommerce Sync").
+      const SUB_HEADER_PATTERNS = /^(add to|remove from|woocommerce|location|product location)/i;
+
+      let headerIdx = data.findIndex(r => /^product\s*name/i.test(String(r[0] ?? "").trim()));
+      if (headerIdx < 0) headerIdx = 0; // fallback: treat row 0 as the header
+
+      // Collect body rows: everything after the header, filtering out sub-header rows and blanks
+      const bodyRaw = data.slice(headerIdx + 1);
+      const body = bodyRaw.filter(r => {
+        const col0 = String(r[0] ?? "").trim();
+        if (!col0) return false;                        // blank first cell
+        if (SUB_HEADER_PATTERNS.test(col0)) return false; // sub-header row
+        return true;
+      });
+      const rows = body.map((r, i) => parseMBPOSRow(r, headerIdx + 2 + i));
 
       if (!rows.length) { toast({ title: "No data rows found", description: "The file appears to be empty after the header.", variant: "destructive" }); return; }
 
