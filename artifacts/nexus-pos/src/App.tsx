@@ -29,6 +29,7 @@ import { VerifyEmail } from "@/pages/verify-email";
 import { Locations } from "@/pages/locations";
 import { Accounting } from "@/pages/accounting";
 import { AccountsReceivable } from "@/pages/ar";
+import { AccountsPayable } from "@/pages/accounts-payable";
 import { Ingredients } from "@/pages/ingredients";
 import { Recipes } from "@/pages/recipes";
 import { Production } from "@/pages/production";
@@ -140,6 +141,7 @@ function POSRouter() {
       <Route path="/locations"><ProtectedRoute component={Locations} permission="inventory.manage" /></Route>
       <Route path="/accounting"><ProtectedRoute component={Accounting} permission="reports.view" /></Route>
       <Route path="/ar"><ProtectedRoute component={AccountsReceivable} permission="reports.view" /></Route>
+      <Route path="/ap"><ProtectedRoute component={AccountsPayable} permission="reports.view" /></Route>
       <Route path="/ingredients"><ProtectedRoute component={Ingredients} permission="inventory.manage" /></Route>
       <Route path="/recipes"><ProtectedRoute component={Recipes} permission="inventory.manage" /></Route>
       <Route path="/production"><ProtectedRoute component={Production} permission="inventory.manage" /></Route>
