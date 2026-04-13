@@ -591,7 +591,7 @@ function CloseShiftDialog({
 }
 
 /* ─── Print helpers ─── */
-type ItemSummaryRow = { productName: string; totalQty: number; totalRevenue: number };
+type ItemSummaryRow = { productName: string; sku?: string | null; totalQty: number; totalRevenue: number };
 
 type CreditOrderRow = { orderNumber: string; total: number; customerName: string | null; customerPhone: string | null; arId: number | null; amountPaid: number | null; arStatus: string | null; createdAt: string };
 
@@ -673,19 +673,30 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
       })()}
       ${d.itemSummary && d.itemSummary.length > 0 ? `
       <div style="border-top:1px dashed #000;margin:8px 0"></div>
-      <b>Items Sold</b>
-      <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:11px">
+      <b>Details of Products Sold</b>
+      <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:10px">
         <thead><tr style="border-bottom:1px solid #000">
-          <th style="text-align:left">Item</th>
-          <th style="text-align:right">Qty</th>
-          <th style="text-align:right">Revenue</th>
+          <th style="text-align:left;padding:1px 2px">#</th>
+          <th style="text-align:left;padding:1px 2px">SKU</th>
+          <th style="text-align:left;padding:1px 2px">Product</th>
+          <th style="text-align:right;padding:1px 2px">Qty</th>
+          <th style="text-align:right;padding:1px 2px">Total</th>
         </tr></thead>
-        <tbody>${d.itemSummary.map(r => `
+        <tbody>${d.itemSummary.map((r, i) => `
           <tr>
-            <td>${r.productName}</td>
-            <td style="text-align:right">${r.totalQty}</td>
-            <td style="text-align:right">${fmt(r.totalRevenue)}</td>
+            <td style="padding:1px 2px">${i + 1}.</td>
+            <td style="padding:1px 2px;font-family:monospace">${r.sku ?? "—"}</td>
+            <td style="padding:1px 2px">${r.productName}</td>
+            <td style="text-align:right;padding:1px 2px">${r.totalQty.toFixed(2)}</td>
+            <td style="text-align:right;padding:1px 2px">J$${Math.abs(r.totalRevenue).toFixed(2)}</td>
           </tr>`).join("")}
+          <tr style="border-top:1px solid #000;font-weight:bold">
+            <td style="padding:2px 2px">#</td>
+            <td></td>
+            <td></td>
+            <td style="text-align:right;padding:2px 2px">${d.itemSummary.reduce((s, r) => s + r.totalQty, 0).toFixed(2)}</td>
+            <td style="text-align:right;padding:2px 2px">Grand Total: J$${d.itemSummary.reduce((s, r) => s + r.totalRevenue, 0).toFixed(2)}</td>
+          </tr>
         </tbody>
       </table>` : ""}
       ${d.creditOrders && d.creditOrders.length > 0 ? `
@@ -862,25 +873,46 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
             </div>
           )}
 
-          {/* Items sold summary */}
+          {/* Details of products sold */}
           {data.itemSummary && data.itemSummary.length > 0 && (
             <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2 text-sm">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Items Sold This Shift</p>
-              <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide pb-1 border-b border-border/40">
-                <span>Item</span><span className="text-right">Qty</span><span className="text-right">Revenue</span>
-              </div>
-              {data.itemSummary.map((row, i) => (
-                <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-sm">
-                  <span className="text-foreground truncate">{row.productName}</span>
-                  <span className="font-mono font-semibold text-right tabular-nums">{row.totalQty}</span>
-                  <span className="font-mono text-right tabular-nums text-muted-foreground">{formatCurrency(row.totalRevenue)}</span>
-                </div>
-              ))}
-              <Separator />
-              <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-sm font-bold">
-                <span>Total</span>
-                <span className="font-mono text-right tabular-nums">{data.itemSummary.reduce((s, r) => s + r.totalQty, 0)}</span>
-                <span className="font-mono text-right tabular-nums text-primary">{formatCurrency(data.itemSummary.reduce((s, r) => s + r.totalRevenue, 0))}</span>
+              <p className="text-sm font-bold text-foreground">Details of products sold</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-border/60">
+                      <th className="text-left font-semibold text-muted-foreground py-1.5 pr-2 w-6">#</th>
+                      <th className="text-left font-semibold text-muted-foreground py-1.5 pr-3">SKU</th>
+                      <th className="text-left font-semibold text-muted-foreground py-1.5 pr-3">Product</th>
+                      <th className="text-right font-semibold text-muted-foreground py-1.5 pr-3">Quantity</th>
+                      <th className="text-right font-semibold text-muted-foreground py-1.5">Total amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.itemSummary.map((row, i) => (
+                      <tr key={i} className="border-b border-border/30">
+                        <td className="py-1.5 pr-2 text-muted-foreground">{i + 1}.</td>
+                        <td className="py-1.5 pr-3 font-mono text-muted-foreground">{row.sku ?? "—"}</td>
+                        <td className="py-1.5 pr-3 text-foreground">{row.productName}</td>
+                        <td className="py-1.5 pr-3 text-right tabular-nums">{row.totalQty.toFixed(2)}</td>
+                        <td className="py-1.5 text-right tabular-nums font-mono">
+                          J$ {Math.abs(row.totalRevenue).toLocaleString("en-JM", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-border font-bold">
+                      <td className="py-2 pr-2 text-muted-foreground">#</td>
+                      <td></td>
+                      <td></td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        {data.itemSummary.reduce((s, r) => s + r.totalQty, 0).toFixed(2)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums font-mono text-primary">
+                        Grand Total: J$ {data.itemSummary.reduce((s, r) => s + r.totalRevenue, 0).toLocaleString("en-JM", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, gte, lte, isNotNull, sql, desc } from "drizzle-orm";
-import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable } from "@workspace/db";
+import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
 
@@ -96,11 +96,13 @@ async function computeItemSummary(tenantId: number, from: Date, to: Date) {
   return db
     .select({
       productName: orderItemsTable.productName,
+      sku: productsTable.sku,
       totalQty: sql<number>`cast(sum(${orderItemsTable.quantity}) as int)`.as("total_qty"),
       totalRevenue: sql<number>`sum(${orderItemsTable.lineTotal})`.as("total_revenue"),
     })
     .from(orderItemsTable)
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(
       and(
         eq(ordersTable.tenantId, tenantId),
@@ -109,7 +111,7 @@ async function computeItemSummary(tenantId: number, from: Date, to: Date) {
         isNotNull(ordersTable.paymentMethod),
       )
     )
-    .groupBy(orderItemsTable.productName)
+    .groupBy(orderItemsTable.productName, productsTable.sku)
     .orderBy(sql`sum(${orderItemsTable.quantity}) desc`);
 }
 
