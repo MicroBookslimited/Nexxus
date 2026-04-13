@@ -106,6 +106,26 @@ function getProductPalette(id: number) {
   return CARD_PALETTES[id % CARD_PALETTES.length];
 }
 
+// Category pill colours — deterministic per name so colours never shuffle
+const CAT_PILL_COLORS = [
+  { bg: "#1d4ed8", border: "#3b82f6", text: "#ffffff" }, // blue
+  { bg: "#7c3aed", border: "#8b5cf6", text: "#ffffff" }, // violet
+  { bg: "#047857", border: "#10b981", text: "#ffffff" }, // emerald
+  { bg: "#b45309", border: "#f59e0b", text: "#ffffff" }, // amber
+  { bg: "#be123c", border: "#f43f5e", text: "#ffffff" }, // rose
+  { bg: "#0e7490", border: "#06b6d4", text: "#ffffff" }, // cyan
+  { bg: "#9d174d", border: "#ec4899", text: "#ffffff" }, // pink
+  { bg: "#3730a3", border: "#6366f1", text: "#ffffff" }, // indigo
+  { bg: "#0f766e", border: "#14b8a6", text: "#ffffff" }, // teal
+  { bg: "#c2410c", border: "#f97316", text: "#ffffff" }, // orange
+];
+
+function getCategoryPillColor(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return CAT_PILL_COLORS[h % CAT_PILL_COLORS.length]!;
+}
+
 /* ─── Customization Dialog ─── */
 function CustomizeDialog({
   productId,
@@ -1101,14 +1121,31 @@ export function POS() {
               <ScanBarcode className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
             </div>
             <div className="flex gap-2 flex-wrap">
-              <Button size="sm" variant={categoryFilter === null ? "default" : "outline"} onClick={() => setCategoryFilter(null)} className="h-7 text-xs">
+              <button
+                onClick={() => setCategoryFilter(null)}
+                className="h-7 px-3 rounded-full text-xs font-semibold transition-all duration-150 border"
+                style={categoryFilter === null
+                  ? { background: "#3b82f6", borderColor: "#3b82f6", color: "#fff" }
+                  : { background: "transparent", borderColor: "#3b82f6", color: "#93c5fd" }}
+              >
                 All
-              </Button>
-              {categories.map((cat) => (
-                <Button key={cat} size="sm" variant={categoryFilter === cat ? "default" : "outline"} onClick={() => setCategoryFilter(cat)} className="h-7 text-xs">
-                  {cat}
-                </Button>
-              ))}
+              </button>
+              {categories.map((cat) => {
+                const c = getCategoryPillColor(cat);
+                const active = categoryFilter === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setCategoryFilter(cat)}
+                    className="h-7 px-3 rounded-full text-xs font-semibold transition-all duration-150 border whitespace-nowrap"
+                    style={active
+                      ? { background: c.bg, borderColor: c.border, color: c.text }
+                      : { background: `${c.bg}22`, borderColor: c.border, color: c.border }}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
