@@ -3,6 +3,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { db, staffTable, staffLocationsTable, locationsTable, rolesTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
+import { seedDefaultRoles } from "./roles";
 
 const router: IRouter = Router();
 
@@ -55,6 +56,9 @@ router.post("/staff", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid request body" });
     return;
   }
+
+  // Seed default roles on first staff creation (new tenant won't have roles yet)
+  await seedDefaultRoles(tenantId);
 
   const existing = await db.select({ id: staffTable.id })
     .from(staffTable)
@@ -172,6 +176,10 @@ router.post("/staff/authenticate", async (req, res): Promise<void> => {
 
   let permissions: string[] = [];
   if (tenantId) {
+    // Ensure default roles exist — they may not yet if the tenant has never
+    // visited the Roles page (e.g. immediately after onboarding).
+    await seedDefaultRoles(tenantId);
+
     const roleRows = await db.select({ permissions: rolesTable.permissions })
       .from(rolesTable)
       .where(and(
