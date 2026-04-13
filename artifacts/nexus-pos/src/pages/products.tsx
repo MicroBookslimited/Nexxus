@@ -1099,6 +1099,478 @@ function ImportProductsDialog({ open, onClose, onImported }: {
   );
 }
 
+/* ─── MBPOS → NEXXUS Import Dialog ─── */
+
+// Fixed MBPOS column indices (0-based)
+const MBPOS_COL = {
+  name:        0,   // Product Name
+  category:    3,   // Category
+  sku:         5,   // SKU
+  manageStock: 7,   // Manage Stock (1/0)
+  sellingPrice: 20, // Selling Price
+  openingStock: 21, // Opening Stock
+  imageUrl:    29,  // Image
+  description: 30,  // Product Description
+} as const;
+
+const MBPOS_TEMPLATE_HEADERS = [
+  "Product Name",
+  "Brand",
+  "Unit",
+  "Category",
+  "Sub Category",
+  "SKU",
+  "Barcode Type",
+  "Manage Stock",
+  "Alert Quantity",
+  "Expires In",
+  "Expiry Period Unit",
+  "Applicable Tax",
+  "Selling Price Tax Type",
+  "Product Type",
+  "Variation Name",
+  "Variation Values",
+  "Variation SKUs",
+  "Purchase Price (Including Tax)",
+  "Purchase Price (Excluding Tax)",
+  "Profit Margin %",
+  "Selling Price",
+  "Opening Stock",
+  "Opening Stock Location",
+  "Expiry Date",
+  "Enable IMEI/Serial",
+  "Weight",
+  "Rack",
+  "Row",
+  "Position",
+  "Image",
+  "Product Description",
+  "Custom Field1",
+  "Custom Field2",
+  "Custom Field3",
+  "Custom Field4",
+  "Not For Selling",
+  "Product Locations",
+];
+
+const MBPOS_TEMPLATE_SAMPLE = [
+  "Jerk Chicken",   // Product Name
+  "",               // Brand
+  "Each",           // Unit
+  "Food",           // Category
+  "",               // Sub Category
+  "JC-001",         // SKU
+  "C128",           // Barcode Type
+  "1",              // Manage Stock
+  "",               // Alert Quantity
+  "",               // Expires In
+  "",               // Expiry Period Unit
+  "",               // Applicable Tax
+  "exclusive",      // Selling Price Tax Type
+  "single",         // Product Type
+  "",               // Variation Name
+  "",               // Variation Values
+  "",               // Variation SKUs
+  "",               // Purchase Price (Including Tax)
+  "400.00",         // Purchase Price (Excluding Tax)
+  "",               // Profit Margin %
+  "850.00",         // Selling Price
+  "50",             // Opening Stock
+  "",               // Opening Stock Location
+  "",               // Expiry Date
+  "0",              // Enable IMEI/Serial
+  "",               // Weight
+  "",               // Rack
+  "",               // Row
+  "",               // Position
+  "",               // Image
+  "Seasoned jerk chicken with festival",  // Product Description
+  "", "", "", "",   // Custom Fields
+  "0",              // Not For Selling
+  "",               // Product Locations
+];
+
+function downloadMBPOSTemplate() {
+  const rows = [MBPOS_TEMPLATE_HEADERS, MBPOS_TEMPLATE_SAMPLE];
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: "MBPOS_Import_Template.csv" });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+type MBPOSPreviewRow = {
+  rowNum: number;
+  name: string;
+  category: string;
+  sku: string;
+  price: number | null;
+  stockCount: number;
+  inStock: boolean;
+  imageUrl: string;
+  description: string;
+  valid: boolean;
+  errors: string[];
+};
+
+function parseMBPOSRow(raw: (string | number | boolean | null | undefined)[], rowNum: number): MBPOSPreviewRow {
+  const get = (i: number) => String(raw[i] ?? "").trim();
+  const errors: string[] = [];
+
+  const name        = get(MBPOS_COL.name);
+  const category    = get(MBPOS_COL.category) || "General";
+  const sku         = get(MBPOS_COL.sku);
+  const manageStock = get(MBPOS_COL.manageStock);
+  const priceStr    = get(MBPOS_COL.sellingPrice);
+  const stockStr    = get(MBPOS_COL.openingStock);
+  const imageUrl    = get(MBPOS_COL.imageUrl);
+  const description = get(MBPOS_COL.description);
+
+  if (!name) errors.push("Product Name is required");
+
+  const price = parseFloat(priceStr.replace(/[^0-9.-]/g, ""));
+  if (!priceStr || isNaN(price) || price < 0) {
+    if (!priceStr) errors.push("Selling Price is required");
+    else errors.push("Selling Price must be a valid number");
+  }
+
+  const stockCount = parseInt(stockStr) || 0;
+  const inStock = manageStock === "1" ? stockCount > 0 : true;
+
+  return {
+    rowNum, name, category, sku,
+    price: isNaN(price) ? null : price,
+    stockCount, inStock,
+    imageUrl: imageUrl.startsWith("http") ? imageUrl : "",
+    description,
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
+function MBPOSImportDialog({ open, onClose, onImported }: {
+  open: boolean;
+  onClose: () => void;
+  onImported: (count: number) => void;
+}) {
+  const createProduct = useCreateProduct();
+  const { toast } = useToast();
+  const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const [step, setStep]         = useState<"upload" | "preview" | "done">("upload");
+  const [fileName, setFileName] = useState("");
+  const [preview, setPreview]   = useState<MBPOSPreviewRow[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [results, setResults]   = useState<{ ok: number; failed: number; errors: { row: number; name: string; error: string }[] }>({ ok: 0, failed: 0, errors: [] });
+
+  const reset = () => { setStep("upload"); setFileName(""); setPreview([]); setImporting(false); setProgress(0); setResults({ ok: 0, failed: 0, errors: [] }); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const parseFile = async (file: File) => {
+    try {
+      const XLSX = await import("xlsx");
+      const buf  = await file.arrayBuffer();
+      const wb   = XLSX.read(buf, { type: "array" });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(ws, { header: 1, defval: "" }) as (string | number | boolean | null)[][];
+      if (!data.length) { toast({ title: "Empty file", variant: "destructive" }); return; }
+
+      // Skip header row if first cell looks like a header (non-numeric first column)
+      const body = (typeof data[0]?.[0] === "string" && !/^\d/.test(String(data[0][0]))) ? data.slice(1) : data;
+      const rows = body.filter(r => String(r[0] ?? "").trim() !== "").map((r, i) => parseMBPOSRow(r, i + 2));
+
+      if (!rows.length) { toast({ title: "No data rows found", description: "The file appears to be empty after the header.", variant: "destructive" }); return; }
+
+      setFileName(file.name);
+      setPreview(rows);
+      setStep("preview");
+    } catch {
+      toast({ title: "Could not read file", description: "Please use a valid CSV or Excel file.", variant: "destructive" });
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) parseFile(f); };
+
+  const validRows = preview.filter(r => r.valid);
+  const invalidRows = preview.filter(r => !r.valid);
+
+  const handleImport = async () => {
+    setImporting(true);
+    let ok = 0; let failed = 0;
+    const errors: { row: number; name: string; error: string }[] = [];
+
+    for (let i = 0; i < validRows.length; i++) {
+      const r = validRows[i];
+      setProgress(i + 1);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          createProduct.mutate({
+            data: {
+              name: r.name,
+              price: r.price!,
+              category: r.category,
+              description: r.description || undefined,
+              barcode: r.sku || undefined,
+              stockCount: r.stockCount,
+              inStock: r.inStock,
+              imageUrl: r.imageUrl || undefined,
+            },
+          }, { onSuccess: () => resolve(), onError: (e) => reject(e) });
+        });
+        ok++;
+      } catch {
+        failed++;
+        errors.push({ row: r.rowNum, name: r.name, error: "Server error" });
+      }
+    }
+
+    // Also count skipped invalid rows
+    invalidRows.forEach(r => {
+      failed++;
+      errors.push({ row: r.rowNum, name: r.name || `Row ${r.rowNum}`, error: r.errors.join("; ") });
+    });
+
+    setResults({ ok, failed, errors });
+    setImporting(false);
+    setStep("done");
+    if (ok > 0) onImported(ok);
+  };
+
+  const MAPPED_FIELDS = [
+    { col: "1 — Product Name",        maps: "Name",             required: true  },
+    { col: "4 — Category",            maps: "Category",         required: false },
+    { col: "6 — SKU",                 maps: "Barcode / SKU",    required: false },
+    { col: "8 — Manage Stock (1/0)",  maps: "In Stock",         required: false },
+    { col: "21 — Selling Price",      maps: "Price",            required: true  },
+    { col: "22 — Opening Stock",      maps: "Opening Stock",    required: false },
+    { col: "30 — Image (URL)",        maps: "Image URL",        required: false },
+    { col: "31 — Product Description",maps: "Description",      required: false },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) handleClose(); }}>
+      <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <FileSpreadsheet className="h-5 w-5 text-sky-400" />
+            MBPOS → NEXXUS Inventory Import
+          </DialogTitle>
+          <p className="text-xs text-muted-foreground mt-0.5">Import products from MicroBooks POS format directly into NEXXUS</p>
+          {/* Steps */}
+          <div className="flex items-center gap-1.5 text-xs pt-2">
+            {(["upload","preview","done"] as const).map((s, i) => (
+              <React.Fragment key={s}>
+                <span className={`flex items-center gap-1.5 ${step === s ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                  <span className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${step === s ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>{i + 1}</span>
+                  {s === "upload" ? "Upload File" : s === "preview" ? "Review & Import" : "Results"}
+                </span>
+                {i < 2 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+              </React.Fragment>
+            ))}
+          </div>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+          {/* ── Step 1: Upload ── */}
+          {step === "upload" && (
+            <div className="space-y-4">
+              {/* Drop zone */}
+              <div
+                onDrop={handleDrop} onDragOver={e => e.preventDefault()}
+                onClick={() => fileRef.current?.click()}
+                className="border-2 border-dashed border-sky-500/40 rounded-xl p-12 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-sky-400/70 hover:bg-sky-500/5 transition-all text-center"
+              >
+                <Upload className="h-10 w-10 text-sky-400/60" />
+                <div>
+                  <p className="font-semibold">Drop your MBPOS export file here, or click to browse</p>
+                  <p className="text-xs text-muted-foreground mt-1">Accepts CSV (.csv) and Excel (.xlsx, .xls)</p>
+                </div>
+                <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) parseFile(f); }} />
+              </div>
+
+              {/* Template download */}
+              <div className="flex items-center gap-4 rounded-lg border border-sky-500/20 bg-sky-500/5 p-4">
+                <FileDown className="h-8 w-8 text-sky-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Don't have an MBPOS file?</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Download the template with the correct 37-column layout and a sample row.</p>
+                </div>
+                <Button variant="outline" size="sm" className="shrink-0 border-sky-500/30 text-sky-400 hover:text-sky-300"
+                  onClick={e => { e.stopPropagation(); downloadMBPOSTemplate(); }}>
+                  <FileDown className="h-3.5 w-3.5 mr-1.5" />Template
+                </Button>
+              </div>
+
+              {/* Column mapping reference */}
+              <div className="rounded-lg border border-border bg-secondary/10 p-4 space-y-3">
+                <p className="text-sm font-semibold">Columns used from MBPOS format</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {MAPPED_FIELDS.map(f => (
+                    <div key={f.col} className="flex items-center gap-2 text-xs">
+                      <span className="font-mono text-muted-foreground bg-secondary/60 rounded px-1.5 py-0.5 shrink-0">{f.col}</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="font-medium text-foreground">{f.maps}</span>
+                      {f.required && <span className="text-red-400 text-[10px]">Required</span>}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground border-t border-border pt-2 mt-1">
+                  All other columns (Brand, Unit, Barcode Type, Tax, Variations, etc.) are read and ignored — your file does not need to be trimmed.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 2: Preview ── */}
+          {step === "preview" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{fileName}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    <span className="text-green-400 font-medium">{validRows.length} valid</span>
+                    {invalidRows.length > 0 && <span className="text-red-400 font-medium ml-2">{invalidRows.length} will be skipped</span>}
+                    <span className="ml-2 text-muted-foreground">({preview.length} rows total)</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Invalid rows warning */}
+              {invalidRows.length > 0 && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-red-400 flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {invalidRows.length} row{invalidRows.length !== 1 ? "s" : ""} will be skipped due to errors
+                  </p>
+                  {invalidRows.slice(0, 5).map(r => (
+                    <p key={r.rowNum} className="text-xs text-muted-foreground pl-5">
+                      Row {r.rowNum}: <span className="font-medium text-foreground">{r.name || "(blank)"}</span> — {r.errors.join(", ")}
+                    </p>
+                  ))}
+                  {invalidRows.length > 5 && <p className="text-xs text-muted-foreground pl-5">…and {invalidRows.length - 5} more</p>}
+                </div>
+              )}
+
+              {/* Preview table */}
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-secondary/40 border-b border-border">
+                        <th className="px-3 py-2.5 text-left font-semibold text-muted-foreground whitespace-nowrap">Product Name</th>
+                        <th className="px-3 py-2.5 text-left font-semibold text-muted-foreground">Category</th>
+                        <th className="px-3 py-2.5 text-left font-semibold text-muted-foreground">SKU</th>
+                        <th className="px-3 py-2.5 text-right font-semibold text-muted-foreground">Price</th>
+                        <th className="px-3 py-2.5 text-right font-semibold text-muted-foreground">Stock</th>
+                        <th className="px-3 py-2.5 text-left font-semibold text-muted-foreground">Description</th>
+                        <th className="px-3 py-2.5 text-center font-semibold text-muted-foreground">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.slice(0, 20).map(r => (
+                        <tr key={r.rowNum} className={`border-b border-border/30 ${!r.valid ? "opacity-50 bg-red-500/5" : "hover:bg-secondary/20"}`}>
+                          <td className="px-3 py-2 font-medium text-foreground max-w-[180px] truncate">{r.name || <span className="text-muted-foreground italic">blank</span>}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{r.category}</td>
+                          <td className="px-3 py-2 font-mono text-muted-foreground">{r.sku || "—"}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium">
+                            {r.price !== null ? `J$\u00a0${r.price.toLocaleString("en-JM", { minimumFractionDigits: 2 })}` : <span className="text-red-400">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">{r.stockCount}</td>
+                          <td className="px-3 py-2 text-muted-foreground max-w-[160px] truncate">{r.description || ""}</td>
+                          <td className="px-3 py-2 text-center">
+                            {r.valid
+                              ? <span className="inline-block w-2 h-2 rounded-full bg-green-400" title="Will import" />
+                              : <span className="inline-block w-2 h-2 rounded-full bg-red-400" title={r.errors.join("; ")} />}
+                          </td>
+                        </tr>
+                      ))}
+                      {preview.length > 20 && (
+                        <tr>
+                          <td colSpan={7} className="px-3 py-2 text-center text-xs text-muted-foreground italic">
+                            …and {preview.length - 20} more rows not shown
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {importing && (
+                <div className="space-y-2">
+                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                    <div className="h-full bg-sky-500 transition-all duration-300 rounded-full" style={{ width: `${(progress / Math.max(validRows.length, 1)) * 100}%` }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">Importing {progress} of {validRows.length}…</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step 3: Results ── */}
+          {step === "done" && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-5 text-center">
+                  <p className="text-3xl font-bold text-emerald-400">{results.ok}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Products imported</p>
+                </div>
+                <div className={`rounded-lg border p-5 text-center ${results.failed > 0 ? "border-red-500/30 bg-red-500/5" : "border-border bg-secondary/10"}`}>
+                  <p className={`text-3xl font-bold ${results.failed > 0 ? "text-red-400" : "text-muted-foreground"}`}>{results.failed}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Skipped / failed</p>
+                </div>
+              </div>
+
+              {results.errors.length > 0 && (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <div className="grid grid-cols-[3rem_1fr_1fr] px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    <span>Row</span><span>Name</span><span>Reason</span>
+                  </div>
+                  <div className="divide-y divide-border/60 max-h-48 overflow-y-auto">
+                    {results.errors.map((e, i) => (
+                      <div key={i} className="grid grid-cols-[3rem_1fr_1fr] px-4 py-2 text-xs items-center">
+                        <span className="text-muted-foreground">{e.row}</span>
+                        <span className="font-medium truncate pr-2">{e.name}</span>
+                        <span className="text-red-400 truncate">{e.error}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="px-6 py-4 border-t border-border shrink-0">
+          {step === "upload" && <Button variant="outline" onClick={handleClose}>Cancel</Button>}
+          {step === "preview" && (
+            <>
+              <Button variant="outline" onClick={() => { setStep("upload"); setPreview([]); setFileName(""); }} disabled={importing}>Back</Button>
+              <Button
+                className="bg-sky-600 hover:bg-sky-500 text-white"
+                onClick={handleImport}
+                disabled={importing || validRows.length === 0}
+              >
+                {importing ? `Importing… (${progress}/${validRows.length})` : `Import ${validRows.length} Product${validRows.length !== 1 ? "s" : ""}`}
+              </Button>
+            </>
+          )}
+          {step === "done" && (
+            <>
+              {results.failed > 0 && <Button variant="outline" onClick={reset}>Import Another File</Button>}
+              <Button onClick={handleClose}>Done</Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ─── Stock History Panel ─── */
 function StockHistoryPanel({ productId }: { productId: number }) {
   const { data, isLoading } = useGetProductStockHistory(productId);
@@ -1237,6 +1709,7 @@ export function Products() {
   const [restockProduct, setRestockProduct] = useState<GetProductResponse | null>(null);
   const [restockForm, setRestockForm] = useState<RestockForm>(emptyRestockForm());
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [mbposDialogOpen, setMbposDialogOpen] = useState(false);
   const [printProduct, setPrintProduct] = useState<LabelProduct | null>(null);
   const [billView, setBillView] = useState<"list" | "new">("list");
   const [viewBillId, setViewBillId] = useState<number | null>(null);
@@ -1488,8 +1961,11 @@ export function Products() {
           </div>
           {pageTab === "products" && canManage && (
             <>
+              <Button variant="outline" onClick={() => setMbposDialogOpen(true)} className="gap-2 border-sky-500/40 text-sky-400 hover:text-sky-300 hover:border-sky-400/60">
+                <FileSpreadsheet className="h-4 w-4" />MBPOS Import
+              </Button>
               <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="gap-2">
-                <FileSpreadsheet className="h-4 w-4" />Import
+                <Upload className="h-4 w-4" />Import
               </Button>
               <Button onClick={openAdd} className="gap-2">
                 <Plus className="h-4 w-4" />Add Product
@@ -2325,6 +2801,16 @@ export function Products() {
         onClose={() => setImportDialogOpen(false)}
         onImported={(count) => {
           toast({ title: `${count} product${count !== 1 ? "s" : ""} imported successfully` });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+        }}
+      />
+
+      {/* MBPOS → NEXXUS Import dialog */}
+      <MBPOSImportDialog
+        open={mbposDialogOpen}
+        onClose={() => setMbposDialogOpen(false)}
+        onImported={(count) => {
+          toast({ title: `${count} product${count !== 1 ? "s" : ""} imported from MBPOS` });
           queryClient.invalidateQueries({ queryKey: ["/api/products"] });
         }}
       />
