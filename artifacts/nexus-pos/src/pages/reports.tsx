@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -22,8 +23,19 @@ import {
   AlertTriangle, CheckCircle2, Clock, CreditCard, Banknote, Star,
   BarChart2, ChefHat, UserCheck, Calendar, Layers, ArrowUpRight, Tag,
   UtensilsCrossed, TrendingDown, Table2, Percent, Receipt, Activity,
+  ClipboardList, Eye, Printer, MapPin,
 } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { useStaff } from "@/contexts/StaffContext";
+
+async function authFetch<T>(path: string): Promise<T> {
+  const token = localStorage.getItem("nexus_tenant_token");
+  const res = await fetch(path, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<T>;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1284,10 +1296,238 @@ function TaxReportTab({ range }: { range: { from: string; to: string } }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// REGISTER REPORT TAB  (Admin + Manager only)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type RegisterRow = {
+  id: number;
+  openedAt: string;
+  closedAt: string | null;
+  status: string;
+  staffName: string;
+  locationName: string | null;
+  openingCash: number;
+  cashSales: number;
+  cardSales: number;
+  creditSales: number;
+  splitSales: number;
+  totalSales: number;
+  refunds: number;
+  orderCount: number;
+};
+
+function fdt(v: string | null | undefined) {
+  if (!v) return "—";
+  try { return format(new Date(v), "dd/MM/yyyy hh:mm a"); }
+  catch { return String(v); }
+}
+
+function SessionDetailDialog({ sessionId, open, onClose }: { sessionId: number | null; open: boolean; onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["session-detail", sessionId],
+    enabled: open && sessionId != null,
+    queryFn: async () => {
+      const d = await authFetch<unknown>(`/api/cash/sessions/${sessionId}`);
+      return d as {
+        session: RegisterRow;
+        salesSummary: { cashSales: number; cardSales: number; creditSales: number; splitSales: number; totalSales: number; totalRefunds: number; voidedCount: number; voidedTotal: number };
+        totalPayouts: number;
+        expectedCash: number;
+        orderCount: number;
+      };
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ClipboardList className="h-5 w-5 text-blue-400" />
+            Register Session Detail
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading && <div className="py-8 text-center text-muted-foreground text-sm">Loading…</div>}
+
+        {data && (
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-muted-foreground text-xs mb-0.5">Opened</p>
+                <p className="font-medium">{fdt(data.session.openedAt)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-0.5">Closed</p>
+                <p className="font-medium">{data.session.closedAt ? fdt(data.session.closedAt) : <span className="text-green-400">Open</span>}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-0.5">Staff</p>
+                <p className="font-medium">{data.session.staffName}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-0.5">Location</p>
+                <p className="font-medium">{data.session.locationName ?? "—"}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border divide-y divide-border overflow-hidden">
+              {[
+                { label: "Cash Sales",       val: data.salesSummary.cashSales },
+                { label: "Card Sales",        val: data.salesSummary.cardSales },
+                { label: "Credit / A/R",      val: data.salesSummary.creditSales },
+                { label: "Split Payments",    val: data.salesSummary.splitSales },
+                { label: "Total Refunds",     val: -data.salesSummary.totalRefunds, cls: "text-red-400" },
+                { label: "Total Payouts",     val: -data.totalPayouts, cls: "text-amber-400" },
+                { label: "Opening Float",     val: data.session.openingCash },
+                { label: "Expected Cash",     val: data.expectedCash, cls: "font-bold" },
+                { label: "Voided Txns",       val: data.salesSummary.voidedCount, isCount: true },
+              ].map(({ label, val, cls, isCount }) => (
+                <div key={label} className="flex justify-between px-3 py-2">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className={`font-mono font-medium ${cls ?? ""}`}>
+                    {isCount ? val : fc(val as number)}
+                  </span>
+                </div>
+              ))}
+              <div className="flex justify-between px-3 py-2 bg-blue-500/10">
+                <span className="font-semibold">Net Sales Total</span>
+                <span className="font-mono font-bold text-blue-400">
+                  {fc(data.salesSummary.totalSales - data.salesSummary.totalRefunds)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RegisterReportTab({ range }: { range: { from: string; to: string } }) {
+  const [viewId, setViewId] = useState<number | null>(null);
+
+  const { data, isLoading } = useQuery<RegisterRow[]>({
+    queryKey: ["register-report", range.from, range.to],
+    queryFn: () => authFetch<RegisterRow[]>(`/api/cash/register-report?from=${range.from}&to=${range.to}`),
+  });
+
+  const rows = data ?? [];
+  const grandTotal    = rows.reduce((s, r) => s + r.totalSales, 0);
+  const grandCash     = rows.reduce((s, r) => s + r.cashSales, 0);
+  const grandCard     = rows.reduce((s, r) => s + r.cardSales, 0);
+  const grandCredit   = rows.reduce((s, r) => s + r.creditSales, 0);
+  const grandSplit    = rows.reduce((s, r) => s + r.splitSales, 0);
+
+  function handlePrint() {
+    window.print();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Register Report</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Cash register sessions with payment method breakdown</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={handlePrint} className="gap-2">
+          <Printer className="h-4 w-4" /> Print
+        </Button>
+      </div>
+
+      {isLoading && (
+        <div className="space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+      )}
+
+      {!isLoading && rows.length === 0 && (
+        <Card>
+          <CardContent className="py-16 text-center text-muted-foreground">
+            <ClipboardList className="h-10 w-10 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">No register sessions found</p>
+            <p className="text-xs mt-1">Try a wider date range</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoading && rows.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs">
+                  <TableHead>Open Time</TableHead>
+                  <TableHead>Close Time</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead>User</TableHead>
+                  <TableHead className="text-right">Cash</TableHead>
+                  <TableHead className="text-right">Card Slips</TableHead>
+                  <TableHead className="text-right">A/R Credit</TableHead>
+                  <TableHead className="text-right">Split</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Orders</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.id} className="text-sm">
+                    <TableCell className="whitespace-nowrap font-mono text-xs">{fdt(r.openedAt)}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-xs">
+                      {r.closedAt
+                        ? fdt(r.closedAt)
+                        : <span className="inline-flex items-center gap-1 text-green-400 text-xs"><span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />Open</span>}
+                    </TableCell>
+                    <TableCell>
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
+                        {r.locationName ?? <span className="text-muted-foreground">—</span>}
+                      </span>
+                    </TableCell>
+                    <TableCell className="font-medium">{r.staffName}</TableCell>
+                    <TableCell className="text-right font-mono">{r.cashSales > 0 ? fc(r.cashSales) : <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="text-right font-mono">{r.cardSales > 0 ? fc(r.cardSales) : <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="text-right font-mono">{r.creditSales > 0 ? fc(r.creditSales) : <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="text-right font-mono">{r.splitSales > 0 ? fc(r.splitSales) : <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="text-right font-mono font-bold text-blue-400">{fc(r.totalSales)}</TableCell>
+                    <TableCell className="text-right">{r.orderCount}</TableCell>
+                    <TableCell className="text-right">
+                      <Button size="sm" variant="outline" className="h-7 px-2 gap-1.5 text-xs" onClick={() => setViewId(r.id)}>
+                        <Eye className="h-3.5 w-3.5" /> View
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+
+                <TableRow className="bg-muted/30 font-semibold border-t-2">
+                  <TableCell colSpan={4} className="text-sm">Totals ({rows.length} sessions)</TableCell>
+                  <TableCell className="text-right font-mono">{fc(grandCash)}</TableCell>
+                  <TableCell className="text-right font-mono">{fc(grandCard)}</TableCell>
+                  <TableCell className="text-right font-mono">{fc(grandCredit)}</TableCell>
+                  <TableCell className="text-right font-mono">{fc(grandSplit)}</TableCell>
+                  <TableCell className="text-right font-mono text-blue-400">{fc(grandTotal)}</TableCell>
+                  <TableCell className="text-right">{rows.reduce((s, r) => s + r.orderCount, 0)}</TableCell>
+                  <TableCell />
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      )}
+
+      <SessionDetailDialog
+        sessionId={viewId}
+        open={viewId != null}
+        onClose={() => setViewId(null)}
+      />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN REPORTS PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const TABS = [
+const BASE_TABS = [
   { value: "daily-sales",    label: "Daily Sales",    icon: Calendar,        num: "01" },
   { value: "payment",        label: "Payment Methods",icon: CreditCard,      num: "02" },
   { value: "product-sales",  label: "Product Sales",  icon: ShoppingBag,     num: "03" },
@@ -1301,10 +1541,19 @@ const TABS = [
   { value: "tax",            label: "GCT / Tax",      icon: Receipt,         num: "11" },
 ];
 
+const REGISTER_TAB = { value: "register", label: "Register Report", icon: ClipboardList, num: "12" };
+
 const TABS_WITH_OWN_DATE = new Set(["hourly"]);
-const TABS_WITH_RANGE    = new Set(["daily-sales","payment","product-sales","inventory","staff","discount-void","category","table-turnover","profit","tax"]);
+const TABS_WITH_RANGE    = new Set(["daily-sales","payment","product-sales","inventory","staff","discount-void","category","table-turnover","profit","tax","register"]);
 
 export function Reports() {
+  const { staff } = useStaff();
+  const role = staff?.role?.toLowerCase() ?? "";
+  const canViewRegister = role === "admin" || role === "manager";
+
+  const TABS = canViewRegister ? [...BASE_TABS, REGISTER_TAB] : BASE_TABS;
+  const tabCount = TABS.length;
+
   const [preset,    setPreset]    = useState<Preset>("today");
   const [customFrom, setCustomFrom] = useState(format(subDays(new Date(), 7), "yyyy-MM-dd"));
   const [customTo,   setCustomTo]   = useState(format(new Date(), "yyyy-MM-dd"));
@@ -1316,7 +1565,7 @@ export function Reports() {
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
       <div>
         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Reports</h2>
-        <p className="text-muted-foreground mt-1 text-sm">11 comprehensive reports across all areas of your business.</p>
+        <p className="text-muted-foreground mt-1 text-sm">{tabCount} comprehensive reports across all areas of your business.</p>
       </div>
 
       {TABS_WITH_RANGE.has(activeTab) && (
@@ -1346,6 +1595,9 @@ export function Reports() {
           <TabsContent value="table-turnover"> <TableTurnoverTab range={range} /></TabsContent>
           <TabsContent value="profit">         <ProfitSnapshotTab range={range} /></TabsContent>
           <TabsContent value="tax">            <TaxReportTab range={range} /></TabsContent>
+          {canViewRegister && (
+            <TabsContent value="register">    <RegisterReportTab range={range} /></TabsContent>
+          )}
         </div>
       </Tabs>
     </motion.div>

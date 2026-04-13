@@ -128,6 +128,61 @@ router.get("/cash/sessions", async (req, res): Promise<void> => {
   res.json(sessions);
 });
 
+/* ─── GET /cash/register-report  (Admin / Manager only) ─── */
+router.get("/cash/register-report", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const { from, to } = req.query as { from?: string; to?: string };
+
+  // Build conditions
+  const conditions = [eq(cashSessionsTable.tenantId, tenantId)];
+  if (from) conditions.push(gte(cashSessionsTable.openedAt, new Date(from)));
+  if (to)   conditions.push(lte(cashSessionsTable.openedAt, new Date(`${to}T23:59:59`)));
+
+  const sessions = await db
+    .select()
+    .from(cashSessionsTable)
+    .where(and(...conditions))
+    .orderBy(desc(cashSessionsTable.openedAt));
+
+  // For each session aggregate orders by payment method
+  const report = await Promise.all(sessions.map(async (s) => {
+    const closedAt = s.closedAt ?? new Date();
+
+    const orderRows = await db
+      .select({ total: ordersTable.total, paymentMethod: ordersTable.paymentMethod, status: ordersTable.status })
+      .from(ordersTable)
+      .where(and(
+        eq(ordersTable.tenantId, tenantId),
+        gte(ordersTable.createdAt, s.openedAt),
+        lte(ordersTable.createdAt, closedAt),
+        isNotNull(ordersTable.paymentMethod),
+      ));
+
+    const sales = computeSales(orderRows);
+
+    return {
+      id:           s.id,
+      openedAt:     s.openedAt,
+      closedAt:     s.closedAt,
+      status:       s.status,
+      staffName:    s.staffName,
+      locationName: s.locationName,
+      openingCash:  s.openingCash,
+      cashSales:    sales.cashSales    - sales.refundedCash,
+      cardSales:    sales.cardSales    - sales.refundedCard,
+      creditSales:  sales.creditSales,
+      splitSales:   sales.splitSales,
+      totalSales:   sales.totalSales   - sales.totalRefunds,
+      refunds:      sales.totalRefunds,
+      orderCount:   orderRows.filter(r => r.status !== "voided").length,
+    };
+  }));
+
+  res.json(report);
+});
+
 router.get("/cash/sessions/current", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
