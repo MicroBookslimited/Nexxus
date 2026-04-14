@@ -150,17 +150,38 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
   const report = await Promise.all(sessions.map(async (s) => {
     const closedAt = s.closedAt ?? new Date();
 
+    // Scope orders to this cashier's staffId so overlapping sessions (multiple
+    // simultaneous cashiers) don't bleed into each other's totals.
+    const sessionConditions = [
+      eq(ordersTable.tenantId, tenantId),
+      gte(ordersTable.createdAt, s.openedAt),
+      lte(ordersTable.createdAt, closedAt),
+      isNotNull(ordersTable.paymentMethod),
+      ...(s.staffId ? [eq(ordersTable.staffId, s.staffId)] : []),
+    ];
+
     const orderRows = await db
-      .select({ total: ordersTable.total, paymentMethod: ordersTable.paymentMethod, status: ordersTable.status })
+      .select({
+        total: ordersTable.total,
+        paymentMethod: ordersTable.paymentMethod,
+        status: ordersTable.status,
+        splitCashAmount: ordersTable.splitCashAmount,
+        splitCardAmount: ordersTable.splitCardAmount,
+      })
       .from(ordersTable)
-      .where(and(
-        eq(ordersTable.tenantId, tenantId),
-        gte(ordersTable.createdAt, s.openedAt),
-        lte(ordersTable.createdAt, closedAt),
-        isNotNull(ordersTable.paymentMethod),
-      ));
+      .where(and(...sessionConditions));
 
     const sales = computeSales(orderRows);
+
+    // For split payments, attribute each portion to its correct column so
+    // Cash and Card Slips totals reflect exactly what each tender received.
+    const notVoided = orderRows.filter(r => r.status !== "voided");
+    const splitCash = notVoided
+      .filter(r => r.paymentMethod === "split")
+      .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
+    const splitCard = notVoided
+      .filter(r => r.paymentMethod === "split")
+      .reduce((s, r) => s + Number(r.splitCardAmount ?? 0), 0);
 
     return {
       id:           s.id,
@@ -170,11 +191,14 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       staffName:    s.staffName,
       locationName: s.locationName,
       openingCash:  s.openingCash,
-      cashSales:    sales.cashSales    - sales.refundedCash,
-      cardSales:    sales.cardSales    - sales.refundedCard,
+      // Cash = pure cash orders + cash portion of split payments
+      cashSales:    sales.cashSales - sales.refundedCash + splitCash,
+      // Card = pure card orders + card portion of split payments
+      cardSales:    sales.cardSales - sales.refundedCard + splitCard,
       creditSales:  sales.creditSales,
+      // Split total kept for audit trail but cash/card already broken out above
       splitSales:   sales.splitSales,
-      totalSales:   sales.totalSales   - sales.totalRefunds,
+      totalSales:   sales.totalSales - sales.totalRefunds,
       refunds:      sales.totalRefunds,
       orderCount:   orderRows.filter(r => r.status !== "voided").length,
     };
