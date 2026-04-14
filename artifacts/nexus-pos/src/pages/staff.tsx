@@ -233,7 +233,10 @@ function StaffDialog({
           <div className="space-y-1">
             <Label className="flex items-center gap-1.5">
               <KeyRound className="h-3 w-3" />
-              PIN {isEditing && <span className="text-xs text-muted-foreground">(leave blank to keep current)</span>}
+              PIN{" "}
+              <span className="text-xs text-muted-foreground font-normal">
+                {isEditing ? "(leave blank to keep current)" : "· must be unique across all staff"}
+              </span>
             </Label>
             <Input
               type="password"
@@ -324,7 +327,10 @@ export function Staff() {
         { id: editingMember.id, data: payload },
         {
           onSuccess: () => { toast({ title: "Staff member updated" }); invalidate(); setDialogOpen(false); },
-          onError: () => toast({ title: "Error", description: "Could not update staff member", variant: "destructive" }),
+          onError: (err: any) => {
+            const msg = err?.data?.error ?? err?.message ?? "Could not update staff member";
+            toast({ title: "Could not update staff member", description: msg, variant: "destructive" });
+          },
         },
       );
     } else {
@@ -332,7 +338,10 @@ export function Staff() {
         { data: { name: data.name, pin: data.pin, role: data.role } },
         {
           onSuccess: () => { toast({ title: "Staff member created" }); invalidate(); setDialogOpen(false); },
-          onError: () => toast({ title: "Error", description: "Could not create staff member", variant: "destructive" }),
+          onError: (err: any) => {
+            const msg = err?.data?.error ?? err?.message ?? "Could not create staff member";
+            toast({ title: "Could not save staff member", description: msg, variant: "destructive" });
+          },
         },
       );
     }
