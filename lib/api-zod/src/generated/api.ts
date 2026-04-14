@@ -314,6 +314,7 @@ export const ListOrdersQueryParams = zod.object({
   limit: zod.coerce.number().optional(),
   from: zod.string().optional(),
   to: zod.string().optional(),
+  staffId: zod.coerce.number().optional(),
 });
 
 export const ListOrdersResponseItem = zod.object({

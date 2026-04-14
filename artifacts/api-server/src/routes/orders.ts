@@ -108,6 +108,9 @@ router.get("/orders", async (req, res): Promise<void> => {
   if (query.data.to) {
     conditions.push(lt(ordersTable.createdAt, jamaicaDayEnd(query.data.to)));
   }
+  if (query.data.staffId) {
+    conditions.push(eq(ordersTable.staffId, query.data.staffId));
+  }
 
   const orders = await db
     .select()

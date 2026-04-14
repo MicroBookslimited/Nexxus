@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings } from "@workspace/api-client-react";
+import { useStaff } from "@/hooks/use-staff";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt } from "@/lib/receipt";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -113,10 +114,15 @@ export function Orders() {
     return "custom";
   })();
 
+  const { staff: sessionStaff, can } = useStaff();
+  const canViewAllOrders = can("reports.view");
+
   const listParams: Record<string, any> = {};
   if (statusFilter !== "all") listParams.status = statusFilter;
   if (fromDate) listParams.from = fromDate;
   if (toDate) listParams.to = toDate;
+  // Cashiers only see their own orders; admins/managers see everything
+  if (!canViewAllOrders && sessionStaff?.id) listParams.staffId = sessionStaff.id;
 
   const { data: orders, isLoading } = useListOrders(listParams);
   const { data: settings } = useGetSettings();
