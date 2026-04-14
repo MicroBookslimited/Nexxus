@@ -44,9 +44,11 @@ function VarianceBadge({ variance }: { variance: number }) {
 }
 
 /* ─── Open Shift Panel ─── */
-function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staffName: string, locationId?: number, locationName?: string) => void }) {
+type OpenShiftStaff = { id: number; name: string; role: string; permissions: string[] };
+
+function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staff: OpenShiftStaff, locationId?: number, locationName?: string) => void }) {
   const [step, setStep] = useState<"pin" | "location" | "cash">("pin");
-  const [staff, setStaff] = useState<{ id: number; name: string; role: string } | null>(null);
+  const [staff, setStaff] = useState<OpenShiftStaff | null>(null);
   const [cash, setCash] = useState("");
   const [locations, setLocations] = useState<{ id: number; name: string }[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
@@ -63,8 +65,8 @@ function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staffName: s
       .catch(() => {});
   }, []);
 
-  const handlePinSuccess = (s: { id: number; name: string; role: string }) => {
-    setStaff(s);
+  const handlePinSuccess = (s: { id: number; name: string; role: string; permissions?: string[] }) => {
+    setStaff({ id: s.id, name: s.name, role: s.role, permissions: s.permissions ?? [] });
     setStep(locations.length > 0 ? "location" : "cash");
   };
 
@@ -76,7 +78,7 @@ function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staffName: s
     const amount = parseFloat(cash);
     if (isNaN(amount) || amount < 0 || !staff) return;
     const loc = locations.find(l => l.id === selectedLocationId);
-    onOpen(amount, staff.name, selectedLocationId ?? undefined, loc?.name);
+    onOpen(amount, staff, selectedLocationId ?? undefined, loc?.name);
   };
 
   const stepLabel = step === "pin"
@@ -1136,10 +1138,13 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
 
 /* ─── Active Session Panel ─── */
 function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { staffName: string; onShiftClosed: (id: number) => void; autoOpen?: boolean }) {
-  const { data, isLoading, isError } = useGetCurrentCashSession({ query: { refetchInterval: 15000, retry: false } });
+  const { can, staff: activeStaff } = useStaff();
+  const { data, isLoading, isError } = useGetCurrentCashSession({
+    query: { refetchInterval: 15000, retry: false },
+    request: activeStaff?.id ? { headers: { "x-staff-id": String(activeStaff.id) } } : undefined,
+  });
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
-  const { can } = useStaff();
 
   useEffect(() => {
     if (autoOpen && data?.session && can("cash.close_session")) {
@@ -1335,12 +1340,13 @@ function SessionHistoryItem({ sessionId, staffFilter }: { sessionId: number; sta
 
 /* ─── Main Cash Management Page ─── */
 export function CashManagement() {
-  const { can, staff: sessionStaff } = useStaff();
+  const { can, staff: sessionStaff, setStaff, clearStaff } = useStaff();
   const canViewAllHistory = can("reports.view");
   const shouldAutoClose = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("close") === "1";
 
   const { data: current, isLoading: loadingCurrent, isError: noSession, refetch: refetchCurrent } = useGetCurrentCashSession({
-    query: { retry: false },
+    query: { retry: false, enabled: !!sessionStaff?.id },
+    request: sessionStaff?.id ? { headers: { "x-staff-id": String(sessionStaff.id) } } : undefined,
   });
   const { data: sessions } = useListCashSessions();
   const openSession = useOpenCashSession();
@@ -1355,11 +1361,14 @@ export function CashManagement() {
   // Cashiers only see their own shift history; managers see all
   const staffFilter = canViewAllHistory ? undefined : (sessionStaff?.name ?? undefined);
 
-  const handleOpenShift = (openingCash: number, name: string, locationId?: number, locationName?: string) => {
+  const handleOpenShift = (openingCash: number, staff: OpenShiftStaff, locationId?: number, locationName?: string) => {
     openSession.mutate(
-      { data: { staffName: name, openingCash, locationId, locationName } },
+      { data: { staffName: staff.name, staffId: staff.id, openingCash, locationId, locationName } },
       {
         onSuccess: () => {
+          // Store the cashier's identity in the staff context so subsequent
+          // requests carry the correct x-staff-id header.
+          setStaff({ id: staff.id, name: staff.name, role: staff.role, permissions: staff.permissions });
           toast({ title: "Shift opened", description: `Opening cash: ${formatCurrency(openingCash)}` });
           setSessionConflict(false);
           queryClient.removeQueries({ queryKey: ["/api/cash/sessions/current"] });
@@ -1367,8 +1376,9 @@ export function CashManagement() {
         },
         onError: (err: any) => {
           if (err?.response?.status === 409) {
+            // Same cashier already has an open session — identify them and show it
+            setStaff({ id: staff.id, name: staff.name, role: staff.role, permissions: staff.permissions });
             setSessionConflict(true);
-            // Immediately refetch so the open session shows in the UI if it exists
             queryClient.removeQueries({ queryKey: ["/api/cash/sessions/current"] });
             refetchCurrent();
           } else {
@@ -1462,7 +1472,7 @@ export function CashManagement() {
           {loadingCurrent && !noSession ? (
             <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
           ) : hasOpenSession ? (
-            <ActiveSessionPanel staffName={current!.session.staffName} onShiftClosed={(id) => setEodSessionId(id)} autoOpen={shouldAutoClose} />
+            <ActiveSessionPanel staffName={current!.session.staffName} onShiftClosed={(id) => { clearStaff(); setEodSessionId(id); }} autoOpen={shouldAutoClose} />
           ) : (
             <OpenShiftPanel onOpen={handleOpenShift} />
           )}

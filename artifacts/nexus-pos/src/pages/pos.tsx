@@ -427,6 +427,7 @@ export function POS() {
 
   const { data: cashSession, isError: noOpenShift, isLoading: checkingShift } = useGetCurrentCashSession({
     query: { retry: false, enabled: !locked },
+    request: sessionStaff?.id ? { headers: { "x-staff-id": String(sessionStaff.id) } } : undefined,
   });
 
   useEffect(() => {

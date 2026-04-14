@@ -187,10 +187,19 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
+  // Use x-staff-id header to scope the session to the requesting cashier.
+  // This allows multiple cashiers to have simultaneous open sessions.
+  const staffIdHeader = (req as never as { headers: { "x-staff-id"?: string } }).headers["x-staff-id"];
+  const staffId = staffIdHeader ? parseInt(staffIdHeader) : null;
+
+  const whereClause = staffId && !isNaN(staffId)
+    ? and(eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId), eq(cashSessionsTable.staffId, staffId))
+    : and(eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId));
+
   const [session] = await db
     .select()
     .from(cashSessionsTable)
-    .where(and(eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId)))
+    .where(whereClause)
     .orderBy(sql`${cashSessionsTable.openedAt} desc`)
     .limit(1);
 
@@ -291,10 +300,17 @@ router.post("/cash/sessions", async (req, res): Promise<void> => {
   const parsed = OpenSessionBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid request body" }); return; }
 
+  // Scope conflict check to this specific cashier (staffId) so multiple
+  // cashiers can each have their own simultaneous open session.
+  const incomingStaffId = parsed.data.staffId ?? null;
+  const conflictWhere = incomingStaffId
+    ? and(eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId), eq(cashSessionsTable.staffId, incomingStaffId))
+    : and(eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId));
+
   const existing = await db
     .select()
     .from(cashSessionsTable)
-    .where(and(eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId)))
+    .where(conflictWhere)
     .limit(1);
 
   if (existing.length > 0) {
@@ -307,7 +323,7 @@ router.post("/cash/sessions", async (req, res): Promise<void> => {
     .values({
       tenantId,
       staffName: parsed.data.staffName,
-      staffId: parsed.data.staffId ?? null,
+      staffId: incomingStaffId,
       locationId: parsed.data.locationId ?? null,
       locationName: parsed.data.locationName ?? null,
       openingCash: parsed.data.openingCash,
