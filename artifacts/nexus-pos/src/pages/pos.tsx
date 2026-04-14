@@ -570,6 +570,7 @@ export function POS() {
   });
 
   const handleProductTap = (product: NonNullable<typeof products>[0]) => {
+    setSearchTerm("");
     if (product.hasVariants || product.hasModifiers) {
       setCustomizingProductId(product.id);
     } else {
