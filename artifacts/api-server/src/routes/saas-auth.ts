@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, tenantsTable, subscriptionsTable, subscriptionPlansTable, resellersTable, tenantAdminUsersTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -140,13 +140,14 @@ router.post("/saas/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const { email, password } = parsed.data;
+  const { email: rawEmail, password } = parsed.data;
+  const email = rawEmail.toLowerCase().trim();
 
   // 1. Check tenant_admin_users first (supports multi-admin per tenant)
   const [adminUser] = await db
     .select()
     .from(tenantAdminUsersTable)
-    .where(and(eq(tenantAdminUsersTable.email, email), eq(tenantAdminUsersTable.status, "active")));
+    .where(and(sql`lower(${tenantAdminUsersTable.email}) = ${email}`, eq(tenantAdminUsersTable.status, "active")));
 
   if (adminUser) {
     if (!adminUser.passwordHash) {
@@ -194,7 +195,7 @@ router.post("/saas/login", async (req, res): Promise<void> => {
   }
 
   // 2. Fall back to legacy tenant login (also auto-migrates primary admin record)
-  const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.email, email));
+  const [tenant] = await db.select().from(tenantsTable).where(sql`lower(${tenantsTable.email}) = ${email}`);
   if (!tenant) {
     res.status(401).json({ error: "Invalid email or password" });
     return;

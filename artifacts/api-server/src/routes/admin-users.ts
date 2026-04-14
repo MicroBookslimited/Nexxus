@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, tenantsTable, tenantAdminUsersTable, subscriptionsTable } from "@workspace/db";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import bcryptjs from "bcryptjs";
 import crypto from "crypto";
@@ -96,12 +96,13 @@ router.post("/admin-users", async (req, res): Promise<void> => {
   const parsed = CreateAdminUserBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }); return; }
 
-  const { name, email, password, sendInvite } = parsed.data;
+  const { name, password, sendInvite } = parsed.data;
+  const email = parsed.data.email.toLowerCase().trim();
 
   const [existing] = await db
     .select({ id: tenantAdminUsersTable.id })
     .from(tenantAdminUsersTable)
-    .where(and(eq(tenantAdminUsersTable.tenantId, ctx.tenantId), eq(tenantAdminUsersTable.email, email)));
+    .where(and(eq(tenantAdminUsersTable.tenantId, ctx.tenantId), sql`lower(${tenantAdminUsersTable.email}) = ${email}`));
 
   if (existing) { res.status(409).json({ error: "An admin user with this email already exists" }); return; }
 
