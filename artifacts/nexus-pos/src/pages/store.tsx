@@ -590,11 +590,13 @@ export default function StorePage() {
       <div className="shrink-0 px-4 sm:px-6 pt-5 pb-4 border-b border-border bg-card/50">
         <div className="flex items-center justify-between gap-3 mb-4">
           <div>
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2">
-              <ShoppingCart className="h-6 w-6 sm:h-7 sm:w-7 text-primary" />
-              NEXXUS Store
-            </h2>
-            <p className="text-sm text-muted-foreground mt-0.5">Hardware, consumables & supplies for your POS system</p>
+            <div className="flex items-center gap-3">
+              <img src="/microbooks-pos-logo.png" alt="MicroBooks POS" className="h-9 sm:h-11 w-auto object-contain" />
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground leading-tight">MicroBooks POS Store</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">Hardware, consumables & supplies for your POS system</p>
+              </div>
+            </div>
           </div>
 
           {/* Cart button */}
