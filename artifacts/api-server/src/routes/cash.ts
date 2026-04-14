@@ -252,7 +252,8 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
       and(
         eq(ordersTable.tenantId, tenantId),
         gte(ordersTable.createdAt, session.openedAt),
-        isNotNull(ordersTable.paymentMethod)
+        isNotNull(ordersTable.paymentMethod),
+        ...(session.staffId ? [eq(ordersTable.staffId, session.staffId)] : []),
       )
     )
     .orderBy(ordersTable.createdAt);
@@ -303,7 +304,8 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
         eq(ordersTable.tenantId, tenantId),
         gte(ordersTable.createdAt, session.openedAt),
         lte(ordersTable.createdAt, closedAt),
-        isNotNull(ordersTable.paymentMethod)
+        isNotNull(ordersTable.paymentMethod),
+        ...(session.staffId ? [eq(ordersTable.staffId, session.staffId)] : []),
       )
     )
     .orderBy(ordersTable.createdAt);
