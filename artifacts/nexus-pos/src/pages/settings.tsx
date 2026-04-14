@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ElementType } from "react";
 import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -190,8 +190,41 @@ export function AdminSettings() {
         </Button>
       </div>
 
+      {/* ─── Section Navigation ─── */}
+      <div className="sticky top-0 z-10 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-background/90 backdrop-blur border-b border-border">
+        <nav className="flex gap-1.5 overflow-x-auto scrollbar-none">
+          {([
+            { id: "section-business", label: "Business", icon: Building2 },
+            { id: "section-receipt", label: "Receipt", icon: Receipt },
+            { id: "section-currency", label: "Currency", icon: DollarSign },
+            { id: "section-email", label: "Email", icon: Mail },
+            { id: "section-digest", label: "Notifications", icon: Bell },
+            { id: "section-inventory", label: "Inventory", icon: Boxes },
+            { id: "section-qr", label: "QR Code", icon: QrCode },
+            { id: "section-admins", label: "Admin Users", icon: UserCog },
+            { id: "section-automation", label: "Automation", icon: MailOpen },
+            { id: "section-roles", label: "Roles", icon: ShieldCheck },
+          ] as { id: string; label: string; icon: ElementType }[]).map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap border transition-colors shrink-0",
+                id === "section-admins"
+                  ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
+                  : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 hover:bg-muted/50"
+              )}
+            >
+              <Icon className="h-3 w-3" />
+              {label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
       {/* Business Info */}
-      <Card>
+      <Card id="section-business">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Building2 className="h-4 w-4 text-primary" />
@@ -298,7 +331,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Receipt Settings */}
-      <Card>
+      <Card id="section-receipt">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Receipt className="h-4 w-4 text-primary" />
@@ -523,7 +556,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Currency Settings */}
-      <Card>
+      <Card id="section-currency">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-primary" />
@@ -589,7 +622,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Email Provider */}
-      <Card>
+      <Card id="section-email">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Mail className="h-4 w-4 text-primary" />
@@ -739,7 +772,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Daily Digest */}
-      <Card>
+      <Card id="section-digest">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Bell className="h-4 w-4 text-primary" />
@@ -851,7 +884,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Inventory */}
-      <Card>
+      <Card id="section-inventory">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Boxes className="h-4 w-4 text-primary" />
@@ -899,7 +932,9 @@ export function AdminSettings() {
       </Card>
 
       {/* QR Code / Online Menu */}
-      {tenantSlug && <QRCodeSection slug={tenantSlug} />}
+      <div id="section-qr">
+        {tenantSlug && <QRCodeSection slug={tenantSlug} />}
+      </div>
 
       <div className="flex justify-end pt-2">
         <Button
@@ -911,9 +946,9 @@ export function AdminSettings() {
         </Button>
       </div>
 
-      <EmailAutomationSettings />
-      <AdminUsersSettings />
-      <RolesSettings />
+      <div id="section-admins"><AdminUsersSettings /></div>
+      <div id="section-automation"><EmailAutomationSettings /></div>
+      <div id="section-roles"><RolesSettings /></div>
     </div>
   );
 }
