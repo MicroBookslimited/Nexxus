@@ -770,7 +770,7 @@ function PrintLabelDialog({ product, onClose, businessName }: { product: LabelPr
       .page{display:flex;flex-wrap:wrap;padding:4mm;gap:2mm;}${labelCss}
       @media print{body{margin:0;}.page{padding:4mm;gap:2mm;}}</style></head>
       <body><div class="page">${Array.from({length:qty}).map(()=>oneLabelHtml).join("")}</div>
-      <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};}<\/script>
+      <script>window.onload=function(){window.onafterprint=function(){window.close();};if(window.matchMedia){var mql=window.matchMedia('print');var h=function(m){if(!m.matches){mql.removeListener(h);window.close();}};mql.addListener(h);}window.print();};<\/script>
       </body></html>`;
 
     const win = window.open("", "_blank", "width=900,height=700");

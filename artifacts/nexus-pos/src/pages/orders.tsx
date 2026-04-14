@@ -272,7 +272,7 @@ export function Orders() {
       <div class="sep"></div>
       <p class="center">*** BILL – PAYMENT PENDING ***</p>
       <p class="center">Powered by MicroBooks</p>
-      <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
+      <script>window.onload=function(){window.onafterprint=function(){window.close();};if(window.matchMedia){var mql=window.matchMedia('print');var h=function(m){if(!m.matches){mql.removeListener(h);window.close();}};mql.addListener(h);}window.print();};<\/script>
       </body></html>
     `);
     win.document.close();

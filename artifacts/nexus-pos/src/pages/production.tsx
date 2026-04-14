@@ -125,7 +125,7 @@ function InventoryHistory({ products }: { products: Array<{ id: number; name: st
     <table><thead><tr>
       <th>Date</th><th>Type</th><th>Reference</th><th>Notes</th><th style="text-align:right">In</th><th style="text-align:right">Out</th><th style="text-align:right">Balance</th>
     </tr></thead><tbody>${rows}</tbody></table>
-    <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
+    <script>window.onload=function(){window.onafterprint=function(){window.close();};if(window.matchMedia){var mql=window.matchMedia('print');var h=function(m){if(!m.matches){mql.removeListener(h);window.close();}};mql.addListener(h);}window.print();};<\/script>
     </body></html>`;
 
     const w = window.open("", "_blank");

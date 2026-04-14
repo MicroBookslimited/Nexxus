@@ -440,7 +440,19 @@ export function openReceiptWindow(html: string): void {
   // Embed the print trigger inside the popup's own HTML so it runs in the
   // popup's window context. Assigning w.onload / w.onafterprint from the
   // parent is unreliable in Edge/Chrome — the events never fire cross-window.
-  const printScript = `<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>`;
+  // Two complementary close mechanisms:
+  // 1. onafterprint  – works in Firefox and modern Edge/Chrome
+  // 2. matchMedia('print') listener – required for older Chrome/Edge builds
+  //    where onafterprint on a popup is unreliable
+  const printScript = `<script>window.onload=function(){` +
+    `window.onafterprint=function(){window.close();};` +
+    `if(window.matchMedia){` +
+    `  var mql=window.matchMedia('print');` +
+    `  var handler=function(m){if(!m.matches){mql.removeListener(handler);window.close();}};` +
+    `  mql.addListener(handler);` +
+    `}` +
+    `window.print();` +
+    `};<\/script>`;
   const printableHtml = html.includes("</body>")
     ? html.replace("</body>", `${printScript}</body>`)
     : html + printScript;
