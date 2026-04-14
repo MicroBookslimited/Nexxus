@@ -23,7 +23,7 @@ import {
   Coins, DollarSign, TrendingUp, TrendingDown, CreditCard, Banknote,
   SplitSquareHorizontal, Plus, CheckCircle2, History,
   ArrowDownLeft, UserCheck, ArrowLeft, Mail, BookOpen, ShoppingBag, MapPin,
-  ListChecks, ChevronRight, SkipForward, AlertTriangle,
+  ListChecks, ChevronRight, ChevronDown, SkipForward, AlertTriangle, ShoppingCart,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -1136,6 +1136,90 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
   );
 }
 
+/* ─── Shift Orders Table (reused in active panel and history) ─── */
+type ShiftOrder = {
+  id: number;
+  orderNumber: string;
+  total: number;
+  paymentMethod: string | null;
+  status: string;
+  createdAt: string;
+};
+
+function paymentBadge(method: string | null) {
+  if (!method) return null;
+  const map: Record<string, { label: string; cls: string }> = {
+    cash:  { label: "Cash",  cls: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+    card:  { label: "Card",  cls: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+    split: { label: "Split", cls: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
+    credit:{ label: "A/R",   cls: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+  };
+  const m = map[method.toLowerCase()] ?? { label: method, cls: "bg-secondary text-muted-foreground border-border" };
+  return <Badge className={cn("text-[10px] px-1.5 py-0 font-medium border", m.cls)}>{m.label}</Badge>;
+}
+
+function ShiftOrdersTable({ orders, title = "Orders" }: { orders: ShiftOrder[]; title?: string }) {
+  const [expanded, setExpanded] = useState(true);
+  const visible = orders.filter((o) => o.status !== "voided");
+  const grandTotal = visible.reduce((s, o) => s + o.total, 0);
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-2 pt-3 px-4">
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center justify-between w-full text-left"
+        >
+          <CardTitle className="text-sm flex items-center gap-2">
+            <ShoppingCart className="h-4 w-4 text-primary" />
+            {title}
+            <span className="text-xs text-muted-foreground font-normal ml-1">({visible.length} orders)</span>
+          </CardTitle>
+          {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        </button>
+      </CardHeader>
+      {expanded && (
+        <CardContent className="px-0 pb-2">
+          {visible.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No orders recorded this shift.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs text-muted-foreground">
+                    <th className="text-left font-medium px-4 py-2">Order #</th>
+                    <th className="text-left font-medium px-4 py-2">Time</th>
+                    <th className="text-left font-medium px-4 py-2">Method</th>
+                    <th className="text-right font-medium px-4 py-2">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {visible.map((o) => (
+                    <tr key={o.id} className="hover:bg-secondary/20 transition-colors">
+                      <td className="px-4 py-2 font-mono font-medium">{o.orderNumber}</td>
+                      <td className="px-4 py-2 text-muted-foreground tabular-nums">
+                        {format(new Date(o.createdAt), "h:mm a")}
+                      </td>
+                      <td className="px-4 py-2">{paymentBadge(o.paymentMethod)}</td>
+                      <td className="px-4 py-2 text-right font-mono">{formatCurrency(o.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border bg-secondary/10">
+                    <td colSpan={3} className="px-4 py-2 font-semibold text-xs text-muted-foreground">Total</td>
+                    <td className="px-4 py-2 text-right font-mono font-bold">{formatCurrency(grandTotal)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 /* ─── Active Session Panel ─── */
 function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { staffName: string; onShiftClosed: (id: number) => void; autoOpen?: boolean }) {
   const { can, staff: activeStaff } = useStaff();
@@ -1157,7 +1241,7 @@ function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { st
   }
   if (!data) return null;
 
-  const { session, payouts, salesSummary, expectedCash, totalPayouts } = data;
+  const { session, payouts, salesSummary, expectedCash, totalPayouts, orders } = data;
 
   return (
     <div className="flex-1 overflow-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
@@ -1292,6 +1376,9 @@ function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { st
         </Card>
       </div>
 
+      {/* Orders this shift */}
+      <ShiftOrdersTable orders={orders as any[]} title="Orders This Shift" />
+
       <AddPayoutDialog
         open={payoutOpen}
         sessionId={session.id}
@@ -1313,27 +1400,40 @@ function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { st
 /* ─── Session History Row ─── */
 function SessionHistoryItem({ sessionId, staffFilter }: { sessionId: number; staffFilter?: string }) {
   const { data } = useGetCashSession(sessionId);
+  const [expanded, setExpanded] = useState(false);
   if (!data) return null;
-  const { session, salesSummary, expectedCash } = data;
-  // If a staffFilter is set, only show sessions belonging to that staff member
+  const { session, salesSummary, expectedCash, orders } = data;
   if (staffFilter && session.staffName !== staffFilter) return null;
   const cashVariance = (session.actualCash ?? 0) - expectedCash;
   return (
-    <div className="flex items-center gap-4 p-3 rounded-lg border border-border hover:bg-secondary/20 transition-colors text-sm">
-      <div className="flex-1 min-w-0">
-        <p className="font-medium truncate">{session.staffName}</p>
-        <p className="text-xs text-muted-foreground">
-          {format(new Date(session.openedAt), "dd/MM, h:mm a")}
-          {session.closedAt && ` → ${format(new Date(session.closedAt), "h:mm a")}`}
-        </p>
-      </div>
-      <div className="text-right shrink-0">
-        <p className="font-mono font-medium">{formatCurrency(salesSummary.totalSales)}</p>
-        <p className="text-xs text-muted-foreground">total sales</p>
-      </div>
-      <div className="text-right shrink-0 w-24">
-        <VarianceBadge variance={cashVariance} />
-      </div>
+    <div className="rounded-lg border border-border overflow-hidden">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-4 p-3 w-full text-left hover:bg-secondary/20 transition-colors text-sm"
+      >
+        <div className="flex-1 min-w-0">
+          <p className="font-medium truncate">{session.staffName}</p>
+          <p className="text-xs text-muted-foreground">
+            {format(new Date(session.openedAt), "dd/MM, h:mm a")}
+            {session.closedAt && ` → ${format(new Date(session.closedAt), "h:mm a")}`}
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className="font-mono font-medium">{formatCurrency(salesSummary.totalSales)}</p>
+          <p className="text-xs text-muted-foreground">total sales</p>
+        </div>
+        <div className="text-right shrink-0 w-24">
+          <VarianceBadge variance={cashVariance} />
+        </div>
+        <div className="shrink-0 text-muted-foreground">
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </div>
+      </button>
+      {expanded && (
+        <div className="border-t border-border bg-secondary/5 p-3">
+          <ShiftOrdersTable orders={(orders ?? []) as any[]} title={`${session.staffName}'s Orders`} />
+        </div>
+      )}
     </div>
   );
 }
