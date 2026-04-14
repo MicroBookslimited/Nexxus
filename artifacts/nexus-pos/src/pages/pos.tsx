@@ -484,6 +484,7 @@ export function POS() {
   const [discountType, setDiscountType] = useState<"percent" | "fixed" | null>(null);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [discountAuthorizedBy, setDiscountAuthorizedBy] = useState<string | null>(null);
+  const [closeShiftOverrideOpen, setCloseShiftOverrideOpen] = useState(false);
   const [discountOverrideOpen, setDiscountOverrideOpen] = useState(false);
   const [discountEntryOpen, setDiscountEntryOpen] = useState(false);
   const [pendingDiscountType, setPendingDiscountType] = useState<"percent" | "fixed">("percent");
@@ -1098,14 +1099,25 @@ export function POS() {
               </div>
             )}
           </div>
-          <button
-            title="Lock register"
-            onClick={() => { setLocked(true); clearStaff(); setSessionLocationId(null); }}
-            className="shrink-0 flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/25 hover:border-amber-400 hover:text-amber-300 active:scale-95 transition-all duration-150"
-          >
-            <LockKeyhole className="h-3.5 w-3.5" />
-            Lock
-          </button>
+          <div className="shrink-0 flex items-center gap-1.5">
+            <button
+              title="Lock register"
+              onClick={() => { setLocked(true); clearStaff(); setSessionLocationId(null); }}
+              className="flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/25 hover:border-amber-400 hover:text-amber-300 active:scale-95 transition-all duration-150"
+            >
+              <LockKeyhole className="h-3.5 w-3.5" />
+              Lock
+            </button>
+            {cashSession?.session && (
+              <button
+                title="End Shift (manager override required)"
+                onClick={() => setCloseShiftOverrideOpen(true)}
+                className="flex items-center gap-1 rounded-md border border-red-500/50 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-500/25 hover:border-red-400 hover:text-red-300 active:scale-95 transition-all duration-150"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       )}
       <div className="flex flex-1 min-h-0">
@@ -1705,6 +1717,29 @@ export function POS() {
           onConfirm={handleCustomizeConfirm}
         />
       )}
+
+      {/* Manager Override — End Shift */}
+      <Dialog open={closeShiftOverrideOpen} onOpenChange={(o) => !o && setCloseShiftOverrideOpen(false)}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <X className="h-4 w-4" />
+              End Shift — Override Required
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground text-center -mt-2 mb-2">
+            A manager or admin PIN is required to close the current shift.
+          </p>
+          <PinPad
+            title=""
+            requiredRoles={["manager", "admin", "supervisor"]}
+            onSuccess={() => {
+              setCloseShiftOverrideOpen(false);
+              navigate("/cash?close=1");
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Manager Override — Discount */}
       <Dialog open={discountOverrideOpen} onOpenChange={(o) => !o && setDiscountOverrideOpen(false)}>

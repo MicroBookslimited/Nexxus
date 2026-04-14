@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
 function formatCurrency(amount: number) {
   return `$${Math.abs(amount).toFixed(2)}`;
@@ -753,13 +754,39 @@ function printEodReport(d: SessionDetail, withDetail: boolean) {
 }
 
 /* ─── EOD Report Modal ─── */
+type EodRecipient = { name: string; email: string; checked: boolean };
+
 function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: () => void }) {
   const { data, isLoading, isError } = useGetCashSession(sessionId);
   const [expanded, setExpanded] = useState(false);
   const [eodEmailOpen, setEodEmailOpen] = useState(false);
-  const [eodEmailAddr, setEodEmailAddr] = useState("");
+  const [eodRecipients, setEodRecipients] = useState<EodRecipient[]>([]);
+  const [eodCustomEmail, setEodCustomEmail] = useState("");
+  const [eodFetching, setEodFetching] = useState(false);
+  const [eodSending, setEodSending] = useState(false);
   const sendEodEmail = useSendEodReportEmail();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!eodEmailOpen) return;
+    setEodFetching(true);
+    const token = localStorage.getItem(TENANT_TOKEN_KEY) ?? "";
+    const headers: HeadersInit = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    fetch("/api/admin-users", { headers })
+      .then(r => r.ok ? r.json() : [])
+      .then((users: { name: string; email: string; isPrimary: boolean; status: string }[]) => {
+        const active = users.filter(u => u.status === "active" && u.email);
+        const seen = new Set<string>();
+        const list: EodRecipient[] = [];
+        active.sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0)).forEach(u => {
+          const key = u.email.toLowerCase();
+          if (!seen.has(key)) { seen.add(key); list.push({ name: u.name + (u.isPrimary ? " (Primary)" : ""), email: u.email, checked: true }); }
+        });
+        setEodRecipients(list);
+      })
+      .catch(() => {})
+      .finally(() => setEodFetching(false));
+  }, [eodEmailOpen]);
 
   if (isLoading) {
     return (
@@ -983,37 +1010,103 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
         </div>
 
         {eodEmailOpen && (
-          <div className="border border-border rounded-lg p-3 bg-muted/40 space-y-2 mt-2">
-            <p className="text-xs font-medium text-muted-foreground">Email report to:</p>
+          <div className="border border-border rounded-lg p-3 bg-muted/40 space-y-3 mt-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Mail className="h-3.5 w-3.5 text-primary" />
+                Email report to:
+              </p>
+              <button onClick={() => setEodEmailOpen(false)} className="text-muted-foreground hover:text-foreground text-sm leading-none">✕</button>
+            </div>
+
+            {/* Recipient checklist */}
+            {eodFetching ? (
+              <p className="text-xs text-muted-foreground text-center py-2">Loading recipients…</p>
+            ) : eodRecipients.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-1">No admin users found. Add a custom email below.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {eodRecipients.map((r, i) => (
+                  <label key={r.email} className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/60 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={r.checked}
+                      onChange={() => setEodRecipients(prev => prev.map((x, xi) => xi === i ? { ...x, checked: !x.checked } : x))}
+                      className="h-3.5 w-3.5 accent-primary"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">{r.name}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{r.email}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {/* Add custom email */}
             <div className="flex gap-2">
               <Input
                 type="email"
-                placeholder="manager@business.com"
-                value={eodEmailAddr}
-                onChange={(e) => setEodEmailAddr(e.target.value)}
-                className="h-8 text-sm"
+                placeholder="Add another email…"
+                value={eodCustomEmail}
+                onChange={e => setEodCustomEmail(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && eodCustomEmail.includes("@")) {
+                    setEodRecipients(prev => {
+                      if (prev.some(x => x.email.toLowerCase() === eodCustomEmail.toLowerCase())) return prev;
+                      return [...prev, { name: eodCustomEmail, email: eodCustomEmail, checked: true }];
+                    });
+                    setEodCustomEmail("");
+                  }
+                }}
+                className="h-8 text-xs"
               />
               <Button
                 size="sm"
-                disabled={!eodEmailAddr || sendEodEmail.isPending}
+                variant="outline"
+                className="shrink-0"
+                disabled={!eodCustomEmail.includes("@")}
                 onClick={() => {
-                  sendEodEmail.mutate(
-                    { data: { sessionId, to: eodEmailAddr } },
-                    {
-                      onSuccess: () => {
-                        toast({ title: "Report sent!", description: `Sent to ${eodEmailAddr}` });
-                        setEodEmailOpen(false);
-                        setEodEmailAddr("");
-                      },
-                      onError: () => toast({ title: "Failed to send", description: "Check that email is configured.", variant: "destructive" }),
-                    }
-                  );
+                  setEodRecipients(prev => {
+                    if (prev.some(x => x.email.toLowerCase() === eodCustomEmail.toLowerCase())) return prev;
+                    return [...prev, { name: eodCustomEmail, email: eodCustomEmail, checked: true }];
+                  });
+                  setEodCustomEmail("");
                 }}
               >
-                {sendEodEmail.isPending ? "Sending…" : "Send"}
+                Add
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setEodEmailOpen(false)}>✕</Button>
             </div>
+
+            {/* Send button */}
+            <Button
+              size="sm"
+              className="w-full"
+              disabled={eodSending || eodRecipients.filter(r => r.checked).length === 0}
+              onClick={async () => {
+                const targets = eodRecipients.filter(r => r.checked);
+                if (targets.length === 0) return;
+                setEodSending(true);
+                let sent = 0;
+                for (const t of targets) {
+                  await new Promise<void>(resolve => {
+                    sendEodEmail.mutate(
+                      { data: { sessionId, to: t.email } },
+                      { onSuccess: () => { sent++; resolve(); }, onError: () => resolve() }
+                    );
+                  });
+                }
+                setEodSending(false);
+                if (sent > 0) {
+                  toast({ title: `Report sent to ${sent} recipient${sent > 1 ? "s" : ""}!` });
+                  setEodEmailOpen(false);
+                } else {
+                  toast({ title: "Failed to send", description: "Check email settings.", variant: "destructive" });
+                }
+              }}
+            >
+              {eodSending ? "Sending…" : `Send to ${eodRecipients.filter(r => r.checked).length} recipient${eodRecipients.filter(r => r.checked).length !== 1 ? "s" : ""}`}
+            </Button>
           </div>
         )}
 
@@ -1042,11 +1135,17 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
 }
 
 /* ─── Active Session Panel ─── */
-function ActiveSessionPanel({ staffName, onShiftClosed }: { staffName: string; onShiftClosed: (id: number) => void }) {
+function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { staffName: string; onShiftClosed: (id: number) => void; autoOpen?: boolean }) {
   const { data, isLoading, isError } = useGetCurrentCashSession({ query: { refetchInterval: 15000, retry: false } });
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const { can } = useStaff();
+
+  useEffect(() => {
+    if (autoOpen && data?.session && can("cash.close_session")) {
+      setCloseOpen(true);
+    }
+  }, [autoOpen, data?.session?.id]);
 
   if (isLoading && !isError) {
     return <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading session…</div>;
@@ -1238,6 +1337,7 @@ function SessionHistoryItem({ sessionId, staffFilter }: { sessionId: number; sta
 export function CashManagement() {
   const { can, staff: sessionStaff } = useStaff();
   const canViewAllHistory = can("reports.view");
+  const shouldAutoClose = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("close") === "1";
 
   const { data: current, isLoading: loadingCurrent, isError: noSession, refetch: refetchCurrent } = useGetCurrentCashSession({
     query: { retry: false },
@@ -1362,7 +1462,7 @@ export function CashManagement() {
           {loadingCurrent && !noSession ? (
             <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
           ) : hasOpenSession ? (
-            <ActiveSessionPanel staffName={current!.session.staffName} onShiftClosed={(id) => setEodSessionId(id)} />
+            <ActiveSessionPanel staffName={current!.session.staffName} onShiftClosed={(id) => setEodSessionId(id)} autoOpen={shouldAutoClose} />
           ) : (
             <OpenShiftPanel onOpen={handleOpenShift} />
           )}
