@@ -766,4 +766,101 @@ router.get("/reports/tax", async (req, res): Promise<void> => {
   });
 });
 
+// ── Sales by Staff Report ──────────────────────────────────────────────────
+router.get("/reports/staff-sales", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const { from, to } = rangeParams(req.query as Record<string, string>);
+  const staffIdFilter = req.query.staffId ? parseInt(req.query.staffId as string) : null;
+
+  const allStaff = await db
+    .select({ id: staffTable.id, name: staffTable.name, role: staffTable.role })
+    .from(staffTable)
+    .where(eq(staffTable.tenantId, tenantId));
+
+  const baseConditions = [
+    eq(ordersTable.tenantId, tenantId),
+    eq(ordersTable.status, "completed"),
+    gte(ordersTable.createdAt, from),
+    lte(ordersTable.createdAt, to),
+    isNotNull(ordersTable.staffId),
+    ...(staffIdFilter ? [eq(ordersTable.staffId, staffIdFilter)] : []),
+  ];
+
+  // Per-staff, per-payment-method rows
+  const rows = await db.select({
+    staffId:       ordersTable.staffId,
+    paymentMethod: ordersTable.paymentMethod,
+    orders:        sql<number>`COUNT(*)`,
+    revenue:       sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
+    discounts:     sql<number>`COALESCE(SUM(${ordersTable.discountValue}), 0)`,
+    splitCash:     sql<number>`COALESCE(SUM(${ordersTable.splitCashAmount}), 0)`,
+    splitCard:     sql<number>`COALESCE(SUM(${ordersTable.splitCardAmount}), 0)`,
+  }).from(ordersTable)
+    .where(and(...baseConditions))
+    .groupBy(ordersTable.staffId, ordersTable.paymentMethod)
+    .orderBy(desc(sql`SUM(${ordersTable.total})`));
+
+  // Daily breakdown
+  const daily = await db.select({
+    staffId: ordersTable.staffId,
+    date:    sql<string>`DATE(${ordersTable.createdAt})::text`,
+    orders:  sql<number>`COUNT(*)`,
+    revenue: sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
+  }).from(ordersTable)
+    .where(and(...baseConditions))
+    .groupBy(ordersTable.staffId, sql`DATE(${ordersTable.createdAt})`)
+    .orderBy(asc(sql`DATE(${ordersTable.createdAt})`));
+
+  type StaffSummary = {
+    staffId: number; staffName: string; role: string;
+    orders: number; revenue: number; discounts: number;
+    cashSales: number; cardSales: number; splitSales: number; creditSales: number;
+    daily: { date: string; orders: number; revenue: number }[];
+  };
+  const staffMap = new Map<number, StaffSummary>();
+
+  rows.forEach(r => {
+    const info = allStaff.find(s => s.id === r.staffId);
+    const entry = staffMap.get(r.staffId!) ?? {
+      staffId: r.staffId!, staffName: info?.name ?? `Staff #${r.staffId}`, role: info?.role ?? "unknown",
+      orders: 0, revenue: 0, discounts: 0, cashSales: 0, cardSales: 0, splitSales: 0, creditSales: 0, daily: [],
+    };
+    const amt = Number(r.revenue ?? 0);
+    entry.orders   += Number(r.orders ?? 0);
+    entry.revenue  += amt;
+    entry.discounts += Number(r.discounts ?? 0);
+    if      (r.paymentMethod === "cash")   entry.cashSales   += amt;
+    else if (r.paymentMethod === "card")   entry.cardSales   += amt;
+    else if (r.paymentMethod === "credit") entry.creditSales += amt;
+    else if (r.paymentMethod === "split") {
+      entry.cashSales  += Number(r.splitCash ?? 0);
+      entry.cardSales  += Number(r.splitCard ?? 0);
+      entry.splitSales += amt;
+    }
+    staffMap.set(r.staffId!, entry);
+  });
+
+  daily.forEach(d => {
+    const entry = staffMap.get(d.staffId!);
+    if (entry) entry.daily.push({ date: d.date, orders: Number(d.orders), revenue: Math.round(Number(d.revenue) * 100) / 100 });
+  });
+
+  const summaries = [...staffMap.values()]
+    .sort((a, b) => b.revenue - a.revenue)
+    .map(s => ({
+      ...s,
+      revenue:     Math.round(s.revenue     * 100) / 100,
+      discounts:   Math.round(s.discounts   * 100) / 100,
+      cashSales:   Math.round(s.cashSales   * 100) / 100,
+      cardSales:   Math.round(s.cardSales   * 100) / 100,
+      splitSales:  Math.round(s.splitSales  * 100) / 100,
+      creditSales: Math.round(s.creditSales * 100) / 100,
+      avgOrder:    s.orders > 0 ? Math.round((s.revenue / s.orders) * 100) / 100 : 0,
+    }));
+
+  res.json({ staffList: allStaff, summaries });
+});
+
 export default router;

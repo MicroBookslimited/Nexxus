@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -90,11 +91,7 @@ function downloadCsv(filename: string, headers: string[], rows: (string | number
 function useReport<T>(key: string[], url: string) {
   return useQuery<T>({
     queryKey: key,
-    queryFn: async () => {
-      const r = await fetch(url);
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
+    queryFn: () => authFetch<T>(url),
   });
 }
 
@@ -1527,6 +1524,204 @@ function RegisterReportTab({ range }: { range: { from: string; to: string } }) {
 // MAIN REPORTS PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 13. SALES BY STAFF
+// ═══════════════════════════════════════════════════════════════════════════════
+function SalesByStaffTab({ range }: { range: { from: string; to: string } }) {
+  const [staffFilter, setStaffFilter] = useState<string>("all");
+  const [pmFilter,    setPmFilter]    = useState<string>("all");
+
+  const staffParam = staffFilter !== "all" ? `&staffId=${staffFilter}` : "";
+  const { data, isLoading } = useReport<any>(
+    ["staff-sales", range.from, range.to, staffFilter],
+    `/api/reports/staff-sales?from=${range.from}&to=${range.to}${staffParam}`,
+  );
+
+  const staffList: any[] = data?.staffList ?? [];
+  const all: any[]       = data?.summaries ?? [];
+
+  // Client-side payment method filter
+  const summaries = pmFilter === "all" ? all : all.filter((s: any) => {
+    if (pmFilter === "cash")   return s.cashSales   > 0;
+    if (pmFilter === "card")   return s.cardSales   > 0;
+    if (pmFilter === "credit") return s.creditSales > 0;
+    return true;
+  });
+
+  const totalRevenue = summaries.reduce((s: number, r: any) => s + r.revenue, 0);
+  const totalOrders  = summaries.reduce((s: number, r: any) => s + r.orders,  0);
+  const topStaff     = summaries[0];
+
+  const chartData = summaries.map((s: any) => ({
+    name:    s.staffName.split(" ")[0],
+    Cash:    s.cashSales,
+    Card:    s.cardSales,
+    Credit:  s.creditSales,
+    Revenue: s.revenue,
+  }));
+
+  // Detail daily rows (for when a single staff is selected)
+  const dailyRows: any[] = staffFilter !== "all" && summaries[0]?.daily ? summaries[0].daily : [];
+
+  const handleExport = () => {
+    if (!summaries.length) return;
+    downloadCsv(`sales-by-staff-${range.from}-to-${range.to}.csv`,
+      ["Staff", "Role", "Orders", "Cash (JMD)", "Card (JMD)", "Credit (JMD)", "Total (JMD)", "Discounts (JMD)", "Avg Order (JMD)"],
+      summaries.map((s: any) => [s.staffName, s.role, s.orders, s.cashSales, s.cardSales, s.creditSales, s.revenue, s.discounts, s.avgOrder]),
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 items-end justify-between">
+        <div className="flex gap-3 flex-wrap">
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-muted-foreground">Staff Member</Label>
+            <Select value={staffFilter} onValueChange={setStaffFilter}>
+              <SelectTrigger className="h-8 w-44 text-xs">
+                <SelectValue placeholder="All Staff" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Staff</SelectItem>
+                {staffList.map((s: any) => (
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-muted-foreground">Payment Method</Label>
+            <Select value={pmFilter} onValueChange={setPmFilter}>
+              <SelectTrigger className="h-8 w-36 text-xs">
+                <SelectValue placeholder="All Methods" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Methods</SelectItem>
+                <SelectItem value="cash">Cash</SelectItem>
+                <SelectItem value="card">Card</SelectItem>
+                <SelectItem value="credit">A/R Credit</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <ExportBtn onClick={handleExport} />
+      </div>
+
+      {isLoading ? <Loading /> : (
+        <>
+          {/* Summary cards */}
+          <div className="grid gap-4 grid-cols-3">
+            <StatCard title="Total Revenue"   value={fc(totalRevenue)}               icon={DollarSign}  loading={false} color="text-blue-400" />
+            <StatCard title="Total Orders"    value={totalOrders.toString()}          icon={ShoppingBag} loading={false} />
+            <StatCard title="Top Cashier"     value={topStaff?.staffName ?? "—"}      icon={UserCheck}   loading={false} sub={topStaff ? fc(topStaff.revenue) : undefined} color="text-emerald-400" />
+          </div>
+
+          {/* Stacked bar chart */}
+          {chartData.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle className="text-base">Revenue by Cashier</CardTitle></CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
+                    <Tooltip content={<CT />} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="Cash"   stackId="a" fill="#10b981" radius={[0,0,0,0]} />
+                    <Bar dataKey="Card"   stackId="a" fill="#3b82f6" radius={[0,0,0,0]} />
+                    <Bar dataKey="Credit" stackId="a" fill="#f59e0b" radius={[4,4,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Main table */}
+          <Card>
+            <CardHeader><CardTitle className="text-base">Sales Breakdown by Staff</CardTitle></CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Staff</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead className="text-right">Orders</TableHead>
+                    <TableHead className="text-right">Cash</TableHead>
+                    <TableHead className="text-right">Card</TableHead>
+                    <TableHead className="text-right">A/R Credit</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Discounts</TableHead>
+                    <TableHead className="text-right">Avg Order</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {summaries.map((s: any) => (
+                    <TableRow key={s.staffId}>
+                      <TableCell className="font-medium">{s.staffName}</TableCell>
+                      <TableCell><Badge variant="outline" className="text-xs capitalize">{s.role}</Badge></TableCell>
+                      <TableCell className="text-right">{s.orders}</TableCell>
+                      <TableCell className="text-right font-mono text-emerald-400">{s.cashSales > 0 ? fc(s.cashSales) : <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="text-right font-mono text-blue-400">{s.cardSales > 0 ? fc(s.cardSales) : <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="text-right font-mono text-amber-400">{s.creditSales > 0 ? fc(s.creditSales) : <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="text-right font-mono font-semibold">{fc(s.revenue)}</TableCell>
+                      <TableCell className="text-right font-mono text-muted-foreground">{s.discounts > 0 ? fc(s.discounts) : <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="text-right font-mono text-sm">{fc(s.avgOrder)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {summaries.length === 0 && (
+                    <TableRow><TableCell colSpan={9}><Empty message="No sales attributed to staff for this period" /></TableCell></TableRow>
+                  )}
+                  {summaries.length > 1 && (
+                    <TableRow className="bg-muted/30 font-semibold border-t-2">
+                      <TableCell colSpan={2}>Totals</TableCell>
+                      <TableCell className="text-right">{totalOrders}</TableCell>
+                      <TableCell className="text-right font-mono text-emerald-400">{fc(summaries.reduce((s: number, r: any) => s + r.cashSales, 0))}</TableCell>
+                      <TableCell className="text-right font-mono text-blue-400">{fc(summaries.reduce((s: number, r: any) => s + r.cardSales, 0))}</TableCell>
+                      <TableCell className="text-right font-mono text-amber-400">{fc(summaries.reduce((s: number, r: any) => s + r.creditSales, 0))}</TableCell>
+                      <TableCell className="text-right font-mono text-blue-400">{fc(totalRevenue)}</TableCell>
+                      <TableCell className="text-right font-mono">{fc(summaries.reduce((s: number, r: any) => s + r.discounts, 0))}</TableCell>
+                      <TableCell />
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Daily breakdown when a single staff member is selected */}
+          {staffFilter !== "all" && dailyRows.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle className="text-base">Daily Breakdown — {summaries[0]?.staffName}</CardTitle></CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right">Orders</TableHead>
+                      <TableHead className="text-right">Revenue</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dailyRows.map((d: any) => (
+                      <TableRow key={d.date}>
+                        <TableCell className="font-mono text-sm">{d.date}</TableCell>
+                        <TableCell className="text-right">{d.orders}</TableCell>
+                        <TableCell className="text-right font-mono">{fc(d.revenue)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 const BASE_TABS = [
   { value: "daily-sales",    label: "Daily Sales",    icon: Calendar,        num: "01" },
   { value: "payment",        label: "Payment Methods",icon: CreditCard,      num: "02" },
@@ -1541,17 +1736,20 @@ const BASE_TABS = [
   { value: "tax",            label: "GCT / Tax",      icon: Receipt,         num: "11" },
 ];
 
-const REGISTER_TAB = { value: "register", label: "Register Report", icon: ClipboardList, num: "12" };
+const REGISTER_TAB  = { value: "register",    label: "Register Report",  icon: ClipboardList, num: "12" };
+const STAFF_SALES_TAB = { value: "staff-sales", label: "Sales by Staff",   icon: Users,         num: "13" };
 
 const TABS_WITH_OWN_DATE = new Set(["hourly"]);
-const TABS_WITH_RANGE    = new Set(["daily-sales","payment","product-sales","inventory","staff","discount-void","category","table-turnover","profit","tax","register"]);
+const TABS_WITH_RANGE    = new Set(["daily-sales","payment","product-sales","inventory","staff","discount-void","category","table-turnover","profit","tax","register","staff-sales"]);
 
 export function Reports() {
   const { staff } = useStaff();
   const role = staff?.role?.toLowerCase() ?? "";
   const canViewRegister = role === "admin" || role === "manager";
 
-  const TABS = canViewRegister ? [...BASE_TABS, REGISTER_TAB] : BASE_TABS;
+  const TABS = canViewRegister
+    ? [...BASE_TABS, REGISTER_TAB, STAFF_SALES_TAB]
+    : [...BASE_TABS, STAFF_SALES_TAB];
   const tabCount = TABS.length;
 
   const [preset,    setPreset]    = useState<Preset>("today");
@@ -1598,6 +1796,7 @@ export function Reports() {
           {canViewRegister && (
             <TabsContent value="register">    <RegisterReportTab range={range} /></TabsContent>
           )}
+          <TabsContent value="staff-sales">   <SalesByStaffTab range={range} /></TabsContent>
         </div>
       </Tabs>
     </motion.div>
