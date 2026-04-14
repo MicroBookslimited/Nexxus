@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable } from "@workspace/db";
 import { getSetting } from "./settings";
+import { sendTemplateEmail } from "./email-templates";
 import {
   CreateOrderBody,
   GetOrderParams,
@@ -365,14 +366,32 @@ router.post("/orders", async (req, res): Promise<void> => {
     const LOYALTY_EARN_RATE = 10;
     const pointsEarned = Math.floor(total / LOYALTY_EARN_RATE);
     const netPoints = pointsEarned - pointsToRedeem;
-    await db
+    const [updatedCustomer] = await db
       .update(customersTable)
       .set({
         totalSpent: sql`${customersTable.totalSpent} + ${total}`,
         orderCount: sql`${customersTable.orderCount} + 1`,
         loyaltyPoints: sql`GREATEST(0, ${customersTable.loyaltyPoints} + ${netPoints})`,
       })
-      .where(and(eq(customersTable.id, parsed.data.customerId), eq(customersTable.tenantId, tenantId)));
+      .where(and(eq(customersTable.id, parsed.data.customerId), eq(customersTable.tenantId, tenantId)))
+      .returning();
+
+    if (pointsEarned > 0 && updatedCustomer?.email) {
+      const businessName = (await getSetting("business_name", tenantId)) ?? "NEXXUS POS";
+      sendTemplateEmail({
+        tenantId,
+        templateKey: "loyalty_earned",
+        to: updatedCustomer.email,
+        vars: {
+          business_name: businessName,
+          customer_name: updatedCustomer.name,
+          points_earned: pointsEarned,
+          points_balance: updatedCustomer.loyaltyPoints ?? 0,
+          order_total: total.toFixed(2),
+          order_date: new Date().toLocaleDateString("en-JM"),
+        },
+      }).catch(() => {});
+    }
   }
 
   if (parsed.data.tableId) {

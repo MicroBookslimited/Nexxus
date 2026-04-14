@@ -72,12 +72,15 @@ export const bankAccountSettingsTable = pgTable("bank_account_settings", {
 
 export const emailTemplatesTable = pgTable("email_templates", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
+  templateKey: text("template_key").notNull(),
   name: text("name").notNull(),
-  eventKey: text("event_key").notNull(),
+  description: text("description").notNull().default(""),
+  eventKey: text("event_key").notNull().default(""),
   subject: text("subject").notNull(),
-  htmlBody: text("html_body").notNull(),
+  body: text("html_body").notNull(),
   textBody: text("text_body").notNull().default(""),
-  isEnabled: boolean("is_enabled").notNull().default(true),
+  enabled: boolean("is_enabled").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { eq, like, and, type SQL } from "drizzle-orm";
 import { db, customersTable, ordersTable, orderItemsTable } from "@workspace/db";
+import { sendTemplateEmail } from "./email-templates";
+import { getSetting } from "./settings";
 import {
   ListCustomersQueryParams,
   ListCustomersResponse,
@@ -71,6 +73,21 @@ router.post("/customers", async (req, res): Promise<void> => {
       phone: parsed.data.phone,
     })
     .returning();
+
+  if (customer?.email) {
+    const businessName = (await getSetting("business_name", tenantId)) ?? "NEXXUS POS";
+    sendTemplateEmail({
+      tenantId,
+      templateKey: "welcome",
+      to: customer.email,
+      vars: {
+        business_name: businessName,
+        customer_name: customer.name,
+        customer_email: customer.email,
+        customer_phone: customer.phone ?? "",
+      },
+    }).catch(() => {});
+  }
 
   res.status(201).json(GetCustomerResponse.parse(normalizeCustomer(customer)));
 });

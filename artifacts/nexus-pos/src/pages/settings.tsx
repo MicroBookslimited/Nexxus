@@ -911,6 +911,7 @@ export function AdminSettings() {
         </Button>
       </div>
 
+      <EmailAutomationSettings />
       <AdminUsersSettings />
       <RolesSettings />
     </div>
@@ -1321,6 +1322,264 @@ async function adminFetch<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(data.error ?? `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
+}
+
+/* ─────────────────────────────────────────
+   Email Automation Settings
+───────────────────────────────────────── */
+
+type EmailTemplateRow = {
+  id: number;
+  templateKey: string;
+  name: string;
+  description: string;
+  subject: string;
+  body: string;
+  enabled: boolean;
+};
+
+const TEMPLATE_VARIABLES: Record<string, { label: string; vars: string[] }> = {
+  welcome:       { label: "Welcome Email",       vars: ["business_name", "customer_name", "customer_email", "customer_phone"] },
+  loyalty_earned:{ label: "Loyalty Points Earned",vars: ["business_name", "customer_name", "points_earned", "points_balance", "order_total", "order_date"] },
+  low_stock:     { label: "Low Stock Alert",      vars: ["business_name", "product_name", "current_stock", "threshold", "category"] },
+  ar_reminder:   { label: "AR Balance Reminder",  vars: ["business_name", "customer_name", "balance", "business_phone", "business_address"] },
+  order_receipt: { label: "Order Receipt",        vars: ["business_name", "customer_name", "order_number", "order_date", "subtotal", "tax", "total", "payment_method", "loyalty_points"] },
+  birthday:      { label: "Birthday Greeting",    vars: ["business_name", "customer_name", "bonus_points"] },
+};
+
+const TRIGGER_LABELS: Record<string, string> = {
+  welcome:        "Triggered when a new customer is added",
+  loyalty_earned: "Triggered when a customer earns loyalty points",
+  low_stock:      "Triggered when stock drops below threshold",
+  ar_reminder:    "Sent manually from customer AR page",
+  order_receipt:  "Triggered when an order is completed",
+  birthday:       "Sent manually or on customer birthday",
+};
+
+function EmailAutomationSettings() {
+  const { toast } = useToast();
+  const [templates, setTemplates] = useState<EmailTemplateRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<EmailTemplateRow | null>(null);
+  const [testEmail, setTestEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await adminFetch<EmailTemplateRow[]>("/api/email-templates");
+      setTemplates(data);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const toggle = async (key: string, enabled: boolean) => {
+    try {
+      const updated = await adminFetch<EmailTemplateRow>(`/api/email-templates/${key}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      setTemplates(ts => ts.map(t => t.templateKey === key ? updated : t));
+    } catch (e) {
+      toast({ title: "Error", description: String(e), variant: "destructive" });
+    }
+  };
+
+  const save = async () => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      const updated = await adminFetch<EmailTemplateRow>(`/api/email-templates/${editing.templateKey}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject: editing.subject, body: editing.body }),
+      });
+      setTemplates(ts => ts.map(t => t.templateKey === editing.templateKey ? updated : t));
+      setEditing(null);
+      toast({ title: "Template saved" });
+    } catch (e) {
+      toast({ title: "Error", description: String(e), variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  const reset = async () => {
+    if (!editing) return;
+    setResetting(true);
+    try {
+      const updated = await adminFetch<EmailTemplateRow>(`/api/email-templates/${editing.templateKey}/reset`, { method: "POST" });
+      setEditing(updated);
+      setTemplates(ts => ts.map(t => t.templateKey === editing.templateKey ? updated : t));
+      toast({ title: "Reset to default" });
+    } catch (e) {
+      toast({ title: "Error", description: String(e), variant: "destructive" });
+    } finally { setResetting(false); }
+  };
+
+  const sendTest = async () => {
+    if (!editing || !testEmail) return;
+    setSending(true);
+    try {
+      await adminFetch(`/api/email-templates/${editing.templateKey}/send-test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: testEmail }),
+      });
+      toast({ title: "Test email sent!", description: `Delivered to ${testEmail}` });
+    } catch (e) {
+      toast({ title: "Failed to send", description: String(e), variant: "destructive" });
+    } finally { setSending(false); }
+  };
+
+  const vars = editing ? (TEMPLATE_VARIABLES[editing.templateKey]?.vars ?? []) : [];
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <span className="text-lg">✉️</span> Email Automation
+          </CardTitle>
+          <CardDescription>Manage automated emails sent to customers on key events. Click a template to edit its subject and content.</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="px-6 py-8 text-center text-muted-foreground text-sm">Loading templates…</div>
+          ) : (
+            <div className="divide-y divide-border">
+              {templates.map(t => (
+                <div key={t.templateKey} className="flex items-start gap-4 px-6 py-4 hover:bg-muted/30 transition-colors">
+                  <button
+                    role="switch"
+                    aria-checked={t.enabled}
+                    onClick={() => toggle(t.templateKey, !t.enabled)}
+                    className={`mt-0.5 relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${t.enabled ? "bg-primary" : "bg-muted"}`}
+                  >
+                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${t.enabled ? "translate-x-4" : "translate-x-0"}`} />
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="font-medium text-sm">{t.name}</span>
+                      {t.enabled
+                        ? <Badge className="text-[10px] h-4 px-1.5 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Active</Badge>
+                        : <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground">Inactive</Badge>
+                      }
+                    </div>
+                    <div className="text-xs text-muted-foreground">{t.description}</div>
+                    <div className="text-xs text-primary/60 mt-0.5">{TRIGGER_LABELS[t.templateKey] ?? ""}</div>
+                  </div>
+                  <Button size="sm" variant="outline" className="shrink-0 h-7 text-xs" onClick={() => { setEditing({ ...t }); setShowPreview(false); }}>
+                    Edit
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editing} onOpenChange={o => { if (!o) setEditing(null); }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editing?.name}</DialogTitle>
+          </DialogHeader>
+          {editing && (
+            <div className="space-y-4">
+              {/* Trigger info */}
+              <div className="text-xs text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+                🔔 {TRIGGER_LABELS[editing.templateKey]}
+              </div>
+
+              {/* Available variables */}
+              {vars.length > 0 && (
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">Available Variables</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {vars.map(v => (
+                      <code key={v} className="text-[11px] bg-muted px-2 py-0.5 rounded font-mono text-primary cursor-pointer hover:bg-primary/10"
+                        onClick={() => setEditing(e => e ? ({ ...e, body: e.body + ` {{${v}}}` }) : e)}>
+                        {`{{${v}}}`}
+                      </code>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Click a variable to insert it into the body. These will be replaced with real values when the email is sent.</p>
+                </div>
+              )}
+
+              {/* Subject */}
+              <div className="space-y-1.5">
+                <Label htmlFor="et-subject">Subject Line</Label>
+                <Input
+                  id="et-subject"
+                  value={editing.subject}
+                  onChange={e => setEditing(v => v ? ({ ...v, subject: e.target.value }) : v)}
+                  placeholder="Email subject…"
+                />
+              </div>
+
+              {/* Body / Preview toggle */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label>Email Body (HTML)</Label>
+                  <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setShowPreview(p => !p)}>
+                    {showPreview ? "← Edit" : "Preview →"}
+                  </Button>
+                </div>
+                {showPreview ? (
+                  <div className="border rounded-md overflow-hidden h-80">
+                    <iframe
+                      srcDoc={editing.body}
+                      title="Email Preview"
+                      className="w-full h-full"
+                      sandbox="allow-same-origin"
+                    />
+                  </div>
+                ) : (
+                  <textarea
+                    className="w-full h-80 rounded-md border border-border bg-background px-3 py-2 text-xs font-mono resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                    value={editing.body}
+                    onChange={e => setEditing(v => v ? ({ ...v, body: e.target.value }) : v)}
+                    placeholder="HTML email body…"
+                    spellCheck={false}
+                  />
+                )}
+              </div>
+
+              {/* Send test */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Send Test Email</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="email"
+                    placeholder="your@email.com"
+                    value={testEmail}
+                    onChange={e => setTestEmail(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={sendTest} disabled={sending || !testEmail}>
+                    {sending ? "Sending…" : "Send Test"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" size="sm" onClick={reset} disabled={resetting} className="mr-auto text-muted-foreground">
+              {resetting ? "Resetting…" : "Reset to Default"}
+            </Button>
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Template"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 function AdminUsersSettings() {
