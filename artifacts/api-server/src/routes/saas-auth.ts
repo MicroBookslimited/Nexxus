@@ -174,6 +174,8 @@ router.post("/saas/login", async (req, res): Promise<void> => {
       .from(subscriptionsTable)
       .where(eq(subscriptionsTable.tenantId, tenant.id));
 
+    await db.update(tenantsTable).set({ lastLoginAt: new Date() }).where(eq(tenantsTable.id, tenant.id));
+
     const token = signToken(tenant.id, adminUser.email, adminUser.id, adminUser.isPrimary);
     res.json({
       token,
@@ -229,6 +231,8 @@ router.post("/saas/login", async (req, res): Promise<void> => {
     .select({ status: subscriptionsTable.status, planId: subscriptionsTable.planId, trialEndsAt: subscriptionsTable.trialEndsAt })
     .from(subscriptionsTable)
     .where(eq(subscriptionsTable.tenantId, tenant.id));
+
+  await db.update(tenantsTable).set({ lastLoginAt: new Date() }).where(eq(tenantsTable.id, tenant.id));
 
   const token = signToken(tenant.id, tenant.email, primaryAdmin?.id, true);
   res.json({

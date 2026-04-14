@@ -82,6 +82,21 @@ function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
   );
 }
 
+/* ─── Relative time helper ─── */
+function formatRelativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
 /* ─── Status Badge ─── */
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string; icon: React.ElementType }> = {
@@ -142,6 +157,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
             <div><span className="text-[#475569]">Phone</span><p className="text-white">{tenant.phone ?? "—"}</p></div>
             <div><span className="text-[#475569]">Country</span><p className="text-white">{tenant.country ?? "—"}</p></div>
             <div><span className="text-[#475569]">Joined</span><p className="text-white">{new Date(tenant.createdAt).toLocaleDateString()}</p></div>
+            <div><span className="text-[#475569]">Last Login</span><p className="text-white" title={tenant.lastLoginAt ? new Date(tenant.lastLoginAt).toLocaleString() : undefined}>{tenant.lastLoginAt ? formatRelativeTime(tenant.lastLoginAt) : "Never"}</p></div>
             <div><span className="text-[#475569]">Plan</span><p className="text-white">{tenant.planName ?? "No plan"}</p></div>
             <div><span className="text-[#475569]">Billing</span><p className="text-white capitalize">{tenant.billingCycle ?? "—"}</p></div>
           </div>
@@ -1142,7 +1158,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-[#2a3a55]">
-                        {["Business", "Owner", "Plan", "Subscription", "Account", "Joined", ""].map(h => (
+                        {["Business", "Owner", "Plan", "Subscription", "Account", "Joined", "Last Login", ""].map(h => (
                           <th key={h} className="text-left text-xs text-[#475569] font-medium uppercase tracking-wide px-4 py-3">{h}</th>
                         ))}
                       </tr>
@@ -1156,6 +1172,15 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                           <td className="px-4 py-3"><StatusBadge status={t.subscriptionStatus ?? "trial"} /></td>
                           <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
                           <td className="px-4 py-3 text-[#475569]">{new Date(t.createdAt).toLocaleDateString()}</td>
+                          <td className="px-4 py-3">
+                            {t.lastLoginAt ? (
+                              <span className="text-xs text-[#94a3b8]" title={new Date(t.lastLoginAt).toLocaleString()}>
+                                {formatRelativeTime(t.lastLoginAt)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-[#475569]">Never</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3">
                             <button onClick={() => setSelectedTenant(t)} className="p-1.5 rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors">
                               <Eye size={14} />
