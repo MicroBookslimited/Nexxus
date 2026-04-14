@@ -125,6 +125,7 @@ function InventoryHistory({ products }: { products: Array<{ id: number; name: st
     <table><thead><tr>
       <th>Date</th><th>Type</th><th>Reference</th><th>Notes</th><th style="text-align:right">In</th><th style="text-align:right">Out</th><th style="text-align:right">Balance</th>
     </tr></thead><tbody>${rows}</tbody></table>
+    <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
     </body></html>`;
 
     const w = window.open("", "_blank");
@@ -132,7 +133,6 @@ function InventoryHistory({ products }: { products: Array<{ id: number; name: st
     w.document.write(html);
     w.document.close();
     w.focus();
-    w.onload = () => { w.print(); w.onafterprint = () => w.close(); };
   }
 
   return (

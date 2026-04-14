@@ -272,13 +272,10 @@ export function Orders() {
       <div class="sep"></div>
       <p class="center">*** BILL – PAYMENT PENDING ***</p>
       <p class="center">Powered by MicroBooks</p>
+      <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
       </body></html>
     `);
     win.document.close();
-    win.onload = () => {
-      win.print();
-      win.onafterprint = () => win.close();
-    };
   };
 
   const toggleExpand = (id: number) => {

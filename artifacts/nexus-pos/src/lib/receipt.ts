@@ -437,10 +437,13 @@ export function openWhatsAppReceipt(phone: string, order: ReceiptOrder, settings
 export function openReceiptWindow(html: string): void {
   const w = window.open("", "_blank", "width=420,height=760");
   if (!w) return;
-  w.document.write(html);
+  // Embed the print trigger inside the popup's own HTML so it runs in the
+  // popup's window context. Assigning w.onload / w.onafterprint from the
+  // parent is unreliable in Edge/Chrome — the events never fire cross-window.
+  const printScript = `<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>`;
+  const printableHtml = html.includes("</body>")
+    ? html.replace("</body>", `${printScript}</body>`)
+    : html + printScript;
+  w.document.write(printableHtml);
   w.document.close();
-  w.onload = () => {
-    w.print();
-    w.onafterprint = () => w.close();
-  };
 }
