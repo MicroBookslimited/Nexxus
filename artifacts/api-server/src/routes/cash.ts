@@ -453,4 +453,52 @@ router.post("/cash/sessions/:id/close", async (req, res): Promise<void> => {
   res.json(closed);
 });
 
+/* ─── POST /cash/sessions/:id/admin-close — manager force-closes any session ─── */
+router.post("/cash/sessions/:id/admin-close", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid session id" }); return; }
+
+  const [session] = await db
+    .select()
+    .from(cashSessionsTable)
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId), eq(cashSessionsTable.status, "open")));
+
+  if (!session) { res.status(404).json({ error: "Open session not found" }); return; }
+
+  // Compute expected cash so we can close with reasonable actuals
+  const payouts = await db.select().from(cashPayoutsTable).where(eq(cashPayoutsTable.sessionId, id));
+  const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
+
+  const orderRows = await db
+    .select({ paymentMethod: ordersTable.paymentMethod, total: ordersTable.total, status: ordersTable.status })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.tenantId, tenantId),
+      gte(ordersTable.createdAt, session.openedAt),
+      isNotNull(ordersTable.paymentMethod),
+      ...(session.staffId ? [eq(ordersTable.staffId, session.staffId)] : []),
+    ));
+
+  const sales = computeSales(orderRows);
+  const expectedCash = session.openingCash + sales.cashSales - totalPayouts - sales.refundedCash;
+
+  const [closed] = await db
+    .update(cashSessionsTable)
+    .set({
+      status: "closed",
+      closedAt: new Date(),
+      actualCash: expectedCash,
+      actualCard: sales.cardSales - sales.refundedCard,
+      actualOther: 0,
+      closingNotes: (req.body as any).notes ?? "Closed by manager",
+    })
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)))
+    .returning();
+
+  res.json(closed);
+});
+
 export default router;

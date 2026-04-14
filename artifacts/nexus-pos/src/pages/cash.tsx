@@ -1223,6 +1223,7 @@ function ShiftOrdersTable({ orders, title = "Orders" }: { orders: ShiftOrder[]; 
 /* ─── Active Session Panel ─── */
 function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { staffName: string; onShiftClosed: (id: number) => void; autoOpen?: boolean }) {
   const { can, staff: activeStaff } = useStaff();
+  const canSeeSensitive = can("reports.view"); // managers / admins only
   const { data, isLoading, isError } = useGetCurrentCashSession({
     query: { refetchInterval: 15000, retry: false },
     request: activeStaff?.id ? { headers: { "x-staff-id": String(activeStaff.id) } } : undefined,
@@ -1283,98 +1284,107 @@ function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { st
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* Stats row — cashiers see only opening cash; managers see all */}
+      <div className={cn("grid gap-3", canSeeSensitive ? "grid-cols-2 md:grid-cols-4" : "grid-cols-1 max-w-xs")}>
         <Card className="bg-card border-border">
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Opening Cash</p>
             <p className="text-xl font-bold font-mono mt-1">{formatCurrency(session.openingCash)}</p>
           </CardContent>
         </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground flex items-center gap-1"><Banknote className="h-3 w-3" />Cash Sales</p>
-            <p className="text-xl font-bold font-mono text-emerald-400 mt-1">{formatCurrency(salesSummary.cashSales)}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground flex items-center gap-1"><ArrowDownLeft className="h-3 w-3 text-amber-400" />Payouts</p>
-            <p className="text-xl font-bold font-mono text-amber-400 mt-1">-{formatCurrency(totalPayouts)}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Expected Cash</p>
-            <p className="text-xl font-bold font-mono text-primary mt-1">{formatCurrency(expectedCash)}</p>
-            <p className="text-[10px] text-muted-foreground/60">Opening + Cash Sales - Payouts</p>
-          </CardContent>
-        </Card>
+        {canSeeSensitive && (
+          <>
+            <Card className="bg-card border-border">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground flex items-center gap-1"><Banknote className="h-3 w-3" />Cash Sales</p>
+                <p className="text-xl font-bold font-mono text-emerald-400 mt-1">{formatCurrency(salesSummary.cashSales)}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-card border-border">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground flex items-center gap-1"><ArrowDownLeft className="h-3 w-3 text-amber-400" />Payouts</p>
+                <p className="text-xl font-bold font-mono text-amber-400 mt-1">-{formatCurrency(totalPayouts)}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-card border-border">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">Expected Cash</p>
+                <p className="text-xl font-bold font-mono text-primary mt-1">{formatCurrency(expectedCash)}</p>
+                <p className="text-[10px] text-muted-foreground/60">Opening + Cash Sales - Payouts</p>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Sales breakdown */}
-        <Card className="bg-card border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-primary" />
-              Sales Breakdown
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-2 text-muted-foreground"><Banknote className="h-3.5 w-3.5 text-emerald-400" />Cash</span>
-              <span className="font-mono font-medium">{formatCurrency(salesSummary.cashSales)}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-2 text-muted-foreground"><CreditCard className="h-3.5 w-3.5 text-blue-400" />Card</span>
-              <span className="font-mono font-medium">{formatCurrency(salesSummary.cardSales)}</span>
-            </div>
-            {salesSummary.splitSales > 0 && (
+      {/* Sales breakdown + payouts — managers/admins only */}
+      {canSeeSensitive && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Sales breakdown */}
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                Sales Breakdown
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground"><SplitSquareHorizontal className="h-3.5 w-3.5 text-purple-400" />Split</span>
-                <span className="font-mono font-medium">{formatCurrency(salesSummary.splitSales)}</span>
+                <span className="flex items-center gap-2 text-muted-foreground"><Banknote className="h-3.5 w-3.5 text-emerald-400" />Cash</span>
+                <span className="font-mono font-medium">{formatCurrency(salesSummary.cashSales)}</span>
               </div>
-            )}
-            <Separator />
-            <div className="flex items-center justify-between font-semibold">
-              <span>Total Sales</span>
-              <span className="font-mono">{formatCurrency(salesSummary.totalSales)}</span>
-            </div>
-          </CardContent>
-        </Card>
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground"><CreditCard className="h-3.5 w-3.5 text-blue-400" />Card</span>
+                <span className="font-mono font-medium">{formatCurrency(salesSummary.cardSales)}</span>
+              </div>
+              {salesSummary.splitSales > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2 text-muted-foreground"><SplitSquareHorizontal className="h-3.5 w-3.5 text-purple-400" />Split</span>
+                  <span className="font-mono font-medium">{formatCurrency(salesSummary.splitSales)}</span>
+                </div>
+              )}
+              <Separator />
+              <div className="flex items-center justify-between font-semibold">
+                <span>Total Sales</span>
+                <span className="font-mono">{formatCurrency(salesSummary.totalSales)}</span>
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* Payouts list */}
-        <Card className="bg-card border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <ArrowDownLeft className="h-4 w-4 text-amber-400" />
-              Payouts ({payouts.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {payouts.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No payouts recorded this shift.</p>
-            ) : (
-              <div className="space-y-2">
-                {payouts.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between text-sm">
-                    <div>
-                      <p className="font-medium">{p.reason}</p>
-                      <p className="text-xs text-muted-foreground">{p.staffName} · {format(new Date(p.createdAt), "h:mm a")}</p>
+          {/* Payouts list */}
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <ArrowDownLeft className="h-4 w-4 text-amber-400" />
+                Payouts ({payouts.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {payouts.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No payouts recorded this shift.</p>
+              ) : (
+                <div className="space-y-2">
+                  {payouts.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between text-sm">
+                      <div>
+                        <p className="font-medium">{p.reason}</p>
+                        <p className="text-xs text-muted-foreground">{p.staffName} · {format(new Date(p.createdAt), "h:mm a")}</p>
+                      </div>
+                      <span className="font-mono text-amber-400">-{formatCurrency(p.amount)}</span>
                     </div>
-                    <span className="font-mono text-amber-400">-{formatCurrency(p.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <Button variant="ghost" size="sm" className="w-full mt-3 text-xs text-muted-foreground" onClick={() => setPayoutOpen(true)}>
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              Add Payout
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+                  ))}
+                </div>
+              )}
+              {can("cash.manage_payouts") && (
+                <Button variant="ghost" size="sm" className="w-full mt-3 text-xs text-muted-foreground" onClick={() => setPayoutOpen(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Add Payout
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Orders this shift */}
       <ShiftOrdersTable orders={orders as any[]} title="Orders This Shift" />
@@ -1393,6 +1403,127 @@ function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { st
         onClose={() => setCloseOpen(false)}
         onClosed={(id) => { setCloseOpen(false); onShiftClosed(id); }}
       />
+    </div>
+  );
+}
+
+/* ─── Manager Close Shift Dialog ─── */
+function ManagerCloseDialog({
+  open,
+  session,
+  onClose,
+  onClosed,
+}: {
+  open: boolean;
+  session: { id: number; staffName: string; openedAt: string } | null;
+  onClose: () => void;
+  onClosed: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [closing, setClosing] = useState(false);
+  const [notes, setNotes] = useState("");
+
+  const handleClose = async () => {
+    if (!session) return;
+    setClosing(true);
+    try {
+      const token = localStorage.getItem(TENANT_TOKEN_KEY);
+      const resp = await fetch(`/api/cash/sessions/${session.id}/admin-close`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ notes: notes.trim() || undefined }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        toast({ title: "Could not close shift", description: (err as any).error ?? "Please try again.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Shift closed", description: `${session.staffName}'s shift has been closed.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
+      onClosed();
+    } catch {
+      toast({ title: "Network error", description: "Please try again.", variant: "destructive" });
+    } finally {
+      setClosing(false);
+      setNotes("");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-amber-400" />
+            Close Shift — Manager Override
+          </DialogTitle>
+        </DialogHeader>
+        {session && (
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm">
+              <p className="font-medium text-amber-300">You are closing <span className="font-bold">{session.staffName}</span>'s shift.</p>
+              <p className="text-xs text-amber-400/80 mt-1">
+                Opened {format(new Date(session.openedAt), "dd/MM/yyyy, h:mm a")}.
+                The session will be closed using expected amounts based on recorded sales.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Closing Notes (optional)</Label>
+              <Input
+                placeholder="Reason for manager close…"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose} disabled={closing}>Cancel</Button>
+          <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={handleClose} disabled={closing}>
+            {closing ? "Closing…" : "Confirm Close Shift"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─── Open Session Card (manager view) ─── */
+function OpenSessionManagerCard({
+  session,
+  onCloseClick,
+}: {
+  session: { id: number; staffName: string; openedAt: string; locationName?: string | null };
+  onCloseClick: (s: { id: number; staffName: string; openedAt: string }) => void;
+}) {
+  const { data } = useGetCashSession(session.id);
+  const totalSales = data?.salesSummary?.totalSales ?? null;
+
+  return (
+    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 overflow-hidden">
+      <div className="flex items-center gap-3 p-3">
+        <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm truncate">{session.staffName}</p>
+          <p className="text-xs text-muted-foreground">
+            Opened {format(new Date(session.openedAt), "dd/MM, h:mm a")}
+            {session.locationName && ` · ${session.locationName}`}
+          </p>
+          {totalSales !== null && (
+            <p className="text-xs text-emerald-400 font-mono mt-0.5">{formatCurrency(totalSales)} total sales</p>
+          )}
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0 border-amber-500/40 text-amber-300 hover:bg-amber-500/20 text-xs h-7 px-2"
+          onClick={() => onCloseClick({ id: session.id, staffName: session.staffName, openedAt: session.openedAt })}
+        >
+          <CheckCircle2 className="h-3 w-3 mr-1" />
+          Close
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1458,8 +1589,13 @@ export function CashManagement() {
 
   const hasOpenSession = !!current?.session;
   const closedSessions = (sessions ?? []).filter((s) => s.status === "closed").slice(0, 20);
+  // Open sessions visible to managers (all open); cashiers see none in history
+  const openSessions = canViewAllHistory
+    ? (sessions ?? []).filter((s) => s.status === "open")
+    : [];
   // Cashiers only see their own shift history; managers see all
   const staffFilter = canViewAllHistory ? undefined : (sessionStaff?.name ?? undefined);
+  const [managerCloseTarget, setManagerCloseTarget] = useState<{ id: number; staffName: string; openedAt: string } | null>(null);
 
   const handleOpenShift = (openingCash: number, staff: OpenShiftStaff, locationId?: number, locationName?: string) => {
     openSession.mutate(
@@ -1578,20 +1714,46 @@ export function CashManagement() {
           )}
         </div>
 
-        {/* Right sidebar: session history */}
-        {closedSessions.length > 0 && (
+        {/* Right sidebar: active shifts (managers) + session history */}
+        {(closedSessions.length > 0 || openSessions.length > 0) && (
           <div className="w-80 border-l border-border flex flex-col shrink-0">
-            <div className="px-4 py-3 border-b border-border">
-              <h2 className="text-sm font-semibold flex items-center gap-2">
-                <History className="h-4 w-4 text-muted-foreground" />
-                Shift History
-              </h2>
-            </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {closedSessions.map((s) => (
-                <SessionHistoryItem key={s.id} sessionId={s.id} staffFilter={staffFilter} />
-              ))}
-            </div>
+            {/* Active Shifts — managers only */}
+            {openSessions.length > 0 && (
+              <>
+                <div className="px-4 py-3 border-b border-border">
+                  <h2 className="text-sm font-semibold flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                    Active Shifts ({openSessions.length})
+                  </h2>
+                </div>
+                <div className="p-3 space-y-2 border-b border-border">
+                  {openSessions.map((s) => (
+                    <OpenSessionManagerCard
+                      key={s.id}
+                      session={s}
+                      onCloseClick={setManagerCloseTarget}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Shift History */}
+            {closedSessions.length > 0 && (
+              <>
+                <div className="px-4 py-3 border-b border-border">
+                  <h2 className="text-sm font-semibold flex items-center gap-2">
+                    <History className="h-4 w-4 text-muted-foreground" />
+                    Shift History
+                  </h2>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {closedSessions.map((s) => (
+                    <SessionHistoryItem key={s.id} sessionId={s.id} staffFilter={staffFilter} />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -1599,6 +1761,12 @@ export function CashManagement() {
       {eodSessionId !== null && (
         <EodReportModal sessionId={eodSessionId} onClose={() => setEodSessionId(null)} />
       )}
+      <ManagerCloseDialog
+        open={managerCloseTarget !== null}
+        session={managerCloseTarget}
+        onClose={() => setManagerCloseTarget(null)}
+        onClosed={() => setManagerCloseTarget(null)}
+      />
     </div>
   );
 }
