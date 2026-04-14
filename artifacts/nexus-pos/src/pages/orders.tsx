@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings } from "@workspace/api-client-react";
-import { useStaff } from "@/hooks/use-staff";
+import { useStaff } from "@/contexts/StaffContext";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt } from "@/lib/receipt";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
