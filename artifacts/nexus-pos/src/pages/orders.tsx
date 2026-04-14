@@ -269,7 +269,10 @@ export function Orders() {
       </body></html>
     `);
     win.document.close();
-    win.print();
+    win.onload = () => {
+      win.print();
+      win.onafterprint = () => win.close();
+    };
   };
 
   const toggleExpand = (id: number) => {

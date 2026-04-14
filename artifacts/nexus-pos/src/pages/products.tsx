@@ -770,7 +770,7 @@ function PrintLabelDialog({ product, onClose, businessName }: { product: LabelPr
       .page{display:flex;flex-wrap:wrap;padding:4mm;gap:2mm;}${labelCss}
       @media print{body{margin:0;}.page{padding:4mm;gap:2mm;}}</style></head>
       <body><div class="page">${Array.from({length:qty}).map(()=>oneLabelHtml).join("")}</div>
-      <script>window.onload=function(){window.print();setTimeout(function(){window.close();},800);}<\/script>
+      <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};}<\/script>
       </body></html>`;
 
     const win = window.open("", "_blank", "width=900,height=700");
