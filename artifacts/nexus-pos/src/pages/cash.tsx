@@ -46,8 +46,14 @@ function VarianceBadge({ variance }: { variance: number }) {
 /* ─── Open Shift Panel ─── */
 type OpenShiftStaff = { id: number; name: string; role: string; permissions: string[] };
 
-function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staff: OpenShiftStaff, locationId?: number, locationName?: string) => void }) {
-  const [step, setStep] = useState<"pin" | "location" | "cash">("pin");
+function OpenShiftPanel({
+  onOpen,
+  onExistingShift,
+}: {
+  onOpen: (openingCash: number, staff: OpenShiftStaff, locationId?: number, locationName?: string) => void;
+  onExistingShift: (staff: OpenShiftStaff) => void;
+}) {
+  const [step, setStep] = useState<"pin" | "location" | "cash" | "checking">("pin");
   const [staff, setStaff] = useState<OpenShiftStaff | null>(null);
   const [cash, setCash] = useState("");
   const [locations, setLocations] = useState<{ id: number; name: string }[]>([]);
@@ -65,8 +71,28 @@ function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staff: OpenS
       .catch(() => {});
   }, []);
 
-  const handlePinSuccess = (s: { id: number; name: string; role: string; permissions?: string[] }) => {
-    setStaff({ id: s.id, name: s.name, role: s.role, permissions: s.permissions ?? [] });
+  const handlePinSuccess = async (s: { id: number; name: string; role: string; permissions?: string[] }) => {
+    const staffInfo: OpenShiftStaff = { id: s.id, name: s.name, role: s.role, permissions: s.permissions ?? [] };
+    setStaff(staffInfo);
+    setStep("checking");
+
+    // Check if this staff member already has an open shift before proceeding
+    try {
+      const token = localStorage.getItem("nexus_tenant_token");
+      const resp = await fetch("/api/cash/sessions/current", {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "x-staff-id": String(s.id),
+        },
+      });
+      if (resp.ok) {
+        // Already has an open shift — hand off immediately without creating a new one
+        onExistingShift(staffInfo);
+        return;
+      }
+    } catch {}
+
+    // No existing shift — continue to the location / cash steps
     setStep(locations.length > 0 ? "location" : "cash");
   };
 
@@ -83,9 +109,11 @@ function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staff: OpenS
 
   const stepLabel = step === "pin"
     ? "Enter your PIN to identify yourself and begin your shift."
-    : step === "location"
-      ? "Select the branch location for this shift."
-      : "Count and record the opening cash balance.";
+    : step === "checking"
+      ? "Checking for an existing shift…"
+      : step === "location"
+        ? "Select the branch location for this shift."
+        : "Count and record the opening cash balance.";
 
   return (
     <div className="flex-1 flex items-center justify-center p-8">
@@ -98,7 +126,12 @@ function OpenShiftPanel({ onOpen }: { onOpen: (openingCash: number, staff: OpenS
           <p className="text-sm text-muted-foreground mt-1">{stepLabel}</p>
         </CardHeader>
         <CardContent className="pt-2">
-          {step === "pin" ? (
+          {step === "checking" ? (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <p className="text-sm text-muted-foreground">Checking shift status for <span className="font-medium text-foreground">{staff?.name}</span>…</p>
+            </div>
+          ) : step === "pin" ? (
             <PinPad onSuccess={handlePinSuccess} title="" />
           ) : step === "location" ? (
             <div className="space-y-4 pt-2">
@@ -324,6 +357,7 @@ function CloseShiftDialog({
   salesSummary,
   onClose,
   onClosed,
+  closingFor,
 }: {
   open: boolean;
   sessionId: number;
@@ -331,6 +365,8 @@ function CloseShiftDialog({
   salesSummary: { cashSales: number; cardSales: number; splitSales: number; creditSales?: number; totalSales: number; refundedCash?: number; refundedCard?: number; totalRefunds?: number; voidedCount?: number; voidedTotal?: number };
   onClose: () => void;
   onClosed: (closedSessionId: number) => void;
+  /** When an admin is closing another staff member's shift, show their name in a banner */
+  closingFor?: string;
 }) {
   const [step, setStep] = useState<CloseStep>("choice");
   const [billQtys, setBillQtys] = useState<Record<number, number>>({});
@@ -407,7 +443,7 @@ function CloseShiftDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-            Close Shift
+            Close Shift{closingFor ? ` — ${closingFor}` : ""}
             {step !== "choice" && (
               <button
                 type="button"
@@ -419,6 +455,17 @@ function CloseShiftDialog({
             )}
           </DialogTitle>
         </DialogHeader>
+
+        {/* Admin banner — only shown when a manager is closing someone else's shift */}
+        {closingFor && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex items-start gap-2.5 -mt-1">
+            <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-amber-300">Manager closing <span className="font-bold">{closingFor}</span>'s shift</p>
+              <p className="text-xs text-amber-400/80 mt-0.5">Count and record the cash in the drawer as you would for any end-of-shift reconciliation.</p>
+            </div>
+          </div>
+        )}
 
         {/* ── Step 1: Choice ── */}
         {step === "choice" && (
@@ -1407,97 +1454,15 @@ function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { st
   );
 }
 
-/* ─── Manager Close Shift Dialog ─── */
-function ManagerCloseDialog({
-  open,
-  session,
-  onClose,
-  onClosed,
-}: {
-  open: boolean;
-  session: { id: number; staffName: string; openedAt: string } | null;
-  onClose: () => void;
-  onClosed: () => void;
-}) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [closing, setClosing] = useState(false);
-  const [notes, setNotes] = useState("");
-
-  const handleClose = async () => {
-    if (!session) return;
-    setClosing(true);
-    try {
-      const token = localStorage.getItem(TENANT_TOKEN_KEY);
-      const resp = await fetch(`/api/cash/sessions/${session.id}/admin-close`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ notes: notes.trim() || undefined }),
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        toast({ title: "Could not close shift", description: (err as any).error ?? "Please try again.", variant: "destructive" });
-        return;
-      }
-      toast({ title: "Shift closed", description: `${session.staffName}'s shift has been closed.` });
-      queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
-      onClosed();
-    } catch {
-      toast({ title: "Network error", description: "Please try again.", variant: "destructive" });
-    } finally {
-      setClosing(false);
-      setNotes("");
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-amber-400" />
-            Close Shift — Manager Override
-          </DialogTitle>
-        </DialogHeader>
-        {session && (
-          <div className="space-y-4 py-2">
-            <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm">
-              <p className="font-medium text-amber-300">You are closing <span className="font-bold">{session.staffName}</span>'s shift.</p>
-              <p className="text-xs text-amber-400/80 mt-1">
-                Opened {format(new Date(session.openedAt), "dd/MM/yyyy, h:mm a")}.
-                The session will be closed using expected amounts based on recorded sales.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Closing Notes (optional)</Label>
-              <Input
-                placeholder="Reason for manager close…"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-          </div>
-        )}
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={onClose} disabled={closing}>Cancel</Button>
-          <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={handleClose} disabled={closing}>
-            {closing ? "Closing…" : "Confirm Close Shift"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 /* ─── Open Session Card (manager view) ─── */
 function OpenSessionManagerCard({
   session,
-  onCloseClick,
 }: {
   session: { id: number; staffName: string; openedAt: string; locationName?: string | null };
-  onCloseClick: (s: { id: number; staffName: string; openedAt: string }) => void;
 }) {
   const { data } = useGetCashSession(session.id);
+  const queryClient = useQueryClient();
+  const [closeOpen, setCloseOpen] = useState(false);
   const totalSales = data?.salesSummary?.totalSales ?? null;
 
   return (
@@ -1518,12 +1483,29 @@ function OpenSessionManagerCard({
           size="sm"
           variant="outline"
           className="shrink-0 border-amber-500/40 text-amber-300 hover:bg-amber-500/20 text-xs h-7 px-2"
-          onClick={() => onCloseClick({ id: session.id, staffName: session.staffName, openedAt: session.openedAt })}
+          disabled={!data}
+          onClick={() => setCloseOpen(true)}
         >
           <CheckCircle2 className="h-3 w-3 mr-1" />
           Close
         </Button>
       </div>
+
+      {/* Full cash-declaration close flow — same as self-close but with admin banner */}
+      {data && (
+        <CloseShiftDialog
+          open={closeOpen}
+          sessionId={session.id}
+          expectedCash={data.expectedCash}
+          salesSummary={data.salesSummary}
+          closingFor={session.staffName}
+          onClose={() => setCloseOpen(false)}
+          onClosed={() => {
+            setCloseOpen(false);
+            queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1595,7 +1577,12 @@ export function CashManagement() {
     : [];
   // Cashiers only see their own shift history; managers see all
   const staffFilter = canViewAllHistory ? undefined : (sessionStaff?.name ?? undefined);
-  const [managerCloseTarget, setManagerCloseTarget] = useState<{ id: number; staffName: string; openedAt: string } | null>(null);
+  const handleExistingShift = (staff: OpenShiftStaff) => {
+    // Staff already has an open shift — set their context so it is fetched and shown
+    setStaff({ id: staff.id, name: staff.name, role: staff.role, permissions: staff.permissions });
+    queryClient.removeQueries({ queryKey: ["/api/cash/sessions/current"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
+  };
 
   const handleOpenShift = (openingCash: number, staff: OpenShiftStaff, locationId?: number, locationName?: string) => {
     openSession.mutate(
@@ -1710,7 +1697,7 @@ export function CashManagement() {
           ) : hasOpenSession ? (
             <ActiveSessionPanel staffName={current!.session.staffName} onShiftClosed={(id) => { clearStaff(); setEodSessionId(id); }} autoOpen={shouldAutoClose} />
           ) : (
-            <OpenShiftPanel onOpen={handleOpenShift} />
+            <OpenShiftPanel onOpen={handleOpenShift} onExistingShift={handleExistingShift} />
           )}
         </div>
 
@@ -1731,7 +1718,6 @@ export function CashManagement() {
                     <OpenSessionManagerCard
                       key={s.id}
                       session={s}
-                      onCloseClick={setManagerCloseTarget}
                     />
                   ))}
                 </div>
@@ -1761,12 +1747,6 @@ export function CashManagement() {
       {eodSessionId !== null && (
         <EodReportModal sessionId={eodSessionId} onClose={() => setEodSessionId(null)} />
       )}
-      <ManagerCloseDialog
-        open={managerCloseTarget !== null}
-        session={managerCloseTarget}
-        onClose={() => setManagerCloseTarget(null)}
-        onClosed={() => setManagerCloseTarget(null)}
-      />
     </div>
   );
 }
