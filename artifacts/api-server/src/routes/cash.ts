@@ -246,6 +246,7 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
       paymentMethod: ordersTable.paymentMethod,
       status: ordersTable.status,
       createdAt: ordersTable.createdAt,
+      splitCashAmount: ordersTable.splitCashAmount,
     })
     .from(ordersTable)
     .where(
@@ -260,11 +261,16 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
 
   const salesSummary = computeSales(orderRows);
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
-  const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts - salesSummary.refundedCash;
+  // Cash portion of split payments is stored separately in splitCashAmount
+  const splitCashSales = orderRows
+    .filter(r => r.status !== "voided" && r.paymentMethod === "split")
+    .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
+  // Expected = opening float + net cash sales (pure cash, net of refunds) + split cash portions − payouts
+  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, new Date());
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, new Date());
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, itemSummary, creditOrders });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, itemSummary, creditOrders });
 });
 
 router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
@@ -297,6 +303,7 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
       paymentMethod: ordersTable.paymentMethod,
       status: ordersTable.status,
       createdAt: ordersTable.createdAt,
+      splitCashAmount: ordersTable.splitCashAmount,
     })
     .from(ordersTable)
     .where(
@@ -312,11 +319,14 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
 
   const salesSummary = computeSales(orderRows);
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
-  const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts - salesSummary.refundedCash;
+  const splitCashSales = orderRows
+    .filter(r => r.status !== "voided" && r.paymentMethod === "split")
+    .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
+  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, closedAt);
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, closedAt);
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, itemSummary, creditOrders });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, itemSummary, creditOrders });
 });
 
 router.post("/cash/sessions", async (req, res): Promise<void> => {
@@ -475,7 +485,7 @@ router.post("/cash/sessions/:id/admin-close", async (req, res): Promise<void> =>
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
 
   const orderRows = await db
-    .select({ paymentMethod: ordersTable.paymentMethod, total: ordersTable.total, status: ordersTable.status })
+    .select({ paymentMethod: ordersTable.paymentMethod, total: ordersTable.total, status: ordersTable.status, splitCashAmount: ordersTable.splitCashAmount })
     .from(ordersTable)
     .where(and(
       eq(ordersTable.tenantId, tenantId),
@@ -485,7 +495,10 @@ router.post("/cash/sessions/:id/admin-close", async (req, res): Promise<void> =>
     ));
 
   const sales = computeSales(orderRows);
-  const expectedCash = session.openingCash + sales.cashSales - totalPayouts - sales.refundedCash;
+  const splitCashSales = orderRows
+    .filter(r => r.status !== "voided" && r.paymentMethod === "split")
+    .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
+  const expectedCash = session.openingCash + (sales.cashSales - sales.refundedCash) + splitCashSales - totalPayouts;
 
   const [closed] = await db
     .update(cashSessionsTable)
