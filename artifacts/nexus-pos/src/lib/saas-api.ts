@@ -199,6 +199,11 @@ export const superadminEndImpersonation = (logId: number) =>
 export const superadminGetImpersonationLogs = () =>
   api<ImpersonationLog[]>("/superadmin/impersonation-logs", { headers: superadminAuthHeaders() });
 
+export const superadminCloseImpersonationSession = (logId: number) =>
+  api<{ success: boolean }>(`/superadmin/impersonation-logs/${logId}/close`, {
+    method: "POST", headers: superadminAuthHeaders(),
+  });
+
 export const fetchAuditLogs = async (params?: { action?: string; staffId?: number; entityType?: string; from?: string; to?: string; q?: string }): Promise<AuditLog[]> => {
   const headers = tenantAuthHeaders();
   const qs = params

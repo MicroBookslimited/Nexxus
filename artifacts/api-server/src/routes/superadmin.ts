@@ -4,7 +4,7 @@ import {
   bankAccountSettingsTable, bankTransferProofsTable, appSettingsTable,
   impersonationLogsTable, tenantAdminUsersTable,
 } from "@workspace/db";
-import { eq, desc, count, sql, ilike, or, and } from "drizzle-orm";
+import { eq, desc, count, sql, ilike, or, and, isNull } from "drizzle-orm";
 import { getSetting } from "./settings";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
@@ -459,6 +459,12 @@ router.post("/superadmin/tenants/:id/impersonate", async (req, res): Promise<voi
   if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
   if (tenant.status === "suspended") { res.status(403).json({ error: "Account is suspended" }); return; }
 
+  // Close any existing open sessions for this tenant before starting a new one
+  await db
+    .update(impersonationLogsTable)
+    .set({ endedAt: new Date() })
+    .where(and(eq(impersonationLogsTable.tenantId, id), isNull(impersonationLogsTable.endedAt)));
+
   const superadminEmail = getSuperadminEmailFromRequest(req);
   const [logRow] = await db.insert(impersonationLogsTable).values({
     superadminEmail,
@@ -471,7 +477,7 @@ router.post("/superadmin/tenants/:id/impersonate", async (req, res): Promise<voi
   res.json({ token, tenant: { id: tenant.id, email: tenant.email, businessName: tenant.businessName }, impersonationLogId: logRow?.id });
 });
 
-/* ─── End Impersonation Session ─── */
+/* ─── End Impersonation Session (called from banner on logout) ─── */
 router.post("/superadmin/impersonation-end", async (req, res): Promise<void> => {
   const parsed = z.object({ logId: z.number().int().positive() }).safeParse(req.body);
   if (!parsed.success) { res.json({ success: true }); return; }
@@ -479,7 +485,22 @@ router.post("/superadmin/impersonation-end", async (req, res): Promise<void> => 
   await db
     .update(impersonationLogsTable)
     .set({ endedAt: new Date() })
-    .where(and(eq(impersonationLogsTable.id, parsed.data.logId), eq(impersonationLogsTable.endedAt, null as unknown as Date)));
+    .where(and(eq(impersonationLogsTable.id, parsed.data.logId), isNull(impersonationLogsTable.endedAt)));
+
+  res.json({ success: true });
+});
+
+/* ─── Close Impersonation Session (superadmin-authenticated, from Access Logs UI) ─── */
+router.post("/superadmin/impersonation-logs/:id/close", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const id = parseInt(req.params["id"] ?? "");
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  await db
+    .update(impersonationLogsTable)
+    .set({ endedAt: new Date() })
+    .where(and(eq(impersonationLogsTable.id, id), isNull(impersonationLogsTable.endedAt)));
 
   res.json({ success: true });
 });

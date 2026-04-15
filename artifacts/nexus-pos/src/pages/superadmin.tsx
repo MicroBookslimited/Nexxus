@@ -17,7 +17,7 @@ import {
   superadminGetTransferProofs, superadminReviewTransferProof,
   superadminGetUsers, superadminImpersonate, superadminResetPassword, superadminResetAdminUserPassword,
   superadminGetPlans, superadminCreatePlan, superadminUpdatePlan, superadminDeletePlan,
-  superadminGetGatewaySettings, superadminUpdateGatewaySettings, superadminGetImpersonationLogs,
+  superadminGetGatewaySettings, superadminUpdateGatewaySettings, superadminGetImpersonationLogs, superadminCloseImpersonationSession,
   type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow, type GatewaySettings, type ImpersonationLog,
 } from "@/lib/saas-api";
 
@@ -825,6 +825,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
 
   const [impersonationLogs, setImpersonationLogs] = useState<ImpersonationLog[]>([]);
   const [impersonationLogsLoading, setImpersonationLogsLoading] = useState(false);
+  const [closingSessionId, setClosingSessionId] = useState<number | null>(null);
 
   const [gatewaySettings, setGatewaySettings] = useState<GatewaySettings | null>(null);
   const [gatewayLoading, setGatewayLoading] = useState(false);
@@ -1659,9 +1660,17 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
 
         {tab === "impersonation-logs" && (
           <div>
-            <div className="flex items-center gap-3 mb-5">
-              <ClipboardList size={20} className="text-[#3b82f6]" />
-              <h2 className="text-lg font-bold text-white">Admin Access Logs</h2>
+            <div className="flex items-center justify-between gap-3 mb-5">
+              <div className="flex items-center gap-3">
+                <ClipboardList size={20} className="text-[#3b82f6]" />
+                <h2 className="text-lg font-bold text-white">Admin Access Logs</h2>
+              </div>
+              <button
+                onClick={() => { setImpersonationLogsLoading(true); superadminGetImpersonationLogs().then(setImpersonationLogs).catch(() => {}).finally(() => setImpersonationLogsLoading(false)); }}
+                className="flex items-center gap-2 text-sm text-[#475569] hover:text-white border border-[#2a3a55] px-3 py-2 rounded-lg transition-colors shrink-0"
+              >
+                <RefreshCw size={14} className={impersonationLogsLoading ? "animate-spin" : ""} /> Refresh
+              </button>
             </div>
             {impersonationLogsLoading ? (
               <div className="flex items-center justify-center py-16 text-[#475569]"><RefreshCw size={20} className="animate-spin" /></div>
@@ -1676,6 +1685,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                       <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Started</th>
                       <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Ended</th>
                       <th className="text-right px-4 py-3 font-medium">Duration</th>
+                      <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#2a3a55]">
@@ -1685,6 +1695,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                         const secs = Math.floor((new Date(log.endedAt).getTime() - new Date(log.startedAt).getTime()) / 1000);
                         dur = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
                       }
+                      const isActive = !log.endedAt;
                       return (
                         <tr key={log.id} className="hover:bg-[#1a2332]/50 transition-colors">
                           <td className="px-4 py-3 text-white font-medium">
@@ -1701,6 +1712,25 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${log.endedAt ? "bg-[#2a3a55] text-[#94a3b8]" : "bg-amber-500/20 text-amber-400"}`}>
                               {dur}
                             </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {isActive && (
+                              <button
+                                disabled={closingSessionId === log.id}
+                                onClick={async () => {
+                                  setClosingSessionId(log.id);
+                                  try {
+                                    await superadminCloseImpersonationSession(log.id);
+                                    setImpersonationLogs(prev => prev.map(l => l.id === log.id ? { ...l, endedAt: new Date().toISOString() } : l));
+                                  } catch { /* ignore */ } finally {
+                                    setClosingSessionId(null);
+                                  }
+                                }}
+                                className="text-xs px-2.5 py-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                              >
+                                {closingSessionId === log.id ? "Closing…" : "Close Session"}
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
