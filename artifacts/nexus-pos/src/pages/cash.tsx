@@ -506,7 +506,7 @@ function CloseShiftDialog({
               </button>
               <button
                 type="button"
-                onClick={() => { setActualCash(""); setStep("confirm"); }}
+                onClick={() => { setActualCash(expectedCash.toFixed(2)); setStep("confirm"); }}
                 className="flex flex-col items-center gap-2 rounded-xl border-2 border-border hover:border-primary/30 hover:bg-muted/40 transition-colors p-4 text-left"
               >
                 <DollarSign className="h-7 w-7 text-muted-foreground" />
@@ -614,6 +614,9 @@ function CloseShiftDialog({
                   <span className="text-[10px] text-primary ml-auto">from breakdown</span>
                 )}
               </Label>
+              <p className="text-[11px] text-muted-foreground -mt-0.5">
+                Total cash in drawer — includes opening float + any cash received
+              </p>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
