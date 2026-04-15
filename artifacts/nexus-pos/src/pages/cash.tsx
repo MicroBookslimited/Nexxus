@@ -436,6 +436,9 @@ function CloseShiftDialog({
           toast({ title: "Shift closed", description: "End-of-day report saved successfully." });
           queryClient.removeQueries({ queryKey: ["/api/cash/sessions/current"] });
           queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
+          // Bust the individual-session cache so EodReportModal gets the
+          // freshly-saved actualCash value instead of the pre-close snapshot
+          queryClient.invalidateQueries({ queryKey: [`/api/cash/sessions/${sessionId}`] });
           onClosed(sessionId);
         },
         onError: () => toast({ title: "Error", description: "Could not close session", variant: "destructive" }),
@@ -506,7 +509,7 @@ function CloseShiftDialog({
               </button>
               <button
                 type="button"
-                onClick={() => { setActualCash(expectedCash.toFixed(2)); setStep("confirm"); }}
+                onClick={() => { setActualCash(""); setStep("confirm"); }}
                 className="flex flex-col items-center gap-2 rounded-xl border-2 border-border hover:border-primary/30 hover:bg-muted/40 transition-colors p-4 text-left"
               >
                 <DollarSign className="h-7 w-7 text-muted-foreground" />
@@ -1573,6 +1576,7 @@ function OpenSessionManagerCard({
           onClosed={() => {
             setCloseOpen(false);
             queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
+            queryClient.invalidateQueries({ queryKey: [`/api/cash/sessions/${session.id}`] });
           }}
         />
       )}
