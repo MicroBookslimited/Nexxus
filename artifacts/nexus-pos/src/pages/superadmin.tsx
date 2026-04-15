@@ -124,6 +124,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
   const [tenantStatus, setTenantStatus] = useState(tenant.status);
   const [subStatus, setSubStatus] = useState(tenant.subscriptionStatus ?? "trial");
   const [planId, setPlanId] = useState(tenant.planId ?? 0);
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">((tenant.billingCycle as "monthly" | "annual") ?? "monthly");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -133,7 +134,9 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
     setSaveError("");
     try {
       await superadminUpdateTenant(tenant.id, {
-        status: tenantStatus, subscriptionStatus: subStatus, ...(planId ? { planId } : {}),
+        status: tenantStatus, subscriptionStatus: subStatus,
+        ...(planId ? { planId } : {}),
+        billingCycle,
       });
       setSaved(true);
       setTimeout(() => { setSaved(false); onUpdate(); }, 900);
@@ -182,13 +185,23 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
-          <div>
-            <label className="block text-sm text-[#94a3b8] mb-1">Plan Override</label>
-            <select value={planId} onChange={e => setPlanId(Number(e.target.value))}
-              className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
-              <option value={0}>— Keep current —</option>
-              {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-[#94a3b8] mb-1">Plan Override</label>
+              <select value={planId} onChange={e => setPlanId(Number(e.target.value))}
+                className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
+                <option value={0}>— Keep current —</option>
+                {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-[#94a3b8] mb-1">Billing Cycle</label>
+              <select value={billingCycle} onChange={e => setBillingCycle(e.target.value as "monthly" | "annual")}
+                className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
+                <option value="monthly">Monthly</option>
+                <option value="annual">Annual</option>
+              </select>
+            </div>
           </div>
         </div>
         {saveError && (

@@ -222,6 +222,7 @@ const UpdateTenantBody = z.object({
   status: z.enum(["active", "suspended", "cancelled"]).optional(),
   subscriptionStatus: z.enum(["active", "trial", "cancelled", "past_due"]).optional(),
   planId: z.number().optional(),
+  billingCycle: z.enum(["monthly", "annual"]).optional(),
 });
 
 router.patch("/superadmin/tenants/:id", async (req, res): Promise<void> => {
@@ -236,18 +237,20 @@ router.patch("/superadmin/tenants/:id", async (req, res): Promise<void> => {
     await db.update(tenantsTable).set({ status: parsed.data.status, updatedAt: new Date() }).where(eq(tenantsTable.id, id));
   }
 
-  if (parsed.data.subscriptionStatus || parsed.data.planId) {
+  if (parsed.data.subscriptionStatus || parsed.data.planId || parsed.data.billingCycle) {
     const [existing] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.tenantId, id));
     if (existing) {
       let setStatus = parsed.data.subscriptionStatus as string | undefined;
       let setProvider: string | undefined;
       let setPeriodStart: Date | undefined;
       let setPeriodEnd: Date | undefined;
+      const cycle = parsed.data.billingCycle ?? existing.billingCycle ?? "monthly";
 
       if (setStatus === "active" && !existing.currentPeriodStart) {
         const now = new Date();
         const end = new Date(now);
-        end.setMonth(end.getMonth() + 1);
+        if (cycle === "annual") end.setFullYear(end.getFullYear() + 1);
+        else end.setMonth(end.getMonth() + 1);
         setProvider = "offline";
         setPeriodStart = now;
         setPeriodEnd = end;
@@ -259,6 +262,7 @@ router.patch("/superadmin/tenants/:id", async (req, res): Promise<void> => {
         ...(setPeriodStart ? { currentPeriodStart: setPeriodStart } : {}),
         ...(setPeriodEnd ? { currentPeriodEnd: setPeriodEnd } : {}),
         ...(parsed.data.planId ? { planId: parsed.data.planId } : {}),
+        ...(parsed.data.billingCycle ? { billingCycle: parsed.data.billingCycle } : {}),
         updatedAt: new Date(),
       }).where(eq(subscriptionsTable.tenantId, id));
     }

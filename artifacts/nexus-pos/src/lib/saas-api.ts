@@ -101,7 +101,7 @@ export const superadminCreateTenant = (data: {
     method: "POST", body: JSON.stringify(data), headers: superadminAuthHeaders(),
   });
 
-export const superadminUpdateTenant = (id: number, data: { status?: string; subscriptionStatus?: string; planId?: number }) =>
+export const superadminUpdateTenant = (id: number, data: { status?: string; subscriptionStatus?: string; planId?: number; billingCycle?: "monthly" | "annual" }) =>
   api<{ success: boolean }>(`/superadmin/tenants/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: superadminAuthHeaders() });
 
 /* ─── Superadmin Plan CRUD ─── */
