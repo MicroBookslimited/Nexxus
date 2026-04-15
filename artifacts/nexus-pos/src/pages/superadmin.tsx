@@ -146,8 +146,8 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-[#1a2332] border border-[#2a3a55] rounded-2xl w-full max-w-lg">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-[#1a2332] border border-[#2a3a55] rounded-t-2xl sm:rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-[#2a3a55]">
           <div>
             <h3 className="text-lg font-bold text-white">{tenant.businessName}</h3>
@@ -940,36 +940,36 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
       {resetTarget && <ResetPasswordModal user={resetTarget} onClose={() => setResetTarget(null)} />}
 
       {/* Top bar */}
-      <header className="bg-[#1a2332] border-b border-[#2a3a55] px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#3b82f6] rounded-lg flex items-center justify-center"><Shield size={16} className="text-white" /></div>
+      <header className="bg-[#1a2332] border-b border-[#2a3a55] px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="w-8 h-8 bg-[#3b82f6] rounded-lg flex items-center justify-center shrink-0"><Shield size={16} className="text-white" /></div>
           <div>
-            <span className="font-bold text-white">NEXXUS POS</span>
-            <span className="ml-2 text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full">Super Admin</span>
+            <span className="font-bold text-white text-sm sm:text-base">NEXXUS POS</span>
+            <span className="ml-1.5 text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full">Super Admin</span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button onClick={loadData} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors">
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
           </button>
-          <button onClick={onLogout} className="flex items-center gap-2 text-[#475569] hover:text-red-400 text-sm transition-colors">
-            <LogOut size={15} /> Sign Out
+          <button onClick={onLogout} className="flex items-center gap-1.5 text-[#475569] hover:text-red-400 text-sm transition-colors">
+            <LogOut size={15} /> <span className="hidden sm:inline">Sign Out</span>
           </button>
         </div>
       </header>
 
-      {/* Tab Nav */}
-      <div className="bg-[#1a2332] border-b border-[#2a3a55] px-6">
-        <div className="flex gap-1">
+      {/* Tab Nav — scrollable on mobile, icons-only below sm */}
+      <div className="bg-[#1a2332] border-b border-[#2a3a55] overflow-x-auto">
+        <div className="flex min-w-max px-2 sm:px-6">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors relative ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-4 py-3 text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${
                 tab === t.id ? "border-[#3b82f6] text-white" : "border-transparent text-[#475569] hover:text-[#94a3b8]"
               }`}>
-              <t.icon size={15} />
-              {t.label}
+              <t.icon size={15} className="shrink-0" />
+              <span className="hidden sm:inline">{t.label}</span>
               {t.badge !== undefined && t.badge > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                <span className="absolute top-1.5 right-0.5 sm:-top-0.5 sm:-right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
                   {t.badge > 9 ? "9+" : t.badge}
                 </span>
               )}
@@ -978,13 +978,13 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
         </div>
       </div>
 
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="p-3 sm:p-6 max-w-7xl mx-auto">
 
         {/* ── OVERVIEW ── */}
         {tab === "overview" && (
           <>
             <div className="mb-6">
-              <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+              <h1 className="text-xl sm:text-2xl font-bold text-white">Dashboard</h1>
               <p className="text-[#94a3b8] text-sm">Platform-wide metrics</p>
             </div>
 
@@ -1042,12 +1042,12 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
         {/* ── USERS ── */}
         {tab === "users" && (
           <>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
               <div>
-                <h1 className="text-2xl font-bold text-white">Users</h1>
+                <h1 className="text-xl sm:text-2xl font-bold text-white">Users</h1>
                 <p className="text-[#94a3b8] text-sm">All registered tenant accounts — login as or reset passwords</p>
               </div>
-              <button onClick={() => loadUsers(userSearch)} className="flex items-center gap-2 text-sm text-[#475569] hover:text-white border border-[#2a3a55] px-3 py-2 rounded-lg transition-colors">
+              <button onClick={() => loadUsers(userSearch)} className="flex items-center gap-2 text-sm text-[#475569] hover:text-white border border-[#2a3a55] px-3 py-2 rounded-lg transition-colors shrink-0">
                 <RefreshCw size={14} className={usersLoading ? "animate-spin" : ""} /> Refresh
               </button>
             </div>
@@ -1094,7 +1094,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                       </div>
 
                       {/* Actions */}
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 shrink-0">
                         <button
                           disabled={impersonating === u.id}
                           onClick={async () => {
@@ -1109,15 +1109,15 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                             }
                           }}
                           title="Login as this user"
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3b82f6]/10 border border-[#3b82f6]/30 hover:bg-[#3b82f6] text-[#3b82f6] hover:text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#3b82f6]/10 border border-[#3b82f6]/30 hover:bg-[#3b82f6] text-[#3b82f6] hover:text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
                           {impersonating === u.id ? <RefreshCw size={12} className="animate-spin" /> : <LogIn size={12} />}
                           Login As
                         </button>
                         <button
                           onClick={() => setResetTarget(u)}
                           title="Reset password"
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500 text-amber-400 hover:text-white rounded-lg text-xs font-medium transition-colors">
-                          <KeyRound size={12} /> Reset Password
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500 text-amber-400 hover:text-white rounded-lg text-xs font-medium transition-colors">
+                          <KeyRound size={12} /> Reset Pwd
                         </button>
                       </div>
                     </div>
@@ -1133,14 +1133,14 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
         {/* ── TENANTS ── */}
         {tab === "tenants" && (
           <>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
               <div>
-                <h1 className="text-2xl font-bold text-white">Businesses</h1>
+                <h1 className="text-xl sm:text-2xl font-bold text-white">Businesses</h1>
                 <p className="text-[#94a3b8] text-sm">All registered tenants</p>
               </div>
               <button onClick={() => setShowCreateTenant(true)}
-                className="flex items-center gap-2 bg-[#3b82f6] hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
-                <Plus size={15} /> Onboard Business
+                className="flex items-center gap-2 bg-[#3b82f6] hover:bg-blue-500 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0">
+                <Plus size={15} /> <span className="hidden xs:inline">Onboard</span> Business
               </button>
             </div>
 
@@ -1169,43 +1169,68 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
               ) : filteredTenants.length === 0 ? (
                 <div className="p-12 text-center text-[#475569]"><Users size={32} className="mx-auto mb-2 opacity-40" />No tenants found</div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-[#2a3a55]">
-                        {["Business", "Owner", "Plan", "Subscription", "Account", "Joined", "Last Login", ""].map(h => (
-                          <th key={h} className="text-left text-xs text-[#475569] font-medium uppercase tracking-wide px-4 py-3">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredTenants.map((t) => (
-                        <tr key={t.id} className="border-b border-[#2a3a55]/50 hover:bg-[#2a3a55]/20 transition-colors">
-                          <td className="px-4 py-3"><div className="font-medium text-white">{t.businessName}</div><div className="text-xs text-[#475569]">{t.email}</div></td>
-                          <td className="px-4 py-3 text-[#94a3b8]">{t.ownerName}</td>
-                          <td className="px-4 py-3 text-[#94a3b8]">{t.planName ?? <span className="text-[#475569]">None</span>}</td>
-                          <td className="px-4 py-3"><StatusBadge status={t.subscriptionStatus ?? "trial"} /></td>
-                          <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
-                          <td className="px-4 py-3 text-[#475569]">{new Date(t.createdAt).toLocaleDateString()}</td>
-                          <td className="px-4 py-3">
-                            {t.lastLoginAt ? (
-                              <span className="text-xs text-[#94a3b8]" title={new Date(t.lastLoginAt).toLocaleString()}>
-                                {formatRelativeTime(t.lastLoginAt)}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-[#475569]">Never</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <button onClick={() => setSelectedTenant(t)} className="p-1.5 rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors">
-                              <Eye size={14} />
-                            </button>
-                          </td>
+                <>
+                  {/* Mobile card list */}
+                  <div className="md:hidden divide-y divide-[#2a3a55]/50">
+                    {filteredTenants.map((t) => (
+                      <div key={t.id} className="px-4 py-3 hover:bg-[#2a3a55]/20 transition-colors" onClick={() => setSelectedTenant(t)}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-medium text-white text-sm truncate">{t.businessName}</div>
+                            <div className="text-xs text-[#475569] truncate">{t.email}</div>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              <StatusBadge status={t.subscriptionStatus ?? "trial"} />
+                              <StatusBadge status={t.status} />
+                              {t.planName && <span className="text-xs text-[#94a3b8]">{t.planName}</span>}
+                            </div>
+                            <div className="text-xs text-[#475569] mt-1">{t.ownerName} · Joined {new Date(t.createdAt).toLocaleDateString()}</div>
+                          </div>
+                          <button onClick={(e) => { e.stopPropagation(); setSelectedTenant(t); }} className="p-1.5 rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors shrink-0 mt-0.5">
+                            <Eye size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Desktop table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[#2a3a55]">
+                          {["Business", "Owner", "Plan", "Subscription", "Account", "Joined", "Last Login", ""].map(h => (
+                            <th key={h} className="text-left text-xs text-[#475569] font-medium uppercase tracking-wide px-4 py-3">{h}</th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {filteredTenants.map((t) => (
+                          <tr key={t.id} className="border-b border-[#2a3a55]/50 hover:bg-[#2a3a55]/20 transition-colors">
+                            <td className="px-4 py-3"><div className="font-medium text-white">{t.businessName}</div><div className="text-xs text-[#475569]">{t.email}</div></td>
+                            <td className="px-4 py-3 text-[#94a3b8]">{t.ownerName}</td>
+                            <td className="px-4 py-3 text-[#94a3b8]">{t.planName ?? <span className="text-[#475569]">None</span>}</td>
+                            <td className="px-4 py-3"><StatusBadge status={t.subscriptionStatus ?? "trial"} /></td>
+                            <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
+                            <td className="px-4 py-3 text-[#475569]">{new Date(t.createdAt).toLocaleDateString()}</td>
+                            <td className="px-4 py-3">
+                              {t.lastLoginAt ? (
+                                <span className="text-xs text-[#94a3b8]" title={new Date(t.lastLoginAt).toLocaleString()}>
+                                  {formatRelativeTime(t.lastLoginAt)}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-[#475569]">Never</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <button onClick={() => setSelectedTenant(t)} className="p-1.5 rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors">
+                                <Eye size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
               <div className="px-4 py-3 border-t border-[#2a3a55] text-xs text-[#475569]">{filteredTenants.length} of {tenants.length} tenants</div>
             </div>
@@ -1215,12 +1240,12 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
         {/* ── PAYMENTS ── */}
         {tab === "payments" && (
           <>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
               <div>
-                <h1 className="text-2xl font-bold text-white">Bank Transfer Payments</h1>
+                <h1 className="text-xl sm:text-2xl font-bold text-white">Bank Transfer Payments</h1>
                 <p className="text-[#94a3b8] text-sm">Review and activate offline payment proofs</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {(["all", "pending", "approved", "rejected"] as const).map(f => (
                   <button key={f} onClick={() => setProofFilter(f)}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${proofFilter === f ? "bg-[#3b82f6] text-white" : "bg-[#1a2332] text-[#94a3b8] hover:text-white border border-[#2a3a55]"}`}>
@@ -1268,13 +1293,13 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
         {/* ── PLANS ── */}
         {tab === "plans" && (
           <>
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-bold text-white">Subscription Plans</h1>
+                <h1 className="text-xl sm:text-2xl font-bold text-white">Subscription Plans</h1>
                 <p className="text-[#94a3b8] text-sm">Create and manage plans available to tenants</p>
               </div>
               <button onClick={() => setEditingPlan("new")}
-                className="flex items-center gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                className="flex items-center gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0">
                 <Plus size={16} /> New Plan
               </button>
             </div>
