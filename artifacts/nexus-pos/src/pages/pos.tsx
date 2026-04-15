@@ -32,7 +32,7 @@ import {
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
-  ClipboardList, BookOpen, LockKeyhole,
+  ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -1104,6 +1104,14 @@ export function POS() {
             )}
           </div>
           <div className="shrink-0 flex items-center gap-1.5">
+            <button
+              title="Switch user"
+              onClick={() => { setLocked(true); clearStaff(); setSessionLocationId(null); }}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground active:scale-95 transition-all duration-150"
+            >
+              <ArrowLeftRight className="h-3.5 w-3.5" />
+              Switch
+            </button>
             <button
               title="Lock register"
               onClick={() => { setLocked(true); clearStaff(); setSessionLocationId(null); }}
