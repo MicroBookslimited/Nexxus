@@ -5,14 +5,14 @@ import { useStaff } from "@/contexts/StaffContext";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt } from "@/lib/receipt";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, ChevronUp, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert, RotateCcw, Printer, CalendarDays, X, WifiOff } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert, RotateCcw, Printer, CalendarDays, X, WifiOff, FileSpreadsheet } from "lucide-react";
 import { getQueue, type QueuedRequest } from "@/lib/offline-queue";
 import { PinPad } from "@/components/PinPad";
 import { 
@@ -282,6 +282,110 @@ export function Orders() {
     setExpandedOrderId(prev => prev === id ? null : id);
   };
 
+  /* ── Totals for the footer row ── */
+  const totals = {
+    count: filteredOrders?.length ?? 0,
+    subtotal: filteredOrders?.reduce((s, o) => s + (o.subtotal ?? 0), 0) ?? 0,
+    tax: filteredOrders?.reduce((s, o) => s + (o.tax ?? 0), 0) ?? 0,
+    discount: filteredOrders?.reduce((s, o) => s + (o.discountValue ?? 0), 0) ?? 0,
+    total: filteredOrders?.reduce((s, o) => s + (o.total ?? 0), 0) ?? 0,
+  };
+
+  /* ── Print / Save as PDF ── */
+  const handlePrintOrders = () => {
+    const win = window.open("", "_blank", "width=1000,height=700");
+    if (!win) return;
+    const dateRange = fromDate || toDate
+      ? `${fromDate || "start"} → ${toDate || "today"}`
+      : "All Time";
+    const rows = (filteredOrders ?? []).map(o => `
+      <tr>
+        <td>${o.orderNumber}</td>
+        <td>${format(new Date(o.createdAt), "dd/MM/yyyy, h:mm a")}</td>
+        <td style="text-transform:capitalize">${o.status}</td>
+        <td style="text-align:center">${o.items.length}</td>
+        <td style="text-align:right">${formatCurrency(o.subtotal)}</td>
+        <td style="text-align:right;color:#f59e0b">${o.discountValue && o.discountValue > 0 ? `-${formatCurrency(o.discountValue)}` : "—"}</td>
+        <td style="text-align:right">${formatCurrency(o.tax)}</td>
+        <td style="text-align:right;font-weight:600">${formatCurrency(o.total)}</td>
+        <td style="text-align:center;text-transform:capitalize">${o.paymentMethod ?? "—"}</td>
+      </tr>
+    `).join("");
+    win.document.write(`
+      <html><head><title>Order History</title>
+      <style>
+        body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:24px;}
+        h2{margin:0 0 2px;font-size:18px;}
+        p{margin:0 0 16px;color:#555;font-size:11px;}
+        table{width:100%;border-collapse:collapse;}
+        th{background:#0f1729;color:#fff;padding:8px 10px;text-align:left;font-size:11px;}
+        th.right{text-align:right;} th.center{text-align:center;}
+        td{padding:7px 10px;border-bottom:1px solid #e5e7eb;}
+        tr:nth-child(even) td{background:#f9fafb;}
+        tfoot td{font-weight:700;background:#f3f4f6;border-top:2px solid #d1d5db;padding:9px 10px;}
+        @media print{body{padding:0;}}
+      </style></head><body>
+      <h2>Order History</h2>
+      <p>Date range: ${dateRange} · Status: ${statusFilter === "all" ? "All" : statusFilter} · ${totals.count} order${totals.count !== 1 ? "s" : ""}</p>
+      <table>
+        <thead><tr>
+          <th>Order #</th><th>Date</th><th>Status</th>
+          <th class="center">Items</th>
+          <th class="right">Subtotal</th><th class="right">Discount</th>
+          <th class="right">Tax</th><th class="right">Total</th>
+          <th class="center">Payment</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr>
+          <td colspan="3">Totals — ${totals.count} order${totals.count !== 1 ? "s" : ""}</td>
+          <td></td>
+          <td style="text-align:right">${formatCurrency(totals.subtotal)}</td>
+          <td style="text-align:right">${totals.discount > 0 ? `-${formatCurrency(totals.discount)}` : "—"}</td>
+          <td style="text-align:right">${formatCurrency(totals.tax)}</td>
+          <td style="text-align:right">${formatCurrency(totals.total)}</td>
+          <td></td>
+        </tr></tfoot>
+      </table>
+      <script>window.onload=function(){window.onafterprint=function(){window.close();};if(window.matchMedia){var mql=window.matchMedia('print');var h=function(m){if(!m.matches){mql.removeListener(h);window.close();}};mql.addListener(h);}window.print();};<\/script>
+      </body></html>
+    `);
+    win.document.close();
+  };
+
+  /* ── Export to CSV (Excel-compatible) ── */
+  const handleExportCSV = () => {
+    const headers = ["Order #", "Date", "Status", "Items", "Subtotal", "Discount", "Tax", "Total", "Payment Method", "Staff", "Notes"];
+    const csvRows = [
+      headers,
+      ...(filteredOrders ?? []).map(o => [
+        o.orderNumber,
+        format(new Date(o.createdAt), "yyyy-MM-dd HH:mm:ss"),
+        o.status,
+        o.items.length,
+        o.subtotal.toFixed(2),
+        (o.discountValue ?? 0).toFixed(2),
+        o.tax.toFixed(2),
+        o.total.toFixed(2),
+        o.paymentMethod ?? "",
+        (o as any).staffName ?? "",
+        o.notes ?? "",
+      ]),
+      ["", "", "TOTALS", totals.count, totals.subtotal.toFixed(2), totals.discount.toFixed(2), totals.tax.toFixed(2), totals.total.toFixed(2), "", "", ""],
+    ];
+    const csv = csvRows.map(row =>
+      row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")
+    ).join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orders-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'open': return <Badge className="bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border-0">Open</Badge>;
@@ -307,6 +411,31 @@ export function Orders() {
         </div>
         
         <div className="flex gap-2 items-center flex-wrap">
+          {/* Export actions */}
+          {!isLoading && (filteredOrders?.length ?? 0) > 0 && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 gap-1.5 text-xs border-muted-foreground/30 text-muted-foreground hover:text-foreground"
+                onClick={handlePrintOrders}
+                title="Print or Save as PDF"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Print / PDF
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 gap-1.5 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+                onClick={handleExportCSV}
+                title="Export to Excel (CSV)"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                Export Excel
+              </Button>
+            </>
+          )}
           <div className="relative w-full sm:w-52">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
@@ -699,6 +828,41 @@ export function Orders() {
                 </TableRow>
               )}
             </TableBody>
+            {!isLoading && (filteredOrders?.length ?? 0) > 0 && (
+              <TableFooter>
+                <TableRow className="bg-muted/40 hover:bg-muted/40 border-t-2 border-border">
+                  <TableCell />
+                  <TableCell colSpan={2} className="font-semibold text-sm py-3">
+                    {totals.count} order{totals.count !== 1 ? "s" : ""} total
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm text-center py-3">
+                    {filteredOrders?.reduce((s, o) => s + o.items.length, 0) ?? 0} items
+                  </TableCell>
+                  <TableCell className="text-right font-mono font-bold text-base py-3" colSpan={2}>
+                    {formatCurrency(totals.total)}
+                  </TableCell>
+                  <TableCell className="py-3">
+                    <div className="flex flex-col items-end gap-0.5 pr-1">
+                      {totals.subtotal !== totals.total && (
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          Sub: {formatCurrency(totals.subtotal)}
+                        </span>
+                      )}
+                      {totals.discount > 0 && (
+                        <span className="text-[10px] text-amber-400 font-mono">
+                          Disc: −{formatCurrency(totals.discount)}
+                        </span>
+                      )}
+                      {totals.tax > 0 && (
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          Tax: {formatCurrency(totals.tax)}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
+            )}
           </Table>
         </CardContent>
       </Card>
