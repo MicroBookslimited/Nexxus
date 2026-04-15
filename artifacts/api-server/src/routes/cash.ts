@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, gte, lte, isNotNull, sql, desc } from "drizzle-orm";
+import { eq, and, gte, lte, isNotNull, isNull, or, sql, desc } from "drizzle-orm";
 import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
@@ -135,10 +135,21 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
 
   const { from, to } = req.query as { from?: string; to?: string };
 
-  // Build conditions
+  // Build conditions — show sessions ACTIVE during the range (overlap), not just opened on that day.
+  // A session overlaps the range when: openedAt <= rangeEnd AND (closedAt IS NULL OR closedAt >= rangeStart)
   const conditions = [eq(cashSessionsTable.tenantId, tenantId)];
-  if (from) conditions.push(gte(cashSessionsTable.openedAt, new Date(from)));
-  if (to)   conditions.push(lte(cashSessionsTable.openedAt, new Date(`${to}T23:59:59`)));
+  if (to) {
+    conditions.push(lte(cashSessionsTable.openedAt, new Date(`${to}T23:59:59`)));
+  }
+  if (from) {
+    const fromDate = new Date(from);
+    conditions.push(
+      or(
+        isNull(cashSessionsTable.closedAt),
+        gte(cashSessionsTable.closedAt, fromDate),
+      )!
+    );
+  }
 
   const sessions = await db
     .select()
@@ -188,9 +199,13 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       .select({ amount: cashPayoutsTable.amount })
       .from(cashPayoutsTable)
       .where(eq(cashPayoutsTable.sessionId, s.id));
-    const totalPayouts = sessionPayouts.reduce((acc, p) => acc + p.amount, 0);
+    const totalPayouts = sessionPayouts.reduce((acc, p) => acc + Number(p.amount ?? 0), 0);
 
-    const expectedCash = s.openingCash
+    const openingCash = Number(s.openingCash ?? 0);
+    const actualCash  = s.actualCash  != null ? Number(s.actualCash)  : null;
+    const actualCard  = s.actualCard  != null ? Number(s.actualCard)  : null;
+
+    const expectedCash = openingCash
       + (sales.cashSales - sales.refundedCash)
       + splitCash
       - totalPayouts;
@@ -203,9 +218,9 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       staffId:      s.staffId ?? null,
       staffName:    s.staffName,
       locationName: s.locationName,
-      openingCash:  s.openingCash,
-      actualCash:   s.actualCash ?? null,
-      actualCard:   s.actualCard ?? null,
+      openingCash,
+      actualCash,
+      actualCard,
       // Cash = pure cash orders + cash portion of split payments
       cashSales:    sales.cashSales - sales.refundedCash + splitCash,
       // Card = pure card orders + card portion of split payments

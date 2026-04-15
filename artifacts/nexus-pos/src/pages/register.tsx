@@ -17,9 +17,9 @@ import {
   PieChart, Pie, Cell, Legend, AreaChart, Area,
 } from "recharts";
 import {
-  Banknote, CreditCard, TrendingUp, Users, CheckCircle2, Clock,
+  Banknote, CreditCard, TrendingUp, CheckCircle2, Clock,
   AlertTriangle, DollarSign, ShoppingBag, SplitSquareHorizontal,
-  BookOpen, X, ChevronDown, ChevronRight, MapPin, RefreshCw, ShieldOff,
+  BookOpen, MapPin, RefreshCw, ShieldOff, Printer, Download, FileDown,
 } from "lucide-react";
 import { format, subDays, startOfWeek, startOfMonth, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -276,17 +276,18 @@ export function Register() {
 
   const openSessions   = rows.filter(r => r.status === "open");
   const closedSessions = rows.filter(r => r.status === "closed");
+  const n = (v: unknown) => (isFinite(Number(v)) ? Number(v) : 0);
   const totals = {
-    totalSales:  rows.reduce((s, r) => s + r.totalSales, 0),
-    cashSales:   rows.reduce((s, r) => s + r.cashSales, 0),
-    cardSales:   rows.reduce((s, r) => s + r.cardSales, 0),
-    creditSales: rows.reduce((s, r) => s + r.creditSales, 0),
-    splitSales:  rows.reduce((s, r) => s + r.splitSales, 0),
-    refunds:     rows.reduce((s, r) => s + r.refunds, 0),
-    orderCount:  rows.reduce((s, r) => s + r.orderCount, 0),
-    voidedCount: rows.reduce((s, r) => s + r.voidedCount, 0),
-    openingCash: rows.reduce((s, r) => s + r.openingCash, 0),
-    totalPayouts: rows.reduce((s, r) => s + r.totalPayouts, 0),
+    totalSales:   rows.reduce((s, r) => s + n(r.totalSales), 0),
+    cashSales:    rows.reduce((s, r) => s + n(r.cashSales), 0),
+    cardSales:    rows.reduce((s, r) => s + n(r.cardSales), 0),
+    creditSales:  rows.reduce((s, r) => s + n(r.creditSales), 0),
+    splitSales:   rows.reduce((s, r) => s + n(r.splitSales), 0),
+    refunds:      rows.reduce((s, r) => s + n(r.refunds), 0),
+    orderCount:   rows.reduce((s, r) => s + n(r.orderCount), 0),
+    voidedCount:  rows.reduce((s, r) => s + n(r.voidedCount), 0),
+    openingCash:  rows.reduce((s, r) => s + n(r.openingCash), 0),
+    totalPayouts: rows.reduce((s, r) => s + n(r.totalPayouts), 0),
   };
 
   const dailyData = useMemo(() => {
@@ -330,6 +331,58 @@ export function Register() {
     labelStyle: { color: "#94a3b8" },
   };
 
+  function handlePrint() { window.print(); }
+
+  function handleExportCsv() {
+    const headers = [
+      "Cashier", "Location", "Status", "Opened", "Closed",
+      "Cash Sales", "Card Sales", "Credit (A/R)", "Split", "Refunds", "Total Sales",
+      "Opening Cash", "Payouts", "Expected Cash", "Actual Cash", "Variance", "Orders", "Voids",
+    ];
+    const csvRows = rows.map(r => {
+      const variance = r.actualCash != null ? n(r.actualCash) - n(r.expectedCash) : "";
+      return [
+        r.staffName,
+        r.locationName ?? "",
+        r.status,
+        r.openedAt ? format(new Date(r.openedAt), "yyyy-MM-dd HH:mm") : "",
+        r.closedAt ? format(new Date(r.closedAt), "yyyy-MM-dd HH:mm") : "",
+        n(r.cashSales).toFixed(2),
+        n(r.cardSales).toFixed(2),
+        n(r.creditSales).toFixed(2),
+        n(r.splitSales).toFixed(2),
+        n(r.refunds).toFixed(2),
+        n(r.totalSales).toFixed(2),
+        n(r.openingCash).toFixed(2),
+        n(r.totalPayouts).toFixed(2),
+        n(r.expectedCash).toFixed(2),
+        r.actualCash != null ? n(r.actualCash).toFixed(2) : "",
+        variance !== "" ? (variance as number).toFixed(2) : "",
+        r.orderCount,
+        r.voidedCount,
+      ].map(v => `"${String(v ?? "").replace(/"/g, '""')}"`);
+    });
+    // Totals row
+    csvRows.push([
+      `"TOTALS (${rows.length} shifts)"`, `""`, `""`, `""`, `""`,
+      `"${totals.cashSales.toFixed(2)}"`, `"${totals.cardSales.toFixed(2)}"`,
+      `"${totals.creditSales.toFixed(2)}"`, `"${totals.splitSales.toFixed(2)}"`,
+      `"${totals.refunds.toFixed(2)}"`, `"${totals.totalSales.toFixed(2)}"`,
+      `"${totals.openingCash.toFixed(2)}"`, `"${totals.totalPayouts.toFixed(2)}"`,
+      `""`, `""`, `""`, `"${totals.orderCount}"`, `"${totals.voidedCount}"`,
+    ]);
+    const csv = [headers.map(h => `"${h}"`).join(","), ...csvRows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `register-report-${range.from}-to-${range.to}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       <div className="p-4 space-y-5">
@@ -339,7 +392,7 @@ export function Register() {
             <h1 className="text-xl font-bold text-foreground">Register</h1>
             <p className="text-xs text-muted-foreground mt-0.5">Cash session overview for all cashiers</p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap print:hidden">
             {/* Preset pills */}
             <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-1 border border-border">
               {PILL_PRESETS.map(p => (
@@ -364,9 +417,31 @@ export function Register() {
                 <Input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="h-8 text-xs w-36" />
               </div>
             )}
-            <Button size="sm" variant="outline" onClick={() => refetch()} className="h-8 px-2 gap-1.5">
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant="outline" onClick={() => refetch()} className="h-8 px-2 gap-1.5" title="Refresh">
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                size="sm" variant="outline"
+                onClick={handleExportCsv}
+                disabled={rows.length === 0}
+                className="h-8 px-3 gap-1.5 text-xs"
+                title="Export CSV"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                CSV
+              </Button>
+              <Button
+                size="sm" variant="outline"
+                onClick={handlePrint}
+                disabled={rows.length === 0}
+                className="h-8 px-3 gap-1.5 text-xs"
+                title="Print"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Print
+              </Button>
+            </div>
           </div>
         </div>
 
