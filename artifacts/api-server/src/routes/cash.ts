@@ -137,12 +137,17 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
 
   // Build conditions — show sessions ACTIVE during the range (overlap), not just opened on that day.
   // A session overlaps the range when: openedAt <= rangeEnd AND (closedAt IS NULL OR closedAt >= rangeStart)
+  // The frontend sends full ISO datetime strings (timezone-aware), so we use them directly.
+  // Fallback: if a plain date string (YYYY-MM-DD) is sent, interpret as UTC end/start of day.
+  const parseDate = (s: string, endOfDay = false) =>
+    s.includes("T") ? new Date(s) : new Date(`${s}T${endOfDay ? "23:59:59" : "00:00:00"}Z`);
+
   const conditions = [eq(cashSessionsTable.tenantId, tenantId)];
   if (to) {
-    conditions.push(lte(cashSessionsTable.openedAt, new Date(`${to}T23:59:59`)));
+    conditions.push(lte(cashSessionsTable.openedAt, parseDate(to, true)));
   }
   if (from) {
-    const fromDate = new Date(from);
+    const fromDate = parseDate(from, false);
     conditions.push(
       or(
         isNull(cashSessionsTable.closedAt),

@@ -73,14 +73,48 @@ function fdt(v: string | null | undefined) {
 
 type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
 
-function getRange(preset: DatePreset, customFrom: string, customTo: string): { from: string; to: string } {
-  const today = new Date();
-  const fmt = (d: Date) => format(d, "yyyy-MM-dd");
-  if (preset === "today")     return { from: fmt(today),                     to: fmt(today) };
-  if (preset === "yesterday") return { from: fmt(subDays(today, 1)),          to: fmt(subDays(today, 1)) };
-  if (preset === "week")      return { from: fmt(startOfWeek(today, { weekStartsOn: 1 })), to: fmt(today) };
-  if (preset === "month")     return { from: fmt(startOfMonth(today)),        to: fmt(today) };
-  return { from: customFrom || fmt(subDays(today, 30)), to: customTo || fmt(today) };
+// Returns { from, to } as local date strings (used for display + query cache key)
+// and { fromISO, toISO } as UTC-aware ISO datetime strings (used for the API call).
+// This ensures sessions opened at e.g. 8 PM Jamaica time (= next UTC day) are correctly
+// included for the local "today" filter, regardless of the server's UTC clock.
+function getRange(preset: DatePreset, customFrom: string, customTo: string): {
+  from: string; to: string; fromISO: string; toISO: string;
+} {
+  const now = new Date();
+  const fmtDate = (d: Date) => format(d, "yyyy-MM-dd");
+
+  // Compute start/end of a local calendar day as UTC ISO strings
+  function localDayStart(d: Date): string {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).toISOString();
+  }
+  function localDayEnd(d: Date): string {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).toISOString();
+  }
+
+  if (preset === "today") {
+    return { from: fmtDate(now), to: fmtDate(now), fromISO: localDayStart(now), toISO: localDayEnd(now) };
+  }
+  if (preset === "yesterday") {
+    const y = subDays(now, 1);
+    return { from: fmtDate(y), to: fmtDate(y), fromISO: localDayStart(y), toISO: localDayEnd(y) };
+  }
+  if (preset === "week") {
+    const ws = startOfWeek(now, { weekStartsOn: 1 });
+    return { from: fmtDate(ws), to: fmtDate(now), fromISO: localDayStart(ws), toISO: localDayEnd(now) };
+  }
+  if (preset === "month") {
+    const ms = startOfMonth(now);
+    return { from: fmtDate(ms), to: fmtDate(now), fromISO: localDayStart(ms), toISO: localDayEnd(now) };
+  }
+  // Custom: use raw date strings from picker, interpret as local time
+  const fromD = customFrom ? new Date(customFrom + "T00:00:00") : subDays(now, 30);
+  const toD   = customTo   ? new Date(customTo   + "T23:59:59") : now;
+  return {
+    from: customFrom || fmtDate(subDays(now, 30)),
+    to:   customTo   || fmtDate(now),
+    fromISO: fromD.toISOString(),
+    toISO:   toD.toISOString(),
+  };
 }
 
 const PILL_PRESETS: { key: DatePreset; label: string }[] = [
@@ -260,8 +294,10 @@ export function Register() {
 
   const { data: rows = [], isLoading, refetch } = useQuery<RegisterRow[]>({
     queryKey: ["register-report", range.from, range.to],
-    queryFn: () => authFetch<RegisterRow[]>(`/api/cash/register-report?from=${range.from}&to=${range.to}`),
+    queryFn: () => authFetch<RegisterRow[]>(`/api/cash/register-report?from=${encodeURIComponent(range.fromISO)}&to=${encodeURIComponent(range.toISO)}`),
     refetchInterval: 30_000,
+    staleTime: 0,
+    refetchOnMount: "always" as const,
   });
 
   if (!can("reports.view")) {
