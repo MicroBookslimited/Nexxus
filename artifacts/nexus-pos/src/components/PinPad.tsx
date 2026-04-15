@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Delete } from "lucide-react";
+import { Delete, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +16,24 @@ interface PinPadProps {
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"];
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function isImpersonationSession(): boolean {
+  const token = localStorage.getItem("nexus_tenant_token");
+  if (!token) return false;
+  const payload = decodeJwtPayload(token);
+  return payload?.impersonation === true;
+}
+
 export function PinPad({
   onSuccess,
   onError,
@@ -29,6 +47,7 @@ export function PinPad({
   const [shake, setShake] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isImpersonating] = useState(() => isImpersonationSession());
 
   const handleKey = (key: string) => {
     if (loading) return;
@@ -74,6 +93,34 @@ export function PinPad({
             ? "Manager or Admin PIN required"
             : data.error ?? "Invalid PIN";
         triggerError(msg);
+      }
+    } catch {
+      triggerError("Connection error — try again");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSuperadminBypass = async () => {
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const token = localStorage.getItem("nexus_tenant_token");
+      const res = await fetch("/api/staff/impersonation-bypass", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      if (res.ok) {
+        const staff = await res.json();
+        onSuccess(staff);
+        setDigits([]);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        triggerError(data.error ?? "Bypass failed");
       }
     } catch {
       triggerError("Connection error — try again");
@@ -158,6 +205,31 @@ export function PinPad({
           );
         })}
       </div>
+
+      {/* Superadmin bypass — only visible during impersonation */}
+      {isImpersonating && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-[13rem]"
+        >
+          <button
+            disabled={loading}
+            onClick={handleSuperadminBypass}
+            className={cn(
+              "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors",
+              "bg-amber-500/10 border border-amber-500/40 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/70",
+              loading && "opacity-50 pointer-events-none",
+            )}
+          >
+            <ShieldCheck size={15} />
+            Superadmin Override
+          </button>
+          <p className="text-center text-[10px] text-muted-foreground/60 mt-1.5">
+            Logs in as highest-privilege staff
+          </p>
+        </motion.div>
+      )}
     </div>
   );
 }

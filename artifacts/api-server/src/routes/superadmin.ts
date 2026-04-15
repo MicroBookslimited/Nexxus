@@ -19,8 +19,8 @@ function signSuperAdminToken() {
   return jwt.sign({ type: "superadmin" }, getJwtSecret(), { expiresIn: "8h" });
 }
 
-function signTenantToken(tenantId: number, email: string) {
-  return jwt.sign({ tenantId, email, type: "tenant" }, getJwtSecret(), { expiresIn: "7d" });
+function signTenantToken(tenantId: number, email: string, impersonation = false) {
+  return jwt.sign({ tenantId, email, type: "tenant", ...(impersonation ? { impersonation: true } : {}) }, getJwtSecret(), { expiresIn: "7d" });
 }
 
 function verifySuperAdminToken(token: string): boolean {
@@ -443,7 +443,7 @@ router.post("/superadmin/tenants/:id/impersonate", async (req, res): Promise<voi
   if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
   if (tenant.status === "suspended") { res.status(403).json({ error: "Account is suspended" }); return; }
 
-  const token = signTenantToken(tenant.id, tenant.email);
+  const token = signTenantToken(tenant.id, tenant.email, true);
   res.json({ token, tenant: { id: tenant.id, email: tenant.email, businessName: tenant.businessName } });
 });
 

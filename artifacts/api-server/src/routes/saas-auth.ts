@@ -17,11 +17,11 @@ function signToken(tenantId: number, email: string, adminUserId?: number, isPrim
   return jwt.sign({ tenantId, email, type: "tenant", adminUserId, isPrimary }, getJwtSecret(), { expiresIn: "7d" });
 }
 
-export function verifyTenantToken(token: string): { tenantId: number; email: string; adminUserId?: number; isPrimary?: boolean } | null {
+export function verifyTenantToken(token: string): { tenantId: number; email: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean } | null {
   try {
-    const payload = jwt.verify(token, getJwtSecret()) as { tenantId: number; email: string; type: string; adminUserId?: number; isPrimary?: boolean };
+    const payload = jwt.verify(token, getJwtSecret()) as { tenantId: number; email: string; type: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean };
     if (payload.type !== "tenant") return null;
-    return { tenantId: payload.tenantId, email: payload.email, adminUserId: payload.adminUserId, isPrimary: payload.isPrimary };
+    return { tenantId: payload.tenantId, email: payload.email, adminUserId: payload.adminUserId, isPrimary: payload.isPrimary, impersonation: payload.impersonation };
   } catch {
     return null;
   }

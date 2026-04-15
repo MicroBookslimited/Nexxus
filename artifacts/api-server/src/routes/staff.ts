@@ -14,6 +14,12 @@ function getTenantId(req: { headers: { authorization?: string } }): number | nul
   return p ? p.tenantId : null;
 }
 
+function getTenantPayload(req: { headers: { authorization?: string } }) {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) return null;
+  return verifyTenantToken(auth.slice(7));
+}
+
 const CreateStaffBody = z.object({
   name: z.string().min(1),
   pin: z.string().min(4).max(8),
@@ -192,6 +198,46 @@ router.post("/staff/authenticate", async (req, res): Promise<void> => {
   }
 
   res.json({ ...sanitizeStaff(match), permissions });
+});
+
+/* ─── Superadmin impersonation PIN bypass ─── */
+router.post("/staff/impersonation-bypass", async (req, res): Promise<void> => {
+  const payload = getTenantPayload(req);
+  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!payload.impersonation) { res.status(403).json({ error: "Not an impersonation session" }); return; }
+
+  const { tenantId } = payload;
+
+  const ROLE_PRIORITY = ["owner", "admin", "manager", "supervisor", "cashier"];
+
+  const members = await db
+    .select()
+    .from(staffTable)
+    .where(and(eq(staffTable.tenantId, tenantId), eq(staffTable.isActive, true)));
+
+  if (members.length === 0) { res.status(404).json({ error: "No active staff found for this tenant" }); return; }
+
+  const sorted = [...members].sort((a, b) => {
+    const ai = ROLE_PRIORITY.indexOf((a.role ?? "cashier").toLowerCase());
+    const bi = ROLE_PRIORITY.indexOf((b.role ?? "cashier").toLowerCase());
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  const staff = sorted[0]!;
+
+  await seedDefaultRoles(tenantId);
+
+  const roleRows = await db
+    .select({ permissions: rolesTable.permissions })
+    .from(rolesTable)
+    .where(and(
+      eq(rolesTable.tenantId, tenantId),
+      sql`LOWER(${rolesTable.name}) = LOWER(${staff.role})`
+    ));
+
+  const permissions: string[] = roleRows.length > 0 ? (roleRows[0]!.permissions as string[]) : [];
+
+  res.json({ ...sanitizeStaff(staff), permissions });
 });
 
 router.get("/staff/:id/locations", async (req, res): Promise<void> => {
