@@ -15,7 +15,7 @@ import {
   superadminUpdateTenant, superadminCreateTenant, superadminGetBankAccounts,
   superadminCreateBankAccount, superadminUpdateBankAccount, superadminDeleteBankAccount,
   superadminGetTransferProofs, superadminReviewTransferProof,
-  superadminGetUsers, superadminImpersonate, superadminResetPassword,
+  superadminGetUsers, superadminImpersonate, superadminResetPassword, superadminResetAdminUserPassword,
   superadminGetPlans, superadminCreatePlan, superadminUpdatePlan, superadminDeletePlan,
   superadminGetGatewaySettings, superadminUpdateGatewaySettings, superadminGetImpersonationLogs,
   type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow, type GatewaySettings, type ImpersonationLog,
@@ -527,7 +527,11 @@ function ResetPasswordModal({ user, onClose }: { user: UserRow; onClose: () => v
     if (newPassword !== confirm) { setError("Passwords do not match."); return; }
     setLoading(true); setError("");
     try {
-      await superadminResetPassword(user.id, newPassword);
+      if (user.adminUserId) {
+        await superadminResetAdminUserPassword(user.adminUserId, newPassword);
+      } else {
+        await superadminResetPassword(user.id, newPassword);
+      }
       setSuccess(true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to reset password");
@@ -1054,7 +1058,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
             <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
               <div>
                 <h1 className="text-xl sm:text-2xl font-bold text-white">Users</h1>
-                <p className="text-[#94a3b8] text-sm">All registered tenant accounts — login as or reset passwords</p>
+                <p className="text-[#94a3b8] text-sm">All users with web email/password login — owners and co-admins</p>
               </div>
               <button onClick={() => loadUsers(userSearch)} className="flex items-center gap-2 text-sm text-[#475569] hover:text-white border border-[#2a3a55] px-3 py-2 rounded-lg transition-colors shrink-0">
                 <RefreshCw size={14} className={usersLoading ? "animate-spin" : ""} /> Refresh
@@ -1092,7 +1096,11 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                           <span className="font-semibold text-white text-sm">{u.ownerName}</span>
                           <span className="text-[#475569] text-xs">·</span>
                           <span className="text-[#94a3b8] text-xs">{u.businessName}</span>
-                          <StatusBadge status={u.subscriptionStatus ?? "trial"} />
+                          {u.userType === "admin" ? (
+                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400 border border-violet-500/30">Co-Admin</span>
+                          ) : (
+                            <StatusBadge status={u.subscriptionStatus ?? "trial"} />
+                          )}
                         </div>
                         <div className="text-xs text-[#475569] mt-0.5 flex items-center gap-3">
                           <span>{u.email}</span>

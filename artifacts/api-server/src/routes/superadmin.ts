@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import {
   db, tenantsTable, subscriptionsTable, subscriptionPlansTable,
   bankAccountSettingsTable, bankTransferProofsTable, appSettingsTable,
-  impersonationLogsTable,
+  impersonationLogsTable, tenantAdminUsersTable,
 } from "@workspace/db";
 import { eq, desc, count, sql, ilike, or, and } from "drizzle-orm";
 import { getSetting } from "./settings";
@@ -588,9 +588,12 @@ router.get("/superadmin/users", async (req, res): Promise<void> => {
 
   const q = (req.query["q"] as string | undefined) ?? "";
 
-  const users = await db
+  // ── Primary tenant owners ──────────────────────────────────
+  const owners = await db
     .select({
       id: tenantsTable.id,
+      adminUserId: sql<number | null>`null`,
+      userType: sql<string>`'owner'`,
       businessName: tenantsTable.businessName,
       ownerName: tenantsTable.ownerName,
       email: tenantsTable.email,
@@ -600,7 +603,6 @@ router.get("/superadmin/users", async (req, res): Promise<void> => {
       onboardingComplete: tenantsTable.onboardingComplete,
       onboardingStep: tenantsTable.onboardingStep,
       createdAt: tenantsTable.createdAt,
-      lastLoginAt: tenantsTable.lastLoginAt,
       subscriptionStatus: subscriptionsTable.status,
       planName: subscriptionPlansTable.name,
       billingCycle: subscriptionsTable.billingCycle,
@@ -619,7 +621,68 @@ router.get("/superadmin/users", async (req, res): Promise<void> => {
     )
     .orderBy(desc(tenantsTable.createdAt));
 
-  res.json(users);
+  // ── Co-admins (non-primary with a set password) ─────────────
+  const coAdmins = await db
+    .select({
+      id: tenantAdminUsersTable.tenantId,
+      adminUserId: tenantAdminUsersTable.id,
+      userType: sql<string>`'admin'`,
+      businessName: tenantsTable.businessName,
+      ownerName: tenantAdminUsersTable.name,
+      email: tenantAdminUsersTable.email,
+      phone: sql<string | null>`null`,
+      country: sql<string | null>`null`,
+      status: tenantAdminUsersTable.status,
+      onboardingComplete: sql<boolean>`true`,
+      onboardingStep: sql<number>`0`,
+      createdAt: tenantAdminUsersTable.createdAt,
+      subscriptionStatus: subscriptionsTable.status,
+      planName: subscriptionPlansTable.name,
+      billingCycle: subscriptionsTable.billingCycle,
+    })
+    .from(tenantAdminUsersTable)
+    .innerJoin(tenantsTable, eq(tenantsTable.id, tenantAdminUsersTable.tenantId))
+    .leftJoin(subscriptionsTable, eq(subscriptionsTable.tenantId, tenantAdminUsersTable.tenantId))
+    .leftJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
+    .where(
+      and(
+        eq(tenantAdminUsersTable.isPrimary, false),
+        sql`${tenantAdminUsersTable.passwordHash} IS NOT NULL`,
+        eq(tenantAdminUsersTable.status, "active"),
+        q
+          ? or(
+              ilike(tenantAdminUsersTable.email, `%${q}%`),
+              ilike(tenantAdminUsersTable.name, `%${q}%`),
+              ilike(tenantsTable.businessName, `%${q}%`)
+            )
+          : undefined
+      )
+    )
+    .orderBy(desc(tenantAdminUsersTable.createdAt));
+
+  // Merge and sort by createdAt desc
+  const all = [...owners, ...coAdmins].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  res.json(all);
+});
+
+/* ─── Reset Co-Admin Password ─── */
+router.post("/superadmin/admin-users/:id/reset-password", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "");
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = z.object({ newPassword: z.string().min(6) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Password must be at least 6 characters" }); return; }
+
+  const [adminUser] = await db.select().from(tenantAdminUsersTable).where(eq(tenantAdminUsersTable.id, id));
+  if (!adminUser) { res.status(404).json({ error: "Admin user not found" }); return; }
+
+  const hash = await bcryptjs.hash(parsed.data.newPassword, 10);
+  await db.update(tenantAdminUsersTable).set({ passwordHash: hash }).where(eq(tenantAdminUsersTable.id, id));
+  res.json({ success: true });
 });
 
 /* ─── Gateway Settings ─── */

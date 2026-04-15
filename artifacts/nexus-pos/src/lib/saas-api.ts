@@ -216,6 +216,11 @@ export const superadminResetPassword = (tenantId: number, newPassword: string) =
     method: "POST", body: JSON.stringify({ newPassword }), headers: superadminAuthHeaders(),
   });
 
+export const superadminResetAdminUserPassword = (adminUserId: number, newPassword: string) =>
+  api<{ success: boolean }>(`/superadmin/admin-users/${adminUserId}/reset-password`, {
+    method: "POST", body: JSON.stringify({ newPassword }), headers: superadminAuthHeaders(),
+  });
+
 /* ─── Email Templates ─── */
 export const superadminGetEmailTemplates = () =>
   api<EmailTemplate[]>("/superadmin/email/templates", { headers: superadminAuthHeaders() });
@@ -290,7 +295,10 @@ export interface TransferProofRow {
 }
 
 export interface UserRow {
-  id: number; businessName: string; ownerName: string; email: string;
+  id: number;           // tenant ID (used for Login As impersonation)
+  adminUserId?: number | null; // set for co-admin users only
+  userType?: "owner" | "admin";
+  businessName: string; ownerName: string; email: string;
   phone?: string; country?: string; status: string;
   onboardingComplete: boolean; onboardingStep: number; createdAt: string;
   subscriptionStatus?: string; planName?: string; billingCycle?: string;
