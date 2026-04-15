@@ -183,14 +183,29 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       .filter(r => r.paymentMethod === "split")
       .reduce((s, r) => s + Number(r.splitCardAmount ?? 0), 0);
 
+    // Payouts for this session (needed for expectedCash)
+    const sessionPayouts = await db
+      .select({ amount: cashPayoutsTable.amount })
+      .from(cashPayoutsTable)
+      .where(eq(cashPayoutsTable.sessionId, s.id));
+    const totalPayouts = sessionPayouts.reduce((acc, p) => acc + p.amount, 0);
+
+    const expectedCash = s.openingCash
+      + (sales.cashSales - sales.refundedCash)
+      + splitCash
+      - totalPayouts;
+
     return {
       id:           s.id,
       openedAt:     s.openedAt,
       closedAt:     s.closedAt,
       status:       s.status,
+      staffId:      s.staffId ?? null,
       staffName:    s.staffName,
       locationName: s.locationName,
       openingCash:  s.openingCash,
+      actualCash:   s.actualCash ?? null,
+      actualCard:   s.actualCard ?? null,
       // Cash = pure cash orders + cash portion of split payments
       cashSales:    sales.cashSales - sales.refundedCash + splitCash,
       // Card = pure card orders + card portion of split payments
@@ -201,6 +216,9 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       totalSales:   sales.totalSales - sales.totalRefunds,
       refunds:      sales.totalRefunds,
       orderCount:   orderRows.filter(r => r.status !== "voided").length,
+      voidedCount:  sales.voidedCount,
+      totalPayouts,
+      expectedCash,
     };
   }));
 

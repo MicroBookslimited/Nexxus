@@ -47,6 +47,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/kitchen",      label: "Kitchen",      icon: ChefHat,         color: "text-red-400",     permission: "kitchen.view" },
   { href: "/orders",       label: "Orders",       icon: ListOrdered,     color: "text-purple-400",  permission: "orders.view" },
   { href: "/cash",         label: "Cash",         icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session",  alwaysShowLabel: true },
+  { href: "/register",     label: "Register",     icon: Monitor,         color: "text-teal-400",    permission: "reports.view" },
   { href: "/products",     label: "Products",     icon: Package,         color: "text-teal-400",    permission: "inventory.view" },
   { href: "/customers",    label: "Customers",    icon: Users,           color: "text-pink-400",    permission: "customers.view" },
   { href: "/staff",        label: "Staff",        icon: UserCog,         color: "text-indigo-400",  permission: "staff.view" },
