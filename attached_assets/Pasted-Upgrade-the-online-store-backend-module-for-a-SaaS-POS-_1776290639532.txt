@@ -1,0 +1,187 @@
+Upgrade the online store backend module for a SaaS POS system (NEXXUS POS) into a full-featured e-commerce and inventory management system.
+
+CURRENT STATE:
+- Product listing with categories, pricing, stock, and active status
+
+GOAL:
+- Build a scalable backend that supports product management, inventory sync, order processing, and supplier/accounting integration
+
+---
+
+1. PRODUCT MANAGEMENT (ENHANCED)
+
+Features:
+- Add/edit/delete products
+- Product types:
+    - Simple product
+    - Variant product (size, color, etc.)
+    - Bundle (e.g. POS system packages)
+
+Fields:
+- Name
+- SKU (auto + manual)
+- Category
+- Price (multi-currency support)
+- Cost price
+- Stock quantity
+- Low stock threshold
+- Product images (multiple)
+- Description
+- Status (active/inactive)
+
+---
+
+2. CATEGORY & TAG SYSTEM
+
+- Create hierarchical categories
+- Add tags for filtering
+- Enable quick filters (e.g. Hardware, Systems, Consumables)
+
+---
+
+3. INVENTORY INTEGRATION
+
+- Real-time stock updates
+- Sync with POS sales
+- Deduct stock on:
+    - POS sale
+    - Online order
+
+- Stock movements log:
+    - Purchase
+    - Sale
+    - Adjustment
+    - Return
+
+---
+
+4. SUPPLIER LINKAGE
+
+- Link each product to a supplier
+- Store:
+    - Preferred supplier
+    - Last purchase price
+    - Lead time
+
+- Enable:
+    - Quick reorder button
+    - Supplier-based reporting
+
+---
+
+5. ORDER MANAGEMENT SYSTEM
+
+Create Orders Module:
+
+Fields:
+- Order ID
+- Customer info
+- Items
+- Total amount
+- Status:
+    - Pending
+    - Paid
+    - Processing
+    - Shipped
+    - Completed
+    - Cancelled
+
+Features:
+- View order details
+- Update status
+- Print invoice
+- Assign fulfillment
+
+---
+
+6. PAYMENT INTEGRATION
+
+- Support:
+    - Cash
+    - Card
+    - Bank transfer
+    - Online gateway (First Atlantic Commerce)
+
+- Track:
+    - Paid
+    - Partial
+    - Unpaid
+
+---
+
+7. ACCOUNTING INTEGRATION
+
+- Link orders to:
+    - Sales records
+    - QuickBooks sync (daily summary)
+
+- Track:
+    - Revenue
+    - Cost (COGS)
+    - Profit
+
+---
+
+8. PRODUCT BUNDLES (IMPORTANT FOR YOU)
+
+Example:
+- Starter POS Bundle
+- Restaurant Bundle
+
+Features:
+- Combine multiple products
+- Auto-deduct individual items from inventory
+
+---
+
+9. SEARCH & FILTER (UPGRADE UI)
+
+- Full-text search
+- Filter by:
+    - Category
+    - Stock status
+    - Price range
+    - Supplier
+
+---
+
+10. BULK ACTIONS
+
+- Bulk update prices
+- Bulk activate/deactivate
+- Bulk stock adjustments
+
+---
+
+11. DASHBOARD METRICS
+
+Show:
+- Total products
+- Low stock items
+- Out of stock
+- Top selling products
+
+---
+
+12. AUDIT LOG (VERY IMPORTANT)
+
+Track:
+- Who edited product
+- Price changes
+- Stock adjustments
+
+---
+
+13. MULTI-BRANCH SUPPORT
+
+- Track stock per location
+- Transfer stock between branches
+
+---
+
+OUTPUT REQUIRED:
+- Database schema (normalized)
+- API endpoints (REST or GraphQL)
+- Inventory deduction logic
+- Order processing flow
+- UI structure for admin dashboard
