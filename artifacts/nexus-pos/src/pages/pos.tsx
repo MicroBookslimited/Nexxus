@@ -867,6 +867,7 @@ export function POS() {
       {
         data: {
           paymentMethod,
+          staffId: sessionStaff?.id ?? undefined,
           items: cart.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
@@ -909,6 +910,7 @@ export function POS() {
     createOrder.mutate(
       {
         data: {
+          staffId: sessionStaff?.id ?? undefined,
           items: cart.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
