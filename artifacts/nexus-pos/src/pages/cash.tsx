@@ -1777,7 +1777,7 @@ export function CashManagement() {
 
         {/* Right sidebar: active shifts (managers) + session history */}
         {(closedSessions.length > 0 || openSessions.length > 0) && (
-          <div className="w-80 border-l border-border flex flex-col shrink-0">
+          <div className="w-1/3 min-w-72 border-l border-border flex flex-col shrink-0">
             {/* Active Shifts — managers only */}
             {openSessions.length > 0 && (
               <>
