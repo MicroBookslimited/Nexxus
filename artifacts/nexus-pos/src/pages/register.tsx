@@ -54,6 +54,7 @@ type RegisterRow = {
 async function authFetch<T>(path: string): Promise<T> {
   const token = localStorage.getItem(TENANT_TOKEN_KEY);
   const res = await fetch(path, {
+    cache: "no-store",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
