@@ -2,8 +2,9 @@ import { Router, type IRouter } from "express";
 import {
   db, tenantsTable, subscriptionsTable, subscriptionPlansTable,
   bankAccountSettingsTable, bankTransferProofsTable, appSettingsTable,
+  impersonationLogsTable,
 } from "@workspace/db";
-import { eq, desc, count, sql, ilike, or } from "drizzle-orm";
+import { eq, desc, count, sql, ilike, or, and } from "drizzle-orm";
 import { getSetting } from "./settings";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
@@ -19,8 +20,23 @@ function signSuperAdminToken() {
   return jwt.sign({ type: "superadmin" }, getJwtSecret(), { expiresIn: "8h" });
 }
 
-function signTenantToken(tenantId: number, email: string, impersonation = false) {
-  return jwt.sign({ tenantId, email, type: "tenant", ...(impersonation ? { impersonation: true } : {}) }, getJwtSecret(), { expiresIn: "7d" });
+function signTenantToken(tenantId: number, email: string, impersonation = false, impersonationLogId?: number) {
+  return jwt.sign({
+    tenantId, email, type: "tenant",
+    ...(impersonation ? { impersonation: true } : {}),
+    ...(impersonationLogId ? { impersonationLogId } : {}),
+  }, getJwtSecret(), { expiresIn: "7d" });
+}
+
+function getSuperadminEmailFromRequest(req: { headers: Record<string, string | undefined> }): string {
+  try {
+    const auth = req.headers["authorization"];
+    if (!auth?.startsWith("Bearer ")) return "superadmin";
+    const payload = jwt.verify(auth.slice(7), getJwtSecret()) as { email?: string; type?: string };
+    return payload.email ?? "superadmin";
+  } catch {
+    return "superadmin";
+  }
 }
 
 function verifySuperAdminToken(token: string): boolean {
@@ -443,8 +459,42 @@ router.post("/superadmin/tenants/:id/impersonate", async (req, res): Promise<voi
   if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
   if (tenant.status === "suspended") { res.status(403).json({ error: "Account is suspended" }); return; }
 
-  const token = signTenantToken(tenant.id, tenant.email, true);
-  res.json({ token, tenant: { id: tenant.id, email: tenant.email, businessName: tenant.businessName } });
+  const superadminEmail = getSuperadminEmailFromRequest(req);
+  const [logRow] = await db.insert(impersonationLogsTable).values({
+    superadminEmail,
+    tenantId: tenant.id,
+    tenantEmail: tenant.email,
+    businessName: tenant.businessName,
+  }).returning({ id: impersonationLogsTable.id });
+
+  const token = signTenantToken(tenant.id, tenant.email, true, logRow?.id);
+  res.json({ token, tenant: { id: tenant.id, email: tenant.email, businessName: tenant.businessName }, impersonationLogId: logRow?.id });
+});
+
+/* ─── End Impersonation Session ─── */
+router.post("/superadmin/impersonation-end", async (req, res): Promise<void> => {
+  const parsed = z.object({ logId: z.number().int().positive() }).safeParse(req.body);
+  if (!parsed.success) { res.json({ success: true }); return; }
+
+  await db
+    .update(impersonationLogsTable)
+    .set({ endedAt: new Date() })
+    .where(and(eq(impersonationLogsTable.id, parsed.data.logId), eq(impersonationLogsTable.endedAt, null as unknown as Date)));
+
+  res.json({ success: true });
+});
+
+/* ─── Impersonation Logs ─── */
+router.get("/superadmin/impersonation-logs", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const rows = await db
+    .select()
+    .from(impersonationLogsTable)
+    .orderBy(desc(impersonationLogsTable.startedAt))
+    .limit(500);
+
+  res.json(rows);
 });
 
 /* ─── Reset Tenant Password ─── */

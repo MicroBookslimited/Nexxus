@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
+import { logAudit } from "./audit";
 import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable } from "@workspace/db";
 import { getSetting } from "./settings";
 import { sendTemplateEmail } from "./email-templates";
@@ -523,6 +524,12 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     }
   }
 
+  if (parsed.data.status === "voided" || parsed.data.status === "refunded") {
+    await logAudit({ tenantId, staffId: order.staffId, action: `order.${parsed.data.status}`, entityType: "order", entityId: order.id, details: { total: order.total, reason: parsed.data.voidReason } });
+  } else if (parsed.data.status === "completed") {
+    await logAudit({ tenantId, staffId: order.staffId, action: "order.complete", entityType: "order", entityId: order.id, details: { total: order.total } });
+  }
+
   const fullOrder = await getOrderWithItems(order.id);
   res.json(UpdateOrderStatusResponse.parse(fullOrder));
 });
@@ -594,6 +601,7 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
   }
 
   const fullOrder = await getOrderWithItems(order.id);
+  await logAudit({ tenantId, staffId: existing.staffId, action: "order.sale", entityType: "order", entityId: order.id, details: { total: existing.total, paymentMethod: parsed.data.paymentMethod } });
   res.json(ChargeOrderResponse.parse(fullOrder));
 });
 

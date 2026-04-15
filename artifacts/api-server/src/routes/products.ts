@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, like, and, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
 import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable } from "@workspace/db";
+import { logAudit } from "./audit";
 import {
   CreateProductBody,
   UpdateProductBody,
@@ -120,6 +121,7 @@ router.post("/products", async (req, res): Promise<void> => {
     })
     .returning();
 
+  await logAudit({ tenantId, action: "product.create", entityType: "product", entityId: product?.id, details: { name: parsed.data.name, price: parsed.data.price } });
   res.status(201).json(GetProductResponse.parse(await withFlags(product)));
 });
 
@@ -184,6 +186,7 @@ router.put("/products/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  await logAudit({ tenantId, action: "product.update", entityType: "product", entityId: product.id, details: { name: product.name, price: product.price } });
   res.json(UpdateProductResponse.parse(await withFlags(product)));
 });
 
@@ -208,6 +211,7 @@ router.delete("/products/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  await logAudit({ tenantId, action: "product.delete", entityType: "product", entityId: product.id, details: { name: product.name } });
   res.sendStatus(204);
 });
 

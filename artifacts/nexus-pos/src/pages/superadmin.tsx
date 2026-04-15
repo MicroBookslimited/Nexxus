@@ -5,7 +5,7 @@ import {
   Eye, X, AlertTriangle, Plus, Building2, Banknote, FileCheck,
   LayoutDashboard, Settings, Pencil, Trash2, Download, ChevronRight,
   LogIn, KeyRound, Check, Package, ToggleLeft, ToggleRight, Mail,
-  Cpu, Globe, ShoppingBag,
+  Cpu, Globe, ShoppingBag, ClipboardList,
 } from "lucide-react";
 import { EmailTab } from "./superadmin-email-tab";
 import { SuperadminStoreTab } from "./superadmin-store-tab";
@@ -17,8 +17,8 @@ import {
   superadminGetTransferProofs, superadminReviewTransferProof,
   superadminGetUsers, superadminImpersonate, superadminResetPassword,
   superadminGetPlans, superadminCreatePlan, superadminUpdatePlan, superadminDeletePlan,
-  superadminGetGatewaySettings, superadminUpdateGatewaySettings,
-  type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow, type GatewaySettings,
+  superadminGetGatewaySettings, superadminUpdateGatewaySettings, superadminGetImpersonationLogs,
+  type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow, type GatewaySettings, type ImpersonationLog,
 } from "@/lib/saas-api";
 
 type Stats = {
@@ -27,7 +27,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "users" | "tenants" | "payments" | "plans" | "email" | "gateway" | "settings" | "store";
+type Tab = "overview" | "users" | "tenants" | "payments" | "plans" | "email" | "gateway" | "settings" | "store" | "impersonation-logs";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -819,6 +819,9 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [editingPlan, setEditingPlan] = useState<Plan | null | "new">(null);
   const [plansLoading, setPlansLoading] = useState(false);
 
+  const [impersonationLogs, setImpersonationLogs] = useState<ImpersonationLog[]>([]);
+  const [impersonationLogsLoading, setImpersonationLogsLoading] = useState(false);
+
   const [gatewaySettings, setGatewaySettings] = useState<GatewaySettings | null>(null);
   const [gatewayLoading, setGatewayLoading] = useState(false);
   const [gatewayForm, setGatewayForm] = useState({ spid: "", sppassword: "", env: "staging", enabled: "true" });
@@ -907,6 +910,11 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
   useEffect(() => { if (tab === "users") loadUsers(); }, [tab, loadUsers]);
   useEffect(() => { if (tab === "plans") loadPlans(); }, [tab, loadPlans]);
   useEffect(() => { if (tab === "gateway") loadGateway(); }, [tab, loadGateway]);
+  useEffect(() => {
+    if (tab !== "impersonation-logs") return;
+    setImpersonationLogsLoading(true);
+    superadminGetImpersonationLogs().then(setImpersonationLogs).catch(() => {}).finally(() => setImpersonationLogsLoading(false));
+  }, [tab]);
 
   useEffect(() => {
     let list = tenants;
@@ -930,6 +938,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     { id: "gateway", label: "Gateway", icon: CreditCard },
     { id: "store", label: "Store", icon: ShoppingBag },
     { id: "settings", label: "Settings", icon: Settings },
+    { id: "impersonation-logs", label: "Access Logs", icon: ClipboardList },
   ];
 
   return (
@@ -1100,8 +1109,10 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                           onClick={async () => {
                             setImpersonating(u.id);
                             try {
-                              const { token } = await superadminImpersonate(u.id);
-                              localStorage.setItem(TENANT_TOKEN_KEY, token);
+                              const res = await superadminImpersonate(u.id);
+                              localStorage.setItem(TENANT_TOKEN_KEY, res.token);
+                              localStorage.setItem("nexus_impersonation_business", res.tenant.businessName);
+                              if (res.impersonationLogId) localStorage.setItem("nexus_impersonation_log_id", String(res.impersonationLogId));
                               window.location.href = "/app/dashboard";
                             } catch (e: unknown) {
                               alert(e instanceof Error ? e.message : "Failed to impersonate");
@@ -1636,6 +1647,61 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
               </div>
             )}
           </>
+        )}
+
+        {tab === "impersonation-logs" && (
+          <div>
+            <div className="flex items-center gap-3 mb-5">
+              <ClipboardList size={20} className="text-[#3b82f6]" />
+              <h2 className="text-lg font-bold text-white">Admin Access Logs</h2>
+            </div>
+            {impersonationLogsLoading ? (
+              <div className="flex items-center justify-center py-16 text-[#475569]"><RefreshCw size={20} className="animate-spin" /></div>
+            ) : impersonationLogs.length === 0 ? (
+              <div className="text-center py-16 text-[#475569]">No access sessions recorded yet.</div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-[#2a3a55]">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-[#1a2332] text-[#475569]">
+                      <th className="text-left px-4 py-3 font-medium">Business</th>
+                      <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Started</th>
+                      <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Ended</th>
+                      <th className="text-right px-4 py-3 font-medium">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#2a3a55]">
+                    {impersonationLogs.map(log => {
+                      let dur = log.endedAt ? "—" : "Active";
+                      if (log.endedAt) {
+                        const secs = Math.floor((new Date(log.endedAt).getTime() - new Date(log.startedAt).getTime()) / 1000);
+                        dur = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+                      }
+                      return (
+                        <tr key={log.id} className="hover:bg-[#1a2332]/50 transition-colors">
+                          <td className="px-4 py-3 text-white font-medium">
+                            {log.businessName}
+                            <span className="block text-xs text-[#475569]">{log.superadminEmail}</span>
+                          </td>
+                          <td className="px-4 py-3 text-[#94a3b8] hidden sm:table-cell">
+                            {new Date(log.startedAt).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-[#94a3b8] hidden md:table-cell">
+                            {log.endedAt ? new Date(log.endedAt).toLocaleString() : <span className="text-amber-400 text-xs font-medium">Still active</span>}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${log.endedAt ? "bg-[#2a3a55] text-[#94a3b8]" : "bg-amber-500/20 text-amber-400"}`}>
+                              {dur}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
 
         <p className="text-center text-xs text-[#2a3a55] mt-8">Powered by MicroBooks</p>

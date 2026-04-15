@@ -187,9 +187,29 @@ export const superadminGetUsers = (q?: string) =>
   api<UserRow[]>(`/superadmin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`, { headers: superadminAuthHeaders() });
 
 export const superadminImpersonate = (tenantId: number) =>
-  api<{ token: string; tenant: { id: number; email: string; businessName: string } }>(`/superadmin/tenants/${tenantId}/impersonate`, {
+  api<{ token: string; tenant: { id: number; email: string; businessName: string }; impersonationLogId?: number }>(`/superadmin/tenants/${tenantId}/impersonate`, {
     method: "POST", headers: superadminAuthHeaders(),
   });
+
+export const superadminEndImpersonation = (logId: number) =>
+  api<{ ok: boolean }>("/superadmin/impersonation-end", {
+    method: "POST", body: JSON.stringify({ logId }), headers: superadminAuthHeaders(),
+  });
+
+export const superadminGetImpersonationLogs = () =>
+  api<ImpersonationLog[]>("/superadmin/impersonation-logs", { headers: superadminAuthHeaders() });
+
+export const fetchAuditLogs = async (params?: { action?: string; staffId?: number; entityType?: string; from?: string; to?: string; q?: string }): Promise<AuditLog[]> => {
+  const headers = tenantAuthHeaders();
+  const qs = params
+    ? Object.entries(params)
+        .filter(([, v]) => v !== undefined && v !== "")
+        .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+        .join("&")
+    : "";
+  const res = await api<{ logs: AuditLog[]; total: number }>(`/audit-logs${qs ? `?${qs}` : ""}`, { headers, cache: "no-store" });
+  return res.logs;
+};
 
 export const superadminResetPassword = (tenantId: number, newPassword: string) =>
   api<{ success: boolean }>(`/superadmin/tenants/${tenantId}/reset-password`, {
@@ -319,4 +339,28 @@ export interface EmailLog {
   errorMessage: string | null;
   variables: string | null;
   sentAt: string;
+}
+
+export interface AuditLog {
+  id: number;
+  tenantId: number;
+  staffId: number | null;
+  staffName?: string;
+  action: string;
+  entityType: string | null;
+  entityId: number | null;
+  details: Record<string, unknown> | null;
+  ipAddress: string | null;
+  createdAt: string;
+}
+
+export interface ImpersonationLog {
+  id: number;
+  superadminEmail: string;
+  tenantId: number;
+  tenantEmail: string;
+  businessName: string;
+  startedAt: string;
+  endedAt: string | null;
+  notes: string | null;
 }

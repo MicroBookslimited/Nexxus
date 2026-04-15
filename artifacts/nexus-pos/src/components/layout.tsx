@@ -5,7 +5,7 @@ import {
   Maximize, Minimize, UtensilsCrossed, ChefHat, UserCog, Coins, Settings,
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
-  FlaskConical, Factory, Store, Cpu, Landmark, Banknote,
+  FlaskConical, Factory, Store, Cpu, Landmark, Banknote, ClipboardList,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { TENANT_TOKEN_KEY, saasMe } from "@/lib/saas-api";
 import { clearQueryCache } from "@/lib/query-persister";
 import { EmailVerificationBanner } from "@/components/EmailVerificationBanner";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useStaff } from "@/contexts/StaffContext";
 import { PinPad } from "@/components/PinPad";
@@ -60,6 +61,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/hardware",     label: "My Hardware",  icon: Cpu,             color: "text-sky-300",     permission: "settings.view" },
   { href: "/store",        label: "Store",        icon: Store,           color: "text-fuchsia-400", permission: null },
   { href: "/subscription", label: "Plan",         icon: CreditCard,      color: "text-green-400",   permission: "settings.manage" },
+  { href: "/audit",        label: "Audit Trail",  icon: ClipboardList,   color: "text-slate-400",   permission: "reports.view" },
 ];
 
 const MOBILE_PRIMARY = ["/dashboard", "/pos", "/orders", "/customers"];
@@ -285,6 +287,9 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground overflow-hidden">
+
+      {/* ── IMPERSONATION BANNER ─────────────────────────────── */}
+      <ImpersonationBanner />
 
       {/* ── TOP HEADER ───────────────────────────────────────── */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-3 sm:px-5 bg-card">

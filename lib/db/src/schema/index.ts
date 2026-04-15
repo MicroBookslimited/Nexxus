@@ -17,3 +17,4 @@ export * from "./store";
 export * from "./hardware";
 export * from "./purchasing";
 export * from "./stock-movements";
+export * from "./audit";

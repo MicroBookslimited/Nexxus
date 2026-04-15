@@ -3,6 +3,7 @@ import { eq, and, gte, lte, isNotNull, isNull, or, sql, desc } from "drizzle-orm
 import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
+import { logAudit } from "./audit";
 
 const router: IRouter = Router();
 
@@ -405,6 +406,7 @@ router.post("/cash/sessions", async (req, res): Promise<void> => {
     })
     .returning();
 
+  await logAudit({ tenantId, staffId: incomingStaffId, staffName: parsed.data.staffName, action: "cash.session.open", entityType: "cash_session", entityId: session?.id, details: { openingCash: parsed.data.openingCash, location: parsed.data.locationName } });
   res.status(201).json(session);
 });
 
@@ -435,6 +437,7 @@ router.post("/cash/sessions/:id/payouts", async (req, res): Promise<void> => {
     })
     .returning();
 
+  await logAudit({ tenantId, staffName: parsed.data.staffName, action: "cash.payout", entityType: "cash_session", entityId: id, details: { amount: parsed.data.amount, reason: parsed.data.reason } });
   res.status(201).json(payout);
 });
 
@@ -500,6 +503,7 @@ router.post("/cash/sessions/:id/close", async (req, res): Promise<void> => {
     .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)))
     .returning();
 
+  await logAudit({ tenantId, staffId: session.staffId, staffName: session.staffName, action: "cash.session.close", entityType: "cash_session", entityId: id, details: { actualCash: parsed.data.actualCash, actualCard: parsed.data.actualCard } });
   res.json(closed);
 });
 

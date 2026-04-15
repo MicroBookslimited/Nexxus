@@ -17,11 +17,11 @@ function signToken(tenantId: number, email: string, adminUserId?: number, isPrim
   return jwt.sign({ tenantId, email, type: "tenant", adminUserId, isPrimary }, getJwtSecret(), { expiresIn: "7d" });
 }
 
-export function verifyTenantToken(token: string): { tenantId: number; email: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean } | null {
+export function verifyTenantToken(token: string): { tenantId: number; email: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean; impersonationLogId?: number } | null {
   try {
-    const payload = jwt.verify(token, getJwtSecret()) as { tenantId: number; email: string; type: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean };
+    const payload = jwt.verify(token, getJwtSecret()) as { tenantId: number; email: string; type: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean; impersonationLogId?: number };
     if (payload.type !== "tenant") return null;
-    return { tenantId: payload.tenantId, email: payload.email, adminUserId: payload.adminUserId, isPrimary: payload.isPrimary, impersonation: payload.impersonation };
+    return { tenantId: payload.tenantId, email: payload.email, adminUserId: payload.adminUserId, isPrimary: payload.isPrimary, impersonation: payload.impersonation, impersonationLogId: payload.impersonationLogId };
   } catch {
     return null;
   }

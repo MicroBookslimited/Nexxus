@@ -35,6 +35,7 @@ import vendorsRouter from "./vendors";
 import apRouter from "./ap";
 import adminUsersRouter from "./admin-users";
 import emailTemplatesRouter from "./email-templates";
+import auditRouter from "./audit";
 
 const router: IRouter = Router();
 
@@ -74,5 +75,6 @@ router.use(vendorsRouter);
 router.use(apRouter);
 router.use(adminUsersRouter);
 router.use("/email-templates", emailTemplatesRouter);
+router.use(auditRouter);
 
 export default router;

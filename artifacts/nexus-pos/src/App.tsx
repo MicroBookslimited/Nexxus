@@ -31,6 +31,7 @@ import { Locations } from "@/pages/locations";
 import { Accounting } from "@/pages/accounting";
 import { AccountsReceivable } from "@/pages/ar";
 import { AccountsPayable } from "@/pages/accounts-payable";
+import { AuditTrail } from "@/pages/audit";
 import { Ingredients } from "@/pages/ingredients";
 import { Recipes } from "@/pages/recipes";
 import { Production } from "@/pages/production";
@@ -148,6 +149,7 @@ function POSRouter() {
       <Route path="/recipes"><ProtectedRoute component={Recipes} permission="inventory.manage" /></Route>
       <Route path="/production"><ProtectedRoute component={Production} permission="inventory.manage" /></Route>
       <Route path="/hardware"><ProtectedRoute component={MyHardware} permission="settings.view" /></Route>
+      <Route path="/audit"><ProtectedRoute component={AuditTrail} permission="reports.view" /></Route>
       <Route path="/cash"><ProtectedRoute component={CashManagement} permission="cash.open_session" /></Route>
       <Route path="/register"><ProtectedRoute component={Register} permission="reports.view" /></Route>
       <Route path="/store"><ProtectedRoute component={StorePage} /></Route>

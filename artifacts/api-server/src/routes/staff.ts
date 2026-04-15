@@ -4,6 +4,7 @@ import { db, staffTable, staffLocationsTable, locationsTable, rolesTable } from 
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
 import { seedDefaultRoles } from "./roles";
+import { logAudit } from "./audit";
 
 const router: IRouter = Router();
 
@@ -83,6 +84,7 @@ router.post("/staff", async (req, res): Promise<void> => {
     isActive: true,
   }).returning();
 
+  await logAudit({ tenantId, action: "staff.create", entityType: "staff", entityId: member?.id, details: { name: parsed.data.name, role: parsed.data.role } });
   res.status(201).json(sanitizeStaff(member));
 });
 
@@ -120,6 +122,7 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
 
   if (!member) { res.status(404).json({ error: "Staff member not found" }); return; }
 
+  await logAudit({ tenantId, action: "staff.update", entityType: "staff", entityId: id, details: { name: member.name, role: member.role, isActive: member.isActive } });
   res.json(sanitizeStaff(member));
 });
 
@@ -133,6 +136,7 @@ router.delete("/staff/:id", async (req, res): Promise<void> => {
   await db.update(staffTable)
     .set({ isActive: false })
     .where(and(eq(staffTable.id, id), eq(staffTable.tenantId, tenantId)));
+  await logAudit({ tenantId, action: "staff.delete", entityType: "staff", entityId: id });
   res.status(204).send();
 });
 
