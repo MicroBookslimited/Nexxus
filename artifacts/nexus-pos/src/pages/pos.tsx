@@ -426,7 +426,7 @@ export function POS() {
   }, [expiryTarget]);
 
   const { data: cashSession, isError: noOpenShift, isLoading: checkingShift } = useGetCurrentCashSession({
-    query: { retry: false, enabled: !locked },
+    query: { retry: false, enabled: !locked, queryKey: ["/api/cash/sessions/current", sessionStaff?.id ?? null] },
     request: sessionStaff?.id ? { headers: { "x-staff-id": String(sessionStaff.id) } } : undefined,
   });
 

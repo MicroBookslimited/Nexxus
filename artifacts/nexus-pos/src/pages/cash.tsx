@@ -1225,7 +1225,7 @@ function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { st
   const { can, staff: activeStaff } = useStaff();
   const canSeeSensitive = can("reports.view"); // managers / admins only
   const { data, isLoading, isError } = useGetCurrentCashSession({
-    query: { refetchInterval: 15000, retry: false },
+    query: { refetchInterval: 15000, retry: false, queryKey: ["/api/cash/sessions/current", activeStaff?.id ?? null] },
     request: activeStaff?.id ? { headers: { "x-staff-id": String(activeStaff.id) } } : undefined,
   });
   const [payoutOpen, setPayoutOpen] = useState(false);
@@ -1576,7 +1576,7 @@ export function CashManagement() {
   const shouldAutoClose = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("close") === "1";
 
   const { data: current, isLoading: loadingCurrent, isError: noSession, refetch: refetchCurrent } = useGetCurrentCashSession({
-    query: { retry: false, enabled: !!sessionStaff?.id },
+    query: { retry: false, enabled: !!sessionStaff?.id, queryKey: ["/api/cash/sessions/current", sessionStaff?.id ?? null] },
     request: sessionStaff?.id ? { headers: { "x-staff-id": String(sessionStaff.id) } } : undefined,
   });
   const { data: sessions } = useListCashSessions();
