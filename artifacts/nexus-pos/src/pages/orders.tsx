@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings } from "@workspace/api-client-react";
+import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings, useListStaff } from "@workspace/api-client-react";
 import { useStaff } from "@/contexts/StaffContext";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt } from "@/lib/receipt";
 import { Card, CardContent } from "@/components/ui/card";
@@ -63,6 +63,7 @@ function getOfflineOrders(): QueuedRequest[] {
 
 export function Orders() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [staffFilter, setStaffFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
@@ -117,15 +118,28 @@ export function Orders() {
   const { staff: sessionStaff, can } = useStaff();
   const canViewAllOrders = can("reports.view");
 
+  // Only admins/managers can see the staff list for filtering
+  const { data: staffList } = useListStaff({ query: { enabled: canViewAllOrders } });
+
   const listParams: Record<string, any> = {};
   if (statusFilter !== "all") listParams.status = statusFilter;
   if (fromDate) listParams.from = fromDate;
   if (toDate) listParams.to = toDate;
-  // Cashiers only see their own orders; admins/managers see everything
-  if (!canViewAllOrders && sessionStaff?.id) listParams.staffId = sessionStaff.id;
+  if (canViewAllOrders) {
+    // Admins/managers: honour the explicit staff filter selection
+    if (staffFilter !== "all") listParams.staffId = parseInt(staffFilter);
+  } else if (sessionStaff?.id) {
+    // Cashiers only ever see their own orders
+    listParams.staffId = sessionStaff.id;
+  }
 
   const { data: orders, isLoading } = useListOrders(listParams);
   const { data: settings } = useGetSettings();
+
+  // Build a staffId → name lookup for rendering the staff badge on each row
+  const staffById = Object.fromEntries(
+    (staffList ?? []).map((s) => [s.id, s.name])
+  );
   const updateStatus = useUpdateOrderStatus();
   const chargeOrder = useChargeOrder();
   const queryClient = useQueryClient();
@@ -298,11 +312,13 @@ export function Orders() {
     const dateRange = fromDate || toDate
       ? `${fromDate || "start"} → ${toDate || "today"}`
       : "All Time";
+    const showStaff = canViewAllOrders && Object.keys(staffById).length > 0;
     const rows = (filteredOrders ?? []).map(o => `
       <tr>
         <td>${o.orderNumber}</td>
         <td>${format(new Date(o.createdAt), "dd/MM/yyyy, h:mm a")}</td>
         <td style="text-transform:capitalize">${o.status}</td>
+        ${showStaff ? `<td>${o.staffId ? (staffById[o.staffId] ?? "—") : "—"}</td>` : ""}
         <td style="text-align:center">${o.items.length}</td>
         <td style="text-align:right">${formatCurrency(o.subtotal)}</td>
         <td style="text-align:right;color:#f59e0b">${o.discountValue && o.discountValue > 0 ? `-${formatCurrency(o.discountValue)}` : "—"}</td>
@@ -326,10 +342,11 @@ export function Orders() {
         @media print{body{padding:0;}}
       </style></head><body>
       <h2>Order History</h2>
-      <p>Date range: ${dateRange} · Status: ${statusFilter === "all" ? "All" : statusFilter} · ${totals.count} order${totals.count !== 1 ? "s" : ""}</p>
+      <p>Date range: ${dateRange} · Status: ${statusFilter === "all" ? "All" : statusFilter}${staffFilter !== "all" && staffById[parseInt(staffFilter)] ? ` · Staff: ${staffById[parseInt(staffFilter)]}` : ""} · ${totals.count} order${totals.count !== 1 ? "s" : ""}</p>
       <table>
         <thead><tr>
           <th>Order #</th><th>Date</th><th>Status</th>
+          ${showStaff ? "<th>Staff</th>" : ""}
           <th class="center">Items</th>
           <th class="right">Subtotal</th><th class="right">Discount</th>
           <th class="right">Tax</th><th class="right">Total</th>
@@ -337,7 +354,7 @@ export function Orders() {
         </tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr>
-          <td colspan="3">Totals — ${totals.count} order${totals.count !== 1 ? "s" : ""}</td>
+          <td colspan="${showStaff ? 4 : 3}">Totals — ${totals.count} order${totals.count !== 1 ? "s" : ""}</td>
           <td></td>
           <td style="text-align:right">${formatCurrency(totals.subtotal)}</td>
           <td style="text-align:right">${totals.discount > 0 ? `-${formatCurrency(totals.discount)}` : "—"}</td>
@@ -367,7 +384,7 @@ export function Orders() {
         o.tax.toFixed(2),
         o.total.toFixed(2),
         o.paymentMethod ?? "",
-        (o as any).staffName ?? "",
+        o.staffId ? (staffById[o.staffId] ?? "") : "",
         o.notes ?? "",
       ]),
       ["", "", "TOTALS", totals.count, totals.subtotal.toFixed(2), totals.discount.toFixed(2), totals.tax.toFixed(2), totals.total.toFixed(2), "", "", ""],
@@ -490,6 +507,22 @@ export function Orders() {
               </button>
             )}
           </div>
+
+          {canViewAllOrders && (staffList?.length ?? 0) > 0 && (
+            <Select value={staffFilter} onValueChange={setStaffFilter}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="All Staff" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Staff</SelectItem>
+                {staffList?.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[150px]">
@@ -641,7 +674,16 @@ export function Orders() {
                     <TableCell className="pl-4 text-muted-foreground">
                       {expandedOrderId === order.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </TableCell>
-                    <TableCell className="font-medium">{order.orderNumber}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex flex-col gap-0.5">
+                        <span>{order.orderNumber}</span>
+                        {canViewAllOrders && order.staffId && staffById[order.staffId] && (
+                          <span className="text-[10px] text-primary/70 font-normal">
+                            {staffById[order.staffId]}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {format(new Date(order.createdAt), "dd/MM/yyyy, h:mm a")}
                     </TableCell>
