@@ -102,6 +102,29 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/* ─── Splash Screen ─── */
+function SplashScreen() {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4 }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black"
+    >
+      <motion.img
+        src="/splash-screen.png"
+        alt="NEXXUS POS"
+        initial={{ scale: 1.04, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.97, opacity: 0 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        className="w-full h-full object-cover"
+      />
+    </motion.div>
+  );
+}
+
 /* ─── Login Page ─── */
 export function Login() {
   const [, setLocation] = useLocation();
@@ -110,6 +133,7 @@ export function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showForgot, setShowForgot] = useState(false);
+  const [showSplash, setShowSplash] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem(TENANT_TOKEN_KEY);
@@ -132,7 +156,10 @@ export function Login() {
       clearQueryCache();
       const { token } = await saasLogin(email, password);
       localStorage.setItem(TENANT_TOKEN_KEY, token);
-      setLocation("/dashboard");
+      setShowSplash(true);
+      setTimeout(() => {
+        setLocation("/dashboard");
+      }, 5000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Invalid email or password");
     } finally {
@@ -142,6 +169,10 @@ export function Login() {
 
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground relative overflow-hidden">
+      <AnimatePresence>
+        {showSplash && <SplashScreen />}
+      </AnimatePresence>
+
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/20 via-background to-background pointer-events-none" />
 
       <AnimatePresence>
