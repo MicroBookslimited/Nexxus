@@ -42,6 +42,9 @@ const DEFAULTS: Record<string, string> = {
   low_stock_alerts_hour: "8",
   allow_overselling: "false",
   product_categories: '["Beverages","Food","Bakery","Merchandise","Other"]',
+  topup_enabled: "false",
+  topup_commission_rate: "5",
+  topup_default_country: "JM",
 };
 
 function makeDbKey(tenantId: number, key: string): string {

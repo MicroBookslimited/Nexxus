@@ -1,0 +1,160 @@
+Integrate Ding Connect API into a SaaS POS system (NEXXUS POS) to allow merchants to sell mobile top-ups and earn commissions.
+
+GOAL:
+Build a secure, real-time top-up service module inside POS and Back Office.
+
+---
+
+1. API INTEGRATION
+
+- Connect to Ding Connect API
+- Authenticate using API key / OAuth
+- Store credentials securely per business or system-wide
+
+Endpoints to implement:
+- Get supported countries
+- Get operators (Digicel, Flow, etc.)
+- Get products (top-up amounts)
+- Send top-up request
+- Check transaction status
+
+---
+
+2. POS INTERFACE (FRONTEND)
+
+Add new module:
+"Top-Up / Airtime"
+
+Flow:
+1. Select country
+2. Select operator
+3. Enter phone number
+4. Select top-up amount
+5. Confirm & process
+
+Features:
+- Autofill Jamaica operators first
+- Validate phone number format
+- Show price in local currency (JMD)
+- Show confirmation before processing
+
+---
+
+3. TRANSACTION PROCESSING
+
+On submit:
+- Send request to Ding API
+- Receive response (success / pending / failed)
+
+Store:
+- transaction_id (Ding reference)
+- phone number
+- operator
+- amount
+- cost
+- commission earned
+- status
+
+---
+
+4. COMMISSION SYSTEM
+
+- Define commission per transaction (fixed or %)
+- Store earnings per business
+
+Example:
+- Top-up $1000 JMD
+- Cost $950 JMD
+- Commission $50 JMD
+
+Track:
+- Daily earnings
+- Monthly earnings
+
+---
+
+5. WALLET / BALANCE SYSTEM (IMPORTANT)
+
+Option A (Recommended):
+- Merchant pre-funds wallet
+- Deduct cost per top-up
+
+Option B:
+- Pay-as-you-go via API billing
+
+Wallet Table:
+- balance
+- transactions
+- top-up deductions
+
+---
+
+6. RECEIPT INTEGRATION
+
+Print receipt:
+- Phone number
+- Operator
+- Amount
+- Transaction reference
+- Status
+
+---
+
+7. BACK OFFICE MODULE
+
+Add "Top-Up Reports"
+
+Features:
+- Transaction history
+- Filter by date/operator
+- Commission summary
+- Failed transactions
+
+---
+
+8. ERROR HANDLING
+
+Handle:
+- API downtime
+- Invalid numbers
+- Insufficient balance
+- Duplicate requests
+
+Retry logic:
+- Auto-check status for pending transactions
+
+---
+
+9. SECURITY
+
+- Encrypt API keys
+- Log all transactions
+- Prevent duplicate submissions
+- Rate limit requests
+
+---
+
+10. MULTI-BRANCH SUPPORT
+
+- Track top-ups per branch
+- Aggregate commissions system-wide
+
+---
+
+11. DASHBOARD METRICS
+
+Show:
+- Total top-ups today
+- Revenue generated
+- Commission earned
+- Top operators
+
+---
+
+OUTPUT REQUIRED:
+- API integration service
+- POS UI for top-ups
+- Wallet system logic
+- Transaction database schema
+- Commission tracking system
+- Error handling system

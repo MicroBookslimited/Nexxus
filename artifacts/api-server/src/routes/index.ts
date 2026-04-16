@@ -36,6 +36,7 @@ import apRouter from "./ap";
 import adminUsersRouter from "./admin-users";
 import emailTemplatesRouter from "./email-templates";
 import auditRouter from "./audit";
+import topupRouter from "./topup";
 
 const router: IRouter = Router();
 
@@ -76,5 +77,6 @@ router.use(apRouter);
 router.use(adminUsersRouter);
 router.use("/email-templates", emailTemplatesRouter);
 router.use(auditRouter);
+router.use(topupRouter);
 
 export default router;
