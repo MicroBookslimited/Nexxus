@@ -8,4 +8,14 @@ router.get("/healthz", (_req, res) => {
   res.json(data);
 });
 
+router.get("/outbound-ip", async (_req, res) => {
+  try {
+    const r = await fetch("https://api.ipify.org?format=json");
+    const data = await r.json() as { ip: string };
+    res.json({ outboundIp: data.ip, env: process.env["NODE_ENV"] ?? "unknown" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch outbound IP" });
+  }
+});
+
 export default router;
