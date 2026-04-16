@@ -25,6 +25,21 @@ function requireSuperAdmin(req: { headers: { authorization?: string } }, res: { 
   return true;
 }
 
+/* ─── Map DB row → API shape (Drizzle field 'body'/'enabled' → 'htmlBody'/'isEnabled') ─── */
+function toApiShape(row: typeof emailTemplatesTable.$inferSelect) {
+  return {
+    id: row.id,
+    name: row.name,
+    eventKey: row.eventKey,
+    subject: row.subject,
+    htmlBody: row.body,
+    textBody: row.textBody,
+    isEnabled: row.enabled,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 /* ─── Variable substitution ─── */
 export function renderTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
@@ -39,13 +54,13 @@ export async function triggerEmailEvent(
   const [template] = await db
     .select()
     .from(emailTemplatesTable)
-    .where(and(eq(emailTemplatesTable.eventKey, eventKey), eq(emailTemplatesTable.isEnabled, true)))
+    .where(and(eq(emailTemplatesTable.eventKey, eventKey), eq(emailTemplatesTable.enabled, true)))
     .limit(1);
 
   if (!template) return;
 
   const subject = renderTemplate(template.subject, variables);
-  const html = renderTemplate(template.htmlBody, variables);
+  const html = renderTemplate(template.body, variables);
 
   const [log] = await db
     .insert(emailLogsTable)
@@ -202,8 +217,15 @@ const DEFAULT_TEMPLATES: Record<string, { name: string; subject: string; htmlBod
 /* ─── List templates ─── */
 router.get("/superadmin/email/templates", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;
-  const rows = await db.select().from(emailTemplatesTable).orderBy(emailTemplatesTable.createdAt);
-  res.json(rows);
+  const rows = await db
+    .select()
+    .from(emailTemplatesTable)
+    .where(and(
+      eq(emailTemplatesTable.tenantId, 0),
+    ))
+    .orderBy(emailTemplatesTable.eventKey, emailTemplatesTable.createdAt);
+  const filtered = rows.filter(r => r.eventKey !== "");
+  res.json(filtered.map(toApiShape));
 });
 
 /* ─── Create template ─── */
@@ -220,8 +242,15 @@ router.post("/superadmin/email/templates", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;
   const parsed = templateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }); return; }
-  const [row] = await db.insert(emailTemplatesTable).values(parsed.data).returning();
-  res.json(row);
+  const { htmlBody, isEnabled, ...rest } = parsed.data;
+  const [row] = await db.insert(emailTemplatesTable).values({
+    ...rest,
+    body: htmlBody,
+    enabled: isEnabled,
+    tenantId: 0,
+    templateKey: parsed.data.eventKey,
+  }).returning();
+  res.json(toApiShape(row));
 });
 
 /* ─── Update template ─── */
@@ -230,12 +259,16 @@ router.put("/superadmin/email/templates/:id", async (req, res): Promise<void> =>
   const id = Number(req.params["id"]);
   const parsed = templateSchema.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }); return; }
+  const { htmlBody, isEnabled, ...rest } = parsed.data;
+  const setData: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+  if (htmlBody !== undefined) setData["body"] = htmlBody;
+  if (isEnabled !== undefined) setData["enabled"] = isEnabled;
   const [row] = await db.update(emailTemplatesTable)
-    .set({ ...parsed.data, updatedAt: new Date() })
+    .set(setData)
     .where(eq(emailTemplatesTable.id, id))
     .returning();
   if (!row) { res.status(404).json({ error: "Template not found" }); return; }
-  res.json(row);
+  res.json(toApiShape(row));
 });
 
 /* ─── Delete template ─── */
@@ -251,16 +284,16 @@ router.delete("/superadmin/email/templates/:id", async (req, res): Promise<void>
 router.patch("/superadmin/email/templates/:id/toggle", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;
   const id = Number(req.params["id"]);
-  const [current] = await db.select({ isEnabled: emailTemplatesTable.isEnabled }).from(emailTemplatesTable).where(eq(emailTemplatesTable.id, id));
+  const [current] = await db.select({ enabled: emailTemplatesTable.enabled }).from(emailTemplatesTable).where(eq(emailTemplatesTable.id, id));
   if (!current) { res.status(404).json({ error: "Not found" }); return; }
   const [row] = await db.update(emailTemplatesTable)
-    .set({ isEnabled: !current.isEnabled, updatedAt: new Date() })
+    .set({ enabled: !current.enabled, updatedAt: new Date() })
     .where(eq(emailTemplatesTable.id, id))
     .returning();
-  res.json(row);
+  res.json(toApiShape(row));
 });
 
-/* ─── Test send ─── */
+/* ─── Test send (per-template) ─── */
 router.post("/superadmin/email/templates/:id/test", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;
   const id = Number(req.params["id"]);
@@ -272,7 +305,7 @@ router.post("/superadmin/email/templates/:id/test", async (req, res): Promise<vo
 
   const vars = variables ?? {};
   const subject = renderTemplate(template.subject, vars);
-  const html = renderTemplate(template.htmlBody, vars);
+  const html = renderTemplate(template.body, vars);
 
   const [log] = await db.insert(emailLogsTable).values({
     templateId: template.id, eventKey: template.eventKey, toEmail: to,
@@ -286,6 +319,97 @@ router.post("/superadmin/email/templates/:id/test", async (req, res): Promise<vo
     res.json({ success: true, messageId: result.messageId });
   } catch (err) {
     await db.update(emailLogsTable).set({ status: "failed", errorMessage: String(err) }).where(eq(emailLogsTable.id, log.id));
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+/* ─── Seed default templates (insert missing ones) ─── */
+router.post("/superadmin/email/seed-defaults", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const { replace = false } = req.body as { replace?: boolean };
+
+  const results: { eventKey: string; action: "inserted" | "replaced" | "skipped" }[] = [];
+
+  for (const [eventKey, tpl] of Object.entries(DEFAULT_TEMPLATES)) {
+    const existing = await db
+      .select({ id: emailTemplatesTable.id })
+      .from(emailTemplatesTable)
+      .where(and(eq(emailTemplatesTable.eventKey, eventKey), eq(emailTemplatesTable.tenantId, 0)))
+      .limit(1);
+
+    if (existing.length > 0 && !replace) {
+      results.push({ eventKey, action: "skipped" });
+      continue;
+    }
+
+    if (existing.length > 0 && replace) {
+      await db.update(emailTemplatesTable)
+        .set({
+          name: tpl.name,
+          subject: tpl.subject,
+          body: tpl.htmlBody,
+          textBody: tpl.textBody,
+          enabled: true,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(emailTemplatesTable.eventKey, eventKey), eq(emailTemplatesTable.tenantId, 0)));
+      results.push({ eventKey, action: "replaced" });
+    } else {
+      await db.insert(emailTemplatesTable).values({
+        name: tpl.name,
+        eventKey,
+        templateKey: eventKey,
+        subject: tpl.subject,
+        body: tpl.htmlBody,
+        textBody: tpl.textBody,
+        enabled: true,
+        tenantId: 0,
+      });
+      results.push({ eventKey, action: "inserted" });
+    }
+  }
+
+  res.json({ success: true, results });
+});
+
+/* ─── Standalone connection test (no template required) ─── */
+router.post("/superadmin/email/send-test", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const { to } = req.body as { to: string };
+  if (!to) { res.status(400).json({ error: "Recipient email required" }); return; }
+
+  try {
+    const from = await getFromDetails();
+    const result = await sendMail({
+      to,
+      subject: "[NEXXUS POS] Email Connection Test",
+      html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:20px;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<div style="max-width:480px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08);">
+  <div style="background:linear-gradient(135deg,#0f1729 0%,#1e3a6e 100%);padding:24px 32px;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:3px;color:#60a5fa;text-transform:uppercase;margin-bottom:4px;">NEXXUS POS</div>
+    <div style="font-size:20px;font-weight:800;color:#fff;">Email Connection Test</div>
+  </div>
+  <div style="padding:24px 32px;">
+    <div style="display:flex;align-items:center;gap:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;margin-bottom:16px;">
+      <div style="font-size:20px;">✅</div>
+      <div>
+        <div style="font-weight:700;color:#166534;font-size:14px;">Connection Successful</div>
+        <div style="color:#4ade80;font-size:12px;">ZeptoMail is correctly configured and sending emails.</div>
+      </div>
+    </div>
+    <p style="color:#475569;font-size:13px;margin:0 0 4px;">This is a test email sent from the NEXXUS POS superadmin panel to verify your email delivery service is working correctly.</p>
+    <p style="color:#94a3b8;font-size:12px;margin:16px 0 0;padding-top:12px;border-top:1px solid #f1f5f9;">Sent on: ${new Date().toLocaleString("en-JM", { timeZone: "America/Jamaica" })} (Jamaica time)</p>
+  </div>
+  <div style="padding:14px 32px;background:#f8fafc;border-top:1px solid #f1f5f9;text-align:center;">
+    <p style="font-size:11px;color:#94a3b8;margin:0;">Powered by <strong>MicroBooks</strong></p>
+  </div>
+</div>
+</body></html>`,
+      ...from,
+    });
+    res.json({ success: true, messageId: result.messageId });
+  } catch (err) {
     res.status(500).json({ error: String(err) });
   }
 });

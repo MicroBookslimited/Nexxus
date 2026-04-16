@@ -253,6 +253,16 @@ export const superadminGetEmailDefaultTemplate = (eventKey: string) =>
 export const superadminGetEmailLogs = (limit = 100, offset = 0) =>
   api<EmailLog[]>(`/superadmin/email/logs?limit=${limit}&offset=${offset}`, { headers: superadminAuthHeaders() });
 
+export const superadminSeedEmailTemplates = (replace = false) =>
+  api<{ success: boolean; results: { eventKey: string; action: string }[] }>("/superadmin/email/seed-defaults", {
+    method: "POST", body: JSON.stringify({ replace }), headers: superadminAuthHeaders(),
+  });
+
+export const superadminSendConnectionTest = (to: string) =>
+  api<{ success: boolean; messageId?: string }>("/superadmin/email/send-test", {
+    method: "POST", body: JSON.stringify({ to }), headers: superadminAuthHeaders(),
+  });
+
 /* ─── Types ─── */
 export interface Tenant {
   id: number; businessName: string; ownerName: string; email: string; phone?: string;

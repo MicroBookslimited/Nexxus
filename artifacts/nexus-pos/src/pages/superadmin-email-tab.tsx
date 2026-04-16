@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Mail, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, Send, Eye, EyeOff,
+  Mail, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, Send, Eye,
   ChevronDown, X, CheckCircle, XCircle, Clock, RefreshCw, Zap, FileText,
-  Copy, AlertTriangle,
+  Copy, AlertTriangle, Database, Wifi,
 } from "lucide-react";
 import {
   superadminGetEmailTemplates, superadminCreateEmailTemplate,
   superadminUpdateEmailTemplate, superadminDeleteEmailTemplate,
   superadminToggleEmailTemplate, superadminTestEmailTemplate,
   superadminGetEmailDefaultTemplate, superadminGetEmailLogs,
+  superadminSeedEmailTemplates, superadminSendConnectionTest,
   type EmailTemplate, type EmailLog, type EventKey,
 } from "@/lib/saas-api";
 
@@ -155,6 +156,69 @@ function TestEmailModal({
             <div className={`flex items-start gap-2 p-3 rounded-lg text-sm ${result.ok ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
               {result.ok ? <CheckCircle size={15} className="shrink-0 mt-0.5" /> : <XCircle size={15} className="shrink-0 mt-0.5" />}
               {result.msg}
+            </div>
+          )}
+        </div>
+        <div className="flex gap-3 p-5 border-t border-[#2a3a55]">
+          <button onClick={onClose} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2 rounded-lg text-sm transition-colors">
+            Close
+          </button>
+          <button onClick={handleSend} disabled={!to || sending}
+            className="flex-1 bg-[#3b82f6] hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            <Send size={14} />
+            {sending ? "Sending…" : "Send Test"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Standalone Connection Test Modal ─── */
+function ConnectionTestModal({ onClose }: { onClose: () => void }) {
+  const [to, setTo] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  async function handleSend() {
+    if (!to) return;
+    setSending(true);
+    setResult(null);
+    try {
+      const res = await superadminSendConnectionTest(to);
+      setResult({ ok: true, msg: `Delivered! Message ID: ${res.messageId ?? "n/a"}` });
+    } catch (err) {
+      setResult({ ok: false, msg: String(err) });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-[#1a2332] border border-[#2a3a55] rounded-2xl w-full max-w-md">
+        <div className="flex items-center justify-between p-5 border-b border-[#2a3a55]">
+          <div>
+            <h3 className="font-bold text-white flex items-center gap-2"><Wifi size={15} className="text-[#3b82f6]" /> Send Test Email</h3>
+            <p className="text-xs text-[#94a3b8] mt-0.5">Verify ZeptoMail is delivering correctly</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55]">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm text-[#94a3b8] mb-1">Recipient Email</label>
+            <input
+              type="email" value={to} onChange={e => setTo(e.target.value)}
+              placeholder="your@email.com"
+              className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none"
+            />
+          </div>
+          {result && (
+            <div className={`flex items-start gap-2 p-3 rounded-lg text-sm ${result.ok ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
+              {result.ok ? <CheckCircle size={15} className="shrink-0 mt-0.5" /> : <XCircle size={15} className="shrink-0 mt-0.5" />}
+              <span>{result.msg}</span>
             </div>
           )}
         </div>
@@ -422,6 +486,9 @@ export function EmailTab() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [showConnectionTest, setShowConnectionTest] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -463,6 +530,27 @@ export function EmailTab() {
     finally { setDeleteConfirm(null); }
   }
 
+  async function handleSeed(replace = false) {
+    setSeeding(true);
+    setSeedResult(null);
+    try {
+      const res = await superadminSeedEmailTemplates(replace);
+      const inserted = res.results.filter(r => r.action === "inserted").length;
+      const replaced = res.results.filter(r => r.action === "replaced").length;
+      const skipped = res.results.filter(r => r.action === "skipped").length;
+      const parts = [];
+      if (inserted > 0) parts.push(`${inserted} added`);
+      if (replaced > 0) parts.push(`${replaced} reset`);
+      if (skipped > 0) parts.push(`${skipped} already existed`);
+      setSeedResult({ ok: true, msg: parts.join(", ") || "Done" });
+      await load();
+    } catch (err) {
+      setSeedResult({ ok: false, msg: String(err) });
+    } finally {
+      setSeeding(false);
+    }
+  }
+
   /* ─── Logs view ─── */
   if (view === "logs") return <EmailLogsView onBack={() => setView("list")} />;
 
@@ -498,6 +586,7 @@ export function EmailTab() {
   return (
     <div>
       {testTarget && <TestEmailModal template={testTarget} onClose={() => setTestTarget(null)} />}
+      {showConnectionTest && <ConnectionTestModal onClose={() => setShowConnectionTest(false)} />}
       {previewTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#1a2332] border border-[#2a3a55] rounded-2xl w-full max-w-2xl">
@@ -514,17 +603,26 @@ export function EmailTab() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between mb-4 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Email Automation</h1>
           <p className="text-[#94a3b8] text-sm">{templates.length} template{templates.length !== 1 ? "s" : ""} configured across {EVENT_KEYS.length} event types</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <button onClick={() => setView("logs")}
             className="flex items-center gap-2 border border-[#2a3a55] text-[#94a3b8] hover:text-white hover:border-[#3b82f6]/50 px-3 py-2 rounded-lg text-sm transition-colors">
-            <FileText size={14} /> View Logs
+            <FileText size={14} /> Logs
           </button>
-          <button onClick={load} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors">
+          <button onClick={() => setShowConnectionTest(true)}
+            className="flex items-center gap-2 border border-[#2a3a55] text-[#94a3b8] hover:text-[#3b82f6] hover:border-[#3b82f6]/50 px-3 py-2 rounded-lg text-sm transition-colors">
+            <Wifi size={14} /> Send Test
+          </button>
+          <button onClick={() => void handleSeed(false)} disabled={seeding}
+            className="flex items-center gap-2 border border-[#2a3a55] text-[#94a3b8] hover:text-amber-400 hover:border-amber-500/30 px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-50">
+            {seeding ? <RefreshCw size={14} className="animate-spin" /> : <Database size={14} />}
+            {seeding ? "Seeding…" : "Seed Defaults"}
+          </button>
+          <button onClick={load} className="w-9 h-9 flex items-center justify-center rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors">
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           </button>
           <button onClick={() => { setEditTarget(null); setSaveError(""); setView("new"); }}
@@ -533,6 +631,23 @@ export function EmailTab() {
           </button>
         </div>
       </div>
+
+      {/* Seed result feedback */}
+      {seedResult && (
+        <div className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm mb-4 ${seedResult.ok ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
+          {seedResult.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
+          <span>{seedResult.ok ? `Templates seeded: ${seedResult.msg}` : seedResult.msg}</span>
+          {seedResult.ok && templates.length === EVENT_KEYS.length && (
+            <button onClick={() => void handleSeed(true)} disabled={seeding}
+              className="ml-auto text-xs text-amber-400 hover:text-amber-300 underline transition-colors disabled:opacity-50">
+              Reset all to defaults
+            </button>
+          )}
+          <button onClick={() => setSeedResult(null)} className="ml-auto text-current opacity-60 hover:opacity-100">
+            <X size={12} />
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center py-16 text-[#475569]"><RefreshCw size={24} className="animate-spin mx-auto mb-2" />Loading templates…</div>
