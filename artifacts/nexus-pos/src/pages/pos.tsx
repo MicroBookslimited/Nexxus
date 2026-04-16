@@ -1149,15 +1149,15 @@ export function POS() {
               />
               <ScanBarcode className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
             </div>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
               <button
                 onClick={() => setCategoryFilter(null)}
-                className="h-7 px-3 rounded-full text-xs font-semibold transition-all duration-150 border"
+                className="shrink-0 w-14 h-12 rounded-xl border-2 flex flex-col items-center justify-center gap-0.5 transition-all duration-150 active:scale-95"
                 style={categoryFilter === null
-                  ? { background: "#3b82f6", borderColor: "#3b82f6", color: "#fff" }
-                  : { background: "transparent", borderColor: "#3b82f6", color: "#93c5fd" }}
+                  ? { background: "#3b82f6", borderColor: "#60a5fa", boxShadow: "0 4px 12px #3b82f640" }
+                  : { background: "#3b82f615", borderColor: "#3b82f640" }}
               >
-                All
+                <span className="text-[10px] font-bold leading-tight" style={{ color: categoryFilter === null ? "#fff" : "#93c5fd" }}>All</span>
               </button>
               {categories.map((cat) => {
                 const c = getCategoryPillColor(cat);
@@ -1166,12 +1166,17 @@ export function POS() {
                   <button
                     key={cat}
                     onClick={() => setCategoryFilter(cat)}
-                    className="h-7 px-3 rounded-full text-xs font-semibold transition-all duration-150 border whitespace-nowrap"
+                    className="shrink-0 w-14 h-12 rounded-xl border-2 flex flex-col items-center justify-center gap-0.5 transition-all duration-150 active:scale-95 px-1"
                     style={active
-                      ? { background: c.bg, borderColor: c.border, color: c.text }
-                      : { background: `${c.bg}22`, borderColor: c.border, color: c.border }}
+                      ? { background: c.bg, borderColor: c.border, boxShadow: `0 4px 12px ${c.border}40` }
+                      : { background: `${c.bg}18`, borderColor: `${c.border}50` }}
                   >
-                    {cat}
+                    <span
+                      className="text-[10px] font-bold leading-tight text-center line-clamp-2 w-full"
+                      style={{ color: active ? "#fff" : c.border }}
+                    >
+                      {cat}
+                    </span>
                   </button>
                 );
               })}
