@@ -1545,8 +1545,47 @@ export function POS() {
                 </div>
               )}
 
-              {/* Notes */}
-              <Textarea className="text-xs resize-none h-12" placeholder="Order notes…" value={notes} onChange={(e) => setNotes(e.target.value)} />
+              {/* Order Notes */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <ClipboardList className="h-3 w-3" />Order Notes
+                  </span>
+                  {notes && (
+                    <button
+                      onClick={() => setNotes("")}
+                      className="text-[10px] text-muted-foreground hover:text-destructive transition-colors flex items-center gap-0.5"
+                    >
+                      <X className="h-2.5 w-2.5" />Clear
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {["No onions", "No ice", "Extra hot", "Well done", "Urgent", "Allergy"].map((chip) => (
+                    <button
+                      key={chip}
+                      onClick={() => setNotes((n) => n ? (n.includes(chip) ? n : `${n}, ${chip}`) : chip)}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition-all ${notes.includes(chip) ? "bg-primary/20 border-primary/50 text-primary" : "border-border/60 text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+                <div className="relative">
+                  <Textarea
+                    className="text-xs resize-none h-16 pr-8"
+                    placeholder="Type a custom note…"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    maxLength={200}
+                  />
+                  {notes.length > 0 && (
+                    <span className="absolute bottom-1.5 right-2 text-[9px] text-muted-foreground/60 font-mono pointer-events-none">
+                      {notes.length}/200
+                    </span>
+                  )}
+                </div>
+              </div>
           </div>
         </div>
 
@@ -1607,6 +1646,14 @@ export function POS() {
                     </>
                   )}
                 </div>
+                {notes && (
+                  <div className="mt-2 pt-2 border-t border-border">
+                    <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1 mb-0.5">
+                      <ClipboardList className="h-2.5 w-2.5" />Note
+                    </p>
+                    <p className="text-[10px] text-amber-400 italic leading-snug">{notes}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
