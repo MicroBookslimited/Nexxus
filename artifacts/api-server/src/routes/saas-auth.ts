@@ -27,11 +27,17 @@ export function verifyTenantToken(token: string): { tenantId: number; email: str
   }
 }
 
+function getAppBase(): string {
+  if (process.env["APP_BASE_URL"]) return process.env["APP_BASE_URL"];
+  const replitDomains = process.env["REPLIT_DOMAINS"];
+  if (replitDomains) return `https://${replitDomains.split(",")[0]!.trim()}`;
+  return "";
+}
+
 async function sendVerificationEmail(email: string, token: string, businessName: string) {
   const zeptoToken = process.env["ZEPTOMAIL_TOKEN"];
   if (!zeptoToken) { console.warn("ZEPTOMAIL_TOKEN not configured — skipping verification email"); return; }
-  const appBase = process.env["APP_BASE_URL"] ?? "";
-  const link = `${appBase}/app/verify-email?token=${token}`;
+  const link = `${getAppBase()}/app/verify-email?token=${token}`;
   try {
     const zepto = new SendMailClient({ url: "api.zeptomail.com/", token: zeptoToken });
     await zepto.sendMail({
@@ -351,8 +357,7 @@ router.post("/saas/forgot-password", async (req, res): Promise<void> => {
     { expiresIn: "1h" }
   );
 
-  const appBase = process.env["APP_BASE_URL"] ?? "";
-  const resetLink = `${appBase}/app/reset-password?token=${resetToken}`;
+  const resetLink = `${getAppBase()}/app/reset-password?token=${resetToken}`;
 
   try {
     const zeptoToken = process.env["ZEPTOMAIL_TOKEN"];
