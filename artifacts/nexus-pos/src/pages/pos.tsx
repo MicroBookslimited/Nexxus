@@ -1266,6 +1266,16 @@ export function POS() {
               {cart.length > 0 && <Badge className="h-5 text-[10px] px-1.5">{cart.reduce((s, i) => s + i.quantity, 0)}</Badge>}
             </div>
             <div className="flex gap-1">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                title="Clear all items"
+                disabled={cart.length === 0}
+                onClick={() => { setCart([]); setEditingNoteKey(null); }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
               <Button size="icon" variant="ghost" className="h-7 w-7" title="Hold order" onClick={handleHoldOrder} disabled={cart.length === 0}>
                 <SaveAll className="h-3.5 w-3.5" />
               </Button>
@@ -1411,8 +1421,8 @@ export function POS() {
                           <span className="ml-auto text-xs font-mono font-semibold">{formatCurrency(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
                         </div>
                         {item.itemNote && editingNoteKey !== item.cartKey && (
-                          <p className="text-[10px] text-amber-400/80 italic mt-1 leading-snug truncate">
-                            "{item.itemNote}"
+                          <p className="text-xs font-medium text-yellow-400 mt-1.5 text-center w-full">
+                            {item.itemNote}
                           </p>
                         )}
                         {editingNoteKey === item.cartKey && (
@@ -1657,7 +1667,7 @@ export function POS() {
                       <span className="font-mono shrink-0 ml-1">{fmtNum(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
                     </div>
                     {item.itemNote && (
-                      <p className="text-[9px] text-amber-400/70 italic pl-3 -mt-0.5 truncate">↳ {item.itemNote}</p>
+                      <p className="text-[10px] text-yellow-400 font-medium pl-3 -mt-0.5 truncate">↳ {item.itemNote}</p>
                     )}
                   </div>
                 ))}
