@@ -248,7 +248,7 @@ router.post("/superadmin/email/templates", async (req, res): Promise<void> => {
     body: htmlBody,
     enabled: isEnabled,
     tenantId: 0,
-    templateKey: parsed.data.eventKey,
+    templateKey: `sa_${parsed.data.eventKey}_${Date.now()}`,
   }).returning();
   res.json(toApiShape(row));
 });
