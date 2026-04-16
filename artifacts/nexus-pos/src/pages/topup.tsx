@@ -106,6 +106,8 @@ export function TopUp() {
 
   // Ding data
   const [countries, setCountries] = useState<DingCountry[]>([]);
+  const [loadingCountries, setLoadingCountries] = useState(true);
+  const [countriesError, setCountriesError] = useState<string | null>(null);
   const [operators, setOperators] = useState<DingOperator[]>([]);
   const [products, setProducts] = useState<DingProduct[]>([]);
   const [loadingOperators, setLoadingOperators] = useState(false);
@@ -156,14 +158,28 @@ export function TopUp() {
   /* ── Load countries ── */
   const loadCountries = useCallback(async () => {
     try {
+      setLoadingCountries(true);
+      setCountriesError(null);
       const data = await apiFetch<{ Countries?: DingCountry[] }>("/api/topup/countries");
       const list = data.Countries ?? [];
       setCountries(list);
+      if (list.length === 0) {
+        setCountriesError("no_countries");
+      }
       const jm = list.find(c => c.Iso === "JM") ?? null;
       if (jm && !selectedCountry) {
         setSelectedCountry(jm);
       }
-    } catch { /* Ding key not configured – show friendly message */ }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("401") || msg.includes("403") || msg.includes("Unauthorized")) {
+        setCountriesError("auth");
+      } else {
+        setCountriesError("api_key");
+      }
+    } finally {
+      setLoadingCountries(false);
+    }
   }, [selectedCountry]);
 
   useEffect(() => { loadWallet(); loadCountries(); }, [loadWallet, loadCountries]);
@@ -363,11 +379,31 @@ export function TopUp() {
                       <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                       <Input className="pl-8" placeholder="Search country…" value={countrySearch} onChange={e => setCountrySearch(e.target.value)} />
                     </div>
-                    {countries.length === 0 && (
+                    {loadingCountries && (
+                      <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground gap-2">
+                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <p className="text-xs">Loading countries…</p>
+                      </div>
+                    )}
+                    {!loadingCountries && countriesError === "auth" && (
+                      <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground gap-2">
+                        <AlertCircle className="h-8 w-8 opacity-40" />
+                        <p className="text-sm font-medium">Session expired</p>
+                        <p className="text-xs">Please log in again to use Top-Up.</p>
+                      </div>
+                    )}
+                    {!loadingCountries && countriesError === "api_key" && (
                       <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground gap-2">
                         <AlertCircle className="h-8 w-8 opacity-40" />
                         <p className="text-sm font-medium">Ding Connect API key not configured</p>
                         <p className="text-xs">Ask your system administrator to set the DING_API_KEY.</p>
+                      </div>
+                    )}
+                    {!loadingCountries && !countriesError && countries.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground gap-2">
+                        <AlertCircle className="h-8 w-8 opacity-40" />
+                        <p className="text-sm font-medium">No countries available</p>
+                        <p className="text-xs">Check your Ding Connect account configuration.</p>
                       </div>
                     )}
                     <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
