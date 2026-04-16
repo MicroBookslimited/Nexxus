@@ -21,11 +21,10 @@ function getDingKey(): string {
 
 async function dingFetch(path: string, opts: RequestInit = {}): Promise<Response> {
   const key = getDingKey();
-  const encoded = Buffer.from(`${key}:`).toString("base64");
   const res = await fetch(`https://api.dingconnect.com/api/V1${path}`, {
     ...opts,
     headers: {
-      "Authorization": `Basic ${encoded}`,
+      "api_key": key,
       "Content-Type": "application/json",
       "Accept": "application/json",
       ...(opts.headers ?? {}),
