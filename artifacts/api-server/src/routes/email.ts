@@ -681,4 +681,32 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
   }
 });
 
+/* ───── Manual triggers for scheduled jobs ───── */
+
+router.post("/email/low-stock-alert", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  try {
+    const { runLowStockAlertsForAllTenants } = await import("../jobs/scheduled-jobs");
+    const result = await runLowStockAlertsForAllTenants(new Date().getHours(), { forceTenantId: tenantId });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    const details = err instanceof Error ? err.message : JSON.stringify(err);
+    res.status(500).json({ error: "Failed to run low stock alert", details });
+  }
+});
+
+router.post("/email/digest-test", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  try {
+    const { runDigestForAllTenants } = await import("../jobs/scheduled-jobs");
+    const result = await runDigestForAllTenants(new Date().getHours(), { forceTenantId: tenantId });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    const details = err instanceof Error ? err.message : JSON.stringify(err);
+    res.status(500).json({ error: "Failed to run digest", details });
+  }
+});
+
 export default router;

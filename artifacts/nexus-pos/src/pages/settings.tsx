@@ -50,8 +50,12 @@ export function AdminSettings() {
   const [digestEmail, setDigestEmail] = useState("");
   const [digestHour, setDigestHour] = useState("7");
   const [lowStockThreshold, setLowStockThreshold] = useState("5");
+  const [lowStockAlertsEnabled, setLowStockAlertsEnabled] = useState(false);
+  const [lowStockAlertsEmail, setLowStockAlertsEmail] = useState("");
+  const [lowStockAlertsHour, setLowStockAlertsHour] = useState("8");
   const [allowOverselling, setAllowOverselling] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
+  const [sendingLowStockTest, setSendingLowStockTest] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [tenantSlug, setTenantSlug] = useState<string>("");
 
@@ -92,6 +96,9 @@ export function AdminSettings() {
     setDigestEmail(settings.daily_digest_email ?? "");
     setDigestHour(settings.daily_digest_hour ?? "7");
     setLowStockThreshold(settings.low_stock_threshold ?? "5");
+    setLowStockAlertsEnabled(settings.low_stock_alerts_enabled === "true");
+    setLowStockAlertsEmail(settings.low_stock_alerts_email ?? "");
+    setLowStockAlertsHour(settings.low_stock_alerts_hour ?? "8");
     setAllowOverselling(settings.allow_overselling === "true");
     setDirty(false);
   }, [settings]);
@@ -129,6 +136,9 @@ export function AdminSettings() {
           daily_digest_email: digestEmail.trim(),
           daily_digest_hour: digestHour,
           low_stock_threshold: lowStockThreshold,
+          low_stock_alerts_enabled: lowStockAlertsEnabled ? "true" : "false",
+          low_stock_alerts_email: lowStockAlertsEmail.trim(),
+          low_stock_alerts_hour: lowStockAlertsHour,
           allow_overselling: allowOverselling ? "true" : "false",
         },
       },
@@ -149,7 +159,7 @@ export function AdminSettings() {
   async function handleSendTestDigest() {
     setSendingTest(true);
     try {
-      const res = await fetch("/api/email/daily-digest", { method: "POST" });
+      const res = await fetch("/api/email/digest-test", { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem(TENANT_TOKEN_KEY)}` } });
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -160,6 +170,28 @@ export function AdminSettings() {
       toast({ title: "Send failed", description: msg, variant: "destructive" });
     } finally {
       setSendingTest(false);
+    }
+  }
+
+  async function handleSendLowStockTest() {
+    setSendingLowStockTest(true);
+    try {
+      const res = await fetch("/api/email/low-stock-alert", { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem(TENANT_TOKEN_KEY)}` } });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const body = await res.json() as { sent?: number; skipped?: number };
+      if ((body.sent ?? 0) === 0) {
+        toast({ title: "All stock levels healthy", description: "No products are out of stock or low — no alert sent." });
+      } else {
+        toast({ title: "Low stock alert sent!", description: `Email delivered to ${lowStockAlertsEmail}` });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to send low stock alert";
+      toast({ title: "Send failed", description: msg, variant: "destructive" });
+    } finally {
+      setSendingLowStockTest(false);
     }
   }
 
@@ -837,22 +869,6 @@ export function AdminSettings() {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="low-stock-threshold">Low Stock Alert Threshold</Label>
-                <div className="flex items-center gap-3">
-                  <Input
-                    id="low-stock-threshold"
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={lowStockThreshold}
-                    onChange={(e) => { setLowStockThreshold(e.target.value); markDirty(); }}
-                    className="w-24"
-                  />
-                  <span className="text-sm text-muted-foreground">units or fewer = flagged as low stock</span>
-                </div>
-              </div>
-
               <div className="flex items-center gap-3 pt-1">
                 <Button
                   type="button"
@@ -876,10 +892,112 @@ export function AdminSettings() {
             <p className="font-medium text-foreground">What's included in the digest</p>
             <ul className="space-y-0.5 ml-2">
               <li>• Yesterday's revenue, order count, average order value, and tax collected</li>
-              <li>• Top 10 best-selling products from the last 7 days</li>
+              <li>• Top 10 best-selling and worst-selling products from the last 7 days</li>
               <li>• Items that are out of stock or running low</li>
             </ul>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Low Stock Alerts */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Bell className="h-4 w-4 text-primary" />
+            Low Stock Alerts
+          </CardTitle>
+          <CardDescription>
+            Get notified automatically when products run out of stock or fall below your threshold
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Enable low stock alerts</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Sends a daily email listing out-of-stock and low-stock items</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={lowStockAlertsEnabled}
+              onClick={() => { setLowStockAlertsEnabled(!lowStockAlertsEnabled); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                lowStockAlertsEnabled ? "bg-primary" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                lowStockAlertsEnabled ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+
+          {lowStockAlertsEnabled && (
+            <div className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="low-stock-alerts-email">Recipient Email</Label>
+                  <Input
+                    id="low-stock-alerts-email"
+                    type="email"
+                    value={lowStockAlertsEmail}
+                    onChange={(e) => { setLowStockAlertsEmail(e.target.value); markDirty(); }}
+                    placeholder="owner@example.com"
+                  />
+                  <p className="text-xs text-muted-foreground">Where the alert will be sent</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="low-stock-alerts-hour">Alert Time</Label>
+                  <select
+                    id="low-stock-alerts-hour"
+                    value={lowStockAlertsHour}
+                    onChange={(e) => { setLowStockAlertsHour(e.target.value); markDirty(); }}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    {Array.from({ length: 24 }, (_, h) => {
+                      const label = h === 0 ? "12:00 AM" : h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM" : `${h - 12}:00 PM`;
+                      return <option key={h} value={String(h)}>{label}</option>;
+                    })}
+                  </select>
+                  <p className="text-xs text-muted-foreground">Server local time</p>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="low-stock-threshold-alert">Low Stock Threshold</Label>
+                <div className="flex items-center gap-3">
+                  <Input
+                    id="low-stock-threshold-alert"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={lowStockThreshold}
+                    onChange={(e) => { setLowStockThreshold(e.target.value); markDirty(); }}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">units or fewer = flagged as low stock</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSendLowStockTest}
+                  disabled={sendingLowStockTest || !lowStockAlertsEmail}
+                  className="gap-2"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  {sendingLowStockTest ? "Sending…" : "Send Test Alert Now"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  {lowStockAlertsEmail ? `Sends immediately to ${lowStockAlertsEmail}` : "Enter a recipient email first"}
+                </p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

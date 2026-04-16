@@ -6,6 +6,11 @@ import { getSetting } from "./routes/settings";
 import { db } from "@workspace/db";
 import { tenantAdminUsersTable, tenantsTable } from "@workspace/db/schema";
 import { sql, and, eq, notExists } from "drizzle-orm";
+import {
+  runDigestForAllTenants,
+  runLowStockAlertsForAllTenants,
+  runSubscriptionExpiryAlerts,
+} from "./jobs/scheduled-jobs";
 
 async function migratePrimaryAdminUsers() {
   try {
@@ -74,6 +79,7 @@ app.listen(port, async (err) => {
 });
 
 /* ───── Daily Digest Cron ───── */
+// Legacy single-tenant digest (kept for backward compat with manual trigger endpoint)
 // Runs every hour — checks if this is the configured digest hour, then sends.
 cron.schedule("0 * * * *", async () => {
   try {
@@ -85,7 +91,7 @@ cron.schedule("0 * * * *", async () => {
     const currentHour = new Date().getHours();
     if (currentHour !== configuredHour) return;
 
-    logger.info({ hour: currentHour }, "Running daily digest");
+    logger.info({ hour: currentHour }, "Running daily digest (legacy)");
     const result = await sendDailyDigest();
     if (result.sent) {
       logger.info({ to: result.to }, "Daily digest sent successfully");
@@ -94,5 +100,49 @@ cron.schedule("0 * * * *", async () => {
     }
   } catch (err) {
     logger.error({ err }, "Daily digest cron error");
+  }
+});
+
+/* ───── Multi-Tenant Daily Digest + Worst Sellers Cron ───── */
+// Runs every hour — for each tenant that has digest enabled, checks their configured hour.
+cron.schedule("5 * * * *", async () => {
+  try {
+    const currentHour = new Date().getHours();
+    // We run for tenants whose digest hour matches current hour.
+    // runDigestForAllTenants checks each tenant's daily_digest_hour setting.
+    logger.info({ hour: currentHour }, "Running multi-tenant daily digest check");
+    const result = await runDigestForAllTenants();
+    if (result.sent > 0) {
+      logger.info(result, "Multi-tenant daily digest completed");
+    }
+  } catch (err) {
+    logger.error({ err }, "Multi-tenant daily digest cron error");
+  }
+});
+
+/* ───── Low Stock Alerts Cron ───── */
+// Runs every hour at :10 — checks each tenant's low_stock_alerts_hour setting.
+cron.schedule("10 * * * *", async () => {
+  try {
+    const currentHour = new Date().getHours();
+    logger.info({ hour: currentHour }, "Running low stock alert check");
+    const result = await runLowStockAlertsForAllTenants();
+    if (result.sent > 0) {
+      logger.info(result, "Low stock alerts completed");
+    }
+  } catch (err) {
+    logger.error({ err }, "Low stock alerts cron error");
+  }
+});
+
+/* ───── Subscription Expiry Alerts Cron ───── */
+// Runs once daily at 08:00 server time.
+cron.schedule("0 8 * * *", async () => {
+  try {
+    logger.info("Running subscription expiry alerts");
+    const result = await runSubscriptionExpiryAlerts();
+    logger.info(result, "Subscription expiry alerts completed");
+  } catch (err) {
+    logger.error({ err }, "Subscription expiry alerts cron error");
   }
 });
