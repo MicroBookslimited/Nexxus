@@ -2095,6 +2095,9 @@ export function Products() {
               <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="gap-2">
                 <Upload className="h-4 w-4" />Import
               </Button>
+              <Button variant="outline" onClick={() => setCatManagerOpen(true)} className="gap-2">
+                <Settings2 className="h-4 w-4" />Categories
+              </Button>
               <Button onClick={openAdd} className="gap-2">
                 <Plus className="h-4 w-4" />Add Product
               </Button>
@@ -2845,10 +2848,19 @@ export function Products() {
                   </div>
                   <div className="grid gap-1.5">
                     <Label>Category *</Label>
-                    <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
+                    <Select
+                      value={form.category}
+                      onValueChange={(v) => {
+                        if (v === "__new__") { setCatManagerOpen(true); return; }
+                        setForm((f) => ({ ...f, category: v }));
+                      }}
+                    >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        <SelectItem value="__new__" className="text-primary border-t border-border mt-1 pt-2">
+                          <span className="flex items-center gap-1.5"><Plus className="h-3.5 w-3.5" />New category…</span>
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
