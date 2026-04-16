@@ -28,6 +28,12 @@ async function getSmtpConfig(tenantId = 0) {
   };
 }
 
+function serializeError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try { return JSON.stringify(err); } catch { return String(err); }
+}
+
 export async function sendMail(opts: {
   to: string;
   subject: string;
@@ -57,13 +63,19 @@ export async function sendMail(opts: {
 
   const token = process.env["ZEPTOMAIL_TOKEN"];
   if (!token) throw new Error("ZEPTOMAIL_TOKEN is not configured. Please add it to your environment secrets.");
-  const zepto = new SendMailClient({ url: ZEPTOMAIL_API_URL, token });
-  const response = await zepto.sendMail({
-    from: { address: opts.fromAddress, name: opts.fromName },
-    to: [{ email_address: { address: opts.to, name: "" } }],
-    subject: opts.subject,
-    htmlbody: opts.html,
-  });
-  return { messageId: (response as { data?: { message_id?: string } })?.data?.message_id };
-}
 
+  const zepto = new SendMailClient({ url: ZEPTOMAIL_API_URL, token });
+  try {
+    const response = await zepto.sendMail({
+      from: { address: opts.fromAddress, name: opts.fromName },
+      to: [{ email_address: { address: opts.to, name: "" } }],
+      subject: opts.subject,
+      htmlbody: opts.html,
+    });
+    return { messageId: (response as { data?: { message_id?: string } })?.data?.message_id };
+  } catch (err) {
+    const serialized = serializeError(err);
+    console.error("[ZeptoMail] Send failed", { to: opts.to, from: opts.fromAddress, err: serialized });
+    throw new Error(`ZeptoMail error: ${serialized}`);
+  }
+}

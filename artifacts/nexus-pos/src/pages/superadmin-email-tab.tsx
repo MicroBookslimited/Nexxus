@@ -109,8 +109,8 @@ function TestEmailModal({
     try {
       await superadminTestEmailTemplate(template.id, to, vars);
       setResult({ ok: true, msg: "Test email sent successfully!" });
-    } catch (err) {
-      setResult({ ok: false, msg: String(err) });
+    } catch (err: unknown) {
+      setResult({ ok: false, msg: err instanceof Error ? err.message : String(err) });
     } finally {
       setSending(false);
     }
@@ -178,7 +178,7 @@ function TestEmailModal({
 function ConnectionTestModal({ onClose }: { onClose: () => void }) {
   const [to, setTo] = useState("");
   const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; msg: string; ip?: string } | null>(null);
 
   async function handleSend() {
     if (!to) return;
@@ -186,9 +186,12 @@ function ConnectionTestModal({ onClose }: { onClose: () => void }) {
     setResult(null);
     try {
       const res = await superadminSendConnectionTest(to);
-      setResult({ ok: true, msg: `Delivered! Message ID: ${res.messageId ?? "n/a"}` });
-    } catch (err) {
-      setResult({ ok: false, msg: String(err) });
+      setResult({ ok: true, msg: `Delivered! Message ID: ${res.messageId ?? "n/a"}`, ip: res.outboundIp });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const body = (err as { body?: Record<string, unknown> })?.body;
+      const ip = typeof body?.["outboundIp"] === "string" ? body["outboundIp"] : undefined;
+      setResult({ ok: false, msg, ip });
     } finally {
       setSending(false);
     }
@@ -216,9 +219,17 @@ function ConnectionTestModal({ onClose }: { onClose: () => void }) {
             />
           </div>
           {result && (
-            <div className={`flex items-start gap-2 p-3 rounded-lg text-sm ${result.ok ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
-              {result.ok ? <CheckCircle size={15} className="shrink-0 mt-0.5" /> : <XCircle size={15} className="shrink-0 mt-0.5" />}
-              <span>{result.msg}</span>
+            <div className={`p-3 rounded-lg text-sm ${result.ok ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
+              <div className="flex items-start gap-2">
+                {result.ok ? <CheckCircle size={15} className="shrink-0 mt-0.5" /> : <XCircle size={15} className="shrink-0 mt-0.5" />}
+                <span className="break-all">{result.msg}</span>
+              </div>
+              {result.ip && (
+                <div className="mt-2 pt-2 border-t border-current/20 text-xs opacity-80">
+                  Server outbound IP: <strong className="font-mono">{result.ip}</strong>
+                  {!result.ok && <span className="block mt-0.5 text-yellow-400">Ensure this IP is whitelisted in ZeptoMail → Mail Agent settings.</span>}
+                </div>
+              )}
             </div>
           )}
         </div>

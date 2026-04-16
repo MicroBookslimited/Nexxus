@@ -2019,7 +2019,11 @@ export function POS() {
                           setReceiptEmailOpen(false);
                           setReceiptEmailAddr("");
                         },
-                        onError: () => toast({ title: "Failed to send", description: "Check that email is configured.", variant: "destructive" }),
+                        onError: (err: unknown) => {
+                          const e = err as { details?: string; error?: string } | null;
+                          const msg = e?.details ?? e?.error ?? "Check that email is configured.";
+                          toast({ title: "Failed to send", description: msg, variant: "destructive" });
+                        },
                       }
                     );
                   }}

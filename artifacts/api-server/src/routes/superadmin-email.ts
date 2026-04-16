@@ -72,7 +72,7 @@ export async function triggerEmailEvent(
     const result = await sendMail({ to: toEmail, subject, html, ...from });
     await db.update(emailLogsTable).set({ status: "sent", messageId: result.messageId }).where(eq(emailLogsTable.id, log.id));
   } catch (err) {
-    await db.update(emailLogsTable).set({ status: "failed", errorMessage: String(err) }).where(eq(emailLogsTable.id, log.id));
+    await db.update(emailLogsTable).set({ status: "failed", errorMessage: err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err) }).where(eq(emailLogsTable.id, log.id));
   }
 }
 
@@ -318,8 +318,8 @@ router.post("/superadmin/email/templates/:id/test", async (req, res): Promise<vo
     await db.update(emailLogsTable).set({ status: "sent", messageId: result.messageId }).where(eq(emailLogsTable.id, log.id));
     res.json({ success: true, messageId: result.messageId });
   } catch (err) {
-    await db.update(emailLogsTable).set({ status: "failed", errorMessage: String(err) }).where(eq(emailLogsTable.id, log.id));
-    res.status(500).json({ error: String(err) });
+    await db.update(emailLogsTable).set({ status: "failed", errorMessage: err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err) }).where(eq(emailLogsTable.id, log.id));
+    res.status(500).json({ error: err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err) });
   }
 });
 
@@ -408,9 +408,22 @@ router.post("/superadmin/email/send-test", async (req, res): Promise<void> => {
 </body></html>`,
       ...from,
     });
-    res.json({ success: true, messageId: result.messageId });
+    let outboundIp = "unknown";
+    try {
+      const ipRes = await fetch("https://api.ipify.org?format=json");
+      const ipData = await ipRes.json() as { ip?: string };
+      outboundIp = ipData.ip ?? "unknown";
+    } catch { /* ignore */ }
+    res.json({ success: true, messageId: result.messageId, outboundIp });
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    let outboundIp = "unknown";
+    try {
+      const ipRes = await fetch("https://api.ipify.org?format=json");
+      const ipData = await ipRes.json() as { ip?: string };
+      outboundIp = ipData.ip ?? "unknown";
+    } catch { /* ignore */ }
+    const errMsg = err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err);
+    res.status(500).json({ error: errMsg, outboundIp });
   }
 });
 

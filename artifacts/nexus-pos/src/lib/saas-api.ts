@@ -11,6 +11,15 @@ function superadminAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+class ApiError extends Error {
+  public readonly body: Record<string, unknown>;
+  constructor(msg: string, body: Record<string, unknown>) {
+    super(msg);
+    this.name = "ApiError";
+    this.body = body;
+  }
+}
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const { headers: optHeaders, ...restOptions } = options ?? {};
   const resp = await fetch(`/api${path}`, {
@@ -18,9 +27,9 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
     ...restOptions,
   });
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: resp.statusText })) as { error?: string; details?: string };
-    const msg = [err.error, err.details].filter(Boolean).join(" — ");
-    throw new Error(msg || resp.statusText);
+    const body = await resp.json().catch(() => ({ error: resp.statusText })) as Record<string, unknown>;
+    const msg = [body["error"], body["details"]].filter(Boolean).join(" — ");
+    throw new ApiError(msg || resp.statusText, body);
   }
   return resp.json() as Promise<T>;
 }
@@ -259,7 +268,7 @@ export const superadminSeedEmailTemplates = (replace = false) =>
   });
 
 export const superadminSendConnectionTest = (to: string) =>
-  api<{ success: boolean; messageId?: string }>("/superadmin/email/send-test", {
+  api<{ success: boolean; messageId?: string; outboundIp?: string }>("/superadmin/email/send-test", {
     method: "POST", body: JSON.stringify({ to }), headers: superadminAuthHeaders(),
   });
 

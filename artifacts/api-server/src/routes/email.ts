@@ -66,13 +66,18 @@ async function sendEmail(opts: {
   const token = process.env["ZEPTOMAIL_TOKEN"];
   if (!token) throw new Error("Email service is not configured. Please contact your administrator to set up ZEPTOMAIL_TOKEN.");
   const zepto = new SendMailClient({ url: ZEPTOMAIL_API_URL, token });
-  const response = await zepto.sendMail({
-    from: { address: opts.fromAddress, name: opts.fromName },
-    to: [{ email_address: { address: opts.to } }],
-    subject: opts.subject,
-    htmlbody: opts.html,
-  });
-  return { messageId: (response as { data?: { message_id?: string } })?.data?.message_id };
+  try {
+    const response = await zepto.sendMail({
+      from: { address: opts.fromAddress, name: opts.fromName },
+      to: [{ email_address: { address: opts.to } }],
+      subject: opts.subject,
+      htmlbody: opts.html,
+    });
+    return { messageId: (response as { data?: { message_id?: string } })?.data?.message_id };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err);
+    throw new Error(`ZeptoMail error: ${msg}`);
+  }
 }
 
 function fmt(n: number) {
@@ -572,7 +577,8 @@ router.post("/email/receipt", async (req, res): Promise<void> => {
     });
     res.json({ success: true, messageId: result.messageId });
   } catch (err) {
-    res.status(500).json({ error: "Failed to send email", details: String(err) });
+    const details = err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err);
+    res.status(500).json({ error: "Failed to send email", details });
   }
 });
 
