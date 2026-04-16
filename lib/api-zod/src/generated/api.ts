@@ -412,6 +412,7 @@ export const CreateOrderBody = zod.object({
           }),
         )
         .optional(),
+      notes: zod.string().optional(),
     }),
   ),
   paymentMethod: zod.string().optional(),

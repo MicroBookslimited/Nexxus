@@ -79,6 +79,7 @@ async function getOrderWithItems(orderId: number) {
       variantChoices: (item.variantChoices as any[] | null) ?? undefined,
       modifierChoices: (item.modifierChoices as any[] | null) ?? undefined,
       lineTotal: item.lineTotal,
+      notes: item.notes ?? undefined,
     })),
   };
 }
@@ -139,6 +140,7 @@ router.get("/orders", async (req, res): Promise<void> => {
           variantChoices: (item.variantChoices as any[] | null) ?? undefined,
           modifierChoices: (item.modifierChoices as any[] | null) ?? undefined,
           lineTotal: item.lineTotal,
+          notes: item.notes ?? undefined,
         })),
       };
     }),
@@ -170,6 +172,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     variantChoices: ChoiceItem[] | undefined;
     modifierChoices: ChoiceItem[] | undefined;
     lineTotal: number;
+    notes: string | undefined;
   }> = [];
 
   for (const item of parsed.data.items) {
@@ -200,6 +203,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       variantChoices: item.variantChoices && item.variantChoices.length > 0 ? item.variantChoices : undefined,
       modifierChoices: item.modifierChoices && item.modifierChoices.length > 0 ? item.modifierChoices : undefined,
       lineTotal,
+      notes: item.notes || undefined,
     });
   }
 
@@ -285,6 +289,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       variantChoices: item.variantChoices ?? null,
       modifierChoices: item.modifierChoices ?? null,
       lineTotal: item.lineTotal,
+      notes: item.notes ?? null,
     })),
   );
 

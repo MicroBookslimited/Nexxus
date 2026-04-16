@@ -57,6 +57,7 @@ export const orderItemsTable = pgTable("order_items", {
     priceAdjustment: number;
   }>>(),
   lineTotal: real("line_total").notNull(),
+  notes: text("notes"),
 });
 
 export const heldOrdersTable = pgTable("held_orders", {

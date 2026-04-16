@@ -105,6 +105,7 @@ export type CreateOrderBodyItemsItem = {
   discountAmount?: number;
   variantChoices?: ChoiceItem[];
   modifierChoices?: ChoiceItem[];
+  notes?: string;
 };
 
 export type CreateOrderBodyDiscountType =

@@ -32,7 +32,7 @@ import {
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
-  ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight,
+  ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -63,6 +63,7 @@ type CartItem = {
   effectivePrice: number;
   quantity: number;
   itemDiscount: number;
+  itemNote?: string;
   variantChoices: ChoiceItem[];
   modifierChoices: ChoiceItem[];
 };
@@ -623,6 +624,8 @@ export function POS() {
     }
   };
 
+  const [editingNoteKey, setEditingNoteKey] = useState<string | null>(null);
+
   const updateQuantity = (cartKey: string, delta: number) => {
     setCart((prev) =>
       prev.map((item) =>
@@ -631,8 +634,17 @@ export function POS() {
     );
   };
 
+  const updateItemNote = (cartKey: string, note: string) => {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.cartKey === cartKey ? { ...item, itemNote: note || undefined } : item,
+      ),
+    );
+  };
+
   const removeFromCart = (cartKey: string) => {
     setCart((prev) => prev.filter((item) => item.cartKey !== cartKey));
+    setEditingNoteKey((k) => (k === cartKey ? null : k));
   };
 
   const subtotal = cart.reduce((sum, item) => sum + item.effectivePrice * item.quantity - item.itemDiscount, 0);
@@ -778,6 +790,7 @@ export function POS() {
           discountAmount: item.itemDiscount || undefined,
           variantChoices: item.variantChoices.length > 0 ? item.variantChoices : undefined,
           modifierChoices: item.modifierChoices.length > 0 ? item.modifierChoices : undefined,
+          notes: item.itemNote || undefined,
         })),
         splitCardAmount: paymentMethod === "split" ? splitCardAmount : undefined,
         splitCashAmount: paymentMethod === "split" ? splitCashAmount : undefined,
@@ -874,6 +887,7 @@ export function POS() {
             discountAmount: item.itemDiscount || undefined,
             variantChoices: item.variantChoices.length > 0 ? item.variantChoices : undefined,
             modifierChoices: item.modifierChoices.length > 0 ? item.modifierChoices : undefined,
+            notes: item.itemNote || undefined,
           })),
           splitCardAmount: paymentMethod === "split" ? splitCardAmount : undefined,
           splitCashAmount: paymentMethod === "split" ? splitCashAmount : undefined,
@@ -917,6 +931,7 @@ export function POS() {
             discountAmount: item.itemDiscount || undefined,
             variantChoices: item.variantChoices.length > 0 ? item.variantChoices : undefined,
             modifierChoices: item.modifierChoices.length > 0 ? item.modifierChoices : undefined,
+            notes: item.itemNote || undefined,
           })),
           discountType: discountType ?? undefined,
           discountAmount: discountAmount > 0 ? discountAmount : undefined,
@@ -1386,8 +1401,41 @@ export function POS() {
                           <Button size="icon" variant="outline" className="h-5 w-5 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:border-red-500" onClick={() => updateQuantity(item.cartKey, -1)}><Minus className="h-2.5 w-2.5" /></Button>
                           <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
                           <Button size="icon" variant="outline" className="h-5 w-5 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500" onClick={() => updateQuantity(item.cartKey, 1)}><Plus className="h-2.5 w-2.5" /></Button>
+                          <button
+                            onClick={() => setEditingNoteKey((k) => k === item.cartKey ? null : item.cartKey)}
+                            title="Add item note"
+                            className={`ml-1 p-0.5 rounded transition-colors ${item.itemNote || editingNoteKey === item.cartKey ? "text-amber-400" : "text-muted-foreground/50 hover:text-muted-foreground"}`}
+                          >
+                            <StickyNote className="h-3 w-3" />
+                          </button>
                           <span className="ml-auto text-xs font-mono font-semibold">{formatCurrency(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
                         </div>
+                        {item.itemNote && editingNoteKey !== item.cartKey && (
+                          <p className="text-[10px] text-amber-400/80 italic mt-1 leading-snug truncate">
+                            "{item.itemNote}"
+                          </p>
+                        )}
+                        {editingNoteKey === item.cartKey && (
+                          <div className="mt-1.5 flex gap-1">
+                            <Input
+                              autoFocus
+                              className="h-6 text-[11px] flex-1 px-1.5 py-0"
+                              placeholder="Item note…"
+                              maxLength={100}
+                              value={item.itemNote ?? ""}
+                              onChange={(e) => updateItemNote(item.cartKey, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === "Escape") setEditingNoteKey(null);
+                              }}
+                            />
+                            <button
+                              onClick={() => { updateItemNote(item.cartKey, ""); setEditingNoteKey(null); }}
+                              className="text-[10px] text-muted-foreground hover:text-destructive transition-colors px-1"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   ))
@@ -1603,9 +1651,14 @@ export function POS() {
             ) : (
               <div className="space-y-0.5 text-xs">
                 {cart.map((item) => (
-                  <div key={item.cartKey} className="flex justify-between text-foreground">
-                    <span className="truncate max-w-[150px]">{item.quantity}× {item.productName}</span>
-                    <span className="font-mono shrink-0 ml-1">{fmtNum(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
+                  <div key={item.cartKey}>
+                    <div className="flex justify-between text-foreground">
+                      <span className="truncate max-w-[150px]">{item.quantity}× {item.productName}</span>
+                      <span className="font-mono shrink-0 ml-1">{fmtNum(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
+                    </div>
+                    {item.itemNote && (
+                      <p className="text-[9px] text-amber-400/70 italic pl-3 -mt-0.5 truncate">↳ {item.itemNote}</p>
+                    )}
                   </div>
                 ))}
                 <div className="pt-1.5 mt-1 border-t border-border space-y-0.5">
