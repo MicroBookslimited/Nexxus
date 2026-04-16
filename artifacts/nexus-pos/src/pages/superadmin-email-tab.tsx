@@ -153,9 +153,27 @@ function TestEmailModal({
             </div>
           </div>
           {result && (
-            <div className={`flex items-start gap-2 p-3 rounded-lg text-sm ${result.ok ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
-              {result.ok ? <CheckCircle size={15} className="shrink-0 mt-0.5" /> : <XCircle size={15} className="shrink-0 mt-0.5" />}
-              {result.msg}
+            <div className={`rounded-lg text-sm overflow-hidden ${result.ok ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
+              {result.ok ? (
+                <div className="flex items-start gap-2 p-3">
+                  <CheckCircle size={15} className="shrink-0 mt-0.5" />
+                  <span>{result.msg}</span>
+                </div>
+              ) : (() => {
+                const pe = parseZeptoError(result.msg);
+                return (
+                  <div className="p-3">
+                    <div className="flex items-start gap-2">
+                      <XCircle size={15} className="shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-semibold">{pe.summary}</div>
+                        {pe.code && <div className="text-xs opacity-70">Code: {pe.code}</div>}
+                        {pe.detail && <div className="text-xs opacity-70">{pe.detail}</div>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -172,6 +190,28 @@ function TestEmailModal({
       </div>
     </div>
   );
+}
+
+/* ─── Parse ZeptoMail errors into human-readable text ─── */
+function parseZeptoError(raw: string): { summary: string; code?: string; detail?: string } {
+  try {
+    const jsonStart = raw.indexOf("{");
+    if (jsonStart !== -1) {
+      const parsed = JSON.parse(raw.slice(jsonStart)) as {
+        error?: { code?: string; message?: string; details?: Array<{ code?: string; message?: string }> };
+        message?: string;
+        code?: string;
+      };
+      const inner = parsed.error ?? parsed;
+      const firstDetail = inner.details?.[0];
+      return {
+        summary: firstDetail?.message ?? inner.message ?? "Unknown error",
+        code: firstDetail?.code ?? inner.code,
+        detail: inner.message && firstDetail?.message ? inner.message : undefined,
+      };
+    }
+  } catch { /* fall through */ }
+  return { summary: raw };
 }
 
 /* ─── Standalone Connection Test Modal ─── */
@@ -197,6 +237,8 @@ function ConnectionTestModal({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const parsedError = result && !result.ok ? parseZeptoError(result.msg) : null;
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-[#1a2332] border border-[#2a3a55] rounded-2xl w-full max-w-md">
@@ -209,7 +251,7 @@ function ConnectionTestModal({ onClose }: { onClose: () => void }) {
             <X size={16} />
           </button>
         </div>
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-3">
           <div>
             <label className="block text-sm text-[#94a3b8] mb-1">Recipient Email</label>
             <input
@@ -218,16 +260,40 @@ function ConnectionTestModal({ onClose }: { onClose: () => void }) {
               className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none"
             />
           </div>
-          {result && (
-            <div className={`p-3 rounded-lg text-sm ${result.ok ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
-              <div className="flex items-start gap-2">
-                {result.ok ? <CheckCircle size={15} className="shrink-0 mt-0.5" /> : <XCircle size={15} className="shrink-0 mt-0.5" />}
-                <span className="break-all">{result.msg}</span>
+          {result?.ok && (
+            <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-green-500/10 border border-green-500/20 text-green-400">
+              <CheckCircle size={15} className="shrink-0 mt-0.5" />
+              <div>
+                <div className="font-semibold">Email delivered successfully</div>
+                <div className="text-xs opacity-80 mt-0.5">Message ID: {result.msg.replace("Delivered! Message ID: ", "")}</div>
+                {result.ip && <div className="text-xs opacity-70 mt-1">Server IP: <span className="font-mono">{result.ip}</span></div>}
+              </div>
+            </div>
+          )}
+          {result && !result.ok && parsedError && (
+            <div className="rounded-lg text-sm bg-red-500/10 border border-red-500/20 text-red-400 overflow-hidden">
+              <div className="flex items-start gap-2 p-3">
+                <XCircle size={15} className="shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <div className="font-semibold">{parsedError.summary}</div>
+                  {parsedError.code && <div className="text-xs opacity-70 mt-0.5">Code: {parsedError.code}</div>}
+                  {parsedError.detail && <div className="text-xs opacity-70 mt-0.5">{parsedError.detail}</div>}
+                </div>
               </div>
               {result.ip && (
-                <div className="mt-2 pt-2 border-t border-current/20 text-xs opacity-80">
-                  Server outbound IP: <strong className="font-mono">{result.ip}</strong>
-                  {!result.ok && <span className="block mt-0.5 text-yellow-400">Ensure this IP is whitelisted in ZeptoMail → Mail Agent settings.</span>}
+                <div className="px-3 pb-3 pt-0">
+                  <div className="bg-[#0f1729]/60 rounded-lg p-2.5 text-xs">
+                    <div className="text-[#94a3b8] mb-1">Server outbound IP to whitelist:</div>
+                    <div className="font-mono text-white text-sm font-bold tracking-wide">{result.ip}</div>
+                    <div className="text-yellow-400 mt-1.5">Add this IP in ZeptoMail → Mail Agents → your agent → Allowed IPs</div>
+                  </div>
+                </div>
+              )}
+              {!result.ip && (
+                <div className="px-3 pb-3">
+                  <div className="text-xs text-yellow-400 bg-yellow-400/10 rounded p-2">
+                    Visit <span className="font-mono">/api/outbound-ip</span> to find your server IP, then add it in ZeptoMail → Mail Agents → Allowed IPs
+                  </div>
                 </div>
               )}
             </div>
