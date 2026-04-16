@@ -136,6 +136,27 @@ function SplashScreen() {
             Smarter Operations. Stronger Business.
           </p>
         </div>
+
+        {/* Progress bar */}
+        <div className="flex flex-col items-center gap-2 mt-2">
+          <div className="relative w-56 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <motion.div
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{ background: "linear-gradient(90deg, #3b82f6, #22d3ee)" }}
+              initial={{ width: "0%" }}
+              animate={{ width: "100%" }}
+              transition={{ duration: 4.6, ease: "linear", delay: 0.3 }}
+            />
+            {/* Shimmer overlay */}
+            <motion.div
+              className="absolute inset-y-0 w-16 rounded-full"
+              style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent)" }}
+              animate={{ x: ["-64px", "224px"] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+            />
+          </div>
+          <p className="text-[10px] tracking-widest text-white/25 uppercase">Loading…</p>
+        </div>
       </motion.div>
     </motion.div>
   );
