@@ -109,18 +109,34 @@ function SplashScreen() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black"
+      transition={{ duration: 0.5 }}
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
+      style={{ background: "#0f1729" }}
     >
-      <motion.img
-        src="/splash-screen.png"
-        alt="NEXXUS POS"
-        initial={{ scale: 1.04, opacity: 0 }}
+      <motion.div
+        initial={{ scale: 0.85, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.97, opacity: 0 }}
+        exit={{ scale: 0.9, opacity: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
-        className="w-full h-full object-cover"
-      />
+        className="flex flex-col items-center gap-6"
+      >
+        <img
+          src="/splash-logo.png"
+          alt="NEXXUS POS"
+          className="w-40 h-40 drop-shadow-2xl"
+        />
+        <div className="flex flex-col items-center gap-1 text-center">
+          <h1 className="text-4xl font-extrabold tracking-widest text-white uppercase">
+            NEXXUS <span style={{ color: "#3b82f6" }}>POS</span>
+          </h1>
+          <p className="text-base font-semibold text-white/90 mt-1">
+            Your Business. <span style={{ color: "#22d3ee" }}>Connected.</span>
+          </p>
+          <p className="text-xs tracking-[0.2em] text-white/40 mt-2 uppercase">
+            Smarter Operations. Stronger Business.
+          </p>
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
