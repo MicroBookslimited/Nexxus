@@ -132,6 +132,8 @@ export const marketingCampaignsTable = pgTable("marketing_campaigns", {
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   sentAt: timestamp("sent_at", { withTimezone: true }),
+  resumedAt: timestamp("resumed_at", { withTimezone: true }),
+  resumeCount: integer("resume_count").notNull().default(0),
 });
 
 export const marketingRecipientsTable = pgTable("marketing_recipients", {

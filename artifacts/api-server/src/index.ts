@@ -5,7 +5,7 @@ import { sendDailyDigest } from "./routes/email";
 import { getSetting } from "./routes/settings";
 import { db } from "@workspace/db";
 import { tenantAdminUsersTable, tenantsTable, marketingCampaignsTable } from "@workspace/db/schema";
-import { sql, and, eq, notExists } from "drizzle-orm";
+import { sql, and, eq, inArray, notExists } from "drizzle-orm";
 import {
   runDigestForAllTenants,
   runLowStockAlertsForAllTenants,
@@ -67,6 +67,18 @@ async function resumeInterruptedCampaigns() {
 
     const ids = stuckCampaigns.map((c) => c.id);
     logger.info({ campaignIds: ids }, "Resuming interrupted marketing campaigns");
+
+    // Mark only the campaigns we actually identified as stuck so the UI can
+    // distinguish a recovery send from a fresh one. Scoping by id avoids
+    // mislabeling a brand-new send that may have started between the SELECT
+    // above and this UPDATE.
+    await db
+      .update(marketingCampaignsTable)
+      .set({
+        resumedAt: new Date(),
+        resumeCount: sql`${marketingCampaignsTable.resumeCount} + 1`,
+      })
+      .where(inArray(marketingCampaignsTable.id, ids));
 
     // Delegate every stuck campaign to the shared sender. It handles both cases:
     //  • pending recipients remain  → sends them, then settles counts + status

@@ -101,7 +101,7 @@ export function SuperadminMarketingTab() {
 
   // Detail / progress
   const [detail, setDetail] = useState<{ campaign: MarketingCampaign; recipients: MarketingRecipient[] } | null>(null);
-  const [progress, setProgress] = useState<Record<number, { sent: number; failed: number; pending: number; opened: number; clicked: number; status: string }>>({});
+  const [progress, setProgress] = useState<Record<number, { sent: number; failed: number; pending: number; opened: number; clicked: number; status: string; resumedAt: string | null; resumeCount: number }>>({});
   const pollRef = useRef<number | null>(null);
 
   const showToast = (kind: "ok" | "err", msg: string) => {
@@ -418,6 +418,10 @@ export function SuperadminMarketingTab() {
                   const failed = live?.failed ?? c.failedCount;
                   const pct = total > 0 ? Math.round(((sent + failed) / total) * 100) : 0;
                   const status = live?.status ?? c.status;
+                  const resumedAt = live?.resumedAt ?? c.resumedAt;
+                  const resumeCount = live?.resumeCount ?? c.resumeCount;
+                  const isRecovering = status === "sending" && !!resumedAt;
+                  const wasRecovered = status !== "sending" && resumeCount > 0;
                   const openRate = sent > 0 ? Math.round((c.openCount / sent) * 100) : null;
                   const clickRate = sent > 0 ? Math.round((c.clickCount / sent) * 100) : null;
                   return (
@@ -425,17 +429,31 @@ export function SuperadminMarketingTab() {
                       <td className="px-4 py-3 text-white max-w-xs truncate">{c.subject}</td>
                       <td className="px-4 py-3 text-[#94a3b8] hidden md:table-cell capitalize">{c.audience}</td>
                       <td className="px-4 py-3">
-                        <StatusPill status={status} />
+                        <div className="flex flex-col gap-1 items-start">
+                          <StatusPill status={isRecovering ? "recovering" : status} />
+                          {wasRecovered && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border bg-violet-500/15 text-violet-300 border-violet-500/30"
+                              title={`Auto-resumed after a server restart${resumedAt ? ` at ${new Date(resumedAt).toLocaleString()}` : ""}${resumeCount > 1 ? ` · ${resumeCount} resumes` : ""}`}
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              Recovered{resumeCount > 1 ? ` ×${resumeCount}` : ""}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 min-w-[140px]">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 h-1.5 bg-[#0f1729] rounded-full overflow-hidden">
-                            <div className={`h-full transition-all ${status === "failed" ? "bg-red-500" : "bg-[#3b82f6]"}`} style={{ width: `${pct}%` }} />
+                            <div className={`h-full transition-all ${status === "failed" ? "bg-red-500" : isRecovering ? "bg-violet-500" : "bg-[#3b82f6]"}`} style={{ width: `${pct}%` }} />
                           </div>
                           <span className="text-xs text-[#94a3b8] tabular-nums">{pct}%</span>
                         </div>
                         <div className="text-[10px] text-[#64748b] mt-1">
                           {sent}/{total} sent {failed > 0 && <span className="text-red-400">· {failed} failed</span>}
+                          {isRecovering && (
+                            <span className="text-violet-400"> · resumed {resumedAt ? new Date(resumedAt).toLocaleTimeString() : ""}</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell">
@@ -552,6 +570,14 @@ export function SuperadminMarketingTab() {
                 color="text-purple-400"
               />
               <Stat label="Status" value={detail.campaign.status} />
+              {detail.campaign.resumeCount > 0 && (
+                <Stat
+                  label="Recovery"
+                  value={detail.campaign.resumeCount === 1 ? "Resumed once" : `Resumed ×${detail.campaign.resumeCount}`}
+                  sub={detail.campaign.resumedAt ? `Last: ${new Date(detail.campaign.resumedAt).toLocaleString()}` : undefined}
+                  color="text-violet-400"
+                />
+              )}
             </div>
             <div className="bg-[#0f1729] rounded p-3 text-sm">
               <div><span className="text-[#64748b]">Subject:</span> <span className="text-white">{detail.campaign.subject}</span></div>
@@ -612,6 +638,7 @@ function StatusPill({ status }: { status: string }) {
   const map: Record<string, { color: string; icon: React.ElementType }> = {
     sent: { color: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", icon: CheckCircle2 },
     sending: { color: "bg-blue-500/15 text-blue-400 border-blue-500/30", icon: Loader2 },
+    recovering: { color: "bg-violet-500/15 text-violet-300 border-violet-500/30", icon: RefreshCw },
     pending: { color: "bg-amber-500/15 text-amber-400 border-amber-500/30", icon: Clock },
     failed: { color: "bg-red-500/15 text-red-400 border-red-500/30", icon: XCircle },
     partial: { color: "bg-orange-500/15 text-orange-400 border-orange-500/30", icon: AlertTriangle },
@@ -621,7 +648,7 @@ function StatusPill({ status }: { status: string }) {
   const Icon = m.icon;
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${m.color} capitalize`}>
-      <Icon className={`h-3 w-3 ${status === "sending" ? "animate-spin" : ""}`} />
+      <Icon className={`h-3 w-3 ${status === "sending" || status === "recovering" ? "animate-spin" : ""}`} />
       {status}
     </span>
   );

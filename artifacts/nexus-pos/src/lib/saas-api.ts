@@ -280,6 +280,7 @@ export interface MarketingCampaign {
   audience: string; status: string; totalRecipients: number; sentCount: number;
   failedCount: number; openCount: number; clickCount: number;
   errorMessage: string | null; createdAt: string; sentAt: string | null;
+  resumedAt: string | null; resumeCount: number;
 }
 
 export interface MarketingRecipient {
@@ -301,7 +302,7 @@ export const superadminMarketingCampaign = (id: number) =>
   api<{ campaign: MarketingCampaign; recipients: MarketingRecipient[] }>(`/superadmin/marketing/campaigns/${id}`, { headers: superadminAuthHeaders() });
 
 export const superadminMarketingProgress = (id: number) =>
-  api<{ status: string; total: number; sent: number; failed: number; pending: number; opened: number; clicked: number }>(`/superadmin/marketing/campaigns/${id}/progress`, { headers: superadminAuthHeaders() });
+  api<{ status: string; total: number; sent: number; failed: number; pending: number; opened: number; clicked: number; resumedAt: string | null; resumeCount: number }>(`/superadmin/marketing/campaigns/${id}/progress`, { headers: superadminAuthHeaders() });
 
 export const superadminMarketingTest = (data: { to: string; subject: string; htmlBody: string; fromName: string; fromAddress: string }) =>
   api<{ success: boolean; messageId?: string }>("/superadmin/marketing/test", {

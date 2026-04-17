@@ -237,6 +237,8 @@ router.get("/superadmin/marketing/campaigns/:id/progress", async (req, res): Pro
     pending: Number(counts?.pending ?? 0),
     opened: Number(counts?.opened ?? 0),
     clicked: Number(counts?.clicked ?? 0),
+    resumedAt: campaign.resumedAt,
+    resumeCount: campaign.resumeCount,
   });
 });
 
