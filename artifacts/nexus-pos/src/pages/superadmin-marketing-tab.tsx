@@ -8,10 +8,13 @@ import {
   superadminMarketingStatus, superadminMarketingAudience, superadminMarketingCampaigns,
   superadminMarketingCampaign, superadminMarketingProgress, superadminMarketingTest,
   superadminMarketingSend, superadminMarketingDelete, superadminMarketingExport,
-  superadminMarketingUnsubscribes,
+  superadminMarketingUnsubscribes, ApiError,
   superadminMarketingPause, superadminMarketingResume, superadminMarketingCancel,
   type MarketingAudience, type MarketingCampaign, type MarketingRecipient, type MarketingUnsubscribe, type MarketingLinkBreakdownEntry,
 } from "@/lib/saas-api";
+
+const TERMINAL_STATUSES: ReadonlySet<string> = new Set(["sent", "partial", "failed", "cancelled"]);
+const isTerminalStatus = (s: string): boolean => TERMINAL_STATUSES.has(s);
 
 const AUDIENCE_OPTIONS: { value: MarketingAudience; label: string; description: string }[] = [
   { value: "all", label: "Everyone", description: "All business owners + admin users" },
@@ -98,6 +101,7 @@ export function SuperadminMarketingTab() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [resendWarn, setResendWarn] = useState<MarketingCampaign | null>(null);
   const [testTo, setTestTo] = useState("");
   const [testing, setTesting] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
@@ -244,9 +248,33 @@ export function SuperadminMarketingTab() {
       setHtmlBody("");
       void loadAll();
     } catch (e) {
-      showToast("err", e instanceof Error ? e.message : "Send failed");
+      // The API returns 409 with a clear, user-friendly message when an operator
+      // tries to re-send a campaign that already finished. Surface that message
+      // verbatim instead of letting it look like a generic crash.
+      if (e instanceof ApiError && e.status === 409) {
+        showToast("err", e.message);
+      } else {
+        showToast("err", e instanceof Error ? e.message : "Send failed");
+      }
     }
     setSending(false);
+  };
+
+  // Pre-fill the composer with a finished campaign's content so the operator
+  // can send it again as a *new* campaign (which is the only safe way to email
+  // the same audience again — re-sending the original would skip everyone who
+  // already received it).
+  const cloneIntoComposer = (c: MarketingCampaign) => {
+    setSubject(c.subject);
+    setHtmlBody(c.htmlBody);
+    setFromName(c.fromName);
+    setFromAddress(c.fromAddress);
+    setAudience(c.audience as MarketingAudience);
+    setResendWarn(null);
+    showToast("ok", "Loaded into composer as a new campaign — review and send.");
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -772,6 +800,15 @@ export function SuperadminMarketingTab() {
                               </button>
                             </>
                           )}
+                          {isTerminalStatus(status) && (
+                            <button
+                              onClick={() => setResendWarn(c)}
+                              title="Re-send campaign"
+                              className="p-1.5 text-[#94a3b8] hover:text-amber-400 hover:bg-[#0f1729] rounded"
+                            >
+                              <Send className="h-4 w-4" />
+                            </button>
+                          )}
                           <button onClick={() => openDetail(c.id)} title="View details"
                             className="p-1.5 text-[#94a3b8] hover:text-white hover:bg-[#0f1729] rounded">
                             <Eye className="h-4 w-4" />
@@ -832,6 +869,52 @@ export function SuperadminMarketingTab() {
               <button onClick={handleSend} disabled={sending}
                 className="bg-[#3b82f6] hover:bg-[#2563eb] text-white px-4 py-2 rounded-md text-sm font-semibold flex items-center gap-2">
                 {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Sending…</> : <><Send className="h-4 w-4" />Confirm & Send</>}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Re-send warning modal ──
+          The API rejects re-sending any campaign in a terminal status with a
+          409 to protect recipients from duplicate emails. We catch the click
+          here BEFORE the request is made and explain the situation, so the
+          operator understands they need to create a new campaign instead. */}
+      {resendWarn && (
+        <Modal title="This campaign already finished" onClose={() => setResendWarn(null)} maxWidth="max-w-md">
+          <div className="space-y-4">
+            <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg p-3 text-sm text-amber-200 flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0 text-amber-400" />
+              <div className="space-y-1">
+                <p className="font-semibold text-amber-100">
+                  Campaign #{resendWarn.id} is in status <span className="capitalize">"{resendWarn.status}"</span>.
+                </p>
+                <p>
+                  Re-sending it would <strong>not</strong> re-email the recipients — the system blocks that to prevent duplicate sends.
+                </p>
+                <p>
+                  To email the same audience again, create a <strong>new campaign</strong>. We can pre-fill the composer with this campaign's content so you can review and send it as a fresh send.
+                </p>
+              </div>
+            </div>
+            <div className="bg-[#0f1729] rounded-md p-3 text-xs space-y-1">
+              <div><span className="text-[#64748b]">Subject:</span> <span className="text-white">{resendWarn.subject}</span></div>
+              <div><span className="text-[#64748b]">Audience:</span> <span className="text-white capitalize">{resendWarn.audience}</span></div>
+              <div><span className="text-[#64748b]">Original send:</span> <span className="text-white">{resendWarn.sentAt ? new Date(resendWarn.sentAt).toLocaleString() : "—"}</span></div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setResendWarn(null)}
+                className="px-4 py-2 rounded-md text-sm text-[#94a3b8] hover:text-white border border-[#2a3a55] hover:bg-[#0f1729]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => cloneIntoComposer(resendWarn)}
+                className="bg-[#3b82f6] hover:bg-[#2563eb] text-white px-4 py-2 rounded-md text-sm font-semibold flex items-center gap-2"
+              >
+                <Sparkles className="h-4 w-4" />
+                Use as template for new campaign
               </button>
             </div>
           </div>

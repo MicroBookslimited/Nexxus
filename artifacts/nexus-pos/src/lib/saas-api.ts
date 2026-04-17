@@ -11,12 +11,14 @@ function superadminAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   public readonly body: Record<string, unknown>;
-  constructor(msg: string, body: Record<string, unknown>) {
+  public readonly status: number;
+  constructor(msg: string, body: Record<string, unknown>, status: number) {
     super(msg);
     this.name = "ApiError";
     this.body = body;
+    this.status = status;
   }
 }
 
@@ -29,7 +31,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({ error: resp.statusText })) as Record<string, unknown>;
     const msg = [body["error"], body["details"]].filter(Boolean).join(" — ");
-    throw new ApiError(msg || resp.statusText, body);
+    throw new ApiError(msg || resp.statusText, body, resp.status);
   }
   return resp.json() as Promise<T>;
 }
