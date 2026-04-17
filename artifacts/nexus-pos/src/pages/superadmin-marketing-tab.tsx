@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Megaphone, Send, Users, Mail, AlertTriangle, CheckCircle2, XCircle, Clock,
-  Eye, Trash2, RefreshCw, Loader2, Sparkles, FileText, MousePointerClick, Webhook, Copy, KeyRound, Download,
+  Eye, Trash2, RefreshCw, Loader2, Sparkles, FileText, MousePointerClick, Webhook, Copy, KeyRound, Download, UserX,
 } from "lucide-react";
 import {
   superadminMarketingStatus, superadminMarketingAudience, superadminMarketingCampaigns,
   superadminMarketingCampaign, superadminMarketingProgress, superadminMarketingTest,
   superadminMarketingSend, superadminMarketingDelete, superadminMarketingExport,
-  type MarketingAudience, type MarketingCampaign, type MarketingRecipient, type MarketingLinkBreakdownEntry,
+  superadminMarketingUnsubscribes,
+  type MarketingAudience, type MarketingCampaign, type MarketingRecipient, type MarketingUnsubscribe, type MarketingLinkBreakdownEntry,
 } from "@/lib/saas-api";
 
 const AUDIENCE_OPTIONS: { value: MarketingAudience; label: string; description: string }[] = [
@@ -100,8 +101,15 @@ export function SuperadminMarketingTab() {
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
   // Detail / progress
-  const [detail, setDetail] = useState<{ campaign: MarketingCampaign; recipients: MarketingRecipient[]; linkBreakdown?: MarketingLinkBreakdownEntry[] } | null>(null);
+  const [detail, setDetail] = useState<{ campaign: MarketingCampaign; recipients: MarketingRecipient[]; unsubscribeCount: number; linkBreakdown?: MarketingLinkBreakdownEntry[] } | null>(null);
+
+  // Opt-outs
+  const [unsubscribes, setUnsubscribes] = useState<MarketingUnsubscribe[]>([]);
+  const [unsubscribesTotal, setUnsubscribesTotal] = useState<number>(0);
+  const [unsubscribesLoading, setUnsubscribesLoading] = useState(false);
+  const [unsubscribesFilter, setUnsubscribesFilter] = useState("");
   const [progress, setProgress] = useState<Record<number, { sent: number; failed: number; pending: number; opened: number; clicked: number; status: string; resumedAt: string | null; resumeCount: number }>>({});
+  const [campaignOptOuts, setCampaignOptOuts] = useState<Record<number, number>>({});
   const pollRef = useRef<number | null>(null);
 
   const showToast = (kind: "ok" | "err", msg: string) => {
@@ -115,6 +123,20 @@ export function SuperadminMarketingTab() {
       const [s, c] = await Promise.all([superadminMarketingStatus(), superadminMarketingCampaigns()]);
       setStatus(s);
       setCampaigns(c);
+      // Fetch per-campaign opt-out counts in parallel so the table column is populated.
+      const results = await Promise.all(
+        c.map(async camp => {
+          try {
+            const d = await superadminMarketingCampaign(camp.id);
+            return [camp.id, d.unsubscribeCount] as const;
+          } catch {
+            return [camp.id, 0] as const;
+          }
+        }),
+      );
+      const map: Record<number, number> = {};
+      for (const [id, n] of results) map[id] = n;
+      setCampaignOptOuts(map);
     } catch (e) {
       showToast("err", e instanceof Error ? e.message : "Failed to load");
     }
@@ -135,8 +157,21 @@ export function SuperadminMarketingTab() {
     setAudienceLoading(false);
   }, []);
 
+  const loadUnsubscribes = useCallback(async () => {
+    setUnsubscribesLoading(true);
+    try {
+      const r = await superadminMarketingUnsubscribes();
+      setUnsubscribes(r.unsubscribes);
+      setUnsubscribesTotal(r.total);
+    } catch (e) {
+      showToast("err", e instanceof Error ? e.message : "Failed to load opt-outs");
+    }
+    setUnsubscribesLoading(false);
+  }, []);
+
   useEffect(() => { void loadAll(); }, [loadAll]);
   useEffect(() => { void loadAudience(audience); }, [audience, loadAudience]);
+  useEffect(() => { void loadUnsubscribes(); }, [loadUnsubscribes]);
 
   // Poll progress for any "sending" campaigns
   useEffect(() => {
@@ -446,6 +481,71 @@ export function SuperadminMarketingTab() {
         </div>
       </div>
 
+      {/* ── Opt-outs ── */}
+      <div className="bg-[#1a2332] border border-[#2a3a55] rounded-xl">
+        <div className="p-4 sm:p-6 border-b border-[#2a3a55] flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <UserX className="h-5 w-5 text-amber-400" />
+            <h2 className="text-lg font-bold text-white">Opt-outs</h2>
+            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30">
+              {unsubscribesTotal} {unsubscribesTotal === 1 ? "person" : "people"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              value={unsubscribesFilter}
+              onChange={e => setUnsubscribesFilter(e.target.value)}
+              placeholder="Filter by email…"
+              className="bg-[#0f1729] border border-[#2a3a55] rounded-md px-3 py-1.5 text-xs text-white placeholder:text-[#475569] focus:border-[#3b82f6] focus:outline-none"
+            />
+            <button onClick={() => void loadUnsubscribes()} className="text-[#94a3b8] hover:text-white p-1">
+              <RefreshCw className={`h-4 w-4 ${unsubscribesLoading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+        </div>
+        <p className="px-4 sm:px-6 pt-3 text-xs text-[#94a3b8]">
+          These addresses are automatically excluded from every audience. They opted out via the unsubscribe link in a marketing email.
+        </p>
+        {unsubscribes.length === 0 ? (
+          <div className="p-8 text-center text-[#64748b] text-sm">
+            {unsubscribesLoading ? "Loading…" : "No one has opted out yet."}
+          </div>
+        ) : (
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-[#1a2332]">
+                <tr className="text-left text-xs text-[#64748b] uppercase tracking-wide border-b border-[#2a3a55]">
+                  <th className="px-4 py-3 font-medium">Email</th>
+                  <th className="px-4 py-3 font-medium">Opted out</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unsubscribes
+                  .filter(u => !unsubscribesFilter.trim() || u.email.toLowerCase().includes(unsubscribesFilter.trim().toLowerCase()))
+                  .map(u => (
+                    <tr key={u.id} className="border-b border-[#2a3a55]/50 hover:bg-[#0f1729]/50">
+                      <td className="px-4 py-2 text-white">
+                        <span className="inline-flex items-center gap-2">
+                          <Mail className="h-3 w-3 text-[#475569]" />
+                          {u.email}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-[#94a3b8] text-xs">
+                        {new Date(u.unsubscribedAt).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+            {unsubscribesTotal > unsubscribes.length && (
+              <div className="px-4 py-2 text-[10px] text-[#64748b] border-t border-[#2a3a55]">
+                Showing the {unsubscribes.length} most recent of {unsubscribesTotal} total opt-outs.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* ── Campaign history ── */}
       <div className="bg-[#1a2332] border border-[#2a3a55] rounded-xl">
         <div className="p-4 sm:p-6 border-b border-[#2a3a55] flex items-center justify-between">
@@ -469,6 +569,7 @@ export function SuperadminMarketingTab() {
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Progress</th>
                   <th className="px-4 py-3 font-medium hidden lg:table-cell">Opens / Clicks</th>
+                  <th className="px-4 py-3 font-medium hidden lg:table-cell">Opt-outs</th>
                   <th className="px-4 py-3 font-medium hidden sm:table-cell">Sent</th>
                   <th className="px-4 py-3 font-medium"></th>
                 </tr>
@@ -536,6 +637,23 @@ export function SuperadminMarketingTab() {
                         ) : (
                           <span className="text-[#475569] text-xs">—</span>
                         )}
+                      </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        {(() => {
+                          const n = campaignOptOuts[c.id];
+                          if (n === undefined) {
+                            return <span className="text-[#475569] text-xs">—</span>;
+                          }
+                          if (n === 0) {
+                            return <span className="text-[#475569] text-xs">0</span>;
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1 text-xs text-amber-300">
+                              <UserX className="h-3 w-3" />
+                              {n}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-[#94a3b8] hidden sm:table-cell text-xs">
                         {c.sentAt ? new Date(c.sentAt).toLocaleString() : "—"}
@@ -633,6 +751,14 @@ export function SuperadminMarketingTab() {
                 color="text-purple-400"
               />
               <Stat label="Status" value={detail.campaign.status} />
+              <Stat
+                label="Opt-outs"
+                value={detail.unsubscribeCount}
+                sub={detail.campaign.sentCount > 0
+                  ? `${((detail.unsubscribeCount / detail.campaign.sentCount) * 100).toFixed(1)}% of sent`
+                  : undefined}
+                color={detail.unsubscribeCount > 0 ? "text-amber-300" : "text-white"}
+              />
               {detail.campaign.resumeCount > 0 && (
                 <Stat
                   label="Recovery"

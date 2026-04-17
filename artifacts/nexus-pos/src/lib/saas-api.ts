@@ -303,8 +303,15 @@ export interface MarketingLinkBreakdownEntry {
   clickCount: number;
 }
 
+export interface MarketingUnsubscribe {
+  id: number; email: string; unsubscribedAt: string;
+}
+
 export const superadminMarketingCampaign = (id: number) =>
-  api<{ campaign: MarketingCampaign; recipients: MarketingRecipient[]; unsubscribeCount?: number; linkBreakdown?: MarketingLinkBreakdownEntry[] }>(`/superadmin/marketing/campaigns/${id}`, { headers: superadminAuthHeaders() });
+  api<{ campaign: MarketingCampaign; recipients: MarketingRecipient[]; unsubscribeCount: number; linkBreakdown?: MarketingLinkBreakdownEntry[] }>(`/superadmin/marketing/campaigns/${id}`, { headers: superadminAuthHeaders() });
+
+export const superadminMarketingUnsubscribes = () =>
+  api<{ total: number; unsubscribes: MarketingUnsubscribe[] }>("/superadmin/marketing/unsubscribes", { headers: superadminAuthHeaders() });
 
 export const superadminMarketingProgress = (id: number) =>
   api<{ status: string; total: number; sent: number; failed: number; pending: number; opened: number; clicked: number; resumedAt: string | null; resumeCount: number }>(`/superadmin/marketing/campaigns/${id}/progress`, { headers: superadminAuthHeaders() });
