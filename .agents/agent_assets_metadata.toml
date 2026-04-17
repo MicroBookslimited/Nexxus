@@ -12,3 +12,9 @@ id = "DFKAuTMBxxKzzSsuHvyCm"
 uri = "file://exports/PowerTranz-FAC-Integration-Manual.pdf"
 type = "pdf"
 title = "PowerTranz / FAC Integration Manual"
+
+[[outputs]]
+id = "bOVX6urwYiNZEpVd8KiIj"
+uri = "file://attached_assets/nexxus-pos-chatfuel-faq.md"
+type = "text"
+title = "NEXXUS POS — Master Chatfuel FAQ"
