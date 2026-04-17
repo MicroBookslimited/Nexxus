@@ -34,3 +34,6 @@ packages = ["fontconfig", "ghostscript", "glib", "harfbuzz", "pango"]
 [userenv.shared]
 SUPERADMIN_EMAIL = "accounts@microbookssolutions.com"
 SUPERADMIN_PASSWORD = "@Mbooks2026*"
+
+[userenv.production]
+APP_BASE_URL = "https://nexxus.microbookspos.com"
