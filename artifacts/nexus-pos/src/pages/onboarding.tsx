@@ -647,7 +647,7 @@ export function Onboarding() {
                   type="button"
                   onClick={() => {
                     try { localStorage.setItem(HARDWARE_CHOICE_KEY, "order"); } catch { /* ignore */ }
-                    navigate("/app/store?onboarding=1");
+                    navigate("/store?onboarding=1");
                   }}
                   className="w-full text-left border border-[#2a3a55] hover:border-[#3b82f6] bg-[#0f1729] hover:bg-[#3b82f6]/5 rounded-xl p-4 transition-all group"
                 >
@@ -671,7 +671,7 @@ export function Onboarding() {
                   type="button"
                   onClick={() => {
                     try { localStorage.setItem(HARDWARE_CHOICE_KEY, "byod"); } catch { /* ignore */ }
-                    navigate("/app/hardware?onboarding=1");
+                    navigate("/hardware?onboarding=1");
                   }}
                   className="w-full text-left border border-[#2a3a55] hover:border-purple-500 bg-[#0f1729] hover:bg-purple-500/5 rounded-xl p-4 transition-all group"
                 >
