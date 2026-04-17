@@ -31,18 +31,29 @@
     <style>
       /* Force Chatfuel widget to bottom-left */
       iframe[src*="chatfuel"],
+      iframe[src*="chatfuel.com"],
+      iframe[src*="panel.chatfuel"],
       div[id*="chatfuel"],
       div[class*="chatfuel"],
       div[id*="cf-"],
       div[class*="cf-"],
+      div[id*="Chatfuel"],
+      div[class*="Chatfuel"],
+      div[class*="launcher" i],
+      div[id*="launcher" i],
+      div[class*="Launcher"],
+      div[id*="Launcher"],
       #cf-widget-container,
       .cf-widget-container,
       [data-chatfuel],
       .chatfuel-widget,
-      #chatfuel-widget {
+      #chatfuel-widget,
+      .chatfuel-launcher,
+      .nx-cf-host {
         left: 20px !important;
         right: auto !important;
         bottom: 20px !important;
+        top: auto !important;
         position: fixed !important;
       }
 
@@ -182,15 +193,35 @@
     <script>
       (function () {
         var CHATFUEL_SELECTORS =
-          'iframe[src*="chatfuel"], div[id*="chatfuel"], div[class*="chatfuel"], ' +
-          'div[id*="cf-"], div[class*="cf-"], #cf-widget-container, .cf-widget-container';
+          'iframe[src*="chatfuel"], iframe[src*="panel.chatfuel"], ' +
+          'div[id*="chatfuel" i], div[class*="chatfuel" i], ' +
+          'div[id*="cf-"], div[class*="cf-"], ' +
+          'div[id*="launcher" i], div[class*="launcher" i], ' +
+          '#cf-widget-container, .cf-widget-container';
 
         /* Reposition Chatfuel widget to bottom-left if it loads */
         function reposition(el) {
+          if (!el || !el.style) return;
           el.style.setProperty('left',     '20px',  'important');
           el.style.setProperty('right',    'auto',  'important');
           el.style.setProperty('bottom',   '20px',  'important');
+          el.style.setProperty('top',      'auto',  'important');
           el.style.setProperty('position', 'fixed', 'important');
+        }
+
+        /* Walk up to find any positioned ancestor (the wrapper Chatfuel actually places) */
+        function repositionWithAncestors(el) {
+          reposition(el);
+          var node = el.parentElement;
+          var hops = 0;
+          while (node && node !== document.body && hops < 6) {
+            var cs = window.getComputedStyle(node);
+            if (cs.position === 'fixed' || cs.position === 'absolute') {
+              reposition(node);
+            }
+            node = node.parentElement;
+            hops++;
+          }
         }
 
         var chatfuelFound = false;
@@ -199,14 +230,29 @@
           var els = document.querySelectorAll(CHATFUEL_SELECTORS);
           if (els.length > 0) {
             chatfuelFound = true;
-            els.forEach(reposition);
+            els.forEach(repositionWithAncestors);
+          }
+          /* Also scan top-level fixed elements for any chatfuel iframe inside */
+          var topLevel = document.body ? document.body.children : [];
+          for (var i = 0; i < topLevel.length; i++) {
+            var node = topLevel[i];
+            if (node.id === 'root' || node.id === 'nx-chat-fallback') continue;
+            var cs = window.getComputedStyle(node);
+            if ((cs.position === 'fixed' || cs.position === 'absolute') &&
+                node.querySelector &&
+                node.querySelector('iframe[src*="chatfuel"], iframe[src*="panel.chatfuel"]')) {
+              chatfuelFound = true;
+              reposition(node);
+            }
           }
         }
 
         var observer = new MutationObserver(scanAndFix);
         observer.observe(document.body, { childList: true, subtree: true });
+        setTimeout(scanAndFix, 1000);
         setTimeout(scanAndFix, 2000);
-        setTimeout(scanAndFix, 5000);
+        setTimeout(scanAndFix, 4000);
+        setTimeout(scanAndFix, 8000);
 
         /* After 6 s — if Chatfuel never injected anything, show our fallback */
         setTimeout(function () {
