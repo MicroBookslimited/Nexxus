@@ -149,11 +149,27 @@ export function Onboarding() {
     }
   }
 
-  function handleStep3(e: React.FormEvent) {
+  async function handleStep3(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedPlan) { setError("Please select a plan."); return; }
     setError("");
     setPaypalRendered(false);
+
+    // Free plan: skip the Payment step and go straight to PIN setup.
+    const isFree = (selectedPlan.priceMonthly ?? 0) === 0 && (selectedPlan.priceAnnual ?? 0) === 0;
+    if (isFree) {
+      setIsLoading(true);
+      try {
+        await saasUpdateOnboarding(5, { planSlug: selectedPlan.slug });
+        setStep(5);
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     setStep(4);
   }
 
@@ -221,11 +237,13 @@ export function Onboarding() {
   }
 
   const planColors: Record<string, string> = {
+    free: "border-green-500/30 hover:border-green-500",
     starter: "border-[#3b82f6]/30 hover:border-[#3b82f6]",
     professional: "border-purple-500/30 hover:border-purple-500",
     enterprise: "border-amber-500/30 hover:border-amber-500",
   };
   const planAccents: Record<string, string> = {
+    free: "bg-green-500/10 text-green-400",
     starter: "bg-[#3b82f6]/10 text-[#3b82f6]",
     professional: "bg-purple-500/10 text-purple-400",
     enterprise: "bg-amber-500/10 text-amber-400",
@@ -404,12 +422,21 @@ export function Onboarding() {
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0 ml-4">
-                        <div className="text-2xl font-bold text-white">
-                          ${billingCycle === "annual" ? Math.round(plan.priceAnnual / 12) : plan.priceMonthly}
-                        </div>
-                        <div className="text-xs text-[#475569]">/month</div>
-                        {billingCycle === "annual" && (
-                          <div className="text-xs text-green-400">billed ${plan.priceAnnual}/yr</div>
+                        {plan.priceMonthly === 0 && plan.priceAnnual === 0 ? (
+                          <>
+                            <div className="text-2xl font-bold text-green-400">Free</div>
+                            <div className="text-xs text-[#475569]">forever</div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-2xl font-bold text-white">
+                              ${billingCycle === "annual" ? Math.round(plan.priceAnnual / 12) : plan.priceMonthly}
+                            </div>
+                            <div className="text-xs text-[#475569]">/month</div>
+                            {billingCycle === "annual" && (
+                              <div className="text-xs text-green-400">billed ${plan.priceAnnual}/yr</div>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>

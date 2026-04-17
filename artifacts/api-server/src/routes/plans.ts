@@ -8,6 +8,20 @@ const ALL_MODULES = ["pos", "reports", "inventory", "customers", "staff", "cash"
 
 const SEED_PLANS = [
   {
+    name: "Free",
+    slug: "free",
+    description: "Try NEXXUS POS with no commitment — no credit card required",
+    priceMonthly: 0,
+    priceAnnual: 0,
+    maxStaff: 2,
+    maxProducts: 25,
+    maxLocations: 1,
+    maxInvoices: 50,
+    modules: JSON.stringify(["pos", "cash", "customers"]),
+    features: JSON.stringify(["POS Terminal", "Cash Management", "Up to 25 Products", "2 Staff Accounts", "Email Receipts", "Community Support"]),
+    isActive: true,
+  },
+  {
     name: "Starter",
     slug: "starter",
     description: "Perfect for small businesses getting started",
