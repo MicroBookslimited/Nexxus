@@ -479,7 +479,7 @@ export function POS() {
       cartBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [cart.length]);
-  const [paymentMethod, setPaymentMethod] = useState<"card" | "cash" | "split" | "credit">("card");
+  const [paymentMethod, setPaymentMethod] = useState<"card" | "cash" | "split" | "credit">("cash");
 
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
