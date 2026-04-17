@@ -281,6 +281,7 @@ export interface MarketingCampaign {
   failedCount: number; openCount: number; clickCount: number;
   errorMessage: string | null; createdAt: string; sentAt: string | null;
   resumedAt: string | null; resumeCount: number;
+  resumeAlertedAt: string | null;
 }
 
 export interface MarketingRecipient {

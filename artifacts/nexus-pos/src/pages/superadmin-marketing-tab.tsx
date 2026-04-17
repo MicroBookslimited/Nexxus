@@ -109,6 +109,13 @@ export function SuperadminMarketingTab() {
   const [unsubscribesLoading, setUnsubscribesLoading] = useState(false);
   const [unsubscribesFilter, setUnsubscribesFilter] = useState("");
   const [progress, setProgress] = useState<Record<number, { sent: number; failed: number; pending: number; opened: number; clicked: number; status: string; resumedAt: string | null; resumeCount: number }>>({});
+
+  const RESUME_ALERT_THRESHOLD = 3;
+  const stuckCampaigns = campaigns.filter(c => {
+    const live = progress[c.id];
+    const count = live?.resumeCount ?? c.resumeCount;
+    return count >= RESUME_ALERT_THRESHOLD;
+  });
   const [campaignOptOuts, setCampaignOptOuts] = useState<Record<number, number>>({});
   const pollRef = useRef<number | null>(null);
 
@@ -273,6 +280,46 @@ export function SuperadminMarketingTab() {
 
   return (
     <div className="space-y-6">
+      {/* Resume-loop alert banner: a campaign that keeps auto-resuming after
+          server restarts is almost certainly stuck. Surface it loudly so the
+          superadmin actually notices, not just as a small badge in the table. */}
+      {stuckCampaigns.length > 0 && (
+        <div className="rounded-lg border-2 border-red-500/60 bg-red-500/10 p-4 flex items-start gap-3">
+          <AlertTriangle className="h-6 w-6 text-red-400 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-red-300 font-bold text-sm">
+              {stuckCampaigns.length === 1
+                ? "1 campaign keeps auto-resuming after server restarts"
+                : `${stuckCampaigns.length} campaigns keep auto-resuming after server restarts`}
+            </p>
+            <p className="text-[#fca5a5] text-xs mt-1">
+              These have been auto-resumed {RESUME_ALERT_THRESHOLD}+ times, which usually means a crash loop, a stuck recipient, or a provider outage — not a normal restart. Investigate before more recipients are affected.
+            </p>
+            <ul className="mt-2 space-y-1">
+              {stuckCampaigns.map(c => {
+                const live = progress[c.id];
+                const count = live?.resumeCount ?? c.resumeCount;
+                return (
+                  <li key={c.id} className="text-xs text-white flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-[#fca5a5]">#{c.id}</span>
+                    <span className="truncate max-w-md">{c.subject}</span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/30 text-red-100 border border-red-500/50">
+                      <RefreshCw className="h-3 w-3" /> resumed ×{count}
+                    </span>
+                    <button
+                      onClick={() => openDetail(c.id)}
+                      className="text-[10px] text-red-200 underline hover:text-white"
+                    >
+                      view
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {/* Provider status */}
       <div className={`rounded-lg border p-4 flex items-start gap-3 ${
         status?.configured
