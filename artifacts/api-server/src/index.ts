@@ -4,13 +4,14 @@ import cron from "node-cron";
 import { sendDailyDigest } from "./routes/email";
 import { getSetting } from "./routes/settings";
 import { db } from "@workspace/db";
-import { tenantAdminUsersTable, tenantsTable } from "@workspace/db/schema";
+import { tenantAdminUsersTable, tenantsTable, marketingCampaignsTable } from "@workspace/db/schema";
 import { sql, and, eq, notExists } from "drizzle-orm";
 import {
   runDigestForAllTenants,
   runLowStockAlertsForAllTenants,
   runSubscriptionExpiryAlerts,
 } from "./jobs/scheduled-jobs";
+import { sendPendingForCampaign } from "./lib/campaign-sender";
 
 async function migratePrimaryAdminUsers() {
   try {
@@ -54,6 +55,33 @@ async function migratePrimaryAdminUsers() {
   }
 }
 
+async function resumeInterruptedCampaigns() {
+  try {
+    // Find every campaign stuck in 'sending' status.
+    const stuckCampaigns = await db
+      .select({ id: marketingCampaignsTable.id })
+      .from(marketingCampaignsTable)
+      .where(eq(marketingCampaignsTable.status, "sending"));
+
+    if (stuckCampaigns.length === 0) return;
+
+    const ids = stuckCampaigns.map((c) => c.id);
+    logger.info({ campaignIds: ids }, "Resuming interrupted marketing campaigns");
+
+    // Delegate every stuck campaign to the shared sender. It handles both cases:
+    //  • pending recipients remain  → sends them, then settles counts + status
+    //  • no pending recipients left → immediately settles counts + status
+    // Campaigns run concurrently; each sender paces itself to ~8/s.
+    for (const id of ids) {
+      void sendPendingForCampaign(id).catch((err) => {
+        logger.error({ err, campaignId: id }, "Failed to resume marketing campaign");
+      });
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to check for interrupted marketing campaigns");
+  }
+}
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
@@ -76,6 +104,7 @@ app.listen(port, async (err) => {
 
   logger.info({ port }, "Server listening");
   await migratePrimaryAdminUsers();
+  await resumeInterruptedCampaigns();
 });
 
 /* ───── Daily Digest Cron ───── */

@@ -3,6 +3,7 @@ import { db, marketingCampaignsTable, marketingRecipientsTable, tenantsTable, te
 import { eq, desc, sql } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { sendMarketingMail, isMarketingMailerConfigured } from "../lib/marketing-mail";
+import { sendPendingForCampaign } from "../lib/campaign-sender";
 
 const router: IRouter = Router();
 
@@ -176,46 +177,8 @@ router.post("/superadmin/marketing/send", async (req, res): Promise<void> => {
   // Respond immediately — sending happens in background.
   res.json({ success: true, campaign, queued: recipients.length });
 
-  // Fire-and-forget background sender. Sequential with small pacing to respect
-  // Resend's rate limits (10 req/s by default).
-  void (async () => {
-    let sent = 0;
-    let failed = 0;
-    const recRows = await db.select().from(marketingRecipientsTable).where(eq(marketingRecipientsTable.campaignId, campaign.id));
-    for (const r of recRows) {
-      try {
-        const result = await sendMarketingMail({
-          to: r.email,
-          subject,
-          html: htmlBody,
-          fromName: fromName || "NEXXUS POS",
-          fromAddress,
-        });
-        await db.update(marketingRecipientsTable)
-          .set({ status: "sent", messageId: result.messageId ?? null, sentAt: new Date() })
-          .where(eq(marketingRecipientsTable.id, r.id));
-        sent++;
-      } catch (err) {
-        await db.update(marketingRecipientsTable)
-          .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err) })
-          .where(eq(marketingRecipientsTable.id, r.id));
-        failed++;
-      }
-      // Pace to ~8 per second to stay under Resend's 10/s limit.
-      await new Promise(r => setTimeout(r, 130));
-      if ((sent + failed) % 25 === 0) {
-        await db.update(marketingCampaignsTable)
-          .set({ sentCount: sent, failedCount: failed })
-          .where(eq(marketingCampaignsTable.id, campaign.id));
-      }
-    }
-    await db.update(marketingCampaignsTable).set({
-      sentCount: sent,
-      failedCount: failed,
-      status: failed === 0 ? "sent" : sent === 0 ? "failed" : "partial",
-      sentAt: new Date(),
-    }).where(eq(marketingCampaignsTable.id, campaign.id));
-  })().catch(err => {
+  // Fire-and-forget: delegate to the shared sender so recovery on restart works.
+  void sendPendingForCampaign(campaign.id).catch(err => {
     void db.update(marketingCampaignsTable).set({
       status: "failed",
       errorMessage: err instanceof Error ? err.message : String(err),
