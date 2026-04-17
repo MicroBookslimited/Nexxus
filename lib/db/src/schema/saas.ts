@@ -127,6 +127,8 @@ export const marketingCampaignsTable = pgTable("marketing_campaigns", {
   totalRecipients: integer("total_recipients").notNull().default(0),
   sentCount: integer("sent_count").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),
+  openCount: integer("open_count").notNull().default(0),
+  clickCount: integer("click_count").notNull().default(0),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   sentAt: timestamp("sent_at", { withTimezone: true }),
@@ -141,6 +143,10 @@ export const marketingRecipientsTable = pgTable("marketing_recipients", {
   messageId: text("message_id"),
   errorMessage: text("error_message"),
   sentAt: timestamp("sent_at", { withTimezone: true }),
+  openedAt: timestamp("opened_at", { withTimezone: true }),
+  clickedAt: timestamp("clicked_at", { withTimezone: true }),
+  openCount: integer("open_count").notNull().default(0),
+  clickCount: integer("click_count").notNull().default(0),
 });
 
 export type MarketingCampaign = typeof marketingCampaignsTable.$inferSelect;

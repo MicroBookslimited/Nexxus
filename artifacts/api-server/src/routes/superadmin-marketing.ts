@@ -1,7 +1,8 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { db, marketingCampaignsTable, marketingRecipientsTable, tenantsTable, tenantAdminUsersTable } from "@workspace/db";
 import { eq, desc, sql } from "drizzle-orm";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { sendMarketingMail, isMarketingMailerConfigured } from "../lib/marketing-mail";
 import { sendPendingForCampaign } from "../lib/campaign-sender";
 
@@ -204,6 +205,8 @@ router.get("/superadmin/marketing/campaigns/:id/progress", async (req, res): Pro
     sent: sql<number>`count(*) filter (where status = 'sent')`,
     failed: sql<number>`count(*) filter (where status = 'failed')`,
     pending: sql<number>`count(*) filter (where status = 'pending')`,
+    opened: sql<number>`count(*) filter (where open_count > 0)`,
+    clicked: sql<number>`count(*) filter (where click_count > 0)`,
   }).from(marketingRecipientsTable).where(eq(marketingRecipientsTable.campaignId, id));
   res.json({
     status: campaign.status,
@@ -211,7 +214,106 @@ router.get("/superadmin/marketing/campaigns/:id/progress", async (req, res): Pro
     sent: Number(counts?.sent ?? 0),
     failed: Number(counts?.failed ?? 0),
     pending: Number(counts?.pending ?? 0),
+    opened: Number(counts?.opened ?? 0),
+    clicked: Number(counts?.clicked ?? 0),
   });
+});
+
+/* ─── Resend webhook — receives email.opened / email.clicked events ─── */
+router.post("/marketing/webhook", async (req, res): Promise<void> => {
+  // Optional Svix-style signature verification if RESEND_WEBHOOK_SECRET is set.
+  const secret = process.env["RESEND_WEBHOOK_SECRET"];
+  if (secret) {
+    const svixId = req.headers["svix-id"] as string | undefined;
+    const svixTimestamp = req.headers["svix-timestamp"] as string | undefined;
+    const svixSignature = req.headers["svix-signature"] as string | undefined;
+
+    if (!svixId || !svixTimestamp || !svixSignature) {
+      res.status(401).json({ error: "Missing Svix signature headers" });
+      return;
+    }
+
+    // Validate timestamp to prevent replay attacks (5 minute window).
+    const tsSeconds = parseInt(svixTimestamp, 10);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (Math.abs(nowSeconds - tsSeconds) > 300) {
+      res.status(401).json({ error: "Timestamp too old" });
+      return;
+    }
+
+    // Use raw body bytes captured before JSON parsing to match Svix canonical bytes.
+    const rawBodyStr = ((req as Request & { rawBody?: Buffer }).rawBody ?? Buffer.alloc(0)).toString("utf-8");
+    const toSign = `${svixId}.${svixTimestamp}.${rawBodyStr}`;
+    const secretBytes = Buffer.from(secret.startsWith("whsec_") ? secret.slice(6) : secret, "base64");
+    const expectedHmac = crypto.createHmac("sha256", secretBytes).update(toSign).digest("base64");
+
+    const signatures = svixSignature.split(" ");
+    const valid = signatures.some(sig => {
+      const parts = sig.split(",");
+      return parts.length === 2 && parts[1] === expectedHmac;
+    });
+
+    if (!valid) {
+      res.status(401).json({ error: "Invalid signature" });
+      return;
+    }
+  }
+
+  type ResendWebhookEvent = {
+    type: string;
+    data: { email_id?: string; [key: string]: unknown };
+  };
+
+  const event = req.body as ResendWebhookEvent;
+  const emailId = event?.data?.email_id;
+
+  if (!emailId || (event.type !== "email.opened" && event.type !== "email.clicked")) {
+    res.json({ received: true, ignored: true });
+    return;
+  }
+
+  try {
+    const now = new Date();
+
+    if (event.type === "email.opened") {
+      // Atomic recipient counter increment; set opened_at only on first open.
+      const updated = await db.update(marketingRecipientsTable).set({
+        openedAt: sql`COALESCE(${marketingRecipientsTable.openedAt}, ${now.toISOString()})`,
+        openCount: sql`${marketingRecipientsTable.openCount} + 1`,
+      }).where(eq(marketingRecipientsTable.messageId, emailId)).returning({
+        id: marketingRecipientsTable.id,
+        campaignId: marketingRecipientsTable.campaignId,
+        wasFirstOpen: sql<boolean>`(${marketingRecipientsTable.openCount} - 1) = 0`,
+      });
+
+      if (updated.length > 0 && updated[0].wasFirstOpen) {
+        await db.update(marketingCampaignsTable).set({
+          openCount: sql`${marketingCampaignsTable.openCount} + 1`,
+        }).where(eq(marketingCampaignsTable.id, updated[0].campaignId));
+      }
+    } else if (event.type === "email.clicked") {
+      // Atomic recipient counter increment; set clicked_at only on first click.
+      const updated = await db.update(marketingRecipientsTable).set({
+        clickedAt: sql`COALESCE(${marketingRecipientsTable.clickedAt}, ${now.toISOString()})`,
+        clickCount: sql`${marketingRecipientsTable.clickCount} + 1`,
+      }).where(eq(marketingRecipientsTable.messageId, emailId)).returning({
+        id: marketingRecipientsTable.id,
+        campaignId: marketingRecipientsTable.campaignId,
+        wasFirstClick: sql<boolean>`(${marketingRecipientsTable.clickCount} - 1) = 0`,
+      });
+
+      if (updated.length > 0 && updated[0].wasFirstClick) {
+        await db.update(marketingCampaignsTable).set({
+          clickCount: sql`${marketingCampaignsTable.clickCount} + 1`,
+        }).where(eq(marketingCampaignsTable.id, updated[0].campaignId));
+      }
+    }
+
+    res.json({ received: true, processed: true });
+  } catch (err) {
+    console.error("[marketing webhook]", err);
+    res.status(500).json({ error: "Internal error" });
+  }
 });
 
 export default router;

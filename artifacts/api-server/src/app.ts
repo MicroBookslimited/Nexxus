@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
@@ -26,6 +26,21 @@ app.use(
   }),
 );
 app.use(cors());
+
+// Capture raw body bytes for the Resend webhook route before the JSON parser
+// consumes the stream — needed for signature verification against exact wire bytes.
+app.use("/api/marketing/webhook", express.raw({ type: "application/json" }), (req: Request, _res: Response, next: NextFunction) => {
+  if (Buffer.isBuffer(req.body)) {
+    (req as Request & { rawBody: Buffer }).rawBody = req.body;
+    try {
+      req.body = JSON.parse(req.body.toString("utf-8")) as unknown;
+    } catch {
+      req.body = {};
+    }
+  }
+  next();
+});
+
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 

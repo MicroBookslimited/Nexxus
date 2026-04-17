@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Megaphone, Send, Users, Mail, AlertTriangle, CheckCircle2, XCircle, Clock,
-  Eye, Trash2, RefreshCw, Loader2, Sparkles, FileText,
+  Eye, Trash2, RefreshCw, Loader2, Sparkles, FileText, MousePointerClick,
 } from "lucide-react";
 import {
   superadminMarketingStatus, superadminMarketingAudience, superadminMarketingCampaigns,
@@ -101,7 +101,7 @@ export function SuperadminMarketingTab() {
 
   // Detail / progress
   const [detail, setDetail] = useState<{ campaign: MarketingCampaign; recipients: MarketingRecipient[] } | null>(null);
-  const [progress, setProgress] = useState<Record<number, { sent: number; failed: number; pending: number; status: string }>>({});
+  const [progress, setProgress] = useState<Record<number, { sent: number; failed: number; pending: number; opened: number; clicked: number; status: string }>>({});
   const pollRef = useRef<number | null>(null);
 
   const showToast = (kind: "ok" | "err", msg: string) => {
@@ -405,6 +405,7 @@ export function SuperadminMarketingTab() {
                   <th className="px-4 py-3 font-medium hidden md:table-cell">Audience</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Progress</th>
+                  <th className="px-4 py-3 font-medium hidden lg:table-cell">Opens / Clicks</th>
                   <th className="px-4 py-3 font-medium hidden sm:table-cell">Sent</th>
                   <th className="px-4 py-3 font-medium"></th>
                 </tr>
@@ -417,6 +418,8 @@ export function SuperadminMarketingTab() {
                   const failed = live?.failed ?? c.failedCount;
                   const pct = total > 0 ? Math.round(((sent + failed) / total) * 100) : 0;
                   const status = live?.status ?? c.status;
+                  const openRate = sent > 0 ? Math.round((c.openCount / sent) * 100) : null;
+                  const clickRate = sent > 0 ? Math.round((c.clickCount / sent) * 100) : null;
                   return (
                     <tr key={c.id} className="border-b border-[#2a3a55] hover:bg-[#0f1729]/50">
                       <td className="px-4 py-3 text-white max-w-xs truncate">{c.subject}</td>
@@ -434,6 +437,24 @@ export function SuperadminMarketingTab() {
                         <div className="text-[10px] text-[#64748b] mt-1">
                           {sent}/{total} sent {failed > 0 && <span className="text-red-400">· {failed} failed</span>}
                         </div>
+                      </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        {openRate !== null || clickRate !== null ? (
+                          <div className="text-xs space-y-0.5">
+                            <div className="flex items-center gap-1 text-blue-400">
+                              <Eye className="h-3 w-3" />
+                              <span>{openRate ?? 0}%</span>
+                              <span className="text-[#475569]">({c.openCount})</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-purple-400">
+                              <MousePointerClick className="h-3 w-3" />
+                              <span>{clickRate ?? 0}%</span>
+                              <span className="text-[#475569]">({c.clickCount})</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-[#475569] text-xs">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-[#94a3b8] hidden sm:table-cell text-xs">
                         {c.sentAt ? new Date(c.sentAt).toLocaleString() : "—"}
@@ -510,10 +531,26 @@ export function SuperadminMarketingTab() {
       {detail && (
         <Modal title={`Campaign #${detail.campaign.id}`} onClose={() => setDetail(null)} maxWidth="max-w-3xl">
           <div className="space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
               <Stat label="Total" value={detail.campaign.totalRecipients} />
               <Stat label="Sent" value={detail.campaign.sentCount} color="text-emerald-400" />
               <Stat label="Failed" value={detail.campaign.failedCount} color="text-red-400" />
+              <Stat
+                label="Open Rate"
+                value={detail.campaign.sentCount > 0
+                  ? `${Math.round((detail.campaign.openCount / detail.campaign.sentCount) * 100)}%`
+                  : "—"}
+                sub={`${detail.campaign.openCount} opened`}
+                color="text-blue-400"
+              />
+              <Stat
+                label="Click Rate"
+                value={detail.campaign.sentCount > 0
+                  ? `${Math.round((detail.campaign.clickCount / detail.campaign.sentCount) * 100)}%`
+                  : "—"}
+                sub={`${detail.campaign.clickCount} clicked`}
+                color="text-purple-400"
+              />
               <Stat label="Status" value={detail.campaign.status} />
             </div>
             <div className="bg-[#0f1729] rounded p-3 text-sm">
@@ -527,6 +564,8 @@ export function SuperadminMarketingTab() {
                   <tr className="text-left text-[#64748b] border-b border-[#2a3a55]">
                     <th className="px-3 py-2">Email</th>
                     <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Opens</th>
+                    <th className="px-3 py-2">Clicks</th>
                     <th className="px-3 py-2">Error</th>
                   </tr>
                 </thead>
@@ -535,6 +574,16 @@ export function SuperadminMarketingTab() {
                     <tr key={r.id} className="border-b border-[#2a3a55]/50">
                       <td className="px-3 py-1.5 text-white">{r.email}</td>
                       <td className="px-3 py-1.5"><StatusPill status={r.status} /></td>
+                      <td className="px-3 py-1.5">
+                        {r.openCount > 0
+                          ? <span className="text-blue-400 flex items-center gap-1"><Eye className="h-3 w-3" />{r.openCount}</span>
+                          : <span className="text-[#475569]">—</span>}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {r.clickCount > 0
+                          ? <span className="text-purple-400 flex items-center gap-1"><MousePointerClick className="h-3 w-3" />{r.clickCount}</span>
+                          : <span className="text-[#475569]">—</span>}
+                      </td>
                       <td className="px-3 py-1.5 text-red-400 truncate max-w-xs">{r.errorMessage ?? ""}</td>
                     </tr>
                   ))}
@@ -578,11 +627,12 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: string | number; color?: string }) {
+function Stat({ label, value, color, sub }: { label: string; value: string | number; color?: string; sub?: string }) {
   return (
     <div className="bg-[#0f1729] rounded-md p-3 border border-[#2a3a55]">
       <div className="text-[10px] text-[#64748b] uppercase tracking-wide">{label}</div>
       <div className={`text-lg font-bold mt-0.5 capitalize ${color ?? "text-white"}`}>{value}</div>
+      {sub && <div className="text-[10px] text-[#64748b] mt-0.5">{sub}</div>}
     </div>
   );
 }
