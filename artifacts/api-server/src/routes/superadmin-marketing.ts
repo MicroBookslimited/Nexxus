@@ -262,6 +262,56 @@ router.post("/superadmin/marketing/send", async (req, res): Promise<void> => {
   });
 });
 
+/* ─── Export per-recipient engagement as CSV ─── */
+router.get("/superadmin/marketing/campaigns/:id/export", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid campaign id" }); return; }
+
+  const [campaign] = await db.select().from(marketingCampaignsTable).where(eq(marketingCampaignsTable.id, id)).limit(1);
+  if (!campaign) { res.status(404).json({ error: "Not found" }); return; }
+
+  const recipients = await db
+    .select({
+      email: marketingRecipientsTable.email,
+      name: marketingRecipientsTable.name,
+      status: marketingRecipientsTable.status,
+      openCount: marketingRecipientsTable.openCount,
+      clickCount: marketingRecipientsTable.clickCount,
+      openedAt: marketingRecipientsTable.openedAt,
+      clickedAt: marketingRecipientsTable.clickedAt,
+    })
+    .from(marketingRecipientsTable)
+    .where(eq(marketingRecipientsTable.campaignId, id))
+    .orderBy(desc(marketingRecipientsTable.id));
+
+  const escape = (val: unknown): string => {
+    if (val === null || val === undefined) return "";
+    const s = String(val);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const header = ["email", "name", "delivery_status", "open_count", "click_count", "first_opened_at", "first_clicked_at"];
+  const lines = [header.join(",")];
+  for (const r of recipients) {
+    lines.push([
+      escape(r.email),
+      escape(r.name ?? ""),
+      escape(r.status),
+      escape(r.openCount ?? 0),
+      escape(r.clickCount ?? 0),
+      escape(r.openedAt ? new Date(r.openedAt).toISOString() : ""),
+      escape(r.clickedAt ? new Date(r.clickedAt).toISOString() : ""),
+    ].join(","));
+  }
+  const csv = lines.join("\r\n") + "\r\n";
+
+  const filename = `campaign-${id}-engagement.csv`;
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(csv);
+});
+
 /* ─── Delete a campaign (cascade deletes recipients) ─── */
 router.delete("/superadmin/marketing/campaigns/:id", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;

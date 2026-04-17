@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Megaphone, Send, Users, Mail, AlertTriangle, CheckCircle2, XCircle, Clock,
-  Eye, Trash2, RefreshCw, Loader2, Sparkles, FileText, MousePointerClick, Webhook, Copy, KeyRound,
+  Eye, Trash2, RefreshCw, Loader2, Sparkles, FileText, MousePointerClick, Webhook, Copy, KeyRound, Download,
 } from "lucide-react";
 import {
   superadminMarketingStatus, superadminMarketingAudience, superadminMarketingCampaigns,
   superadminMarketingCampaign, superadminMarketingProgress, superadminMarketingTest,
-  superadminMarketingSend, superadminMarketingDelete,
+  superadminMarketingSend, superadminMarketingDelete, superadminMarketingExport,
   type MarketingAudience, type MarketingCampaign, type MarketingRecipient,
 } from "@/lib/saas-api";
 
@@ -222,6 +222,18 @@ export function SuperadminMarketingTab() {
     } catch (e) {
       showToast("err", e instanceof Error ? e.message : "Failed to load campaign");
     }
+  };
+
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async (id: number) => {
+    setExporting(true);
+    try {
+      await superadminMarketingExport(id);
+      showToast("ok", "Export downloaded");
+    } catch (e) {
+      showToast("err", e instanceof Error ? e.message : "Export failed");
+    }
+    setExporting(false);
   };
 
   return (
@@ -634,6 +646,16 @@ export function SuperadminMarketingTab() {
               <div><span className="text-[#64748b]">Subject:</span> <span className="text-white">{detail.campaign.subject}</span></div>
               <div><span className="text-[#64748b]">From:</span> <span className="text-white">{detail.campaign.fromName} &lt;{detail.campaign.fromAddress}&gt;</span></div>
               <div><span className="text-[#64748b]">Sent at:</span> <span className="text-white">{detail.campaign.sentAt ? new Date(detail.campaign.sentAt).toLocaleString() : "—"}</span></div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={() => handleExport(detail.campaign.id)}
+                disabled={exporting}
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded bg-[#0f1729] hover:bg-[#1a2332] border border-[#2a3a55] text-white disabled:opacity-50"
+              >
+                {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                Export CSV
+              </button>
             </div>
             <div className="max-h-80 overflow-y-auto border border-[#2a3a55] rounded">
               <table className="w-full text-xs">

@@ -317,6 +317,25 @@ export const superadminMarketingSend = (data: { subject: string; htmlBody: strin
 export const superadminMarketingDelete = (id: number) =>
   api<{ success: boolean }>(`/superadmin/marketing/campaigns/${id}`, { method: "DELETE", headers: superadminAuthHeaders() });
 
+export async function superadminMarketingExport(id: number): Promise<void> {
+  const resp = await fetch(`/api/superadmin/marketing/campaigns/${id}/export`, {
+    headers: superadminAuthHeaders(),
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({ error: resp.statusText })) as Record<string, unknown>;
+    throw new Error(typeof body["error"] === "string" ? body["error"] : resp.statusText);
+  }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `campaign-${id}-engagement.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /* ─── Types ─── */
 export interface Tenant {
   id: number; businessName: string; ownerName: string; email: string; phone?: string;
