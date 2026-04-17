@@ -39,6 +39,7 @@ import auditRouter from "./audit";
 import topupRouter from "./topup";
 import superadminMarketingRouter from "./superadmin-marketing";
 import marketingUnsubscribeRouter from "./marketing-unsubscribe";
+import scaleRouter from "./scale";
 
 const router: IRouter = Router();
 
@@ -82,5 +83,6 @@ router.use(auditRouter);
 router.use(topupRouter);
 router.use(superadminMarketingRouter);
 router.use(marketingUnsubscribeRouter);
+router.use(scaleRouter);
 
 export default router;

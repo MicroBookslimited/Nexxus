@@ -482,6 +482,90 @@ export interface AuditLog {
   createdAt: string;
 }
 
+/* ─── Weighing Scale ─── */
+export interface ScaleProduct {
+  id: number;
+  name: string;
+  category: string;
+  price: number;
+  barcode: string | null;
+  soldByWeight: boolean;
+  unitOfMeasure: string | null;
+  plu: string | null;
+}
+
+export interface WeightLabel {
+  id: number;
+  tenantId: number;
+  productId: number;
+  productName: string;
+  productPlu: string;
+  unitOfMeasure: string;
+  weightValue: number;
+  pricePerUnit: number;
+  totalPrice: number;
+  packDate: string | null;
+  expirationDate: string | null;
+  barcode: string;
+  status: "available" | "sold" | "voided";
+  createdByStaffId: number | null;
+  createdByStaffName: string | null;
+  soldOrderId: number | null;
+  createdAt: string;
+  soldAt: string | null;
+}
+
+/**
+ * Adds the `x-staff-id` header used by server-side staff-permission checks
+ * (e.g. `requireScaleStaff` in routes/scale.ts). Pass the active operator's
+ * staff id on any call that mutates scale data.
+ */
+function staffAuthHeaders(staffId?: number | null): Record<string, string> {
+  return { ...tenantAuthHeaders(), ...(staffId ? { "x-staff-id": String(staffId) } : {}) };
+}
+
+export const getScaleProducts = (weightOnly = false) =>
+  api<ScaleProduct[]>(`/scale/products${weightOnly ? "?weightOnly=1" : ""}`, { headers: tenantAuthHeaders() });
+
+export const updateScaleProductSettings = (
+  id: number,
+  data: { soldByWeight: boolean; unitOfMeasure?: "lb" | "kg" | "oz" | "g" },
+  staffId?: number,
+) =>
+  api<ScaleProduct>(`/scale/products/${id}`, {
+    method: "PATCH", body: JSON.stringify(data), headers: staffAuthHeaders(staffId),
+  });
+
+export const createWeightLabel = (data: { productId: number; weightValue: number; packDate?: string | null; expirationDate?: string | null; staffId?: number }) =>
+  api<WeightLabel>("/scale/labels", {
+    method: "POST", body: JSON.stringify(data), headers: staffAuthHeaders(data.staffId),
+  });
+
+export const listWeightLabels = (status: "available" | "sold" | "voided" | "reserved" = "available") =>
+  api<WeightLabel[]>(`/scale/labels?status=${status}`, { headers: tenantAuthHeaders() });
+
+export const lookupWeightLabel = (barcode: string) =>
+  api<{ source: "label" | "derived"; label: WeightLabel & { id: number | null } }>(
+    `/scale/labels/lookup/${encodeURIComponent(barcode)}`,
+    { headers: tenantAuthHeaders() },
+  );
+
+export const markWeightLabelsSold = (labelIds: number[], orderId?: number) =>
+  api<{ updated: number }>("/scale/labels/mark-sold", {
+    method: "POST", body: JSON.stringify({ labelIds, orderId }), headers: tenantAuthHeaders(),
+  });
+
+/** Releases reserved labels back to 'available' (cart removal / order failure). */
+export const releaseWeightLabels = (labelIds: number[]) =>
+  api<{ released: number }>("/scale/labels/release", {
+    method: "POST", body: JSON.stringify({ labelIds }), headers: tenantAuthHeaders(),
+  });
+
+export const voidWeightLabel = (id: number, staffId?: number) =>
+  api<{ success: boolean }>(`/scale/labels/${id}`, {
+    method: "DELETE", headers: staffAuthHeaders(staffId),
+  });
+
 export interface ImpersonationLog {
   id: number;
   superadminEmail: string;

@@ -34,7 +34,7 @@ import {
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote,
 } from "lucide-react";
-import { saasMe, TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { enqueueRequest } from "@/lib/offline-queue";
 import { useStaff } from "@/contexts/StaffContext";
@@ -611,9 +611,50 @@ export function POS() {
     setCustomizingProductId(null);
   };
 
+  // Tracks weight-label IDs currently in the cart, so they can be marked sold
+  // server-side once the order is created.
+  const scaleLabelIdsRef = useRef<number[]>([]);
+
+  const addWeightLabelToCart = async (barcode: string) => {
+    try {
+      const { label } = await lookupWeightLabel(barcode);
+      const cartKey = `wlbl:${label.id ?? barcode}:${Date.now()}`;
+      const display = `${label.productName} (${label.weightValue.toFixed(3)} ${label.unitOfMeasure})`;
+      setCart((prev) => [
+        ...prev,
+        {
+          cartKey,
+          productId: label.productId,
+          productName: display,
+          basePrice: label.totalPrice,
+          effectivePrice: label.totalPrice,
+          quantity: 1,
+          itemDiscount: 0,
+          variantChoices: [],
+          modifierChoices: [],
+        },
+      ]);
+      if (label.id) scaleLabelIdsRef.current.push(label.id);
+      toast({ title: "Weight item added", description: display });
+    } catch (err) {
+      toast({
+        title: "Barcode not recognised",
+        description: (err as Error).message || "No matching weight label found",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && searchTerm.trim()) {
-      const barcodeMatch = products?.find((p) => p.barcode === searchTerm.trim());
+      const code = searchTerm.trim();
+      // Weight-embedded EAN-13 barcode: starts with '2', exactly 13 digits.
+      if (/^2\d{12}$/.test(code)) {
+        void addWeightLabelToCart(code);
+        setSearchTerm("");
+        return;
+      }
+      const barcodeMatch = products?.find((p) => p.barcode === code);
       if (barcodeMatch) {
         handleProductTap(barcodeMatch);
         if (!barcodeMatch.hasVariants && !barcodeMatch.hasModifiers) {
@@ -643,6 +684,15 @@ export function POS() {
   };
 
   const removeFromCart = (cartKey: string) => {
+    // If the removed line corresponds to a server-reserved weight label,
+    // release the reservation so the label is available for another sale.
+    if (cartKey.startsWith("wlbl:")) {
+      const labelId = parseInt(cartKey.split(":")[1] ?? "", 10);
+      if (!isNaN(labelId) && scaleLabelIdsRef.current.includes(labelId)) {
+        scaleLabelIdsRef.current = scaleLabelIdsRef.current.filter((x) => x !== labelId);
+        void releaseWeightLabels([labelId]).catch(() => {});
+      }
+    }
     setCart((prev) => prev.filter((item) => item.cartKey !== cartKey));
     setEditingNoteKey((k) => (k === cartKey ? null : k));
   };
@@ -677,6 +727,7 @@ export function POS() {
 
   const resetCart = () => {
     setCart([]);
+    scaleLabelIdsRef.current = [];
     setDiscountType(null);
     setDiscountAmount(0);
     setDiscountAuthorizedBy(null);
@@ -906,12 +957,31 @@ export function POS() {
       },
       {
         onSuccess: (data) => {
+          // Mark any scanned weight labels as sold so they leave the active
+          // list. If this fails, surface a warning so a manager can reconcile.
+          if (scaleLabelIdsRef.current.length > 0) {
+            const ids = [...scaleLabelIdsRef.current];
+            const orderId = (data as { id?: number })?.id;
+            markWeightLabelsSold(ids, orderId).catch(() => {
+              toast({
+                title: "Weight label sync failed",
+                description: "The sale completed but one or more weight labels did not transition to sold. Please void them manually from the scale screen.",
+                variant: "destructive",
+              });
+            });
+          }
           setReceiptOrder(data);
           resetCart();
           queryClient.invalidateQueries({ queryKey: ["/api/kitchen"] });
           queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
         },
         onError: () => {
+          // Order failed — release any reserved labels so they can be re-sold.
+          if (scaleLabelIdsRef.current.length > 0) {
+            const ids = [...scaleLabelIdsRef.current];
+            scaleLabelIdsRef.current = [];
+            void releaseWeightLabels(ids).catch(() => {});
+          }
           toast({ title: "Payment Failed", description: "There was an error processing the payment.", variant: "destructive" });
         },
       },

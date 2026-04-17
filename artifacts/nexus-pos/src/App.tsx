@@ -39,6 +39,7 @@ import { MyHardware } from "@/pages/my-hardware";
 import StorePage from "@/pages/store";
 import { Register } from "@/pages/register";
 import { TopUp } from "@/pages/topup";
+import { ScalePage } from "@/pages/scale";
 import { Layout, PermissionGate } from "@/components/layout";
 
 // ─── Lazy section imports ───────────────────────────────────────────────────
@@ -154,6 +155,7 @@ function POSRouter() {
       <Route path="/cash"><ProtectedRoute component={CashManagement} permission="cash.open_session" /></Route>
       <Route path="/register"><ProtectedRoute component={Register} permission="reports.view" /></Route>
       <Route path="/topup"><ProtectedRoute component={TopUp} permission="pos.sale" /></Route>
+      <Route path="/scale"><ProtectedRoute component={ScalePage} permission="scale.use" /></Route>
       <Route path="/store"><ProtectedRoute component={StorePage} /></Route>
       <Route path="/settings"><ProtectedRoute component={AdminSettings} permission="settings.view" /></Route>
       <Route path="/subscription"><ProtectedRoute component={SubscriptionPage} permission="settings.manage" /></Route>

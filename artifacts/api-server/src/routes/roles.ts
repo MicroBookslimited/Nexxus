@@ -30,6 +30,7 @@ export const ALL_PERMISSIONS = [
   { key: "kitchen.manage",     label: "Manage Kitchen Orders",   category: "Kitchen" },
   { key: "settings.view",      label: "View Settings",           category: "Settings" },
   { key: "settings.manage",    label: "Manage Settings",         category: "Settings" },
+  { key: "scale.use",          label: "Use Weighing Scale & Print Labels", category: "Weighing Scale" },
 ];
 
 const ALL_KEYS = ALL_PERMISSIONS.map(p => p.key);
@@ -70,7 +71,7 @@ const SYSTEM_ROLES: { name: string; color: string; permissions: string[] }[] = [
   {
     name: "Inventory Clerk",
     color: "#10b981",
-    permissions: ["inventory.view","inventory.manage","reports.view","orders.view"],
+    permissions: ["inventory.view","inventory.manage","reports.view","orders.view","scale.use"],
   },
 ];
 
