@@ -156,15 +156,59 @@ router.post("/superadmin/marketing/test", async (req, res): Promise<void> => {
 router.post("/superadmin/marketing/send", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;
 
-  const { subject, htmlBody, fromName, fromAddress, audience } = req.body as {
-    subject: string; htmlBody: string; fromName: string; fromAddress: string; audience: Audience;
+  const { subject, htmlBody, fromName, fromAddress, audience, campaignId } = req.body as {
+    subject: string; htmlBody: string; fromName: string; fromAddress: string; audience: Audience; campaignId?: number;
   };
+
+  if (!isMarketingMailerConfigured()) {
+    res.status(503).json({ error: "Marketing email provider (Resend) is not configured. Set RESEND_API_KEY." }); return;
+  }
+
+  // Idempotency guard for manual re-triggers: if the caller supplied a
+  // campaignId, refuse to re-send any campaign that already reached a
+  // terminal status. This prevents recipients from getting duplicate emails
+  // if a superadmin accidentally re-fires a completed campaign.
+  if (typeof campaignId === "number" && Number.isFinite(campaignId)) {
+    const [existing] = await db
+      .select()
+      .from(marketingCampaignsTable)
+      .where(eq(marketingCampaignsTable.id, campaignId))
+      .limit(1);
+    if (!existing) {
+      res.status(404).json({ error: `Campaign ${campaignId} not found` });
+      return;
+    }
+    const TERMINAL_STATUSES = new Set(["sent", "partial", "failed", "cancelled"]);
+    if (TERMINAL_STATUSES.has(existing.status)) {
+      res.status(409).json({
+        error: `Campaign ${campaignId} has already finished sending (status: ${existing.status}). Re-sending is not allowed — create a new campaign instead to avoid duplicate emails to recipients.`,
+        status: existing.status,
+      });
+      return;
+    }
+    // Only campaigns in 'sending' status can be resumed. Anything else
+    // (e.g. 'draft' or an unknown state) is refused so the operator gets
+    // an explicit answer instead of a silent no-op from the sender.
+    if (existing.status !== "sending") {
+      res.status(409).json({
+        error: `Campaign ${campaignId} is in status '${existing.status}' and cannot be resumed. Only campaigns currently in 'sending' status can be re-triggered.`,
+        status: existing.status,
+      });
+      return;
+    }
+    // Resume an in-flight campaign by replaying its pending recipients.
+    res.json({ success: true, campaign: existing, resumed: true });
+    void sendPendingForCampaign(existing.id).catch(err => {
+      void db.update(marketingCampaignsTable).set({
+        status: "failed",
+        errorMessage: err instanceof Error ? err.message : String(err),
+      }).where(eq(marketingCampaignsTable.id, existing.id));
+    });
+    return;
+  }
 
   if (!subject || !htmlBody || !fromAddress) {
     res.status(400).json({ error: "Missing required fields (subject, htmlBody, fromAddress)" }); return;
-  }
-  if (!isMarketingMailerConfigured()) {
-    res.status(503).json({ error: "Marketing email provider (Resend) is not configured. Set RESEND_API_KEY." }); return;
   }
 
   const aud: Audience = (audience ?? "all") as Audience;

@@ -35,6 +35,18 @@ export async function sendPendingForCampaign(campaignId: number): Promise<void> 
     return;
   }
 
+  // Idempotency guard: only campaigns currently in 'sending' status should be
+  // processed. If the campaign already settled to a terminal status
+  // ('sent' / 'partial' / 'failed') or was cancelled, exit early so we never
+  // accidentally re-email recipients on a manual re-trigger or stale recovery.
+  if (campaign.status !== "sending") {
+    logger.warn(
+      { campaignId, status: campaign.status },
+      "campaign-sender: campaign is not in 'sending' status, skipping to avoid duplicate sends"
+    );
+    return;
+  }
+
   const pendingRecipients = await db
     .select()
     .from(marketingRecipientsTable)
