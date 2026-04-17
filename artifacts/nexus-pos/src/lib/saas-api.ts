@@ -298,8 +298,13 @@ export const superadminMarketingAudience = (audience: MarketingAudience) =>
 export const superadminMarketingCampaigns = () =>
   api<MarketingCampaign[]>("/superadmin/marketing/campaigns", { headers: superadminAuthHeaders() });
 
+export interface MarketingLinkBreakdownEntry {
+  url: string;
+  clickCount: number;
+}
+
 export const superadminMarketingCampaign = (id: number) =>
-  api<{ campaign: MarketingCampaign; recipients: MarketingRecipient[] }>(`/superadmin/marketing/campaigns/${id}`, { headers: superadminAuthHeaders() });
+  api<{ campaign: MarketingCampaign; recipients: MarketingRecipient[]; unsubscribeCount?: number; linkBreakdown?: MarketingLinkBreakdownEntry[] }>(`/superadmin/marketing/campaigns/${id}`, { headers: superadminAuthHeaders() });
 
 export const superadminMarketingProgress = (id: number) =>
   api<{ status: string; total: number; sent: number; failed: number; pending: number; opened: number; clicked: number; resumedAt: string | null; resumeCount: number }>(`/superadmin/marketing/campaigns/${id}/progress`, { headers: superadminAuthHeaders() });

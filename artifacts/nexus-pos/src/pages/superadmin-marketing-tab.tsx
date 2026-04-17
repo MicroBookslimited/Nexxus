@@ -7,7 +7,7 @@ import {
   superadminMarketingStatus, superadminMarketingAudience, superadminMarketingCampaigns,
   superadminMarketingCampaign, superadminMarketingProgress, superadminMarketingTest,
   superadminMarketingSend, superadminMarketingDelete, superadminMarketingExport,
-  type MarketingAudience, type MarketingCampaign, type MarketingRecipient,
+  type MarketingAudience, type MarketingCampaign, type MarketingRecipient, type MarketingLinkBreakdownEntry,
 } from "@/lib/saas-api";
 
 const AUDIENCE_OPTIONS: { value: MarketingAudience; label: string; description: string }[] = [
@@ -100,7 +100,7 @@ export function SuperadminMarketingTab() {
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
   // Detail / progress
-  const [detail, setDetail] = useState<{ campaign: MarketingCampaign; recipients: MarketingRecipient[] } | null>(null);
+  const [detail, setDetail] = useState<{ campaign: MarketingCampaign; recipients: MarketingRecipient[]; linkBreakdown?: MarketingLinkBreakdownEntry[] } | null>(null);
   const [progress, setProgress] = useState<Record<number, { sent: number; failed: number; pending: number; opened: number; clicked: number; status: string; resumedAt: string | null; resumeCount: number }>>({});
   const pollRef = useRef<number | null>(null);
 
@@ -657,6 +657,47 @@ export function SuperadminMarketingTab() {
                 Export CSV
               </button>
             </div>
+            {/* Per-link click breakdown */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <MousePointerClick className="h-4 w-4 text-purple-400" />
+                <h4 className="text-sm font-semibold text-white">Link clicks</h4>
+                {detail.linkBreakdown && detail.linkBreakdown.length > 0 && (
+                  <span className="text-[10px] text-[#64748b]">
+                    {detail.linkBreakdown.length} unique link{detail.linkBreakdown.length === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+              {detail.linkBreakdown && detail.linkBreakdown.length > 0 ? (
+                <div className="max-h-48 overflow-y-auto border border-[#2a3a55] rounded">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-[#1a2332]">
+                      <tr className="text-left text-[#64748b] border-b border-[#2a3a55]">
+                        <th className="px-3 py-2">URL</th>
+                        <th className="px-3 py-2 text-right w-24">Clicks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.linkBreakdown.map((l, i) => (
+                        <tr key={i} className="border-b border-[#2a3a55]/50">
+                          <td className="px-3 py-1.5 text-[#cbd5e1] max-w-md truncate">
+                            <a href={l.url} target="_blank" rel="noopener noreferrer" className="hover:text-[#3b82f6] hover:underline" title={l.url}>
+                              {l.url}
+                            </a>
+                          </td>
+                          <td className="px-3 py-1.5 text-right text-purple-400 font-semibold tabular-nums">{l.clickCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-xs text-[#64748b] border border-[#2a3a55] rounded px-3 py-4 text-center">
+                  No link clicks recorded yet.
+                </div>
+              )}
+            </div>
+
             <div className="max-h-80 overflow-y-auto border border-[#2a3a55] rounded">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-[#1a2332]">

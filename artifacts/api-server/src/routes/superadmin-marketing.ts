@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { db, marketingCampaignsTable, marketingRecipientsTable, tenantsTable, tenantAdminUsersTable, marketingUnsubscribesTable } from "@workspace/db";
+import { db, marketingCampaignsTable, marketingRecipientsTable, tenantsTable, tenantAdminUsersTable, marketingUnsubscribesTable, marketingLinkClicksTable } from "@workspace/db";
 import { eq, desc, sql, inArray } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
@@ -138,7 +138,20 @@ router.get("/superadmin/marketing/campaigns/:id", async (req, res): Promise<void
     unsubscribeCount = Number(countRow?.count ?? 0);
   }
 
-  res.json({ campaign, recipients, unsubscribeCount });
+  // Per-link click breakdown for this campaign, sorted by most clicked.
+  const linkClicks = await db
+    .select({
+      url: marketingLinkClicksTable.url,
+      clickCount: sql<number>`count(*)`,
+    })
+    .from(marketingLinkClicksTable)
+    .where(eq(marketingLinkClicksTable.campaignId, id))
+    .groupBy(marketingLinkClicksTable.url)
+    .orderBy(sql`count(*) desc`);
+
+  const linkBreakdown = linkClicks.map(l => ({ url: l.url, clickCount: Number(l.clickCount) }));
+
+  res.json({ campaign, recipients, unsubscribeCount, linkBreakdown });
 });
 
 /* ─── Send a single test email ─── */
@@ -433,6 +446,20 @@ router.post("/marketing/webhook", async (req, res): Promise<void> => {
         await db.update(marketingCampaignsTable).set({
           clickCount: sql`${marketingCampaignsTable.clickCount} + 1`,
         }).where(eq(marketingCampaignsTable.id, updated[0].campaignId));
+      }
+
+      // Record per-link click. Resend includes the URL under data.click.link.
+      if (updated.length > 0) {
+        const clickData = (event.data as { click?: { link?: unknown } }).click;
+        const linkUrl = typeof clickData?.link === "string" ? clickData.link : null;
+        if (linkUrl) {
+          await db.insert(marketingLinkClicksTable).values({
+            recipientId: updated[0].id,
+            campaignId: updated[0].campaignId,
+            url: linkUrl,
+            clickedAt: now,
+          });
+        }
       }
     }
 

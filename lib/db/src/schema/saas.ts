@@ -163,6 +163,16 @@ export const marketingUnsubscribesTable = pgTable("marketing_unsubscribes", {
 
 export type MarketingUnsubscribe = typeof marketingUnsubscribesTable.$inferSelect;
 
+export const marketingLinkClicksTable = pgTable("marketing_link_clicks", {
+  id: serial("id").primaryKey(),
+  recipientId: integer("recipient_id").notNull().references(() => marketingRecipientsTable.id, { onDelete: "cascade" }),
+  campaignId: integer("campaign_id").notNull().references(() => marketingCampaignsTable.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  clickedAt: timestamp("clicked_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type MarketingLinkClick = typeof marketingLinkClicksTable.$inferSelect;
+
 export const bankTransferProofsTable = pgTable("bank_transfer_proofs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id),
