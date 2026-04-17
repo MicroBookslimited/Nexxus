@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request } from "express";
 import { db, marketingCampaignsTable, marketingRecipientsTable, tenantsTable, tenantAdminUsersTable, marketingUnsubscribesTable, marketingLinkClicksTable } from "@workspace/db";
-import { eq, desc, sql, inArray, and } from "drizzle-orm";
+import { eq, asc, desc, sql, inArray, and } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { sendMarketingMail, isMarketingMailerConfigured } from "../lib/marketing-mail";
@@ -152,6 +152,37 @@ router.get("/superadmin/marketing/campaigns/:id", async (req, res): Promise<void
   const linkBreakdown = linkClicks.map(l => ({ url: l.url, clickCount: Number(l.clickCount) }));
 
   res.json({ campaign, recipients, unsubscribeCount, linkBreakdown });
+});
+
+/* ─── Per-recipient link click history ─── */
+router.get("/superadmin/marketing/campaigns/:id/recipients/:recipientId/clicks", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params.id, 10);
+  const recipientId = parseInt(req.params.recipientId, 10);
+  if (!Number.isFinite(id) || !Number.isFinite(recipientId)) {
+    res.status(400).json({ error: "Invalid id" }); return;
+  }
+
+  const [recipient] = await db
+    .select({ id: marketingRecipientsTable.id, campaignId: marketingRecipientsTable.campaignId })
+    .from(marketingRecipientsTable)
+    .where(eq(marketingRecipientsTable.id, recipientId))
+    .limit(1);
+  if (!recipient || recipient.campaignId !== id) {
+    res.status(404).json({ error: "Recipient not found in this campaign" }); return;
+  }
+
+  const clicks = await db
+    .select({
+      id: marketingLinkClicksTable.id,
+      url: marketingLinkClicksTable.url,
+      clickedAt: marketingLinkClicksTable.clickedAt,
+    })
+    .from(marketingLinkClicksTable)
+    .where(eq(marketingLinkClicksTable.recipientId, recipientId))
+    .orderBy(asc(marketingLinkClicksTable.clickedAt));
+
+  res.json({ clicks });
 });
 
 /* ─── Send a single test email ─── */

@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { Fragment, useState, useEffect, useCallback, useRef } from "react";
 import {
   Megaphone, Send, Users, Mail, AlertTriangle, CheckCircle2, XCircle, Clock,
   Eye, Trash2, RefreshCw, Loader2, Sparkles, FileText, MousePointerClick, Webhook, Copy, KeyRound, Download, UserX,
-  Pause, Play, Ban, MinusCircle,
+  Pause, Play, Ban, MinusCircle, ChevronRight, ChevronDown,
 } from "lucide-react";
 import {
   superadminMarketingStatus, superadminMarketingAudience, superadminMarketingCampaigns,
@@ -10,7 +10,8 @@ import {
   superadminMarketingSend, superadminMarketingDelete, superadminMarketingExport, superadminMarketingUnsubscribesExport,
   superadminMarketingUnsubscribes, ApiError,
   superadminMarketingPause, superadminMarketingResume, superadminMarketingCancel,
-  type MarketingAudience, type MarketingCampaign, type MarketingRecipient, type MarketingUnsubscribe, type MarketingLinkBreakdownEntry,
+  superadminMarketingRecipientClicks,
+  type MarketingAudience, type MarketingCampaign, type MarketingRecipient, type MarketingUnsubscribe, type MarketingLinkBreakdownEntry, type MarketingRecipientClick,
 } from "@/lib/saas-api";
 
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set(["sent", "partial", "failed", "cancelled"]);
@@ -108,6 +109,35 @@ export function SuperadminMarketingTab() {
 
   // Detail / progress
   const [detail, setDetail] = useState<{ campaign: MarketingCampaign; recipients: MarketingRecipient[]; unsubscribeCount: number; linkBreakdown?: MarketingLinkBreakdownEntry[] } | null>(null);
+
+  // Per-recipient link click drill-down: tracks which recipient row is expanded,
+  // their cached click history, in-flight loading state, and any fetch error.
+  const [expandedRecipientId, setExpandedRecipientId] = useState<number | null>(null);
+  const [recipientClicks, setRecipientClicks] = useState<Record<number, MarketingRecipientClick[]>>({});
+  const [recipientClicksLoading, setRecipientClicksLoading] = useState<Record<number, boolean>>({});
+  const [recipientClicksError, setRecipientClicksError] = useState<Record<number, string | null>>({});
+
+  const toggleRecipientExpanded = useCallback(async (campaignId: number, recipient: MarketingRecipient) => {
+    if (expandedRecipientId === recipient.id) {
+      setExpandedRecipientId(null);
+      return;
+    }
+    setExpandedRecipientId(recipient.id);
+    // Skip the request entirely for recipients with zero clicks — the UI will
+    // just show "No link clicks" without a needless round-trip.
+    if (recipient.clickCount <= 0) return;
+    if (recipientClicks[recipient.id]) return;
+    setRecipientClicksLoading(s => ({ ...s, [recipient.id]: true }));
+    setRecipientClicksError(s => ({ ...s, [recipient.id]: null }));
+    try {
+      const r = await superadminMarketingRecipientClicks(campaignId, recipient.id);
+      setRecipientClicks(s => ({ ...s, [recipient.id]: r.clicks }));
+    } catch (e) {
+      setRecipientClicksError(s => ({ ...s, [recipient.id]: e instanceof Error ? e.message : "Failed to load clicks" }));
+    } finally {
+      setRecipientClicksLoading(s => ({ ...s, [recipient.id]: false }));
+    }
+  }, [expandedRecipientId, recipientClicks]);
 
   // Opt-outs
   const [unsubscribes, setUnsubscribes] = useState<MarketingUnsubscribe[]>([]);
@@ -323,6 +353,12 @@ export function SuperadminMarketingTab() {
     try {
       const d = await superadminMarketingCampaign(id);
       setDetail(d);
+      // Reset per-recipient drill-down state so a previously open row doesn't
+      // bleed across into the newly opened campaign.
+      setExpandedRecipientId(null);
+      setRecipientClicks({});
+      setRecipientClicksLoading({});
+      setRecipientClicksError({});
     } catch (e) {
       showToast("err", e instanceof Error ? e.message : "Failed to load campaign");
     }
@@ -1043,6 +1079,7 @@ export function SuperadminMarketingTab() {
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-[#1a2332]">
                   <tr className="text-left text-[#64748b] border-b border-[#2a3a55]">
+                    <th className="px-2 py-2 w-6"></th>
                     <th className="px-3 py-2">Email</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2">Opens</th>
@@ -1051,23 +1088,79 @@ export function SuperadminMarketingTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {detail.recipients.map(r => (
-                    <tr key={r.id} className="border-b border-[#2a3a55]/50">
-                      <td className="px-3 py-1.5 text-white">{r.email}</td>
-                      <td className="px-3 py-1.5"><StatusPill status={r.status} /></td>
-                      <td className="px-3 py-1.5">
-                        {r.openCount > 0
-                          ? <span className="text-blue-400 flex items-center gap-1"><Eye className="h-3 w-3" />{r.openCount}</span>
-                          : <span className="text-[#475569]">—</span>}
-                      </td>
-                      <td className="px-3 py-1.5">
-                        {r.clickCount > 0
-                          ? <span className="text-purple-400 flex items-center gap-1"><MousePointerClick className="h-3 w-3" />{r.clickCount}</span>
-                          : <span className="text-[#475569]">—</span>}
-                      </td>
-                      <td className="px-3 py-1.5 text-red-400 truncate max-w-xs">{r.errorMessage ?? ""}</td>
-                    </tr>
-                  ))}
+                  {detail.recipients.map(r => {
+                    const isExpanded = expandedRecipientId === r.id;
+                    const clicks = recipientClicks[r.id];
+                    const loading = recipientClicksLoading[r.id];
+                    const err = recipientClicksError[r.id];
+                    return (
+                      <Fragment key={r.id}>
+                        <tr
+                          className="border-b border-[#2a3a55]/50 hover:bg-[#0f1729]/60 cursor-pointer"
+                          onClick={() => void toggleRecipientExpanded(detail.campaign.id, r)}
+                        >
+                          <td className="px-2 py-1.5 text-[#64748b]">
+                            {isExpanded
+                              ? <ChevronDown className="h-3.5 w-3.5" />
+                              : <ChevronRight className="h-3.5 w-3.5" />}
+                          </td>
+                          <td className="px-3 py-1.5 text-white">{r.email}</td>
+                          <td className="px-3 py-1.5"><StatusPill status={r.status} /></td>
+                          <td className="px-3 py-1.5">
+                            {r.openCount > 0
+                              ? <span className="text-blue-400 flex items-center gap-1"><Eye className="h-3 w-3" />{r.openCount}</span>
+                              : <span className="text-[#475569]">—</span>}
+                          </td>
+                          <td className="px-3 py-1.5">
+                            {r.clickCount > 0
+                              ? <span className="text-purple-400 flex items-center gap-1"><MousePointerClick className="h-3 w-3" />{r.clickCount}</span>
+                              : <span className="text-[#475569]">—</span>}
+                          </td>
+                          <td className="px-3 py-1.5 text-red-400 truncate max-w-xs">{r.errorMessage ?? ""}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr key={`${r.id}-expanded`} className="bg-[#0f1729]/40 border-b border-[#2a3a55]/50">
+                            <td></td>
+                            <td colSpan={5} className="px-3 py-2">
+                              <div className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1.5 flex items-center gap-1.5">
+                                <MousePointerClick className="h-3 w-3 text-purple-400" />
+                                Link click history
+                              </div>
+                              {loading ? (
+                                <div className="flex items-center gap-2 text-[#94a3b8]">
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                  Loading clicks…
+                                </div>
+                              ) : err ? (
+                                <div className="text-red-400">{err}</div>
+                              ) : r.clickCount <= 0 || !clicks || clicks.length === 0 ? (
+                                <div className="text-[#64748b] italic">No link clicks recorded for this recipient.</div>
+                              ) : (
+                                <ul className="space-y-1">
+                                  {clicks.map(c => (
+                                    <li key={c.id} className="flex items-start gap-2">
+                                      <span className="text-[#64748b] tabular-nums whitespace-nowrap pt-0.5">
+                                        {new Date(c.clickedAt).toLocaleString()}
+                                      </span>
+                                      <a
+                                        href={c.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[#cbd5e1] hover:text-[#3b82f6] hover:underline break-all"
+                                        title={c.url}
+                                      >
+                                        {c.url}
+                                      </a>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

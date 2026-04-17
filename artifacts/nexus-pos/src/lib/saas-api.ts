@@ -315,6 +315,18 @@ export interface MarketingUnsubscribe {
 export const superadminMarketingCampaign = (id: number) =>
   api<{ campaign: MarketingCampaign; recipients: MarketingRecipient[]; unsubscribeCount: number; linkBreakdown?: MarketingLinkBreakdownEntry[] }>(`/superadmin/marketing/campaigns/${id}`, { headers: superadminAuthHeaders() });
 
+export interface MarketingRecipientClick {
+  id: number;
+  url: string;
+  clickedAt: string;
+}
+
+export const superadminMarketingRecipientClicks = (campaignId: number, recipientId: number) =>
+  api<{ clicks: MarketingRecipientClick[] }>(
+    `/superadmin/marketing/campaigns/${campaignId}/recipients/${recipientId}/clicks`,
+    { headers: superadminAuthHeaders() },
+  );
+
 export const superadminMarketingUnsubscribes = () =>
   api<{ total: number; unsubscribes: MarketingUnsubscribe[] }>("/superadmin/marketing/unsubscribes", { headers: superadminAuthHeaders() });
 
