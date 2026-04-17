@@ -33,6 +33,25 @@ async function dingFetch(path: string, opts: RequestInit = {}): Promise<Response
   return res;
 }
 
+/**
+ * Checks a Ding response for upstream errors (HTTP non-2xx OR an inline
+ * `ErrorCodes` payload that Ding sometimes returns with a 200). Returns a
+ * human-readable message, or null if the call was healthy.
+ */
+function extractDingError(status: number, data: unknown): string | null {
+  const d = data as {
+    ErrorCodes?: { Code?: string; Context?: string | null }[];
+    Errors?: { Code?: string; Message?: string }[];
+    ResultCode?: number;
+  } | null;
+  const err = d?.ErrorCodes?.[0] ?? null;
+  if (err?.Code) return err.Context ? `${err.Code}: ${err.Context}` : err.Code;
+  const sendErr = d?.Errors?.[0];
+  if (sendErr?.Message) return sendErr.Message;
+  if (status < 200 || status >= 300) return `Ding API returned HTTP ${status}`;
+  return null;
+}
+
 async function getOrCreateWallet(tenantId: number): Promise<typeof topupWalletsTable.$inferSelect> {
   const [existing] = await db.select().from(topupWalletsTable).where(eq(topupWalletsTable.tenantId, tenantId)).limit(1);
   if (existing) return existing;
@@ -71,33 +90,48 @@ async function creditWallet(tenantId: number, amount: number, description: strin
 router.get("/topup/countries", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!getDingKey()) { res.status(503).json({ error: "Ding API key not configured" }); return; }
   try {
     const r = await dingFetch("/GetCountries");
     const data = await r.json() as unknown;
+    const upstreamErr = extractDingError(r.status, data);
+    if (upstreamErr) {
+      res.status(r.status === 401 ? 502 : (r.status >= 400 ? r.status : 502))
+        .json({ error: `Ding: ${upstreamErr}`, upstream: data });
+      return;
+    }
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch countries", details: String(err) });
+    res.status(502).json({ error: "Failed to fetch countries", details: String(err) });
   }
 });
 
 router.get("/topup/operators", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!getDingKey()) { res.status(503).json({ error: "Ding API key not configured" }); return; }
   const { countryIso } = req.query as { countryIso?: string };
   try {
     const params = new URLSearchParams();
     if (countryIso) params.append("countryIsos[0]", countryIso);
     const r = await dingFetch(`/GetProviders?${params.toString()}`);
     const data = await r.json() as unknown;
+    const upstreamErr = extractDingError(r.status, data);
+    if (upstreamErr) {
+      res.status(r.status === 401 ? 502 : (r.status >= 400 ? r.status : 502))
+        .json({ error: `Ding: ${upstreamErr}`, upstream: data });
+      return;
+    }
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch operators", details: String(err) });
+    res.status(502).json({ error: "Failed to fetch operators", details: String(err) });
   }
 });
 
 router.get("/topup/products", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!getDingKey()) { res.status(503).json({ error: "Ding API key not configured" }); return; }
   const { operatorId } = req.query as { operatorId?: string };
   if (!operatorId) { res.status(400).json({ error: "operatorId is required" }); return; }
   try {
@@ -105,9 +139,38 @@ router.get("/topup/products", async (req, res): Promise<void> => {
     params.append("providerCodes[0]", operatorId);
     const r = await dingFetch(`/GetProducts?${params.toString()}`);
     const data = await r.json() as unknown;
+    const upstreamErr = extractDingError(r.status, data);
+    if (upstreamErr) {
+      res.status(r.status === 401 ? 502 : (r.status >= 400 ? r.status : 502))
+        .json({ error: `Ding: ${upstreamErr}`, upstream: data });
+      return;
+    }
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch products", details: String(err) });
+    res.status(502).json({ error: "Failed to fetch products", details: String(err) });
+  }
+});
+
+/* ─── Diagnostics ─── */
+router.get("/topup/diagnostics", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const key = getDingKey();
+  if (!key) { res.json({ ok: false, reason: "DING_API_KEY not set" }); return; }
+  try {
+    const r = await dingFetch("/GetCountries");
+    const data = await r.json() as unknown;
+    const err = extractDingError(r.status, data);
+    res.json({
+      ok: !err,
+      httpStatus: r.status,
+      keyLength: key.length,
+      keyPrefix: key.slice(0, 4),
+      upstreamError: err,
+      upstreamBody: err ? data : undefined,
+    });
+  } catch (err) {
+    res.json({ ok: false, reason: "Network error reaching Ding", details: String(err) });
   }
 });
 
