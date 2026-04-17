@@ -186,19 +186,9 @@ export function SuperadminMarketingTab() {
       const [s, c] = await Promise.all([superadminMarketingStatus(), superadminMarketingCampaigns()]);
       setStatus(s);
       setCampaigns(c);
-      // Fetch per-campaign opt-out counts in parallel so the table column is populated.
-      const results = await Promise.all(
-        c.map(async camp => {
-          try {
-            const d = await superadminMarketingCampaign(camp.id);
-            return [camp.id, d.unsubscribeCount] as const;
-          } catch {
-            return [camp.id, 0] as const;
-          }
-        }),
-      );
+      // unsubscribeCount is now returned directly by the campaigns list endpoint.
       const map: Record<number, number> = {};
-      for (const [id, n] of results) map[id] = n;
+      for (const camp of c) map[camp.id] = camp.unsubscribeCount ?? 0;
       setCampaignOptOuts(map);
     } catch (e) {
       showToast("err", e instanceof Error ? e.message : "Failed to load");

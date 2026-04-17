@@ -284,6 +284,7 @@ export interface MarketingCampaign {
   errorMessage: string | null; createdAt: string; sentAt: string | null;
   resumedAt: string | null; resumeCount: number;
   resumeAlertedAt: string | null;
+  unsubscribeCount?: number;
 }
 
 export interface MarketingRecipient {

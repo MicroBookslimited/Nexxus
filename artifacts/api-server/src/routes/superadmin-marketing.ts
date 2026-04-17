@@ -116,7 +116,30 @@ router.get("/superadmin/marketing/audience", async (req, res): Promise<void> => 
 router.get("/superadmin/marketing/campaigns", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;
   const rows = await db.select().from(marketingCampaignsTable).orderBy(desc(marketingCampaignsTable.createdAt)).limit(100);
-  res.json(rows);
+
+  // Compute unsubscribe counts for the returned campaigns in one query so the
+  // frontend doesn't need to fan out per-campaign detail requests just to fill
+  // the Opt-outs column. Restrict to the returned IDs to avoid a full-table
+  // grouping across all historical campaigns.
+  const campaignIds = rows.map(r => r.id);
+  const unsubCounts = campaignIds.length > 0
+    ? await db
+        .select({
+          campaignId: marketingRecipientsTable.campaignId,
+          count: sql<number>`count(distinct lower(${marketingRecipientsTable.email}))::int`,
+        })
+        .from(marketingUnsubscribesTable)
+        .innerJoin(
+          marketingRecipientsTable,
+          sql`lower(${marketingRecipientsTable.email}) = lower(${marketingUnsubscribesTable.email})`,
+        )
+        .where(inArray(marketingRecipientsTable.campaignId, campaignIds))
+        .groupBy(marketingRecipientsTable.campaignId)
+    : [];
+
+  const countMap = new Map(unsubCounts.map(r => [r.campaignId, r.count]));
+  const result = rows.map(r => ({ ...r, unsubscribeCount: countMap.get(r.id) ?? 0 }));
+  res.json(result);
 });
 
 /* ─── Get one campaign with recipient summary + opt-out count ─── */
