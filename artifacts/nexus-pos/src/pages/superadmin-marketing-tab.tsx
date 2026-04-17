@@ -7,7 +7,7 @@ import {
 import {
   superadminMarketingStatus, superadminMarketingAudience, superadminMarketingCampaigns,
   superadminMarketingCampaign, superadminMarketingProgress, superadminMarketingTest,
-  superadminMarketingSend, superadminMarketingDelete, superadminMarketingExport,
+  superadminMarketingSend, superadminMarketingDelete, superadminMarketingExport, superadminMarketingUnsubscribesExport,
   superadminMarketingUnsubscribes, ApiError,
   superadminMarketingPause, superadminMarketingResume, superadminMarketingCancel,
   type MarketingAudience, type MarketingCampaign, type MarketingRecipient, type MarketingUnsubscribe, type MarketingLinkBreakdownEntry,
@@ -114,6 +114,7 @@ export function SuperadminMarketingTab() {
   const [unsubscribesTotal, setUnsubscribesTotal] = useState<number>(0);
   const [unsubscribesLoading, setUnsubscribesLoading] = useState(false);
   const [unsubscribesFilter, setUnsubscribesFilter] = useState("");
+  const [unsubscribesExporting, setUnsubscribesExporting] = useState(false);
   const [progress, setProgress] = useState<Record<number, { sent: number; failed: number; pending: number; opened: number; clicked: number; status: string; resumedAt: string | null; resumeCount: number }>>({});
 
   const RESUME_ALERT_THRESHOLD = 3;
@@ -606,6 +607,25 @@ export function SuperadminMarketingTab() {
               placeholder="Filter by email…"
               className="bg-[#0f1729] border border-[#2a3a55] rounded-md px-3 py-1.5 text-xs text-white placeholder:text-[#475569] focus:border-[#3b82f6] focus:outline-none"
             />
+            <button
+              onClick={async () => {
+                if (unsubscribesTotal === 0) { showToast("err", "No opt-outs to export"); return; }
+                setUnsubscribesExporting(true);
+                try {
+                  await superadminMarketingUnsubscribesExport();
+                  showToast("ok", "Export downloaded");
+                } catch (e) {
+                  showToast("err", e instanceof Error ? e.message : "Export failed");
+                }
+                setUnsubscribesExporting(false);
+              }}
+              disabled={unsubscribesExporting}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#0f1729] border border-[#2a3a55] hover:border-[#3b82f6] text-xs text-white disabled:opacity-50"
+              title="Export full opt-out list as CSV"
+            >
+              {unsubscribesExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              Export CSV
+            </button>
             <button onClick={() => void loadUnsubscribes()} className="text-[#94a3b8] hover:text-white p-1">
               <RefreshCw className={`h-4 w-4 ${unsubscribesLoading ? "animate-spin" : ""}`} />
             </button>

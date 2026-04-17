@@ -597,6 +597,38 @@ router.get("/superadmin/marketing/unsubscribes", async (req, res): Promise<void>
   res.json({ total: rows.length, unsubscribes: rows });
 });
 
+/* ─── Export the full opt-out list as CSV ─── */
+router.get("/superadmin/marketing/unsubscribes/export", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const rows = await db
+    .select({
+      email: marketingUnsubscribesTable.email,
+      unsubscribedAt: marketingUnsubscribesTable.unsubscribedAt,
+    })
+    .from(marketingUnsubscribesTable)
+    .orderBy(desc(marketingUnsubscribesTable.unsubscribedAt));
+
+  const escape = (val: unknown): string => {
+    if (val === null || val === undefined) return "";
+    const s = String(val);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const lines = ["email,unsubscribed_at"];
+  for (const r of rows) {
+    lines.push([
+      escape(r.email),
+      escape(r.unsubscribedAt ? new Date(r.unsubscribedAt).toISOString() : ""),
+    ].join(","));
+  }
+  const csv = lines.join("\r\n") + "\r\n";
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="marketing-unsubscribes.csv"`);
+  res.send(csv);
+});
+
 /* ─── Re-subscribe: remove an email from the opt-out list ─── */
 router.delete("/superadmin/marketing/unsubscribes/:email", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;

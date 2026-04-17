@@ -368,6 +368,25 @@ export async function superadminMarketingExport(id: number): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+export async function superadminMarketingUnsubscribesExport(): Promise<void> {
+  const resp = await fetch(`/api/superadmin/marketing/unsubscribes/export`, {
+    headers: superadminAuthHeaders(),
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({ error: resp.statusText })) as Record<string, unknown>;
+    throw new Error(typeof body["error"] === "string" ? body["error"] : resp.statusText);
+  }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `marketing-unsubscribes.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /* ─── Types ─── */
 export interface Tenant {
   id: number; businessName: string; ownerName: string; email: string; phone?: string;
