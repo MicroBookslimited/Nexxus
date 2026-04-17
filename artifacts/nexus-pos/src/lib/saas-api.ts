@@ -332,6 +332,21 @@ export const superadminMarketingSend = (data: { subject: string; htmlBody: strin
 export const superadminMarketingDelete = (id: number) =>
   api<{ success: boolean }>(`/superadmin/marketing/campaigns/${id}`, { method: "DELETE", headers: superadminAuthHeaders() });
 
+export const superadminMarketingPause = (id: number) =>
+  api<{ success: boolean; status: string }>(`/superadmin/marketing/campaigns/${id}/pause`, {
+    method: "POST", headers: superadminAuthHeaders(),
+  });
+
+export const superadminMarketingResume = (id: number) =>
+  api<{ success: boolean; status: string }>(`/superadmin/marketing/campaigns/${id}/resume`, {
+    method: "POST", headers: superadminAuthHeaders(),
+  });
+
+export const superadminMarketingCancel = (id: number) =>
+  api<{ success: boolean; status: string; skippedCount: number }>(`/superadmin/marketing/campaigns/${id}/cancel`, {
+    method: "POST", headers: superadminAuthHeaders(),
+  });
+
 export async function superadminMarketingExport(id: number): Promise<void> {
   const resp = await fetch(`/api/superadmin/marketing/campaigns/${id}/export`, {
     headers: superadminAuthHeaders(),

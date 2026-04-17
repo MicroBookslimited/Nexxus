@@ -1,10 +1,10 @@
 import { Router, type IRouter, type Request } from "express";
 import { db, marketingCampaignsTable, marketingRecipientsTable, tenantsTable, tenantAdminUsersTable, marketingUnsubscribesTable, marketingLinkClicksTable } from "@workspace/db";
-import { eq, desc, sql, inArray } from "drizzle-orm";
+import { eq, desc, sql, inArray, and } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { sendMarketingMail, isMarketingMailerConfigured } from "../lib/marketing-mail";
-import { sendPendingForCampaign } from "../lib/campaign-sender";
+import { sendPendingForCampaign, flushCounts } from "../lib/campaign-sender";
 
 const router: IRouter = Router();
 
@@ -323,6 +323,102 @@ router.get("/superadmin/marketing/campaigns/:id/export", async (req, res): Promi
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send(csv);
+});
+
+/* ─── Pause a campaign mid-send ─── */
+router.post("/superadmin/marketing/campaigns/:id/pause", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid campaign id" }); return; }
+
+  const [existing] = await db.select().from(marketingCampaignsTable).where(eq(marketingCampaignsTable.id, id)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+  if (existing.status !== "sending") {
+    res.status(409).json({
+      error: `Cannot pause campaign in status '${existing.status}'. Only campaigns currently sending can be paused.`,
+      status: existing.status,
+    });
+    return;
+  }
+
+  // Flip the status. The running sender loop will notice on its next
+  // iteration and exit cleanly, leaving pending recipients untouched.
+  await db.update(marketingCampaignsTable).set({ status: "paused" }).where(eq(marketingCampaignsTable.id, id));
+  res.json({ success: true, status: "paused" });
+});
+
+/* ─── Resume a paused campaign ─── */
+router.post("/superadmin/marketing/campaigns/:id/resume", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid campaign id" }); return; }
+
+  const [existing] = await db.select().from(marketingCampaignsTable).where(eq(marketingCampaignsTable.id, id)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+  if (existing.status !== "paused") {
+    res.status(409).json({
+      error: `Cannot resume campaign in status '${existing.status}'. Only paused campaigns can be resumed.`,
+      status: existing.status,
+    });
+    return;
+  }
+
+  await db.update(marketingCampaignsTable).set({
+    status: "sending",
+    resumedAt: new Date(),
+    resumeCount: sql`${marketingCampaignsTable.resumeCount} + 1`,
+  }).where(eq(marketingCampaignsTable.id, id));
+
+  res.json({ success: true, status: "sending" });
+
+  void sendPendingForCampaign(id).catch(err => {
+    void db.update(marketingCampaignsTable).set({
+      status: "failed",
+      errorMessage: err instanceof Error ? err.message : String(err),
+    }).where(eq(marketingCampaignsTable.id, id));
+  });
+});
+
+/* ─── Cancel a campaign mid-send ─── */
+router.post("/superadmin/marketing/campaigns/:id/cancel", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid campaign id" }); return; }
+
+  const [existing] = await db.select().from(marketingCampaignsTable).where(eq(marketingCampaignsTable.id, id)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+  if (existing.status !== "sending" && existing.status !== "paused") {
+    res.status(409).json({
+      error: `Cannot cancel campaign in status '${existing.status}'. Only sending or paused campaigns can be cancelled.`,
+      status: existing.status,
+    });
+    return;
+  }
+
+  // Mark every still-pending recipient as 'skipped' so the recipient table
+  // makes it clear they were intentionally not contacted (rather than failed).
+  const skipped = await db
+    .update(marketingRecipientsTable)
+    .set({ status: "skipped" })
+    .where(and(
+      eq(marketingRecipientsTable.campaignId, id),
+      eq(marketingRecipientsTable.status, "pending"),
+    ))
+    .returning({ id: marketingRecipientsTable.id });
+
+  // Recompute sent/failed counts from the recipient table so the dashboard
+  // reflects the true state at cancellation time (the sender flushes counts
+  // every 25 sends, so they could otherwise be slightly stale).
+  await flushCounts(id);
+
+  // Finalize the campaign. We keep sentAt so any partial sends still record a
+  // timestamp; if nothing was sent yet, stamp it now to mark the cancel time.
+  await db.update(marketingCampaignsTable).set({
+    status: "cancelled",
+    sentAt: existing.sentAt ?? new Date(),
+  }).where(eq(marketingCampaignsTable.id, id));
+
+  res.json({ success: true, status: "cancelled", skippedCount: skipped.length });
 });
 
 /* ─── Delete a campaign (cascade deletes recipients) ─── */

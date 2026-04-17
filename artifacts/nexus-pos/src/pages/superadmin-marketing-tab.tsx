@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Megaphone, Send, Users, Mail, AlertTriangle, CheckCircle2, XCircle, Clock,
   Eye, Trash2, RefreshCw, Loader2, Sparkles, FileText, MousePointerClick, Webhook, Copy, KeyRound, Download, UserX,
+  Pause, Play, Ban, MinusCircle,
 } from "lucide-react";
 import {
   superadminMarketingStatus, superadminMarketingAudience, superadminMarketingCampaigns,
   superadminMarketingCampaign, superadminMarketingProgress, superadminMarketingTest,
   superadminMarketingSend, superadminMarketingDelete, superadminMarketingExport,
   superadminMarketingUnsubscribes,
+  superadminMarketingPause, superadminMarketingResume, superadminMarketingCancel,
   type MarketingAudience, type MarketingCampaign, type MarketingRecipient, type MarketingUnsubscribe, type MarketingLinkBreakdownEntry,
 } from "@/lib/saas-api";
 
@@ -182,7 +184,7 @@ export function SuperadminMarketingTab() {
 
   // Poll progress for any "sending" campaigns
   useEffect(() => {
-    const sendingIds = campaigns.filter(c => c.status === "sending").map(c => c.id);
+    const sendingIds = campaigns.filter(c => c.status === "sending" || c.status === "paused").map(c => c.id);
     if (sendingIds.length === 0) {
       if (pollRef.current) { window.clearInterval(pollRef.current); pollRef.current = null; }
       return;
@@ -197,8 +199,8 @@ export function SuperadminMarketingTab() {
         } catch { /* ignore */ }
       }
       setProgress(prev => ({ ...prev, ...updates }));
-      // If anything finished, refresh the list.
-      if (Object.values(updates).some(u => u.status !== "sending")) {
+      // If anything transitioned to a non-active state, refresh the list.
+      if (Object.values(updates).some(u => u.status !== "sending" && u.status !== "paused")) {
         void loadAll();
       }
     }, 3000);
@@ -254,6 +256,37 @@ export function SuperadminMarketingTab() {
       void loadAll();
     } catch (e) {
       showToast("err", e instanceof Error ? e.message : "Delete failed");
+    }
+  };
+
+  const handlePause = async (id: number) => {
+    try {
+      await superadminMarketingPause(id);
+      showToast("ok", "Campaign paused. Pending recipients are kept for resume.");
+      void loadAll();
+    } catch (e) {
+      showToast("err", e instanceof Error ? e.message : "Pause failed");
+    }
+  };
+
+  const handleResume = async (id: number) => {
+    try {
+      await superadminMarketingResume(id);
+      showToast("ok", "Campaign resumed.");
+      void loadAll();
+    } catch (e) {
+      showToast("err", e instanceof Error ? e.message : "Resume failed");
+    }
+  };
+
+  const handleCancel = async (id: number) => {
+    if (!confirm("Cancel this campaign? Any unsent recipients will be marked as skipped and will not receive the email.")) return;
+    try {
+      const r = await superadminMarketingCancel(id);
+      showToast("ok", `Campaign cancelled. ${r.skippedCount} recipient${r.skippedCount === 1 ? "" : "s"} skipped.`);
+      void loadAll();
+    } catch (e) {
+      showToast("err", e instanceof Error ? e.message : "Cancel failed");
     }
   };
 
@@ -715,6 +748,30 @@ export function SuperadminMarketingTab() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1 justify-end">
+                          {status === "sending" && (
+                            <>
+                              <button onClick={() => handlePause(c.id)} title="Pause sending"
+                                className="p-1.5 text-[#94a3b8] hover:text-yellow-400 hover:bg-[#0f1729] rounded">
+                                <Pause className="h-4 w-4" />
+                              </button>
+                              <button onClick={() => handleCancel(c.id)} title="Cancel campaign (skip remaining recipients)"
+                                className="p-1.5 text-[#94a3b8] hover:text-red-400 hover:bg-[#0f1729] rounded">
+                                <Ban className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
+                          {status === "paused" && (
+                            <>
+                              <button onClick={() => handleResume(c.id)} title="Resume sending"
+                                className="p-1.5 text-[#94a3b8] hover:text-emerald-400 hover:bg-[#0f1729] rounded">
+                                <Play className="h-4 w-4" />
+                              </button>
+                              <button onClick={() => handleCancel(c.id)} title="Cancel campaign (skip remaining recipients)"
+                                className="p-1.5 text-[#94a3b8] hover:text-red-400 hover:bg-[#0f1729] rounded">
+                                <Ban className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
                           <button onClick={() => openDetail(c.id)} title="View details"
                             className="p-1.5 text-[#94a3b8] hover:text-white hover:bg-[#0f1729] rounded">
                             <Eye className="h-4 w-4" />
@@ -937,6 +994,9 @@ function StatusPill({ status }: { status: string }) {
     pending: { color: "bg-amber-500/15 text-amber-400 border-amber-500/30", icon: Clock },
     failed: { color: "bg-red-500/15 text-red-400 border-red-500/30", icon: XCircle },
     partial: { color: "bg-orange-500/15 text-orange-400 border-orange-500/30", icon: AlertTriangle },
+    paused: { color: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30", icon: Pause },
+    cancelled: { color: "bg-slate-500/15 text-slate-300 border-slate-500/30", icon: Ban },
+    skipped: { color: "bg-slate-500/15 text-slate-400 border-slate-500/30", icon: MinusCircle },
     draft: { color: "bg-[#0f1729] text-[#94a3b8] border-[#2a3a55]", icon: FileText },
   };
   const m = map[status] ?? map["draft"];

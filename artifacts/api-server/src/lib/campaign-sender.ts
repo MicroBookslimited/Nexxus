@@ -69,6 +69,25 @@ export async function sendPendingForCampaign(campaignId: number): Promise<void> 
   let batchFailed = 0;
 
   for (const r of pendingRecipients) {
+    // Cooperative pause/cancel: re-check the campaign status before each send.
+    // If a superadmin has flipped the campaign out of 'sending' (paused or
+    // cancelled) we exit early without settling a final status — the route
+    // handler that performed the transition is responsible for the final
+    // status of the campaign.
+    const [current] = await db
+      .select({ status: marketingCampaignsTable.status })
+      .from(marketingCampaignsTable)
+      .where(eq(marketingCampaignsTable.id, campaignId))
+      .limit(1);
+    if (!current || current.status !== "sending") {
+      logger.info(
+        { campaignId, status: current?.status, batchSent, batchFailed },
+        "campaign-sender: status changed mid-send, exiting early"
+      );
+      await flushCounts(campaignId);
+      return;
+    }
+
     try {
       const unsubscribeUrl = buildUnsubscribeUrl(r.email, campaignId);
       const result = await sendMarketingMail({
@@ -133,7 +152,7 @@ async function settleCampaignStatus(campaignId: number): Promise<void> {
  * Computes live sent/failed counts from recipient rows and writes them to the
  * campaign row without changing the campaign status.
  */
-async function flushCounts(campaignId: number): Promise<void> {
+export async function flushCounts(campaignId: number): Promise<void> {
   const recipients = await db
     .select()
     .from(marketingRecipientsTable)
