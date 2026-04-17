@@ -190,6 +190,12 @@ app.listen(port, async (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  if (!process.env["RESEND_WEBHOOK_SECRET"]) {
+    logger.warn(
+      "RESEND_WEBHOOK_SECRET is not set — /api/marketing/webhook will accept unsigned events. " +
+      "Set RESEND_WEBHOOK_SECRET (Svix whsec_...) to verify Resend webhook signatures.",
+    );
+  }
   await migratePrimaryAdminUsers();
   await resumeInterruptedCampaigns();
 });

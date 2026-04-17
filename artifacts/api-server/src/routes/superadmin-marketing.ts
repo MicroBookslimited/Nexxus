@@ -470,10 +470,13 @@ router.post("/marketing/webhook", async (req, res): Promise<void> => {
     }
 
     // Validate timestamp to prevent replay attacks (5 minute window).
-    const tsSeconds = parseInt(svixTimestamp, 10);
+    // Reject anything that isn't a clean integer string of seconds — otherwise
+    // a malformed/NaN timestamp would silently slip through the abs() check
+    // (NaN compares false) and disable replay protection.
     const nowSeconds = Math.floor(Date.now() / 1000);
-    if (Math.abs(nowSeconds - tsSeconds) > 300) {
-      res.status(401).json({ error: "Timestamp too old" });
+    const tsSeconds = /^-?\d+$/.test(svixTimestamp) ? parseInt(svixTimestamp, 10) : NaN;
+    if (!Number.isFinite(tsSeconds) || Math.abs(nowSeconds - tsSeconds) > 300) {
+      res.status(401).json({ error: "Invalid or stale timestamp" });
       return;
     }
 
@@ -483,10 +486,20 @@ router.post("/marketing/webhook", async (req, res): Promise<void> => {
     const secretBytes = Buffer.from(secret.startsWith("whsec_") ? secret.slice(6) : secret, "base64");
     const expectedHmac = crypto.createHmac("sha256", secretBytes).update(toSign).digest("base64");
 
+    const expectedBuf = Buffer.from(expectedHmac, "base64");
     const signatures = svixSignature.split(" ");
     const valid = signatures.some(sig => {
       const parts = sig.split(",");
-      return parts.length === 2 && parts[1] === expectedHmac;
+      // Svix format is "<version>,<base64-signature>"; only v1 is supported today.
+      if (parts.length !== 2 || parts[0] !== "v1") return false;
+      let providedBuf: Buffer;
+      try {
+        providedBuf = Buffer.from(parts[1], "base64");
+      } catch {
+        return false;
+      }
+      if (providedBuf.length !== expectedBuf.length) return false;
+      return crypto.timingSafeEqual(providedBuf, expectedBuf);
     });
 
     if (!valid) {
