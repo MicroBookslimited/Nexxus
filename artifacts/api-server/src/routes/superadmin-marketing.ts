@@ -185,6 +185,92 @@ router.get("/superadmin/marketing/campaigns/:id/recipients/:recipientId/clicks",
   res.json({ clicks });
 });
 
+/* ─── Per-link click trend (time-bucketed) for a campaign ─── */
+router.get("/superadmin/marketing/campaigns/:id/click-trend", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid campaign id" }); return; }
+
+  const [campaign] = await db.select().from(marketingCampaignsTable).where(eq(marketingCampaignsTable.id, id)).limit(1);
+  if (!campaign) { res.status(404).json({ error: "Not found" }); return; }
+
+  // Decide hour vs day buckets based on the click time-span. If the spread
+  // between earliest and latest click is more than 3 days, day buckets keep
+  // the chart readable; otherwise hourly resolution shows the early-decay
+  // pattern superadmins care about.
+  const [span] = await db
+    .select({
+      minAt: sql<Date | null>`min(${marketingLinkClicksTable.clickedAt})`,
+      maxAt: sql<Date | null>`max(${marketingLinkClicksTable.clickedAt})`,
+    })
+    .from(marketingLinkClicksTable)
+    .where(eq(marketingLinkClicksTable.campaignId, id));
+
+  if (!span?.minAt || !span?.maxAt) {
+    res.json({ bucketSize: "hour" as const, urls: [], points: [] });
+    return;
+  }
+
+  const minMs = new Date(span.minAt).getTime();
+  const maxMs = new Date(span.maxAt).getTime();
+  const spanDays = (maxMs - minMs) / (1000 * 60 * 60 * 24);
+  const bucketSize: "hour" | "day" = spanDays > 3 ? "day" : "hour";
+  const truncUnit = bucketSize === "day" ? "day" : "hour";
+
+  const rows = await db
+    .select({
+      bucket: sql<Date>`date_trunc(${truncUnit}, ${marketingLinkClicksTable.clickedAt})`,
+      url: marketingLinkClicksTable.url,
+      count: sql<number>`count(*)`,
+    })
+    .from(marketingLinkClicksTable)
+    .where(eq(marketingLinkClicksTable.campaignId, id))
+    .groupBy(sql`date_trunc(${truncUnit}, ${marketingLinkClicksTable.clickedAt})`, marketingLinkClicksTable.url)
+    .orderBy(sql`date_trunc(${truncUnit}, ${marketingLinkClicksTable.clickedAt})`);
+
+  // Collect distinct urls (sorted by total clicks desc so the legend is stable)
+  const totals = new Map<string, number>();
+  for (const r of rows) totals.set(r.url, (totals.get(r.url) ?? 0) + Number(r.count));
+  const urls = Array.from(totals.entries()).sort((a, b) => b[1] - a[1]).map(([u]) => u);
+
+  // Build a dense series so the chart x-axis has every bucket from min to max,
+  // even if a particular url had zero clicks in that bucket.
+  const stepMs = bucketSize === "day" ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+  const truncate = (ms: number): number => {
+    const d = new Date(ms);
+    if (bucketSize === "day") {
+      d.setUTCHours(0, 0, 0, 0);
+    } else {
+      d.setUTCMinutes(0, 0, 0);
+    }
+    return d.getTime();
+  };
+  const startMs = truncate(minMs);
+  const endMs = truncate(maxMs);
+
+  const lookup = new Map<string, number>();
+  for (const r of rows) {
+    const key = `${new Date(r.bucket).getTime()}|${r.url}`;
+    lookup.set(key, Number(r.count));
+  }
+
+  const points: { time: string; [url: string]: number | string }[] = [];
+  // Cap the dense expansion so a single rogue old click can't blow up the
+  // response. 500 buckets = ~20 days hourly or ~16 months daily, which is
+  // plenty for the modal chart.
+  const MAX_BUCKETS = 500;
+  let buckets = Math.floor((endMs - startMs) / stepMs) + 1;
+  if (buckets > MAX_BUCKETS) buckets = MAX_BUCKETS;
+  for (let i = 0; i < buckets; i++) {
+    const t = startMs + i * stepMs;
+    const point: { time: string; [url: string]: number | string } = { time: new Date(t).toISOString() };
+    for (const u of urls) point[u] = lookup.get(`${t}|${u}`) ?? 0;
+    points.push(point);
+  }
+
+  res.json({ bucketSize, urls, points });
+});
+
 /* ─── Send a single test email ─── */
 router.post("/superadmin/marketing/test", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;

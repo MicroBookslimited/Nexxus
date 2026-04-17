@@ -11,8 +11,26 @@ import {
   superadminMarketingUnsubscribes, ApiError,
   superadminMarketingPause, superadminMarketingResume, superadminMarketingCancel,
   superadminMarketingRecipientClicks,
+  superadminMarketingClickTrend,
   type MarketingAudience, type MarketingCampaign, type MarketingRecipient, type MarketingUnsubscribe, type MarketingLinkBreakdownEntry, type MarketingRecipientClick,
+  type MarketingClickTrendPoint,
 } from "@/lib/saas-api";
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
+} from "recharts";
+
+const CLICK_TREND_PALETTE = ["#3b82f6", "#a855f7", "#22c55e", "#f97316", "#eab308", "#ec4899", "#14b8a6", "#f43f5e"];
+
+function shortenUrlForLegend(url: string): string {
+  try {
+    const u = new URL(url);
+    const path = u.pathname === "/" ? "" : u.pathname;
+    const label = `${u.hostname}${path}`;
+    return label.length > 32 ? label.slice(0, 31) + "…" : label;
+  } catch {
+    return url.length > 32 ? url.slice(0, 31) + "…" : url;
+  }
+}
 
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set(["sent", "partial", "failed", "cancelled"]);
 const isTerminalStatus = (s: string): boolean => TERMINAL_STATUSES.has(s);
@@ -109,6 +127,7 @@ export function SuperadminMarketingTab() {
 
   // Detail / progress
   const [detail, setDetail] = useState<{ campaign: MarketingCampaign; recipients: MarketingRecipient[]; unsubscribeCount: number; linkBreakdown?: MarketingLinkBreakdownEntry[] } | null>(null);
+  const [clickTrend, setClickTrend] = useState<{ bucketSize: "hour" | "day"; urls: string[]; points: MarketingClickTrendPoint[] } | null>(null);
 
   // Per-recipient link click drill-down: tracks which recipient row is expanded,
   // their cached click history, in-flight loading state, and any fetch error.
@@ -351,8 +370,13 @@ export function SuperadminMarketingTab() {
 
   const openDetail = async (id: number) => {
     try {
-      const d = await superadminMarketingCampaign(id);
+      setClickTrend(null);
+      const [d, trend] = await Promise.all([
+        superadminMarketingCampaign(id),
+        superadminMarketingClickTrend(id).catch(() => null),
+      ]);
       setDetail(d);
+      setClickTrend(trend);
       // Reset per-recipient drill-down state so a previously open row doesn't
       // bleed across into the newly opened campaign.
       setExpandedRecipientId(null);
@@ -979,7 +1003,7 @@ export function SuperadminMarketingTab() {
 
       {/* ── Detail modal ── */}
       {detail && (
-        <Modal title={`Campaign #${detail.campaign.id}`} onClose={() => setDetail(null)} maxWidth="max-w-3xl">
+        <Modal title={`Campaign #${detail.campaign.id}`} onClose={() => { setDetail(null); setClickTrend(null); }} maxWidth="max-w-3xl">
           <div className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
               <Stat label="Total" value={detail.campaign.totalRecipients} />
@@ -1074,6 +1098,65 @@ export function SuperadminMarketingTab() {
                 </div>
               )}
             </div>
+
+            {/* Click trend over time */}
+            {clickTrend && clickTrend.urls.length > 0 && clickTrend.points.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <MousePointerClick className="h-4 w-4 text-blue-400" />
+                  <h4 className="text-sm font-semibold text-white">Click trend</h4>
+                  <span className="text-[10px] text-[#64748b]">
+                    bucketed by {clickTrend.bucketSize}
+                  </span>
+                </div>
+                <div className="bg-[#0f1729] border border-[#2a3a55] rounded p-2" style={{ height: 240 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={clickTrend.points} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
+                      <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="time"
+                        stroke="#64748b"
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(v: string) => {
+                          const d = new Date(v);
+                          return clickTrend.bucketSize === "day"
+                            ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+                            : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" });
+                        }}
+                        minTickGap={24}
+                      />
+                      <YAxis stroke="#64748b" tick={{ fontSize: 10 }} allowDecimals={false} width={28} />
+                      <Tooltip
+                        contentStyle={{ background: "#0f1729", border: "1px solid #2a3a55", fontSize: 12 }}
+                        labelStyle={{ color: "#cbd5e1" }}
+                        labelFormatter={(v: string) => {
+                          const d = new Date(v);
+                          return clickTrend.bucketSize === "day"
+                            ? d.toLocaleDateString()
+                            : d.toLocaleString();
+                        }}
+                        formatter={(value: number, name: string) => [value, shortenUrlForLegend(name)]}
+                      />
+                      <Legend
+                        wrapperStyle={{ fontSize: 10 }}
+                        formatter={(value: string) => shortenUrlForLegend(value)}
+                      />
+                      {clickTrend.urls.map((url, i) => (
+                        <Line
+                          key={url}
+                          type="monotone"
+                          dataKey={url}
+                          stroke={CLICK_TREND_PALETTE[i % CLICK_TREND_PALETTE.length]}
+                          strokeWidth={2}
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
 
             <div className="max-h-80 overflow-y-auto border border-[#2a3a55] rounded">
               <table className="w-full text-xs">

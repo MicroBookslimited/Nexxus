@@ -327,6 +327,14 @@ export const superadminMarketingRecipientClicks = (campaignId: number, recipient
     { headers: superadminAuthHeaders() },
   );
 
+export interface MarketingClickTrendPoint {
+  time: string;
+  [url: string]: number | string;
+}
+
+export const superadminMarketingClickTrend = (id: number) =>
+  api<{ bucketSize: "hour" | "day"; urls: string[]; points: MarketingClickTrendPoint[] }>(`/superadmin/marketing/campaigns/${id}/click-trend`, { headers: superadminAuthHeaders() });
+
 export const superadminMarketingUnsubscribes = () =>
   api<{ total: number; unsubscribes: MarketingUnsubscribe[] }>("/superadmin/marketing/unsubscribes", { headers: superadminAuthHeaders() });
 
