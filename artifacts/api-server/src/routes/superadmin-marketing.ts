@@ -485,4 +485,42 @@ router.get("/superadmin/marketing/unsubscribes", async (req, res): Promise<void>
   res.json({ total: rows.length, unsubscribes: rows });
 });
 
+/* ─── Re-subscribe: remove an email from the opt-out list ─── */
+router.delete("/superadmin/marketing/unsubscribes/:email", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  // Express already URL-decodes path params, so req.params.email arrives
+  // with characters like '@' already in their literal form.
+  const rawEmail = req.params.email;
+  if (!rawEmail) {
+    res.status(400).json({ error: "Email is required" });
+    return;
+  }
+  const email = rawEmail.trim().toLowerCase();
+  // Minimal sanity check — we only want to operate on something email-shaped.
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ error: "Invalid email address" });
+    return;
+  }
+
+  try {
+    const deleted = await db
+      .delete(marketingUnsubscribesTable)
+      .where(eq(marketingUnsubscribesTable.email, email))
+      .returning({ id: marketingUnsubscribesTable.id, email: marketingUnsubscribesTable.email });
+
+    if (deleted.length === 0) {
+      res.status(404).json({ error: `${email} is not currently on the opt-out list` });
+      return;
+    }
+
+    res.json({ success: true, email });
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to remove opt-out",
+      details: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
 export default router;
