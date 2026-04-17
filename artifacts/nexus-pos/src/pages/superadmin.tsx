@@ -5,9 +5,10 @@ import {
   Eye, X, AlertTriangle, Plus, Building2, Banknote, FileCheck,
   LayoutDashboard, Settings, Pencil, Trash2, Download, ChevronRight,
   LogIn, KeyRound, Check, Package, ToggleLeft, ToggleRight, Mail,
-  Cpu, Globe, ShoppingBag, ClipboardList,
+  Cpu, Globe, ShoppingBag, ClipboardList, Megaphone,
 } from "lucide-react";
 import { EmailTab } from "./superadmin-email-tab";
+import { SuperadminMarketingTab } from "./superadmin-marketing-tab";
 import { SuperadminStoreTab } from "./superadmin-store-tab";
 import {
   SUPERADMIN_TOKEN_KEY, TENANT_TOKEN_KEY,
@@ -27,7 +28,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "users" | "tenants" | "payments" | "plans" | "email" | "gateway" | "settings" | "store" | "impersonation-logs";
+type Tab = "overview" | "users" | "tenants" | "payments" | "plans" | "email" | "marketing" | "gateway" | "settings" | "store" | "impersonation-logs";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -940,6 +941,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     { id: "payments", label: "Payments", icon: Banknote, badge: stats?.pendingProofs || undefined },
     { id: "plans", label: "Plans", icon: Package },
     { id: "email", label: "Email", icon: Mail },
+    { id: "marketing", label: "Marketing", icon: Megaphone },
     { id: "gateway", label: "Gateway", icon: CreditCard },
     { id: "store", label: "Store", icon: ShoppingBag },
     { id: "settings", label: "Settings", icon: Settings },
@@ -1422,6 +1424,8 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
 
         {/* ── EMAIL ── */}
         {tab === "email" && <EmailTab />}
+
+        {tab === "marketing" && <SuperadminMarketingTab />}
 
         {/* ── STORE ── */}
         {tab === "store" && <SuperadminStoreTab />}

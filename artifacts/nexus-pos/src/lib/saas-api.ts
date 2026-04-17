@@ -272,6 +272,48 @@ export const superadminSendConnectionTest = (to: string) =>
     method: "POST", body: JSON.stringify({ to }), headers: superadminAuthHeaders(),
   });
 
+/* ─── Marketing / Promotional ─── */
+export type MarketingAudience = "all" | "owners" | "admins" | "active" | "trial" | "verified";
+
+export interface MarketingCampaign {
+  id: number; subject: string; htmlBody: string; fromName: string; fromAddress: string;
+  audience: string; status: string; totalRecipients: number; sentCount: number;
+  failedCount: number; errorMessage: string | null; createdAt: string; sentAt: string | null;
+}
+
+export interface MarketingRecipient {
+  id: number; campaignId: number; email: string; name: string | null; status: string;
+  messageId: string | null; errorMessage: string | null; sentAt: string | null;
+}
+
+export const superadminMarketingStatus = () =>
+  api<{ provider: string; configured: boolean }>("/superadmin/marketing/status", { headers: superadminAuthHeaders() });
+
+export const superadminMarketingAudience = (audience: MarketingAudience) =>
+  api<{ total: number; sample: { email: string; name: string | null }[] }>(`/superadmin/marketing/audience?audience=${audience}`, { headers: superadminAuthHeaders() });
+
+export const superadminMarketingCampaigns = () =>
+  api<MarketingCampaign[]>("/superadmin/marketing/campaigns", { headers: superadminAuthHeaders() });
+
+export const superadminMarketingCampaign = (id: number) =>
+  api<{ campaign: MarketingCampaign; recipients: MarketingRecipient[] }>(`/superadmin/marketing/campaigns/${id}`, { headers: superadminAuthHeaders() });
+
+export const superadminMarketingProgress = (id: number) =>
+  api<{ status: string; total: number; sent: number; failed: number; pending: number }>(`/superadmin/marketing/campaigns/${id}/progress`, { headers: superadminAuthHeaders() });
+
+export const superadminMarketingTest = (data: { to: string; subject: string; htmlBody: string; fromName: string; fromAddress: string }) =>
+  api<{ success: boolean; messageId?: string }>("/superadmin/marketing/test", {
+    method: "POST", body: JSON.stringify(data), headers: superadminAuthHeaders(),
+  });
+
+export const superadminMarketingSend = (data: { subject: string; htmlBody: string; fromName: string; fromAddress: string; audience: MarketingAudience }) =>
+  api<{ success: boolean; campaign: MarketingCampaign; queued: number }>("/superadmin/marketing/send", {
+    method: "POST", body: JSON.stringify(data), headers: superadminAuthHeaders(),
+  });
+
+export const superadminMarketingDelete = (id: number) =>
+  api<{ success: boolean }>(`/superadmin/marketing/campaigns/${id}`, { method: "DELETE", headers: superadminAuthHeaders() });
+
 /* ─── Types ─── */
 export interface Tenant {
   id: number; businessName: string; ownerName: string; email: string; phone?: string;

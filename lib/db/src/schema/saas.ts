@@ -115,6 +115,37 @@ export const tenantAdminUsersTable = pgTable("tenant_admin_users", {
 
 export type TenantAdminUser = typeof tenantAdminUsersTable.$inferSelect;
 
+export const marketingCampaignsTable = pgTable("marketing_campaigns", {
+  id: serial("id").primaryKey(),
+  subject: text("subject").notNull(),
+  htmlBody: text("html_body").notNull(),
+  fromName: text("from_name").notNull(),
+  fromAddress: text("from_address").notNull(),
+  audience: text("audience").notNull().default("all"),
+  audienceFilter: text("audience_filter"),
+  status: text("status").notNull().default("draft"),
+  totalRecipients: integer("total_recipients").notNull().default(0),
+  sentCount: integer("sent_count").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+});
+
+export const marketingRecipientsTable = pgTable("marketing_recipients", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaign_id").notNull().references(() => marketingCampaignsTable.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  name: text("name"),
+  status: text("status").notNull().default("pending"),
+  messageId: text("message_id"),
+  errorMessage: text("error_message"),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+});
+
+export type MarketingCampaign = typeof marketingCampaignsTable.$inferSelect;
+export type MarketingRecipient = typeof marketingRecipientsTable.$inferSelect;
+
 export const bankTransferProofsTable = pgTable("bank_transfer_proofs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id),
