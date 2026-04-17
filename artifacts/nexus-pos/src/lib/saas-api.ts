@@ -305,6 +305,8 @@ export interface MarketingLinkBreakdownEntry {
 
 export interface MarketingUnsubscribe {
   id: number; email: string; unsubscribedAt: string;
+  campaignId: number | null;
+  campaignSubject: string | null;
 }
 
 export const superadminMarketingCampaign = (id: number) =>

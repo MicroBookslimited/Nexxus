@@ -478,8 +478,11 @@ router.get("/superadmin/marketing/unsubscribes", async (req, res): Promise<void>
       id: marketingUnsubscribesTable.id,
       email: marketingUnsubscribesTable.email,
       unsubscribedAt: marketingUnsubscribesTable.unsubscribedAt,
+      campaignId: marketingUnsubscribesTable.campaignId,
+      campaignSubject: marketingCampaignsTable.subject,
     })
     .from(marketingUnsubscribesTable)
+    .leftJoin(marketingCampaignsTable, eq(marketingUnsubscribesTable.campaignId, marketingCampaignsTable.id))
     .orderBy(desc(marketingUnsubscribesTable.unsubscribedAt))
     .limit(500);
   res.json({ total: rows.length, unsubscribes: rows });

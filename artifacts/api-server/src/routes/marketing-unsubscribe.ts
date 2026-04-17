@@ -111,12 +111,16 @@ router.get("/unsubscribe", async (req, res): Promise<void> => {
   }
 
   let email: string;
+  let campaignId: number | null = null;
   try {
-    const payload = jwt.verify(token, getJwtSecret()) as { type: string; email: string };
+    const payload = jwt.verify(token, getJwtSecret()) as { type: string; email: string; campaignId?: number };
     if (payload.type !== "unsubscribe" || !payload.email) {
       throw new Error("Invalid token type");
     }
     email = payload.email;
+    if (typeof payload.campaignId === "number" && Number.isFinite(payload.campaignId)) {
+      campaignId = payload.campaignId;
+    }
   } catch {
     res.status(400).type("html").send(ERROR_PAGE);
     return;
@@ -137,6 +141,7 @@ router.get("/unsubscribe", async (req, res): Promise<void> => {
     await db.insert(marketingUnsubscribesTable).values({
       email: email.toLowerCase(),
       token,
+      campaignId,
     });
 
     res.type("html").send(SUCCESS_PAGE);

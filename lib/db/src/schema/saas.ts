@@ -158,6 +158,7 @@ export const marketingUnsubscribesTable = pgTable("marketing_unsubscribes", {
   id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
   token: text("token"),
+  campaignId: integer("campaign_id").references(() => marketingCampaignsTable.id, { onDelete: "set null" }),
   unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

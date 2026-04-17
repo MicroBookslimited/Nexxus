@@ -8,8 +8,8 @@ function getJwtSecret() {
   return process.env["SESSION_SECRET"] ?? "nexus-pos-secret";
 }
 
-function buildUnsubscribeUrl(email: string): string {
-  const token = jwt.sign({ type: "unsubscribe", email }, getJwtSecret());
+function buildUnsubscribeUrl(email: string, campaignId: number): string {
+  const token = jwt.sign({ type: "unsubscribe", email, campaignId }, getJwtSecret());
   const base =
     process.env["PUBLIC_API_URL"] ??
     (process.env["REPLIT_DEV_DOMAIN"]
@@ -70,7 +70,7 @@ export async function sendPendingForCampaign(campaignId: number): Promise<void> 
 
   for (const r of pendingRecipients) {
     try {
-      const unsubscribeUrl = buildUnsubscribeUrl(r.email);
+      const unsubscribeUrl = buildUnsubscribeUrl(r.email, campaignId);
       const result = await sendMarketingMail({
         to: r.email,
         subject: campaign.subject,

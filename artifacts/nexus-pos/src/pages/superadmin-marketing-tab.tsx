@@ -516,6 +516,7 @@ export function SuperadminMarketingTab() {
               <thead className="sticky top-0 bg-[#1a2332]">
                 <tr className="text-left text-xs text-[#64748b] uppercase tracking-wide border-b border-[#2a3a55]">
                   <th className="px-4 py-3 font-medium">Email</th>
+                  <th className="px-4 py-3 font-medium">Triggered by campaign</th>
                   <th className="px-4 py-3 font-medium">Opted out</th>
                 </tr>
               </thead>
@@ -529,6 +530,13 @@ export function SuperadminMarketingTab() {
                           <Mail className="h-3 w-3 text-[#475569]" />
                           {u.email}
                         </span>
+                      </td>
+                      <td className="px-4 py-2 text-xs">
+                        {u.campaignSubject ? (
+                          <span className="text-[#cbd5e1]" title={`Campaign #${u.campaignId}`}>{u.campaignSubject}</span>
+                        ) : (
+                          <span className="text-[#475569] italic">Unknown</span>
+                        )}
                       </td>
                       <td className="px-4 py-2 text-[#94a3b8] text-xs">
                         {new Date(u.unsubscribedAt).toLocaleString()}
