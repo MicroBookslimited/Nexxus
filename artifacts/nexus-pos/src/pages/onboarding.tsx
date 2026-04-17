@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Check, ChevronRight, Building2, CreditCard, Zap, ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck } from "lucide-react";
+import { Check, ChevronRight, CreditCard, Zap, ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck, ShoppingBag, Cpu, Code2 } from "lucide-react";
 import { TENANT_TOKEN_KEY, saasRegister, saasMe, saasUpdateOnboarding, createFirstStaff, getPlans, createPayPalOrder, capturePayPalOrder, initiatePowerTranz, type Plan } from "@/lib/saas-api";
 import { loadScript } from "@paypal/paypal-js";
 
-const STEPS = ["Account", "Business", "Plan", "Payment", "Setup", "Launch"] as const;
+const STEPS = ["Account", "Business", "Plan", "Payment", "Setup", "Hardware", "Launch"] as const;
+const HARDWARE_CHOICE_KEY = "nexxus.onboarding.hardwareChoice";
 
 const COUNTRIES = [
   "United States", "United Kingdom", "Canada", "Australia", "Jamaica", "Trinidad and Tobago",
@@ -49,8 +50,8 @@ export function Onboarding() {
         if (tenant.onboardingComplete) {
           navigate("/dashboard");
         } else {
-          // Resume from the step stored on the server (clamped to 2–5)
-          const resumeStep = Math.max(2, Math.min(5, tenant.onboardingStep ?? 2));
+          // Resume from the step stored on the server (clamped to 2–6)
+          const resumeStep = Math.max(2, Math.min(6, tenant.onboardingStep ?? 2));
           setStep(resumeStep);
           if (tenant.businessName) updateForm("businessName", tenant.businessName);
           if (tenant.ownerName)    updateForm("ownerName",    tenant.ownerName);
@@ -600,8 +601,99 @@ export function Onboarding() {
             </form>
           )}
 
-          {/* Step 6: Success / Launch */}
+          {/* Step 6: Hardware Setup Choice */}
           {step === 6 && (
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 bg-[#3b82f6]/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Cpu size={24} className="text-[#3b82f6]" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">How will you set up your hardware?</h2>
+                  <p className="text-[#94a3b8] text-sm">Pick the option that fits your business — you can change this later.</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {/* Option 1: Order POS hardware */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    try { localStorage.setItem(HARDWARE_CHOICE_KEY, "order"); } catch { /* ignore */ }
+                    navigate("/app/store?onboarding=1");
+                  }}
+                  className="w-full text-left border border-[#2a3a55] hover:border-[#3b82f6] bg-[#0f1729] hover:bg-[#3b82f6]/5 rounded-xl p-4 transition-all group"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-11 h-11 bg-[#3b82f6]/10 group-hover:bg-[#3b82f6]/20 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors">
+                      <ShoppingBag size={20} className="text-[#3b82f6]" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-white font-semibold">Order POS hardware</h3>
+                        <span className="text-xs bg-[#3b82f6]/20 text-[#3b82f6] px-2 py-0.5 rounded-full">Recommended</span>
+                      </div>
+                      <p className="text-sm text-[#94a3b8]">Browse our catalog of receipt printers, scanners, cash drawers, card readers, and full POS bundles. We'll ship it ready-to-use.</p>
+                    </div>
+                    <ChevronRight size={18} className="text-[#475569] group-hover:text-[#3b82f6] flex-shrink-0 mt-2 transition-colors" />
+                  </div>
+                </button>
+
+                {/* Option 2: Bring your own device */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    try { localStorage.setItem(HARDWARE_CHOICE_KEY, "byod"); } catch { /* ignore */ }
+                    navigate("/app/hardware?onboarding=1");
+                  }}
+                  className="w-full text-left border border-[#2a3a55] hover:border-purple-500 bg-[#0f1729] hover:bg-purple-500/5 rounded-xl p-4 transition-all group"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-11 h-11 bg-purple-500/10 group-hover:bg-purple-500/20 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors">
+                      <Cpu size={20} className="text-purple-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold mb-1">Bring your own device</h3>
+                      <p className="text-sm text-[#94a3b8]">Already have a tablet, printer, or scanner? Register your existing equipment and download the right drivers.</p>
+                    </div>
+                    <ChevronRight size={18} className="text-[#475569] group-hover:text-purple-400 flex-shrink-0 mt-2 transition-colors" />
+                  </div>
+                </button>
+
+                {/* Option 3: Software only */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    try { localStorage.setItem(HARDWARE_CHOICE_KEY, "software-only"); } catch { /* ignore */ }
+                    setStep(7);
+                  }}
+                  className="w-full text-left border border-[#2a3a55] hover:border-amber-500 bg-[#0f1729] hover:bg-amber-500/5 rounded-xl p-4 transition-all group"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-11 h-11 bg-amber-500/10 group-hover:bg-amber-500/20 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors">
+                      <Code2 size={20} className="text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-semibold mb-1">Software only</h3>
+                      <p className="text-sm text-[#94a3b8]">Just give me the app — I'll handle hardware on my own. You can still add devices anytime from the Hardware menu.</p>
+                    </div>
+                    <ChevronRight size={18} className="text-[#475569] group-hover:text-amber-400 flex-shrink-0 mt-2 transition-colors" />
+                  </div>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setStep(7)}
+                className="w-full mt-5 text-[#475569] hover:text-[#94a3b8] text-sm text-center transition-colors"
+              >
+                Skip for now → finish onboarding
+              </button>
+            </div>
+          )}
+
+          {/* Step 7: Success / Launch */}
+          {step === 7 && (
             <div className="text-center py-4">
               <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check size={32} className="text-green-400" />
