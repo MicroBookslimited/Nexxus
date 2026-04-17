@@ -420,7 +420,6 @@ function CloseShiftDialog({
   };
 
   const handleClose = (withBreakdown: boolean) => {
-    if (actualCash === "") return;
     closeSession.mutate(
       {
         id: sessionId,
@@ -509,7 +508,7 @@ function CloseShiftDialog({
               </button>
               <button
                 type="button"
-                onClick={() => { setActualCash(""); setStep("confirm"); }}
+                onClick={() => { setActualCash(expectedCash.toFixed(2)); setStep("confirm"); }}
                 className="flex flex-col items-center gap-2 rounded-xl border-2 border-border hover:border-primary/30 hover:bg-muted/40 transition-colors p-4 text-left"
               >
                 <DollarSign className="h-7 w-7 text-muted-foreground" />
@@ -694,7 +693,7 @@ function CloseShiftDialog({
           {step === "confirm" && (
             <Button
               onClick={() => handleClose(breakdownTotal > 0)}
-              disabled={actualCash === "" || closeSession.isPending}
+              disabled={closeSession.isPending}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />

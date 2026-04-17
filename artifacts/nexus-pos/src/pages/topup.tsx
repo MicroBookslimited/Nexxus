@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { Layout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -278,7 +277,7 @@ export function TopUp() {
 
   /* ── Render ── */
   return (
-    <Layout title="Top-Up / Airtime">
+    <>
       <div className="flex flex-col h-full gap-4 p-4 md:p-6 overflow-auto">
 
         {/* Header metrics */}
@@ -751,12 +750,19 @@ export function TopUp() {
               <div className="flex justify-between"><span className="text-muted-foreground">Operator</span><span className="font-semibold">{selectedOperator?.Name}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Amount</span><span className="font-bold text-primary text-base">{JMD(face)}</span></div>
               {commission > 0 && <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">Commission</span><span className="font-medium text-emerald-400">{JMD(commission)}</span></div>}
+              <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">Wallet balance</span><span className={cn("font-mono", (wallet?.balance ?? 0) < cost ? "text-red-400" : "text-foreground")}>{JMD(wallet?.balance ?? 0)}</span></div>
             </div>
-            <p className="text-xs text-muted-foreground text-center">This action cannot be undone. The top-up will be sent immediately.</p>
+            {(wallet?.balance ?? 0) < cost ? (
+              <div className="rounded-md border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-300 text-center">
+                Insufficient wallet balance. Please add funds before sending.
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center">This action cannot be undone. The top-up will be sent immediately.</p>
+            )}
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-            <Button onClick={handleSend} disabled={sending} className="bg-emerald-600 hover:bg-emerald-700 gap-2">
+            <Button onClick={handleSend} disabled={sending || (wallet?.balance ?? 0) < cost} className="bg-emerald-600 hover:bg-emerald-700 gap-2">
               {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Sending…</> : <><CheckCircle2 className="h-4 w-4" />Confirm & Send</>}
             </Button>
           </DialogFooter>
@@ -850,7 +856,7 @@ export function TopUp() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Layout>
+    </>
   );
 }
 
