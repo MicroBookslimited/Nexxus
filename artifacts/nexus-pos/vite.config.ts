@@ -63,6 +63,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,woff,ttf}"],
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /\/api\/products/,
@@ -119,6 +120,20 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "react-vendor": ["react", "react-dom", "react/jsx-runtime"],
+          "router": ["wouter"],
+          "query": ["@tanstack/react-query"],
+          "xlsx": ["xlsx"],
+          "barcode": ["jsbarcode"],
+          "charts": ["recharts"],
+          "icons": ["lucide-react"],
+        },
+      },
+    },
   },
   server: {
     port,
