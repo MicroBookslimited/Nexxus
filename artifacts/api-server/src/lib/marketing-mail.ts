@@ -10,6 +10,17 @@ export function isMarketingMailerConfigured(): boolean {
   return Boolean(process.env["RESEND_API_KEY"]);
 }
 
+function buildUnsubscribeFooter(unsubscribeUrl: string): string {
+  return `
+<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;font-family:sans-serif;font-size:12px;color:#6b7280;text-align:center;">
+  <p style="margin:0 0 6px;">You are receiving this email because you have an account with NEXXUS POS.</p>
+  <p style="margin:0;">
+    If you no longer wish to receive marketing emails from us,
+    <a href="${unsubscribeUrl}" style="color:#6b7280;text-decoration:underline;">click here to unsubscribe</a>.
+  </p>
+</div>`;
+}
+
 export async function sendMarketingMail(opts: {
   to: string;
   subject: string;
@@ -17,6 +28,7 @@ export async function sendMarketingMail(opts: {
   fromName: string;
   fromAddress: string;
   replyTo?: string;
+  unsubscribeUrl?: string;
 }): Promise<{ messageId?: string }> {
   const apiKey = process.env["RESEND_API_KEY"];
   if (!apiKey) {
@@ -25,12 +37,17 @@ export async function sendMarketingMail(opts: {
 
   const from = `${opts.fromName} <${opts.fromAddress}>`;
 
+  const htmlWithFooter = opts.unsubscribeUrl
+    ? opts.html + buildUnsubscribeFooter(opts.unsubscribeUrl)
+    : opts.html;
+
   const payload = JSON.stringify({
     from,
     to: [opts.to],
     subject: opts.subject,
-    html: opts.html,
+    html: htmlWithFooter,
     ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
+    ...(opts.unsubscribeUrl ? { headers: { "List-Unsubscribe": `<${opts.unsubscribeUrl}>` } } : {}),
   });
 
   // Retry once on transient errors (429 / 5xx) honoring Retry-After.

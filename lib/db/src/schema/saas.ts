@@ -152,6 +152,15 @@ export const marketingRecipientsTable = pgTable("marketing_recipients", {
 export type MarketingCampaign = typeof marketingCampaignsTable.$inferSelect;
 export type MarketingRecipient = typeof marketingRecipientsTable.$inferSelect;
 
+export const marketingUnsubscribesTable = pgTable("marketing_unsubscribes", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  token: text("token"),
+  unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type MarketingUnsubscribe = typeof marketingUnsubscribesTable.$inferSelect;
+
 export const bankTransferProofsTable = pgTable("bank_transfer_proofs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id),

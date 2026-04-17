@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request } from "express";
-import { db, marketingCampaignsTable, marketingRecipientsTable, tenantsTable, tenantAdminUsersTable } from "@workspace/db";
-import { eq, desc, sql } from "drizzle-orm";
+import { db, marketingCampaignsTable, marketingRecipientsTable, tenantsTable, tenantAdminUsersTable, marketingUnsubscribesTable } from "@workspace/db";
+import { eq, desc, sql, inArray } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { sendMarketingMail, isMarketingMailerConfigured } from "../lib/marketing-mail";
@@ -27,11 +27,18 @@ function requireSuperAdmin(req: { headers: { authorization?: string } }, res: { 
 
 type Audience = "all" | "owners" | "admins" | "active" | "trial" | "verified";
 
+async function getUnsubscribedEmails(): Promise<Set<string>> {
+  const rows = await db.select({ email: marketingUnsubscribesTable.email }).from(marketingUnsubscribesTable);
+  return new Set(rows.map(r => r.email.toLowerCase()));
+}
+
 async function resolveAudience(audience: Audience): Promise<{ email: string; name: string | null }[]> {
   const includeOwners = audience === "all" || audience === "owners" || audience === "active" || audience === "trial" || audience === "verified";
   const includeAdmins = audience === "all" || audience === "admins";
 
   const recipients = new Map<string, { email: string; name: string | null }>();
+
+  const unsubscribed = await getUnsubscribedEmails();
 
   if (includeOwners) {
     const owners = await db.select({
@@ -47,6 +54,7 @@ async function resolveAudience(audience: Audience): Promise<{ email: string; nam
       if (audience === "trial" && o.status !== "trial" && o.status !== "pending") continue;
       if (audience === "verified" && !o.emailVerified) continue;
       const key = o.email.toLowerCase();
+      if (unsubscribed.has(key)) continue;
       if (!recipients.has(key)) recipients.set(key, { email: o.email, name: o.name ?? null });
     }
   }
@@ -62,6 +70,7 @@ async function resolveAudience(audience: Audience): Promise<{ email: string; nam
       if (!a.email) continue;
       if (a.status !== "active") continue;
       const key = a.email.toLowerCase();
+      if (unsubscribed.has(key)) continue;
       if (!recipients.has(key)) recipients.set(key, { email: a.email, name: a.name ?? null });
     }
   }
@@ -100,14 +109,26 @@ router.get("/superadmin/marketing/campaigns", async (req, res): Promise<void> =>
   res.json(rows);
 });
 
-/* ─── Get one campaign with recipient summary ─── */
+/* ─── Get one campaign with recipient summary + opt-out count ─── */
 router.get("/superadmin/marketing/campaigns/:id", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;
   const id = parseInt(req.params.id, 10);
   const [campaign] = await db.select().from(marketingCampaignsTable).where(eq(marketingCampaignsTable.id, id)).limit(1);
   if (!campaign) { res.status(404).json({ error: "Not found" }); return; }
   const recipients = await db.select().from(marketingRecipientsTable).where(eq(marketingRecipientsTable.campaignId, id)).orderBy(desc(marketingRecipientsTable.id)).limit(500);
-  res.json({ campaign, recipients });
+
+  // Count how many recipients of this campaign have since unsubscribed.
+  let unsubscribeCount = 0;
+  if (recipients.length > 0) {
+    const recipientEmails = [...new Set(recipients.map(r => r.email.toLowerCase()))];
+    const [countRow] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(marketingUnsubscribesTable)
+      .where(inArray(marketingUnsubscribesTable.email, recipientEmails));
+    unsubscribeCount = Number(countRow?.count ?? 0);
+  }
+
+  res.json({ campaign, recipients, unsubscribeCount });
 });
 
 /* ─── Send a single test email ─── */
@@ -314,6 +335,21 @@ router.post("/marketing/webhook", async (req, res): Promise<void> => {
     console.error("[marketing webhook]", err);
     res.status(500).json({ error: "Internal error" });
   }
+});
+
+/* ─── Global unsubscribes list ─── */
+router.get("/superadmin/marketing/unsubscribes", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const rows = await db
+    .select({
+      id: marketingUnsubscribesTable.id,
+      email: marketingUnsubscribesTable.email,
+      unsubscribedAt: marketingUnsubscribesTable.unsubscribedAt,
+    })
+    .from(marketingUnsubscribesTable)
+    .orderBy(desc(marketingUnsubscribesTable.unsubscribedAt))
+    .limit(500);
+  res.json({ total: rows.length, unsubscribes: rows });
 });
 
 export default router;

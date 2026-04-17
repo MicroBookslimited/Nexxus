@@ -38,6 +38,7 @@ import emailTemplatesRouter from "./email-templates";
 import auditRouter from "./audit";
 import topupRouter from "./topup";
 import superadminMarketingRouter from "./superadmin-marketing";
+import marketingUnsubscribeRouter from "./marketing-unsubscribe";
 
 const router: IRouter = Router();
 
@@ -80,5 +81,6 @@ router.use("/email-templates", emailTemplatesRouter);
 router.use(auditRouter);
 router.use(topupRouter);
 router.use(superadminMarketingRouter);
+router.use(marketingUnsubscribeRouter);
 
 export default router;

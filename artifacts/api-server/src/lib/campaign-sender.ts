@@ -2,6 +2,21 @@ import { db, marketingCampaignsTable, marketingRecipientsTable } from "@workspac
 import { eq, and } from "drizzle-orm";
 import { sendMarketingMail } from "./marketing-mail";
 import { logger } from "./logger";
+import jwt from "jsonwebtoken";
+
+function getJwtSecret() {
+  return process.env["SESSION_SECRET"] ?? "nexus-pos-secret";
+}
+
+function buildUnsubscribeUrl(email: string): string {
+  const token = jwt.sign({ type: "unsubscribe", email }, getJwtSecret());
+  const base =
+    process.env["PUBLIC_API_URL"] ??
+    (process.env["REPLIT_DEV_DOMAIN"]
+      ? `https://${process.env["REPLIT_DEV_DOMAIN"]}/api`
+      : "");
+  return `${base}/unsubscribe?token=${encodeURIComponent(token)}`;
+}
 
 /**
  * Sends all pending recipients for the given campaign, updating statuses as it
@@ -43,12 +58,14 @@ export async function sendPendingForCampaign(campaignId: number): Promise<void> 
 
   for (const r of pendingRecipients) {
     try {
+      const unsubscribeUrl = buildUnsubscribeUrl(r.email);
       const result = await sendMarketingMail({
         to: r.email,
         subject: campaign.subject,
         html: campaign.htmlBody,
         fromName: campaign.fromName,
         fromAddress: campaign.fromAddress,
+        unsubscribeUrl,
       });
       await db
         .update(marketingRecipientsTable)
