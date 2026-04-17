@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Megaphone, Send, Users, Mail, AlertTriangle, CheckCircle2, XCircle, Clock,
-  Eye, Trash2, RefreshCw, Loader2, Sparkles, FileText, MousePointerClick,
+  Eye, Trash2, RefreshCw, Loader2, Sparkles, FileText, MousePointerClick, Webhook, Copy, KeyRound,
 } from "lucide-react";
 import {
   superadminMarketingStatus, superadminMarketingAudience, superadminMarketingCampaigns,
@@ -77,7 +77,7 @@ const STARTER_TEMPLATES: { name: string; subject: string; html: string }[] = [
 ];
 
 export function SuperadminMarketingTab() {
-  const [status, setStatus] = useState<{ provider: string; configured: boolean } | null>(null);
+  const [status, setStatus] = useState<{ provider: string; configured: boolean; webhookUrl: string; webhookSecretConfigured: boolean } | null>(null);
   const [campaigns, setCampaigns] = useState<MarketingCampaign[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -245,6 +245,57 @@ export function SuperadminMarketingTab() {
           </p>
         </div>
       </div>
+
+      {/* Webhook setup */}
+      {status && (
+        <div className="rounded-lg border border-[#2a3a55] bg-[#1a2332] p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <Webhook className="h-5 w-5 text-[#3b82f6] mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h3 className="text-sm font-semibold text-white">Webhook setup</h3>
+                <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border ${
+                  status.webhookSecretConfigured
+                    ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                    : "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                }`}>
+                  <KeyRound className="h-3 w-3" />
+                  RESEND_WEBHOOK_SECRET {status.webhookSecretConfigured ? "set" : "not set (signature verification disabled)"}
+                </span>
+              </div>
+              <p className="text-xs text-[#94a3b8] mt-1">
+                Open & click counters stay at <strong>0</strong> until you register this URL as a webhook in your Resend dashboard
+                (<em>Webhooks → Add Endpoint</em>) and subscribe to <code className="text-[#cbd5e1]">email.opened</code>, <code className="text-[#cbd5e1]">email.clicked</code>, <code className="text-[#cbd5e1]">email.delivered</code>, <code className="text-[#cbd5e1]">email.bounced</code>, and <code className="text-[#cbd5e1]">email.complained</code>.
+              </p>
+              <div className="mt-3 flex items-stretch gap-2">
+                <input
+                  readOnly
+                  value={status.webhookUrl}
+                  onFocus={e => e.currentTarget.select()}
+                  className="flex-1 bg-[#0f1729] border border-[#2a3a55] rounded-md px-3 py-2 text-xs text-white font-mono focus:border-[#3b82f6] focus:outline-none"
+                />
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(status.webhookUrl);
+                      showToast("ok", "Webhook URL copied");
+                    } catch {
+                      showToast("err", "Could not copy — select and copy manually");
+                    }
+                  }}
+                  className="bg-[#0f1729] border border-[#3b82f6]/40 text-[#3b82f6] hover:bg-[#3b82f6]/10 px-3 py-2 rounded-md text-xs font-medium flex items-center gap-1.5"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </button>
+              </div>
+              <p className="text-[10px] text-[#64748b] mt-2">
+                For signed events, also add a <code className="text-[#cbd5e1]">RESEND_WEBHOOK_SECRET</code> environment variable matching the signing secret shown in Resend.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-6">
         {/* ── Composer ── */}

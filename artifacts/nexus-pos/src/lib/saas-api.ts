@@ -290,7 +290,7 @@ export interface MarketingRecipient {
 }
 
 export const superadminMarketingStatus = () =>
-  api<{ provider: string; configured: boolean }>("/superadmin/marketing/status", { headers: superadminAuthHeaders() });
+  api<{ provider: string; configured: boolean; webhookUrl: string; webhookSecretConfigured: boolean }>("/superadmin/marketing/status", { headers: superadminAuthHeaders() });
 
 export const superadminMarketingAudience = (audience: MarketingAudience) =>
   api<{ total: number; sample: { email: string; name: string | null }[] }>(`/superadmin/marketing/audience?audience=${audience}`, { headers: superadminAuthHeaders() });

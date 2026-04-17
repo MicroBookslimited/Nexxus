@@ -81,9 +81,19 @@ async function resolveAudience(audience: Audience): Promise<{ email: string; nam
 /* ─── Status: provider configured? ─── */
 router.get("/superadmin/marketing/status", (req, res): void => {
   if (!requireSuperAdmin(req, res)) return;
+  const rawBase =
+    process.env["APP_BASE_URL"] ??
+    (process.env["REPLIT_DOMAINS"]
+      ? `https://${process.env["REPLIT_DOMAINS"].split(",")[0]!.trim()}`
+      : process.env["REPLIT_DEV_DOMAIN"]
+        ? `https://${process.env["REPLIT_DEV_DOMAIN"]}`
+        : "");
+  const appBase = rawBase.replace(/\/+$/, "");
   res.json({
     provider: "resend",
     configured: isMarketingMailerConfigured(),
+    webhookUrl: appBase ? `${appBase}/api/marketing/webhook` : "/api/marketing/webhook",
+    webhookSecretConfigured: !!process.env["RESEND_WEBHOOK_SECRET"],
   });
 });
 
