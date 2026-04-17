@@ -42,27 +42,29 @@ type NavGroup = {
 type NavEntry = NavItem | NavGroup;
 
 const NAV_ITEMS: NavEntry[] = [
-  { href: "/dashboard",    label: "Dashboard",   icon: LayoutDashboard, color: "text-sky-400",     permission: null },
-  { href: "/pos",          label: "POS",          icon: ShoppingCart,    color: "text-emerald-400", permission: "pos.sale",           alwaysShowLabel: true },
-  { href: "/tables",       label: "Tables",       icon: UtensilsCrossed, color: "text-orange-400",  permission: "orders.view" },
-  { href: "/kitchen",      label: "Kitchen",      icon: ChefHat,         color: "text-red-400",     permission: "kitchen.view" },
-  { href: "/orders",       label: "Orders",       icon: ListOrdered,     color: "text-purple-400",  permission: "orders.view" },
-  { href: "/cash",         label: "Cash",         icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session",  alwaysShowLabel: true },
-  { href: "/register",     label: "Register",     icon: Banknote,        color: "text-teal-400",    permission: "reports.view" },
-  { href: "/products",     label: "Products",     icon: Package,         color: "text-teal-400",    permission: "inventory.view" },
-  { href: "/customers",    label: "Customers",    icon: Users,           color: "text-pink-400",    permission: "customers.view" },
-  { href: "/staff",        label: "Staff",        icon: UserCog,         color: "text-indigo-400",  permission: "staff.view" },
-  { href: "/locations",    label: "Locations",    icon: MapPin,          color: "text-rose-400",    permission: "inventory.manage" },
-  { href: "/production",   label: "Production",   icon: FlaskConical,    color: "text-lime-400",    permission: "inventory.manage" },
-  { href: "/accounting",   label: "Accounting",   icon: Calculator,      color: "text-cyan-400",    permission: "reports.view" },
-  { href: "/ar",           label: "Receivables",  icon: BookOpen,        color: "text-violet-400",  permission: "reports.view" },
-  { href: "/ap",           label: "Payables",     icon: Landmark,        color: "text-orange-400",  permission: "reports.view" },
-  { href: "/topup",        label: "Top-Up",       icon: Smartphone,      color: "text-green-300",   permission: "pos.sale" },
-  { href: "/reports",      label: "Reports",      icon: BarChart2,       color: "text-amber-400",   permission: "reports.view" },
-  { href: "/hardware",     label: "My Hardware",  icon: Cpu,             color: "text-sky-300",     permission: "settings.view" },
-  { href: "/store",        label: "Store",        icon: Store,           color: "text-fuchsia-400", permission: null },
-  { href: "/subscription", label: "Plan",         icon: CreditCard,      color: "text-green-400",   permission: "settings.manage" },
-  { href: "/audit",        label: "Audit Trail",  icon: ClipboardList,   color: "text-slate-400",   permission: "reports.view" },
+  // ── PRIORITY: critical day-to-day buttons — always show label, pinned first ──
+  { href: "/pos",          label: "POS",             icon: ShoppingCart,    color: "text-emerald-400", permission: "pos.sale",           alwaysShowLabel: true },
+  { href: "/orders",       label: "Order List",      icon: ListOrdered,     color: "text-purple-400",  permission: "orders.view",        alwaysShowLabel: true },
+  { href: "/cash",         label: "Cash Mgmt",       icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session",  alwaysShowLabel: true },
+  { href: "/register",     label: "Cash Register",   icon: Banknote,        color: "text-teal-400",    permission: "reports.view",       alwaysShowLabel: true },
+  // ── secondary items — show as icons, label only when active ──
+  { href: "/dashboard",    label: "Dashboard",       icon: LayoutDashboard, color: "text-sky-400",     permission: null },
+  { href: "/tables",       label: "Tables",          icon: UtensilsCrossed, color: "text-orange-400",  permission: "orders.view" },
+  { href: "/kitchen",      label: "Kitchen",         icon: ChefHat,         color: "text-red-400",     permission: "kitchen.view" },
+  { href: "/products",     label: "Products",        icon: Package,         color: "text-teal-400",    permission: "inventory.view" },
+  { href: "/customers",    label: "Customers",       icon: Users,           color: "text-pink-400",    permission: "customers.view" },
+  { href: "/staff",        label: "Staff",           icon: UserCog,         color: "text-indigo-400",  permission: "staff.view" },
+  { href: "/locations",    label: "Locations",       icon: MapPin,          color: "text-rose-400",    permission: "inventory.manage" },
+  { href: "/production",   label: "Production",      icon: FlaskConical,    color: "text-lime-400",    permission: "inventory.manage" },
+  { href: "/accounting",   label: "Accounting",      icon: Calculator,      color: "text-cyan-400",    permission: "reports.view" },
+  { href: "/ar",           label: "Receivables",     icon: BookOpen,        color: "text-violet-400",  permission: "reports.view" },
+  { href: "/ap",           label: "Payables",        icon: Landmark,        color: "text-orange-400",  permission: "reports.view" },
+  { href: "/topup",        label: "Top-Up",          icon: Smartphone,      color: "text-green-300",   permission: "pos.sale" },
+  { href: "/reports",      label: "Reports",         icon: BarChart2,       color: "text-amber-400",   permission: "reports.view" },
+  { href: "/hardware",     label: "My Hardware",     icon: Cpu,             color: "text-sky-300",     permission: "settings.view" },
+  { href: "/store",        label: "Store",           icon: Store,           color: "text-fuchsia-400", permission: null },
+  { href: "/subscription", label: "Plan",            icon: CreditCard,      color: "text-green-400",   permission: "settings.manage" },
+  { href: "/audit",        label: "Audit Trail",     icon: ClipboardList,   color: "text-slate-400",   permission: "reports.view" },
 ];
 
 const MOBILE_PRIMARY = ["/dashboard", "/pos", "/orders", "/customers"];
@@ -293,7 +295,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <ImpersonationBanner />
 
       {/* ── TOP HEADER ───────────────────────────────────────── */}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-3 sm:px-5 bg-card">
+      <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-border px-3 sm:px-5 py-1 bg-card gap-2">
 
         {/* Logo */}
         <div className="flex items-center shrink-0">
@@ -301,7 +303,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
 
         {/* ── DESKTOP NAV (≥1280px): dynamic — active shows label, inactive icon-only ── */}
-        <nav className="hidden xl:flex items-center gap-0 overflow-x-auto no-scrollbar mx-2 flex-1">
+        <nav className="hidden xl:flex flex-wrap items-center gap-y-1 mx-2 flex-1">
           {visibleNav.map((entry) => {
             if (isGroup(entry)) {
               const active = groupActive(entry, location);
@@ -341,8 +343,8 @@ export function Layout({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        {/* ── TABLET NAV (768-1279px): icon-only with tooltip ── */}
-        <nav className="hidden md:flex xl:hidden items-center gap-0 overflow-x-auto no-scrollbar mx-2 flex-1 justify-center">
+        {/* ── TABLET NAV (768-1279px): icon-only with tooltip, wraps to 2nd row when needed ── */}
+        <nav className="hidden md:flex xl:hidden flex-wrap items-center gap-y-1 mx-2 flex-1 justify-center">
           {visibleNav.map((entry) => {
             if (isGroup(entry)) {
               const active = groupActive(entry, location);
