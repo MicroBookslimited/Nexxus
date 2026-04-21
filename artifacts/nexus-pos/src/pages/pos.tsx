@@ -1342,7 +1342,7 @@ export function POS() {
         </div>
 
         {/* ── MIDDLE: Order controls ── */}
-        <div className="w-[300px] shrink-0 border-l border-border flex flex-col bg-card">
+        <div className="w-[340px] shrink-0 border-l border-border flex flex-col bg-card text-sm">
           {/* Order mode selector — restaurant only */}
           {isRestaurant && showOrderModes ? (
             <div className="grid grid-cols-3 gap-1 p-2 border-b border-border shrink-0">
@@ -1515,10 +1515,10 @@ export function POS() {
                       <div className="rounded-lg bg-secondary/30 p-2">
                         <div className="flex items-start justify-between gap-1">
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium leading-snug truncate">{item.productName}</p>
-                            {item.variantChoices.length > 0 && <p className="text-[10px] text-primary/80">{choiceLabel(item.variantChoices)}</p>}
-                            {item.modifierChoices.length > 0 && <p className="text-[10px] text-amber-400/90">+ {choiceLabel(item.modifierChoices)}</p>}
-                            <p className="text-[10px] font-mono text-primary mt-0.5">
+                            <p className="text-sm font-medium leading-snug truncate">{item.productName}</p>
+                            {item.variantChoices.length > 0 && <p className="text-xs text-primary/80">{choiceLabel(item.variantChoices)}</p>}
+                            {item.modifierChoices.length > 0 && <p className="text-xs text-amber-400/90">+ {choiceLabel(item.modifierChoices)}</p>}
+                            <p className="text-xs font-mono text-primary mt-0.5">
                               {tier ? (
                                 <>
                                   <span className="line-through text-muted-foreground/60 mr-1">{formatCurrency(item.effectivePrice)}</span>
@@ -1534,17 +1534,17 @@ export function POS() {
                           </Button>
                         </div>
                         <div className="flex items-center gap-1 mt-1.5">
-                          <Button size="icon" variant="outline" className="h-5 w-5 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:border-red-500" onClick={() => updateQuantity(item.cartKey, -1)}><Minus className="h-2.5 w-2.5" /></Button>
-                          <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
-                          <Button size="icon" variant="outline" className="h-5 w-5 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500" onClick={() => updateQuantity(item.cartKey, 1)}><Plus className="h-2.5 w-2.5" /></Button>
+                          <Button size="icon" variant="outline" className="h-6 w-6 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:border-red-500" onClick={() => updateQuantity(item.cartKey, -1)}><Minus className="h-3 w-3" /></Button>
+                          <span className="text-sm font-bold w-5 text-center">{item.quantity}</span>
+                          <Button size="icon" variant="outline" className="h-6 w-6 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500" onClick={() => updateQuantity(item.cartKey, 1)}><Plus className="h-3 w-3" /></Button>
                           <button
                             onClick={() => setEditingNoteKey((k) => k === item.cartKey ? null : item.cartKey)}
                             title="Add item note"
                             className={`ml-1 p-0.5 rounded transition-colors ${item.itemNote || editingNoteKey === item.cartKey ? "text-amber-400" : "text-muted-foreground/50 hover:text-muted-foreground"}`}
                           >
-                            <StickyNote className="h-3 w-3" />
+                            <StickyNote className="h-3.5 w-3.5" />
                           </button>
-                          <span className="ml-auto text-xs font-mono font-semibold">{formatCurrency(lineTotal)}</span>
+                          <span className="ml-auto text-sm font-mono font-bold">{formatCurrency(lineTotal)}</span>
                         </div>
                         {item.itemNote && editingNoteKey !== item.cartKey && (
                           <p className="text-xs font-medium text-yellow-400 mt-1.5 text-center w-full">
@@ -1777,18 +1777,18 @@ export function POS() {
         </div>
 
         {/* ── RIGHT: Bill preview + keypad ── */}
-        <div className="w-[400px] shrink-0 border-l border-border flex flex-col bg-card">
+        <div className="w-[440px] shrink-0 border-l border-border flex flex-col bg-card">
           {/* Bill summary */}
           <div className="flex-1 overflow-y-auto p-3 border-b border-border">
             <div className="flex items-center gap-1.5 mb-2">
-              <Printer className="h-3.5 w-3.5 text-primary" />
-              <span className="text-xs font-semibold text-primary">Bill Preview</span>
-              {cart.length > 0 && <span className="ml-auto text-[10px] text-muted-foreground">{cart.reduce((s, i) => s + i.quantity, 0)} items</span>}
+              <Printer className="h-4 w-4 text-primary" />
+              <span className="text-sm font-semibold text-primary">Bill Preview</span>
+              {cart.length > 0 && <span className="ml-auto text-xs text-muted-foreground">{cart.reduce((s, i) => s + i.quantity, 0)} items</span>}
             </div>
             {cart.length === 0 ? (
-              <p className="text-center text-[10px] text-muted-foreground py-1 opacity-50">Add items to see bill</p>
+              <p className="text-center text-xs text-muted-foreground py-1 opacity-50">Add items to see bill</p>
             ) : (
-              <div className="space-y-0.5 text-xs">
+              <div className="space-y-1 text-sm">
                 {cart.map((item) => {
                   const tiers = pricingTiersByProduct.get(item.productId) ?? [];
                   // Tier price is per BASE unit; effectivePrice already includes
@@ -1803,22 +1803,22 @@ export function POS() {
                   return (
                     <div key={item.cartKey}>
                       <div className="flex justify-between text-foreground">
-                        <span className="truncate max-w-[150px]">{item.quantity}× {item.productName}</span>
+                        <span className="truncate max-w-[180px]">{item.quantity}× {item.productName}</span>
                         <span className="font-mono shrink-0 ml-1">{fmtNum(lineTotal)}</span>
                       </div>
                       {tier && (
-                        <p className="text-[10px] text-emerald-400 font-medium pl-3 -mt-0.5 truncate">
+                        <p className="text-xs text-emerald-400 font-medium pl-3 truncate">
                           ↳ Tier {tier.minQty}{tier.maxQty != null ? `–${tier.maxQty}` : "+"}
                           {totalSavings > 0 && <> · save {fmtNum(totalSavings)}</>}
                         </p>
                       )}
                       {item.itemNote && (
-                        <p className="text-[10px] text-yellow-400 font-medium pl-3 -mt-0.5 truncate">↳ {item.itemNote}</p>
+                        <p className="text-xs text-yellow-400 font-medium pl-3 truncate">↳ {item.itemNote}</p>
                       )}
                     </div>
                   );
                 })}
-                <div className="pt-1.5 mt-1 border-t border-border space-y-0.5">
+                <div className="pt-2 mt-1 border-t border-border space-y-1">
                   <div className="flex justify-between text-foreground/80">
                     <span>Subtotal</span><span className="font-mono">{fmtNum(subtotal)}</span>
                   </div>
@@ -1835,7 +1835,7 @@ export function POS() {
                   <div className="flex justify-between text-foreground/80">
                     <span>GCT {taxPct > 0 ? `(${taxPct}%)` : ""}{taxMode === "inclusive" ? " incl." : ""}</span><span className="font-mono">{fmtNum(tax)}</span>
                   </div>
-                  <div className="flex justify-between font-bold text-sm pt-1 border-t border-border">
+                  <div className="flex justify-between font-bold text-base pt-1 border-t border-border">
                     <span>Total</span><span className="font-mono text-primary">{formatCurrency(total, baseCurrency)}</span>
                   </div>
                   {secondaryCurrency && exchangeRate > 0 && (
