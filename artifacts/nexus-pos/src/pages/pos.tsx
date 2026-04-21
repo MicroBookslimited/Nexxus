@@ -1919,12 +1919,24 @@ export function POS() {
                     { label: "Exact", val: total.toFixed(2) },
                     ...sorted.slice(0, 3).map(a => ({ label: formatCurrency(a), val: a.toFixed(2) })),
                   ];
-                })().map(({ label, val }) => (
-                  <button key={label} onClick={() => setNumpadValue(val)}
-                    className="h-8 rounded text-xs font-medium border border-border hover:bg-secondary/80 active:scale-95 transition-all">
-                    {label}
-                  </button>
-                ))}
+                })().map(({ label, val }, i) => {
+                  // Solid colour palette — cycles per slot for vibrant cash suggestions
+                  const palette = [
+                    "bg-emerald-500 hover:bg-emerald-400 border-emerald-600 text-white",
+                    "bg-sky-500 hover:bg-sky-400 border-sky-600 text-white",
+                    "bg-violet-500 hover:bg-violet-400 border-violet-600 text-white",
+                    "bg-amber-500 hover:bg-amber-400 border-amber-600 text-white",
+                    "bg-rose-500 hover:bg-rose-400 border-rose-600 text-white",
+                    "bg-teal-500 hover:bg-teal-400 border-teal-600 text-white",
+                  ];
+                  const cls = palette[i % palette.length];
+                  return (
+                    <button key={label} onClick={() => setNumpadValue(val)}
+                      className={`h-8 rounded text-xs font-bold border shadow-sm active:scale-95 transition-all ${cls}`}>
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
