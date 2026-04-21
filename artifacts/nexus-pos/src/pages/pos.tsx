@@ -767,6 +767,10 @@ export function POS() {
   const resetCart = () => {
     setCart([]);
     scaleLabelIdsRef.current = [];
+    // Snap focus back to the search bar so the next sale starts immediately.
+    // Delay slightly so any closing dialog/toast doesn't steal focus back.
+    setTimeout(() => searchInputRef.current?.focus(), 50);
+    setTimeout(() => searchInputRef.current?.focus(), 250);
     setDiscountType(null);
     setDiscountAmount(0);
     setDiscountAuthorizedBy(null);
