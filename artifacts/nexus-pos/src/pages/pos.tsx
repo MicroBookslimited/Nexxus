@@ -1543,7 +1543,7 @@ export function POS() {
                   </Button>
                 </div>
               ) : (
-                <Button size="sm" variant="outline" className="w-full h-7 text-xs border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                <Button size="sm" className="w-full h-7 text-xs bg-amber-500 hover:bg-amber-400 text-white border border-amber-600 shadow-sm font-semibold"
                   disabled={cart.length === 0}
                   onClick={() => { setPendingDiscountType("percent"); setPendingDiscountAmount(0); setDiscountOverrideOpen(true); }}>
                   <Percent className="h-3 w-3 mr-1" />Apply Discount (Manager Override)

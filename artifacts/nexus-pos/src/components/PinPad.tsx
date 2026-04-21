@@ -191,11 +191,11 @@ export function PinPad({
           return (
             <Button
               key={idx}
-              variant="outline"
               className={cn(
-                "w-16 h-16 text-xl font-bold rounded-2xl border border-border/70",
-                "hover:bg-primary/10 hover:border-primary/50 active:scale-95 transition-transform",
-                key === "del" && "text-muted-foreground",
+                "w-16 h-16 text-xl font-bold rounded-2xl border shadow-sm active:scale-95 transition-all",
+                key === "del"
+                  ? "bg-slate-600 hover:bg-slate-500 border-slate-500 text-white"
+                  : "bg-white hover:bg-slate-100 border-slate-300 text-slate-800",
                 loading && "opacity-50 pointer-events-none",
               )}
               onClick={() => handleKey(key)}
