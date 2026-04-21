@@ -20,6 +20,7 @@ import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useStaff } from "@/contexts/StaffContext";
 import { PinPad } from "@/components/PinPad";
+import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 
 type NavItem = {
   alwaysShowLabel?: boolean;
@@ -28,6 +29,8 @@ type NavItem = {
   icon: React.ElementType;
   color: string;
   permission: string | null;
+  /** Hide unless tenant business type is restaurant or hybrid. */
+  restaurantOnly?: boolean;
   children?: never;
 };
 
@@ -50,8 +53,8 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/register",     label: "Cash Register",   icon: Banknote,        color: "text-teal-400",    permission: "reports.view",       alwaysShowLabel: true },
   // ── secondary items — show as icons, label only when active ──
   { href: "/dashboard",    label: "Dashboard",       icon: LayoutDashboard, color: "text-sky-400",     permission: null },
-  { href: "/tables",       label: "Tables",          icon: UtensilsCrossed, color: "text-orange-400",  permission: "orders.view" },
-  { href: "/kitchen",      label: "Kitchen",         icon: ChefHat,         color: "text-red-400",     permission: "kitchen.view" },
+  { href: "/tables",       label: "Tables",          icon: UtensilsCrossed, color: "text-orange-400",  permission: "orders.view",        restaurantOnly: true },
+  { href: "/kitchen",      label: "Kitchen",         icon: ChefHat,         color: "text-red-400",     permission: "kitchen.view",       restaurantOnly: true },
   { href: "/products",     label: "Products",        icon: Package,         color: "text-teal-400",    permission: "inventory.view" },
   { href: "/scale",        label: "Weighing Scale",  icon: Scale,           color: "text-emerald-300", permission: "scale.use" },
   { href: "/customers",    label: "Customers",       icon: Users,           color: "text-pink-400",    permission: "customers.view" },
@@ -276,16 +279,25 @@ export function Layout({ children }: { children: ReactNode }) {
   const isWarning = daysLeft <= 7;
   const pad = (n: number) => String(n).padStart(2, "0");
 
-  // Filter entries: for groups, filter children too
+  const { isRestaurant } = useBusinessProfile();
+
+  // Filter entries: for groups, filter children too. Also hide restaurant-only
+  // items for non-restaurant tenants (retail / wholesale).
+  const canSeeItem = (item: NavItem): boolean => {
+    if (item.restaurantOnly && !isRestaurant) return false;
+    return !item.permission || can(item.permission);
+  };
   const canSeeEntry = (entry: NavEntry): boolean => {
-    if (!entry.permission || can(entry.permission)) {
-      if (isGroup(entry)) return entry.children.some(c => !c.permission || can(c.permission));
-      return true;
+    if (isGroup(entry)) {
+      if (entry.permission && !can(entry.permission)) return false;
+      return entry.children.some(canSeeItem);
     }
-    return false;
+    return canSeeItem(entry);
   };
 
-  const visibleNav = NAV_ITEMS.filter(canSeeEntry);
+  const visibleNav = NAV_ITEMS
+    .filter(canSeeEntry)
+    .map(e => isGroup(e) ? { ...e, children: e.children.filter(canSeeItem) } : e);
   const flatItems = visibleNav.flatMap(e => isGroup(e) ? e.children : [e]);
   const mobilePrimary = flatItems.filter(i => MOBILE_PRIMARY.includes(i.href));
   const mobileSecondary = flatItems.filter(i => !MOBILE_PRIMARY.includes(i.href));
