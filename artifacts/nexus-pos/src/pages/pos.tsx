@@ -1815,7 +1815,7 @@ export function POS() {
                     }
                   }}
                   disabled={paymentMethod !== "cash"}
-                  className={`h-11 rounded-md text-base font-semibold border border-border transition-all active:scale-95 ${k === "⌫" ? "text-red-400 hover:bg-red-500/10" : "hover:bg-secondary/80"} ${paymentMethod !== "cash" ? "opacity-25 cursor-not-allowed" : ""}`}
+                  className={`h-11 rounded-md text-base font-bold border shadow-sm transition-all active:scale-95 ${k === "⌫" ? "bg-slate-600 hover:bg-slate-500 border-slate-500 text-white" : "bg-white hover:bg-slate-100 border-slate-300 text-slate-800"} ${paymentMethod !== "cash" ? "opacity-25 cursor-not-allowed" : ""}`}
                 >
                   {k}
                 </button>
