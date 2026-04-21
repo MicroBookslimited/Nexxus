@@ -476,6 +476,13 @@ export function POS() {
   const [searchTerm, setSearchTerm] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const cartBottomRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  // Re-focus the search bar whenever the cart changes (item added/removed/cleared)
+  // and on mount, so the cashier can always type / scan straight away.
+  useEffect(() => {
+    const t = setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [cart.length]);
   useEffect(() => {
     if (cart.length > 0) {
       cartBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -1255,9 +1262,11 @@ export function POS() {
           {/* Search & filters */}
           <div className="p-4 border-b border-border space-y-3">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-400 pointer-events-none" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-600 pointer-events-none" />
               <Input
-                className="pl-9 pr-10 h-11 text-sm w-full border-2 border-blue-500/60 focus-visible:border-blue-500 focus-visible:ring-0 rounded-lg bg-background/80 placeholder:text-muted-foreground/70"
+                ref={searchInputRef}
+                autoFocus
+                className="pl-9 pr-10 h-11 text-sm w-full border-2 border-blue-500/60 focus-visible:border-blue-500 focus-visible:ring-0 rounded-lg bg-white text-slate-900 placeholder:text-slate-500"
                 placeholder="Search products or scan barcode (Enter)"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
