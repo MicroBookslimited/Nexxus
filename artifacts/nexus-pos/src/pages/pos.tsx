@@ -1192,7 +1192,7 @@ export function POS() {
             <button
               title="Switch user"
               onClick={() => { setLocked(true); clearStaff(); setSessionLocationId(null); }}
-              className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground active:scale-95 transition-all duration-150"
+              className="flex items-center gap-1.5 rounded-md border border-slate-500 bg-slate-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-500 hover:border-slate-400 active:scale-95 transition-all duration-150 shadow-sm"
             >
               <ArrowLeftRight className="h-3.5 w-3.5" />
               Switch
@@ -1200,7 +1200,7 @@ export function POS() {
             <button
               title="Lock register"
               onClick={() => { setLocked(true); clearStaff(); setSessionLocationId(null); }}
-              className="flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/25 hover:border-amber-400 hover:text-amber-300 active:scale-95 transition-all duration-150"
+              className="flex items-center gap-1.5 rounded-md border border-amber-600 bg-amber-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-400 hover:border-amber-500 active:scale-95 transition-all duration-150 shadow-sm"
             >
               <LockKeyhole className="h-3.5 w-3.5" />
               Lock
@@ -1209,7 +1209,7 @@ export function POS() {
               <button
                 title="End Shift (manager override required)"
                 onClick={() => setCloseShiftOverrideOpen(true)}
-                className="flex items-center gap-1 rounded-md border border-red-500/50 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-500/25 hover:border-red-400 hover:text-red-300 active:scale-95 transition-all duration-150"
+                className="flex items-center gap-1 rounded-md border border-red-600 bg-red-500 px-2 py-1 text-xs font-medium text-white hover:bg-red-400 hover:border-red-500 active:scale-95 transition-all duration-150 shadow-sm"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
