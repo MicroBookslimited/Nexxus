@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { sessionRevocationMiddleware } from "./middleware/session-revocation";
 
 const app: Express = express();
 
@@ -44,6 +45,6 @@ app.use("/api/marketing/webhook", express.raw({ type: "application/json" }), (re
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
-app.use("/api", router);
+app.use("/api", sessionRevocationMiddleware, router);
 
 export default app;

@@ -34,6 +34,7 @@ export const tenantsTable = pgTable("tenants", {
   emailVerified: boolean("email_verified").notNull().default(false),
   emailVerificationToken: text("email_verification_token"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  sessionsInvalidatedAt: timestamp("sessions_invalidated_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -109,6 +110,7 @@ export const tenantAdminUsersTable = pgTable("tenant_admin_users", {
   inviteToken: text("invite_token"),
   inviteExpiresAt: timestamp("invite_expires_at", { withTimezone: true }),
   status: text("status").notNull().default("active"),
+  sessionsInvalidatedAt: timestamp("sessions_invalidated_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

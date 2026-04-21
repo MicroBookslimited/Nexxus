@@ -17,6 +17,7 @@ import {
   superadminCreateBankAccount, superadminUpdateBankAccount, superadminDeleteBankAccount,
   superadminGetTransferProofs, superadminReviewTransferProof,
   superadminGetUsers, superadminImpersonate, superadminResetPassword, superadminResetAdminUserPassword,
+  superadminForceLogoutTenant, superadminForceLogoutAdminUser,
   superadminGetPlans, superadminCreatePlan, superadminUpdatePlan, superadminDeletePlan,
   superadminGetGatewaySettings, superadminUpdateGatewaySettings, superadminGetImpersonationLogs, superadminCloseImpersonationSession,
   type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow, type GatewaySettings, type ImpersonationLog,
@@ -1140,6 +1141,27 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                           title="Reset password"
                           className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500 text-amber-400 hover:text-white rounded-lg text-xs font-medium transition-colors">
                           <KeyRound size={12} /> Reset Pwd
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const isUser = !!u.adminUserId;
+                            const target = isUser ? `${u.ownerName} (${u.email})` : `all users at ${u.businessName}`;
+                            if (!confirm(`Force logout ${target}?\n\nThis will immediately invalidate every active session and force a fresh login. They will not lose any data.`)) return;
+                            try {
+                              const res = isUser
+                                ? await superadminForceLogoutAdminUser(u.adminUserId!)
+                                : await superadminForceLogoutTenant(u.id);
+                              const extra = "affectedAdminUsers" in res && res.affectedAdminUsers > 0
+                                ? ` (also signed out ${res.affectedAdminUsers} co-admin${res.affectedAdminUsers === 1 ? "" : "s"})`
+                                : "";
+                              alert(`Sessions invalidated${extra}. Anyone currently signed in as ${target} will be logged out on their next request.`);
+                            } catch (e: unknown) {
+                              alert(e instanceof Error ? e.message : "Failed to force logout");
+                            }
+                          }}
+                          title="Invalidate all sessions and force re-login"
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500 text-rose-400 hover:text-white rounded-lg text-xs font-medium transition-colors">
+                          <LogOut size={12} /> Force Logout
                         </button>
                       </div>
                     </div>

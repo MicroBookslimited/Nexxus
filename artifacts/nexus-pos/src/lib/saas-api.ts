@@ -237,6 +237,18 @@ export const superadminResetAdminUserPassword = (adminUserId: number, newPasswor
     method: "POST", body: JSON.stringify({ newPassword }), headers: superadminAuthHeaders(),
   });
 
+export const superadminForceLogoutTenant = (tenantId: number) =>
+  api<{ success: boolean; invalidatedAt: string; affectedAdminUsers: number }>(
+    `/superadmin/tenants/${tenantId}/force-logout`,
+    { method: "POST", headers: superadminAuthHeaders() },
+  );
+
+export const superadminForceLogoutAdminUser = (adminUserId: number) =>
+  api<{ success: boolean; invalidatedAt: string }>(
+    `/superadmin/admin-users/${adminUserId}/force-logout`,
+    { method: "POST", headers: superadminAuthHeaders() },
+  );
+
 /* ─── Email Templates ─── */
 export const superadminGetEmailTemplates = () =>
   api<EmailTemplate[]>("/superadmin/email/templates", { headers: superadminAuthHeaders() });

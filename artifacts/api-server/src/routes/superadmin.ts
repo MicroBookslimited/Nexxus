@@ -539,6 +539,56 @@ router.post("/superadmin/tenants/:id/reset-password", async (req, res): Promise<
   res.json({ success: true });
 });
 
+/* ─── Force Logout ─── */
+// Bumping sessions_invalidated_at causes the session-revocation middleware to
+// reject any JWT issued before this moment. Effective on the next request after
+// the in-memory cache (60s) refreshes — or immediately for the bumped record
+// because we clear the cache entry inline.
+import { clearTenantSessionCache, clearAdminUserSessionCache } from "../middleware/session-revocation";
+
+router.post("/superadmin/tenants/:id/force-logout", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "");
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.id, id));
+  if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
+
+  const now = new Date();
+  // Bumping the tenant cuts off the primary owner's tokens. To also cut off
+  // every co-admin user under this tenant, bump their rows too.
+  await db.update(tenantsTable).set({ sessionsInvalidatedAt: now, updatedAt: now }).where(eq(tenantsTable.id, id));
+  const adminUsers = await db.select({ id: tenantAdminUsersTable.id })
+    .from(tenantAdminUsersTable).where(eq(tenantAdminUsersTable.tenantId, id));
+  if (adminUsers.length > 0) {
+    await db.update(tenantAdminUsersTable)
+      .set({ sessionsInvalidatedAt: now, updatedAt: now })
+      .where(eq(tenantAdminUsersTable.tenantId, id));
+  }
+
+  clearTenantSessionCache(id);
+  for (const u of adminUsers) clearAdminUserSessionCache(u.id);
+
+  res.json({ success: true, invalidatedAt: now.toISOString(), affectedAdminUsers: adminUsers.length });
+});
+
+router.post("/superadmin/admin-users/:id/force-logout", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "");
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [user] = await db.select().from(tenantAdminUsersTable).where(eq(tenantAdminUsersTable.id, id));
+  if (!user) { res.status(404).json({ error: "Admin user not found" }); return; }
+
+  const now = new Date();
+  await db.update(tenantAdminUsersTable)
+    .set({ sessionsInvalidatedAt: now, updatedAt: now })
+    .where(eq(tenantAdminUsersTable.id, id));
+  clearAdminUserSessionCache(id);
+
+  res.json({ success: true, invalidatedAt: now.toISOString() });
+});
+
 /* ─── Superadmin Plan CRUD ─── */
 router.get("/superadmin/plans", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res)) return;
