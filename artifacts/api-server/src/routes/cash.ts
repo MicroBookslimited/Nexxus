@@ -143,16 +143,22 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
   const parseDate = (s: string, endOfDay = false) =>
     s.includes("T") ? new Date(s) : new Date(`${s}T${endOfDay ? "23:59:59" : "00:00:00"}Z`);
 
+  // Resolve the requested filter window once and reuse for both session
+  // selection AND order aggregation. Without this, a long-running open session
+  // would show its full lifetime totals on a "Today" pill instead of today's
+  // orders only.
+  const rangeStart = from ? parseDate(from, false) : null;
+  const rangeEnd   = to   ? parseDate(to,   true)  : null;
+
   const conditions = [eq(cashSessionsTable.tenantId, tenantId)];
-  if (to) {
-    conditions.push(lte(cashSessionsTable.openedAt, parseDate(to, true)));
+  if (rangeEnd) {
+    conditions.push(lte(cashSessionsTable.openedAt, rangeEnd));
   }
-  if (from) {
-    const fromDate = parseDate(from, false);
+  if (rangeStart) {
     conditions.push(
       or(
         isNull(cashSessionsTable.closedAt),
-        gte(cashSessionsTable.closedAt, fromDate),
+        gte(cashSessionsTable.closedAt, rangeStart),
       )!
     );
   }
@@ -163,16 +169,21 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
     .where(and(...conditions))
     .orderBy(desc(cashSessionsTable.openedAt));
 
-  // For each session aggregate orders by payment method
+  // For each session aggregate orders by payment method, clipped to the
+  // requested filter window so each pill (Today / Yesterday / Week / Month /
+  // Custom) reflects only orders that fell inside that window.
   const report = await Promise.all(sessions.map(async (s) => {
-    const closedAt = s.closedAt ?? new Date();
+    const sessionEnd = s.closedAt ?? new Date();
+    // Clip the session's window to the requested filter window.
+    const windowStart = rangeStart && rangeStart > s.openedAt ? rangeStart : s.openedAt;
+    const windowEnd   = rangeEnd   && rangeEnd   < sessionEnd ? rangeEnd   : sessionEnd;
 
     // Scope orders to this cashier's staffId so overlapping sessions (multiple
     // simultaneous cashiers) don't bleed into each other's totals.
     const sessionConditions = [
       eq(ordersTable.tenantId, tenantId),
-      gte(ordersTable.createdAt, s.openedAt),
-      lte(ordersTable.createdAt, closedAt),
+      gte(ordersTable.createdAt, windowStart),
+      lte(ordersTable.createdAt, windowEnd),
       isNotNull(ordersTable.paymentMethod),
       ...(s.staffId ? [eq(ordersTable.staffId, s.staffId)] : []),
     ];
