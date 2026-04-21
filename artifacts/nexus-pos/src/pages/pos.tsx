@@ -1574,7 +1574,8 @@ export function POS() {
                         )}
                       </div>
                     </motion.div>
-                  ))
+                  );
+                  })
                 )}
               </AnimatePresence>
               <div ref={cartBottomRef} />
