@@ -14,7 +14,7 @@ function getJwtSecret(): string {
 }
 
 function signToken(tenantId: number, email: string, adminUserId?: number, isPrimary?: boolean) {
-  return jwt.sign({ tenantId, email, type: "tenant", adminUserId, isPrimary }, getJwtSecret(), { expiresIn: "7d" });
+  return jwt.sign({ tenantId, email, type: "tenant", adminUserId, isPrimary }, getJwtSecret(), { expiresIn: "90d" });
 }
 
 export function verifyTenantToken(token: string): { tenantId: number; email: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean; impersonationLogId?: number } | null {

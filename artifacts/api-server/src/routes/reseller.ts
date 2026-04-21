@@ -16,7 +16,7 @@ function getJwtSecret(): string {
 }
 
 function signResellerToken(resellerId: number, email: string): string {
-  return jwt.sign({ resellerId, email, type: "reseller" }, getJwtSecret(), { expiresIn: "7d" });
+  return jwt.sign({ resellerId, email, type: "reseller" }, getJwtSecret(), { expiresIn: "90d" });
 }
 
 export function verifyResellerToken(token: string): { resellerId: number; email: string } | null {

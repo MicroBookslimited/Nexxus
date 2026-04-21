@@ -311,7 +311,7 @@ router.post("/admin-users/accept-invite", async (req, res): Promise<void> => {
   const token = jwt.sign(
     { tenantId: user.tenantId, email: user.email, type: "tenant", adminUserId: user.id, isPrimary: false },
     getJwtSecret(),
-    { expiresIn: "7d" }
+    { expiresIn: "90d" }
   );
 
   res.json({

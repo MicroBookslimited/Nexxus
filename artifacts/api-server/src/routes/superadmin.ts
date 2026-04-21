@@ -25,7 +25,7 @@ function signTenantToken(tenantId: number, email: string, impersonation = false,
     tenantId, email, type: "tenant",
     ...(impersonation ? { impersonation: true } : {}),
     ...(impersonationLogId ? { impersonationLogId } : {}),
-  }, getJwtSecret(), { expiresIn: "7d" });
+  }, getJwtSecret(), { expiresIn: "90d" });
 }
 
 function getSuperadminEmailFromRequest(req: { headers: Record<string, string | undefined> }): string {
