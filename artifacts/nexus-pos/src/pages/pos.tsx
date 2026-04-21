@@ -1911,7 +1911,7 @@ export function POS() {
               <p className="text-amber-500 text-xs font-medium">Must equal {formatCurrency(total, baseCurrency)}</p>
             )}
 
-            {orderMode === "dine-in" && (
+            {isRestaurant && orderMode === "dine-in" && (
               <Button variant="outline" className="w-full h-10 text-sm border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
                 onClick={handleSendToKitchen} disabled={cart.length === 0 || createOrder.isPending}>
                 <ChefHat className="mr-2 h-4 w-4" />Send to Kitchen (Pay Later)
