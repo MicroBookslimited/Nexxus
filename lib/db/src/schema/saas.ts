@@ -35,9 +35,24 @@ export const tenantsTable = pgTable("tenants", {
   emailVerificationToken: text("email_verification_token"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   sessionsInvalidatedAt: timestamp("sessions_invalidated_at", { withTimezone: true }),
+  // Industry / experience type. Drives which POS surface and feature flags load.
+  // Values: restaurant | retail | wholesale | hybrid.
+  businessType: text("business_type").notNull().default("restaurant"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Per-tenant feature flags. One row per (tenant, feature). Absence = use the
+// default for the tenant's business_type (see DEFAULT_FEATURES on the server).
+export const tenantFeaturesTable = pgTable("tenant_features", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id, { onDelete: "cascade" }),
+  featureName: text("feature_name").notNull(),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type TenantFeature = typeof tenantFeaturesTable.$inferSelect;
 
 export const subscriptionsTable = pgTable("subscriptions", {
   id: serial("id").primaryKey(),

@@ -21,6 +21,11 @@ export const productsTable = pgTable("products", {
   unitOfMeasure: text("unit_of_measure"),
   // 6-digit Product Lookup Unit code embedded in EAN-13 weight barcodes.
   plu: text("plu"),
+  // Multi-industry support:
+  //  - "item"      = retail/wholesale stock-keeping unit
+  //  - "menu_item" = restaurant-style item that may have modifiers/kitchen routing
+  productType: text("product_type").notNull().default("item"),
+  hasModifiers: boolean("has_modifiers").notNull().default(false),
 });
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({ id: true, createdAt: true });

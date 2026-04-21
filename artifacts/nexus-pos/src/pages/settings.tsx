@@ -9,12 +9,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign, Bell, Send,
+  Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign, Bell, Send, Briefcase,
   ShieldCheck, Plus, Trash2, ChevronDown, ChevronRight, Edit2, Check, X, QrCode, Copy, Download, ExternalLink,
   Boxes, UserCog, KeyRound, Eye, EyeOff, MailOpen, Crown, UserPlus, Loader2, Link,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY,
+  setBusinessType, setBusinessFeature, type BusinessType } from "@/lib/saas-api";
+import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { QRCodeSVG } from "qrcode.react";
 
 
@@ -227,6 +229,7 @@ export function AdminSettings() {
         <nav className="flex gap-1.5 overflow-x-auto scrollbar-none">
           {([
             { id: "section-business", label: "Business", icon: Building2 },
+            { id: "section-industry", label: "Industry & Features", icon: Briefcase },
             { id: "section-receipt", label: "Receipt", icon: Receipt },
             { id: "section-currency", label: "Currency", icon: DollarSign },
             { id: "section-email", label: "Email", icon: Mail },
@@ -254,6 +257,9 @@ export function AdminSettings() {
           ))}
         </nav>
       </div>
+
+      {/* Industry & Features (multi-industry POS) */}
+      <BusinessProfileCard />
 
       {/* Business Info */}
       <Card id="section-business">
@@ -2099,6 +2105,153 @@ function RolesSettings() {
             )}
           </>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * BusinessProfileCard — picks the industry (restaurant / retail /
+ * wholesale / hybrid) and toggles individual feature flags. Changing
+ * the type wipes overrides and reseeds defaults for that industry.
+ * ─────────────────────────────────────────────────────────────────── */
+function BusinessProfileCard() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { profile, businessType, features, isLoading } = useBusinessProfile();
+
+  const [savingType, setSavingType] = useState(false);
+  const [savingFlags, setSavingFlags] = useState<Set<string>>(new Set());
+
+  const TYPES: { key: BusinessType; label: string; blurb: string }[] = [
+    { key: "restaurant", label: "Restaurant", blurb: "Tables, modifiers, kitchen routing, dine-in/takeout/delivery" },
+    { key: "retail",     label: "Retail",     blurb: "Barcode scanning, variants, quick checkout" },
+    { key: "wholesale",  label: "Wholesale",  blurb: "Bulk pricing, barcode scanning, account-based" },
+    { key: "hybrid",     label: "Hybrid",     blurb: "Both restaurant and retail surfaces in one tenant" },
+  ];
+
+  async function changeType(t: BusinessType) {
+    if (t === businessType) return;
+    if (!confirm(`Switch this business to ${t}? Custom feature toggles will be reset to the new defaults.`)) return;
+    setSavingType(true);
+    try {
+      await setBusinessType(t);
+      await qc.invalidateQueries({ queryKey: ["business-profile"] });
+      toast({ title: "Industry updated", description: `Now configured for ${t}.` });
+    } catch (e) {
+      toast({ title: "Failed", description: e instanceof Error ? e.message : "Try again", variant: "destructive" });
+    } finally { setSavingType(false); }
+  }
+
+  async function toggleFlag(key: string, next: boolean) {
+    setSavingFlags(prev => { const s = new Set(prev); s.add(key); return s; });
+    try {
+      await setBusinessFeature(key, next);
+      await qc.invalidateQueries({ queryKey: ["business-profile"] });
+    } catch (e) {
+      toast({ title: "Failed", description: e instanceof Error ? e.message : "Try again", variant: "destructive" });
+    } finally {
+      setSavingFlags(prev => { const s = new Set(prev); s.delete(key); return s; });
+    }
+  }
+
+  if (isLoading || !profile) {
+    return (
+      <Card id="section-industry">
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">Loading industry profile…</CardContent>
+      </Card>
+    );
+  }
+
+  // Group catalog by category for display
+  const grouped = profile.catalog.reduce<Record<string, typeof profile.catalog>>((acc, f) => {
+    (acc[f.category] ??= []).push(f);
+    return acc;
+  }, {});
+
+  return (
+    <Card id="section-industry">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Briefcase className="h-4 w-4 text-primary" />
+          Industry & Feature Flags
+        </CardTitle>
+        <CardDescription>
+          Choose your business type to load the right POS experience. Toggle individual features below to fine-tune.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Industry selector */}
+        <div>
+          <Label className="text-xs uppercase tracking-wide text-muted-foreground mb-2 block">Business Type</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {TYPES.map(t => {
+              const active = t.key === businessType;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  disabled={savingType}
+                  onClick={() => changeType(t.key)}
+                  className={cn(
+                    "text-left p-3 rounded-lg border-2 transition-all",
+                    active
+                      ? "border-primary bg-primary/10 shadow-sm"
+                      : "border-border hover:border-primary/50 hover:bg-muted/40",
+                    savingType && "opacity-50 cursor-wait",
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className={cn("font-semibold text-sm", active && "text-primary")}>{t.label}</span>
+                    {active && <Badge variant="default" className="text-[10px] py-0">Active</Badge>}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-snug">{t.blurb}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Feature flag toggles, grouped by category */}
+        <div className="space-y-4">
+          <Label className="text-xs uppercase tracking-wide text-muted-foreground block">Feature Flags</Label>
+          {Object.entries(grouped).map(([category, items]) => (
+            <div key={category} className="space-y-1.5">
+              <p className="text-[11px] font-semibold uppercase text-muted-foreground/70">{category}</p>
+              <div className="rounded-lg border border-border divide-y divide-border bg-muted/20">
+                {items.map(f => {
+                  const enabled = features[f.key] === true;
+                  const busy = savingFlags.has(f.key);
+                  return (
+                    <div key={f.key} className="flex items-center justify-between px-3 py-2.5">
+                      <div>
+                        <p className="text-sm font-medium">{f.label}</p>
+                        <p className="text-[11px] text-muted-foreground font-mono">{f.key}</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => toggleFlag(f.key, !enabled)}
+                        className={cn(
+                          "relative inline-flex h-6 w-11 items-center rounded-full border transition-colors",
+                          enabled ? "bg-primary border-primary" : "bg-muted border-border",
+                          busy && "opacity-50 cursor-wait",
+                        )}
+                        aria-pressed={enabled}
+                        aria-label={`${enabled ? "Disable" : "Enable"} ${f.label}`}
+                      >
+                        <span className={cn(
+                          "inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform",
+                          enabled ? "translate-x-5" : "translate-x-0.5",
+                        )} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );

@@ -56,6 +56,30 @@ export const createFirstStaff = (data: { name: string; pin: string; role: string
     headers: tenantAuthHeaders(),
   });
 
+/* ─── Business Profile (multi-industry) ─── */
+export type BusinessType = "restaurant" | "retail" | "wholesale" | "hybrid";
+export interface FeatureCatalogEntry { key: string; label: string; category: string }
+export interface BusinessProfile {
+  tenantId: number;
+  businessName: string;
+  businessType: BusinessType;
+  features: Record<string, boolean>;
+  catalog: FeatureCatalogEntry[];
+}
+
+export const getBusinessProfile = () =>
+  api<BusinessProfile>("/business-profile", { headers: tenantAuthHeaders() });
+
+export const setBusinessType = (businessType: BusinessType) =>
+  api<{ businessType: BusinessType; features: Record<string, boolean> }>("/business-profile/type", {
+    method: "PUT", body: JSON.stringify({ businessType }), headers: tenantAuthHeaders(),
+  });
+
+export const setBusinessFeature = (key: string, enabled: boolean) =>
+  api<{ feature: string; enabled: boolean }>(`/business-profile/features/${encodeURIComponent(key)}`, {
+    method: "PUT", body: JSON.stringify({ enabled }), headers: tenantAuthHeaders(),
+  });
+
 /* ─── Plans ─── */
 export const getPlans = () => api<Plan[]>("/plans");
 

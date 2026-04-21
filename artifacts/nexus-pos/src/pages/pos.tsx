@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
 import { useStaff } from "@/contexts/StaffContext";
 import { useLocation, Link } from "wouter";
@@ -510,7 +511,15 @@ export function POS() {
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState<number>(0);
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
-  const [orderMode, setOrderMode] = useState<"dine-in" | "takeout" | "delivery">("dine-in");
+  // Industry-aware UI: gate restaurant-only sections behind business profile.
+  const { businessType, has: hasFeature, isRestaurant, isRetail } = useBusinessProfile();
+  const showOrderModes = hasFeature("order_modes");
+  const showTables = hasFeature("tables_management");
+  const showSplitBills = hasFeature("split_bills");
+  // Retail = single mode (just "sale"). Restaurant defaults to dine-in.
+  const [orderMode, setOrderMode] = useState<"dine-in" | "takeout" | "delivery">(
+    isRetail && !isRestaurant ? "takeout" : "dine-in",
+  );
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryPhone, setDeliveryPhone] = useState("");
   const [numpadValue, setNumpadValue] = useState("");
@@ -1311,22 +1320,32 @@ export function POS() {
 
         {/* ── MIDDLE: Order controls ── */}
         <div className="w-[300px] shrink-0 border-l border-border flex flex-col bg-card">
-          {/* Order mode selector */}
-          <div className="grid grid-cols-3 gap-1 p-2 border-b border-border shrink-0">
-            {([
-              { mode: "dine-in", label: "Dine In", icon: UtensilsCrossed },
-              { mode: "takeout", label: "Takeout", icon: ShoppingBag },
-              { mode: "delivery", label: "Delivery", icon: Truck },
-            ] as const).map(({ mode, label, icon: Icon }) => (
-              <button
-                key={mode}
-                onClick={() => { setOrderMode(mode); if (mode !== "dine-in") setSelectedTableId(null); }}
-                className={`flex flex-col items-center gap-0.5 py-2 rounded-md text-xs font-medium transition-all ${orderMode === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"}`}
-              >
-                <Icon className="h-4 w-4" />{label}
-              </button>
-            ))}
-          </div>
+          {/* Order mode selector — restaurant only */}
+          {showOrderModes ? (
+            <div className="grid grid-cols-3 gap-1 p-2 border-b border-border shrink-0">
+              {([
+                { mode: "dine-in", label: "Dine In", icon: UtensilsCrossed },
+                { mode: "takeout", label: "Takeout", icon: ShoppingBag },
+                { mode: "delivery", label: "Delivery", icon: Truck },
+              ] as const).map(({ mode, label, icon: Icon }) => (
+                <button
+                  key={mode}
+                  onClick={() => { setOrderMode(mode); if (mode !== "dine-in") setSelectedTableId(null); }}
+                  className={`flex flex-col items-center gap-0.5 py-2 rounded-md text-xs font-medium transition-all ${orderMode === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"}`}
+                >
+                  <Icon className="h-4 w-4" />{label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            // Retail / wholesale — single sale mode badge instead of selector
+            <div className="px-3 py-2 border-b border-border shrink-0 flex items-center gap-2">
+              <ShoppingBag className="h-4 w-4 text-primary" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {businessType === "wholesale" ? "Wholesale Sale" : "Retail Sale"}
+              </span>
+            </div>
+          )}
 
           {/* Cart header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
@@ -1646,8 +1665,8 @@ export function POS() {
                 </div>
               )}
 
-              {/* Table */}
-              {orderMode === "dine-in" && tables && tables.length > 0 && (
+              {/* Table — restaurant only */}
+              {showTables && orderMode === "dine-in" && tables && tables.length > 0 && (
                 <div>
                   <p className="text-[10px] font-medium text-muted-foreground mb-1">Table</p>
                   <div className="flex flex-wrap gap-1">
@@ -1861,9 +1880,11 @@ export function POS() {
               <Button variant={paymentMethod === "cash" ? "default" : "outline"} onClick={() => setPaymentMethod("cash")} className="h-12 text-sm flex-col gap-0.5 px-1">
                 <Banknote className="h-4 w-4 shrink-0" />Cash
               </Button>
-              <Button variant={paymentMethod === "split" ? "default" : "outline"} onClick={handleSplitClick} className="h-12 text-sm flex-col gap-0.5 px-1">
-                <SplitSquareHorizontal className="h-4 w-4 shrink-0" />Split
-              </Button>
+              {showSplitBills && (
+                <Button variant={paymentMethod === "split" ? "default" : "outline"} onClick={handleSplitClick} className="h-12 text-sm flex-col gap-0.5 px-1">
+                  <SplitSquareHorizontal className="h-4 w-4 shrink-0" />Split
+                </Button>
+              )}
               <Button variant={paymentMethod === "credit" ? "default" : "outline"} onClick={() => { setPaymentMethod("credit"); setNumpadValue(""); }} className={`h-12 text-sm flex-col gap-0.5 px-1 ${paymentMethod === "credit" ? "" : "border-amber-500/40 text-amber-400 hover:bg-amber-500/10"}`}>
                 <BookOpen className="h-4 w-4 shrink-0" />Credit
               </Button>
