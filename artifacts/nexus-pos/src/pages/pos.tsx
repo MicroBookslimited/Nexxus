@@ -40,7 +40,8 @@ import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
 import { useStaff } from "@/contexts/StaffContext";
 import { useLocation, Link } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQueries } from "@tanstack/react-query";
+import { getPricingTiers, previewTierPrice, type PricingTier } from "@/lib/saas-api";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -706,7 +707,29 @@ export function POS() {
     setEditingNoteKey((k) => (k === cartKey ? null : k));
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + item.effectivePrice * item.quantity - item.itemDiscount, 0);
+  // ── Volume-pricing: fetch tiers for every product currently in the cart.
+  // Uses the same query key as the editor for cache hits. Tiers default to
+  // empty so previewTierPrice falls back to basePrice cleanly.
+  const cartProductIds = Array.from(new Set(cart.map(c => c.productId).filter(id => id > 0)));
+  const tierQueries = useQueries({
+    queries: cartProductIds.map(pid => ({
+      queryKey: ["pricing-tiers", pid],
+      queryFn: () => getPricingTiers(pid),
+      staleTime: 60_000,
+    })),
+  });
+  const pricingTiersByProduct = new Map<number, PricingTier[]>();
+  cartProductIds.forEach((pid, i) => {
+    pricingTiersByProduct.set(pid, (tierQueries[i]?.data as PricingTier[] | undefined) ?? []);
+  });
+
+  // Subtotal honors tier pricing so totals match what we render per line.
+  const subtotal = cart.reduce((sum, item) => {
+    const tiers = pricingTiersByProduct.get(item.productId) ?? [];
+    const { tier } = previewTierPrice(item.basePrice, item.quantity, tiers);
+    const eff = tier ? tier.unitPrice + (item.effectivePrice - item.basePrice) : item.effectivePrice;
+    return sum + eff * item.quantity - item.itemDiscount;
+  }, 0);
 
   let cartDiscountValue = 0;
   if (discountType === "percent") cartDiscountValue = subtotal * ((discountAmount || 0) / 100);
@@ -1482,7 +1505,12 @@ export function POS() {
                     <p className="text-xs">Cart is empty</p>
                   </div>
                 ) : (
-                  cart.map((item) => (
+                  cart.map((item) => {
+                    const tiers = pricingTiersByProduct.get(item.productId) ?? [];
+                    const { tier } = previewTierPrice(item.basePrice, item.quantity, tiers);
+                    const tieredEff = tier ? tier.unitPrice + (item.effectivePrice - item.basePrice) : item.effectivePrice;
+                    const lineTotal = tieredEff * item.quantity - item.itemDiscount;
+                    return (
                     <motion.div key={item.cartKey} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}>
                       <div className="rounded-lg bg-secondary/30 p-2">
                         <div className="flex items-start justify-between gap-1">
@@ -1490,7 +1518,16 @@ export function POS() {
                             <p className="text-xs font-medium leading-snug truncate">{item.productName}</p>
                             {item.variantChoices.length > 0 && <p className="text-[10px] text-primary/80">{choiceLabel(item.variantChoices)}</p>}
                             {item.modifierChoices.length > 0 && <p className="text-[10px] text-amber-400/90">+ {choiceLabel(item.modifierChoices)}</p>}
-                            <p className="text-[10px] font-mono text-primary mt-0.5">{formatCurrency(item.effectivePrice)} ea</p>
+                            <p className="text-[10px] font-mono text-primary mt-0.5">
+                              {tier ? (
+                                <>
+                                  <span className="line-through text-muted-foreground/60 mr-1">{formatCurrency(item.effectivePrice)}</span>
+                                  <span className="text-emerald-400">{formatCurrency(tieredEff)}</span> ea
+                                </>
+                              ) : (
+                                <>{formatCurrency(item.effectivePrice)} ea</>
+                              )}
+                            </p>
                           </div>
                           <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive shrink-0" onClick={() => removeFromCart(item.cartKey)}>
                             <Trash2 className="h-2.5 w-2.5" />
@@ -1507,7 +1544,7 @@ export function POS() {
                           >
                             <StickyNote className="h-3 w-3" />
                           </button>
-                          <span className="ml-auto text-xs font-mono font-semibold">{formatCurrency(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
+                          <span className="ml-auto text-xs font-mono font-semibold">{formatCurrency(lineTotal)}</span>
                         </div>
                         {item.itemNote && editingNoteKey !== item.cartKey && (
                           <p className="text-xs font-medium text-yellow-400 mt-1.5 text-center w-full">
@@ -1751,17 +1788,35 @@ export function POS() {
               <p className="text-center text-[10px] text-muted-foreground py-1 opacity-50">Add items to see bill</p>
             ) : (
               <div className="space-y-0.5 text-xs">
-                {cart.map((item) => (
-                  <div key={item.cartKey}>
-                    <div className="flex justify-between text-foreground">
-                      <span className="truncate max-w-[150px]">{item.quantity}× {item.productName}</span>
-                      <span className="font-mono shrink-0 ml-1">{fmtNum(item.effectivePrice * item.quantity - item.itemDiscount)}</span>
+                {cart.map((item) => {
+                  const tiers = pricingTiersByProduct.get(item.productId) ?? [];
+                  // Tier price is per BASE unit; effectivePrice already includes
+                  // variant/modifier adjustments. Apply the tier ratio against basePrice
+                  // so adjustments stay intact.
+                  const { tier, savingsPerUnit } = previewTierPrice(item.basePrice, item.quantity, tiers);
+                  const tieredEffective = tier
+                    ? tier.unitPrice + (item.effectivePrice - item.basePrice)
+                    : item.effectivePrice;
+                  const lineTotal = tieredEffective * item.quantity - item.itemDiscount;
+                  const totalSavings = savingsPerUnit * item.quantity;
+                  return (
+                    <div key={item.cartKey}>
+                      <div className="flex justify-between text-foreground">
+                        <span className="truncate max-w-[150px]">{item.quantity}× {item.productName}</span>
+                        <span className="font-mono shrink-0 ml-1">{fmtNum(lineTotal)}</span>
+                      </div>
+                      {tier && (
+                        <p className="text-[10px] text-emerald-400 font-medium pl-3 -mt-0.5 truncate">
+                          ↳ Tier {tier.minQty}{tier.maxQty != null ? `–${tier.maxQty}` : "+"}
+                          {totalSavings > 0 && <> · save {fmtNum(totalSavings)}</>}
+                        </p>
+                      )}
+                      {item.itemNote && (
+                        <p className="text-[10px] text-yellow-400 font-medium pl-3 -mt-0.5 truncate">↳ {item.itemNote}</p>
+                      )}
                     </div>
-                    {item.itemNote && (
-                      <p className="text-[10px] text-yellow-400 font-medium pl-3 -mt-0.5 truncate">↳ {item.itemNote}</p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
                 <div className="pt-1.5 mt-1 border-t border-border space-y-0.5">
                   <div className="flex justify-between text-foreground/80">
                     <span>Subtotal</span><span className="font-mono">{fmtNum(subtotal)}</span>

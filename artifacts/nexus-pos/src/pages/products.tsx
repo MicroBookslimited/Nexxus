@@ -24,6 +24,7 @@ import {
 } from "@workspace/api-client-react";
 import type { GetProductResponse } from "@workspace/api-zod";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
+import { PricingUnitsEditor } from "@/components/PricingUnitsEditor";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -2830,6 +2831,7 @@ export function Products() {
               <TabsTrigger value="variants" disabled={!editingProduct}>Variants</TabsTrigger>
               <TabsTrigger value="modifiers" disabled={!editingProduct}>Modifiers</TabsTrigger>
               <TabsTrigger value="locations" disabled={!editingProduct}>Locations</TabsTrigger>
+              <TabsTrigger value="pricing" disabled={!editingProduct}>Pricing & Units</TabsTrigger>
               <TabsTrigger value="history" disabled={!editingProduct}>
                 <History className="h-3.5 w-3.5 mr-1" />History
               </TabsTrigger>
@@ -2905,6 +2907,16 @@ export function Products() {
 
               <TabsContent value="locations" className="mt-0">
                 {editingProduct && <LocationsEditor productId={editingProduct.id} />}
+              </TabsContent>
+
+              <TabsContent value="pricing" className="mt-0">
+                {editingProduct && (
+                  <PricingUnitsEditor
+                    productId={editingProduct.id}
+                    basePrice={editingProduct.price}
+                    baseUnit={(editingProduct as { baseUnit?: string }).baseUnit ?? "each"}
+                  />
+                )}
               </TabsContent>
 
               <TabsContent value="history" className="mt-0">

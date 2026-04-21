@@ -26,8 +26,49 @@ export const productsTable = pgTable("products", {
   //  - "menu_item" = restaurant-style item that may have modifiers/kitchen routing
   productType: text("product_type").notNull().default("item"),
   hasModifiers: boolean("has_modifiers").notNull().default(false),
+  // Base inventory unit. All stock_count values are stored in this unit.
+  // Examples: "each", "kg", "g", "lb", "oz", "ml", "L". Defaults to "each".
+  baseUnit: text("base_unit").notNull().default("each"),
 });
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({ id: true, createdAt: true });
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof productsTable.$inferSelect;
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Volume / tier pricing.
+ * Each row: when the cart's total quantity (in base units) for this product
+ * is between minQty and maxQty (inclusive), charge `unitPrice` per base unit.
+ * maxQty = NULL means open-ended ("buy 100 or more"). Tiers are evaluated
+ * lowest-min first; the first matching tier wins.
+ * ──────────────────────────────────────────────────────────────────────── */
+export const productPricingTiersTable = pgTable("product_pricing_tiers", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  productId: integer("product_id").notNull(),
+  minQty: real("min_qty").notNull(),
+  maxQty: real("max_qty"),
+  unitPrice: real("unit_price").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type ProductPricingTier = typeof productPricingTiersTable.$inferSelect;
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Multi-unit conversions per product.
+ *   unitName          — display name ("Case", "Dozen", "Sack")
+ *   conversionFactor  — base units in 1 of this unit (e.g. Case = 24)
+ *   isPurchase        — show in purchase form
+ *   isSale            — allow selling by this unit
+ * The product's baseUnit always has implicit factor 1; we don't store it.
+ * ──────────────────────────────────────────────────────────────────────── */
+export const productPurchaseUnitsTable = pgTable("product_purchase_units", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  productId: integer("product_id").notNull(),
+  unitName: text("unit_name").notNull(),
+  conversionFactor: real("conversion_factor").notNull(),
+  isPurchase: boolean("is_purchase").notNull().default(true),
+  isSale: boolean("is_sale").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type ProductPurchaseUnit = typeof productPurchaseUnitsTable.$inferSelect;

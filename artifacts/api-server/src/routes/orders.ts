@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { logAudit } from "./audit";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable } from "@workspace/db";
+import { applyVolumePricing } from "../lib/pricing";
 import { getSetting } from "./settings";
 import { sendTemplateEmail } from "./email-templates";
 import {
@@ -189,14 +190,25 @@ router.post("/orders", async (req, res): Promise<void> => {
     const itemDiscount = item.discountAmount ?? 0;
     const variantAdj = (item.variantChoices ?? []).reduce((s, c) => s + c.priceAdjustment, 0);
     const modifierAdj = (item.modifierChoices ?? []).reduce((s, c) => s + c.priceAdjustment, 0);
-    const effectiveUnitPrice = product.price + variantAdj + modifierAdj;
+
+    // Apply volume pricing tiers (server-authoritative — never trust client tier)
+    const tiers = await db
+      .select()
+      .from(productPricingTiersTable)
+      .where(and(
+        eq(productPricingTiersTable.tenantId, tenantId),
+        eq(productPricingTiersTable.productId, product.id),
+      ));
+    const { unitPrice: tierUnitPrice } = applyVolumePricing(product.price, item.quantity, tiers);
+
+    const effectiveUnitPrice = tierUnitPrice + variantAdj + modifierAdj;
     const lineTotal = Math.max(0, effectiveUnitPrice * item.quantity - itemDiscount);
     rawSubtotal += lineTotal;
     resolvedItems.push({
       productId: product.id,
       productName: product.name,
       quantity: item.quantity,
-      unitPrice: product.price,
+      unitPrice: tierUnitPrice,
       discountAmount: itemDiscount > 0 ? itemDiscount : undefined,
       variantAdjustment: variantAdj !== 0 ? variantAdj : undefined,
       modifierAdjustment: modifierAdj !== 0 ? modifierAdj : undefined,

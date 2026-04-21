@@ -652,3 +652,54 @@ export interface ImpersonationLog {
   endedAt: string | null;
   notes: string | null;
 }
+
+/* ─── Volume pricing tiers + multi-unit (retail engine) ─── */
+export interface PricingTier {
+  id: number;
+  productId: number;
+  minQty: number;
+  maxQty: number | null;
+  unitPrice: number;
+}
+export interface PurchaseUnit {
+  id: number;
+  productId: number;
+  unitName: string;
+  conversionFactor: number;
+  isPurchase: boolean;
+  isSale: boolean;
+}
+
+export const getPricingTiers = (productId: number) =>
+  api<PricingTier[]>(`/products/${productId}/pricing-tiers`, { headers: tenantAuthHeaders() });
+
+export const replacePricingTiers = (
+  productId: number,
+  tiers: { minQty: number; maxQty: number | null; unitPrice: number }[],
+) =>
+  api<PricingTier[]>(`/products/${productId}/pricing-tiers`, {
+    method: "PUT", body: JSON.stringify({ tiers }), headers: tenantAuthHeaders(),
+  });
+
+export const getPurchaseUnits = (productId: number) =>
+  api<PurchaseUnit[]>(`/products/${productId}/purchase-units`, { headers: tenantAuthHeaders() });
+
+export const replacePurchaseUnits = (
+  productId: number,
+  units: { unitName: string; conversionFactor: number; isPurchase?: boolean; isSale?: boolean }[],
+) =>
+  api<PurchaseUnit[]>(`/products/${productId}/purchase-units`, {
+    method: "PUT", body: JSON.stringify({ units }), headers: tenantAuthHeaders(),
+  });
+
+/** Mirror of server-side applyVolumePricing for live POS preview. */
+export function previewTierPrice(basePrice: number, qty: number, tiers: PricingTier[]) {
+  const sorted = [...tiers].sort((a, b) => a.minQty - b.minQty);
+  let chosen: PricingTier | null = null;
+  for (const t of sorted) {
+    const max = t.maxQty ?? Number.POSITIVE_INFINITY;
+    if (qty >= t.minQty && qty <= max) chosen = t;
+  }
+  const unitPrice = chosen ? chosen.unitPrice : basePrice;
+  return { unitPrice, tier: chosen, savingsPerUnit: Math.max(0, basePrice - unitPrice) };
+}

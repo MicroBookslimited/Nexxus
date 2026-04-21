@@ -41,6 +41,7 @@ import superadminMarketingRouter from "./superadmin-marketing";
 import marketingUnsubscribeRouter from "./marketing-unsubscribe";
 import scaleRouter from "./scale";
 import businessProfileRouter from "./business-profile";
+import productPricingRouter from "./product-pricing";
 
 const router: IRouter = Router();
 
@@ -86,5 +87,6 @@ router.use(superadminMarketingRouter);
 router.use(marketingUnsubscribeRouter);
 router.use(scaleRouter);
 router.use(businessProfileRouter);
+router.use(productPricingRouter);
 
 export default router;

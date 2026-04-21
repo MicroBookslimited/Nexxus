@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
 import { and, eq, desc } from "drizzle-orm";
-import { db, purchasesTable, productsTable, stockMovementsTable } from "@workspace/db";
+import { db, purchasesTable, productsTable, stockMovementsTable, productPurchaseUnitsTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
+import { convertToBaseUnit } from "../lib/pricing";
 
 const router: IRouter = Router();
 
@@ -16,7 +17,11 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
 
 const CreatePurchaseBody = z.object({
   productId: z.number().int().positive(),
-  quantity: z.number().int().positive(),
+  /** Quantity in `unit` (NOT base units). Server converts using product purchase units. */
+  quantity: z.number().positive(),
+  /** The unit the quantity is expressed in. Defaults to product's base unit. */
+  unit: z.string().optional(),
+  /** Cost per `unit` (NOT per base unit). */
   unitCost: z.number().min(0).default(0),
   notes: z.string().optional(),
 });
@@ -70,7 +75,7 @@ router.post("/purchases", async (req, res): Promise<void> => {
     return;
   }
 
-  const { productId, quantity, unitCost, notes } = parsed.data;
+  const { productId, quantity, unit, unitCost, notes } = parsed.data;
 
   const [product] = await db
     .select()
@@ -82,18 +87,33 @@ router.post("/purchases", async (req, res): Promise<void> => {
     return;
   }
 
+  // Convert purchase qty -> base units using product's purchase-unit table.
+  const purchaseUnits = await db
+    .select()
+    .from(productPurchaseUnitsTable)
+    .where(and(
+      eq(productPurchaseUnitsTable.tenantId, tenantId),
+      eq(productPurchaseUnitsTable.productId, productId),
+    ));
+  const baseQty = convertToBaseUnit(quantity, unit, product.baseUnit, purchaseUnits);
+  // stock_count is integer in current schema — round to avoid drift on
+  // partial conversions (e.g. half-cases). Logged in notes for audit.
+  const baseQtyRounded = Math.round(baseQty);
   const totalCost = unitCost * quantity;
-  const newStockCount = product.stockCount + quantity;
+  const newStockCount = product.stockCount + baseQtyRounded;
+  const noteWithConversion = unit && unit !== product.baseUnit
+    ? `${notes ? notes + " · " : ""}${quantity} ${unit} → ${baseQty} ${product.baseUnit}`
+    : notes ?? null;
 
   const [purchase] = await db
     .insert(purchasesTable)
     .values({
       tenantId,
       productId,
-      quantity,
+      quantity: baseQtyRounded,
       unitCost,
       totalCost,
-      notes: notes ?? null,
+      notes: noteWithConversion,
     })
     .returning();
 
@@ -106,11 +126,11 @@ router.post("/purchases", async (req, res): Promise<void> => {
     tenantId,
     productId,
     type: "restock",
-    quantity: quantity,
+    quantity: baseQtyRounded,
     balanceAfter: newStockCount,
     referenceType: "purchase",
     referenceId: purchase.id,
-    notes: notes ?? null,
+    notes: noteWithConversion,
   });
 
   const enriched = await enrichPurchase(purchase);
