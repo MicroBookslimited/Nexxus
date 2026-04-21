@@ -53,7 +53,7 @@ const SYSTEM_ROLES: { name: string; color: string; permissions: string[] }[] = [
     permissions: [
       "pos.sale","pos.void","pos.discount","pos.refund","pos.open_drawer",
       "orders.view","orders.manage","inventory.view","reports.view","reports.export",
-      "customers.view","cash.open_session","cash.close_session","kitchen.view",
+      "customers.view","cash.open_session","cash.close_session","kitchen.view","scale.use",
     ],
   },
   {
@@ -66,7 +66,7 @@ const SYSTEM_ROLES: { name: string; color: string; permissions: string[] }[] = [
   {
     name: "Kitchen",
     color: "#f97316",
-    permissions: ["kitchen.view","kitchen.manage","orders.view"],
+    permissions: ["kitchen.view","kitchen.manage","orders.view","scale.use"],
   },
   {
     name: "Inventory Clerk",
