@@ -1321,7 +1321,7 @@ export function POS() {
         {/* ── MIDDLE: Order controls ── */}
         <div className="w-[300px] shrink-0 border-l border-border flex flex-col bg-card">
           {/* Order mode selector — restaurant only */}
-          {showOrderModes ? (
+          {isRestaurant && showOrderModes ? (
             <div className="grid grid-cols-3 gap-1 p-2 border-b border-border shrink-0">
               {([
                 { mode: "dine-in", label: "Dine In", icon: UtensilsCrossed },
@@ -1692,7 +1692,8 @@ export function POS() {
                 </div>
               )}
 
-              {/* Order Notes */}
+              {/* Order Notes — restaurant-only */}
+              {isRestaurant && (
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
@@ -1733,6 +1734,7 @@ export function POS() {
                   )}
                 </div>
               </div>
+              )}
           </div>
         </div>
 
