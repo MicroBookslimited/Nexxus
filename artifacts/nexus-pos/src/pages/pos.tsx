@@ -2146,7 +2146,19 @@ export function POS() {
       </Dialog>
 
       {/* Receipt Modal */}
-      <Dialog open={!!receiptOrder} onOpenChange={(o) => !o && setReceiptOrder(null)}>
+      <Dialog
+        open={!!receiptOrder}
+        onOpenChange={(o) => {
+          if (!o) {
+            setReceiptOrder(null);
+            // Snap focus back to the search bar when the receipt closes so
+            // the next sale can start immediately. Two delayed attempts to
+            // beat any toast/dialog that re-grabs focus.
+            setTimeout(() => searchInputRef.current?.focus(), 50);
+            setTimeout(() => searchInputRef.current?.focus(), 300);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-sm">
           {/* Business details at top of dialog */}
           <div className="text-center pb-3 border-b border-border">
