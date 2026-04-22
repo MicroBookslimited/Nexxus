@@ -435,27 +435,96 @@ export function openWhatsAppReceipt(phone: string, order: ReceiptOrder, settings
 }
 
 export function openReceiptWindow(html: string): void {
-  const w = window.open("", "_blank", "width=420,height=760");
-  if (!w) return;
-  // Embed the print trigger inside the popup's own HTML so it runs in the
-  // popup's window context. Assigning w.onload / w.onafterprint from the
-  // parent is unreliable in Edge/Chrome — the events never fire cross-window.
-  // Two complementary close mechanisms:
-  // 1. onafterprint  – works in Firefox and modern Edge/Chrome
-  // 2. matchMedia('print') listener – required for older Chrome/Edge builds
-  //    where onafterprint on a popup is unreliable
-  const printScript = `<script>window.onload=function(){` +
-    `window.onafterprint=function(){window.close();};` +
-    `if(window.matchMedia){` +
-    `  var mql=window.matchMedia('print');` +
-    `  var handler=function(m){if(!m.matches){mql.removeListener(handler);window.close();}};` +
-    `  mql.addListener(handler);` +
-    `}` +
-    `window.print();` +
-    `};<\/script>`;
+  // Use a hidden iframe instead of window.open. Popups are blocked by
+  // default on mobile Chrome (Android) and by many desktop pop-up blockers,
+  // which silently drops the print preview. A same-origin iframe always
+  // renders, lets us call print() from the iframe's own context, and works
+  // identically on desktop and Android.
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(
+    typeof navigator !== "undefined" ? navigator.userAgent : "",
+  );
+
+  const printScript = `<script>(function(){` +
+    `function go(){try{window.focus();window.print();}catch(e){}}` +
+    `if(document.readyState==='complete'){setTimeout(go,50);}` +
+    `else{window.addEventListener('load',function(){setTimeout(go,50);});}` +
+    `})();<\/script>`;
   const printableHtml = html.includes("</body>")
     ? html.replace("</body>", `${printScript}</body>`)
     : html + printScript;
-  w.document.write(printableHtml);
-  w.document.close();
+
+  // Remove any leftover print iframe before adding a new one.
+  const prev = document.getElementById("nexus-print-frame");
+  if (prev) prev.parentNode?.removeChild(prev);
+
+  const iframe = document.createElement("iframe");
+  iframe.id = "nexus-print-frame";
+  iframe.setAttribute("aria-hidden", "true");
+  // Position off-screen but keep it in the layout so Chrome on Android
+  // actually paints it before printing. display:none breaks print on some
+  // mobile browsers.
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.style.opacity = "0";
+  iframe.style.pointerEvents = "none";
+
+  document.body.appendChild(iframe);
+
+  const cleanup = () => {
+    setTimeout(() => {
+      iframe.parentNode?.removeChild(iframe);
+    }, 1000);
+  };
+
+  iframe.addEventListener("load", () => {
+    try {
+      const cw = iframe.contentWindow;
+      if (cw) {
+        cw.focus();
+        // The embedded printScript will fire window.print() inside the
+        // iframe's own context, which is the only reliable way on Android
+        // Chrome. Also try from here as a desktop fallback.
+        setTimeout(() => {
+          try {
+            cw.print();
+          } catch {
+            /* iframe script will handle */
+          }
+          cleanup();
+        }, 100);
+      } else {
+        cleanup();
+      }
+    } catch {
+      cleanup();
+    }
+  });
+
+  // srcdoc renders synchronously and is supported on Android 5+ Chrome.
+  iframe.srcdoc = printableHtml;
+
+  // Mobile Chrome (especially Android 8) can ignore srcdoc-triggered print
+  // when the page is not user-interaction driven. As a safety net, after a
+  // short delay check whether the print dialog actually opened. If not, fall
+  // back to a same-tab data URL the user can print manually from the browser
+  // menu.
+  if (isMobile) {
+    setTimeout(() => {
+      // If iframe was already cleaned up the print likely succeeded.
+      if (!document.getElementById("nexus-print-frame")) return;
+      // Otherwise open the receipt in the same tab so the user can use
+      // Chrome's "Share → Print" menu.
+      try {
+        const blob = new Blob([printableHtml], { type: "text/html" });
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+      } catch {
+        /* ignore */
+      }
+    }, 2500);
+  }
 }

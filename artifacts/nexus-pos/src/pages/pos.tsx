@@ -582,7 +582,11 @@ export function POS() {
   }, [products]);
 
   const filteredProducts = products?.filter((p) => {
-    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const q = searchTerm.toLowerCase().trim();
+    const matchesSearch =
+      p.name.toLowerCase().includes(q) ||
+      (p.barcode ? p.barcode.toLowerCase().includes(q) : false) ||
+      ((p as { sku?: string }).sku ? String((p as { sku?: string }).sku).toLowerCase().includes(q) : false);
     const matchesCategory = categoryFilter ? p.category === categoryFilter : true;
     return matchesSearch && matchesCategory;
   });
@@ -662,25 +666,51 @@ export function POS() {
     }
   };
 
+  // Process a scanned/typed code. Returns true if it was consumed.
+  const tryConsumeCode = (raw: string): boolean => {
+    const code = raw.trim();
+    if (!code) return false;
+    // Weight-embedded EAN-13 barcode: starts with '2', exactly 13 digits.
+    if (/^2\d{12}$/.test(code)) {
+      void addWeightLabelToCart(code);
+      setSearchTerm("");
+      return true;
+    }
+    const barcodeMatch = products?.find((p) => p.barcode === code);
+    if (barcodeMatch) {
+      handleProductTap(barcodeMatch);
+      if (!barcodeMatch.hasVariants && !barcodeMatch.hasModifiers) {
+        toast({ title: "Product added", description: barcodeMatch.name });
+      }
+      setSearchTerm("");
+      return true;
+    }
+    return false;
+  };
+
   const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && searchTerm.trim()) {
-      const code = searchTerm.trim();
-      // Weight-embedded EAN-13 barcode: starts with '2', exactly 13 digits.
-      if (/^2\d{12}$/.test(code)) {
-        void addWeightLabelToCart(code);
-        setSearchTerm("");
-        return;
-      }
-      const barcodeMatch = products?.find((p) => p.barcode === code);
-      if (barcodeMatch) {
-        handleProductTap(barcodeMatch);
-        if (!barcodeMatch.hasVariants && !barcodeMatch.hasModifiers) {
-          toast({ title: "Product added", description: barcodeMatch.name });
-        }
-        setSearchTerm("");
-      }
+      tryConsumeCode(searchTerm);
     }
   };
+
+  // Auto-detect barcode scans where the scanner does NOT send a trailing Enter
+  // (common on Bluetooth HID scanners on Android). When the search input value
+  // exactly matches a product barcode (or the EAN-13 weight-label pattern),
+  // add it to the cart immediately. Debounced briefly so partial typing of a
+  // matching numeric SKU doesn't fire prematurely.
+  useEffect(() => {
+    const code = searchTerm.trim();
+    if (!code || !products) return;
+    const isEan = /^2\d{12}$/.test(code);
+    const exactMatch = products.find((p) => p.barcode === code);
+    if (!isEan && !exactMatch) return;
+    const t = setTimeout(() => {
+      tryConsumeCode(code);
+    }, 120);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, products]);
 
   const [editingNoteKey, setEditingNoteKey] = useState<string | null>(null);
 
