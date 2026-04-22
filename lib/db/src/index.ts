@@ -19,7 +19,14 @@ if (process.env.SUPABASE_DATABASE_URL) {
   console.log("[db] Using Replit database");
 }
 
-export const pool = new Pool({ connectionString });
+const needsSsl =
+  /supabase\.|neon\.tech|amazonaws\.com|render\.com/i.test(connectionString) ||
+  /sslmode=require/i.test(connectionString);
+
+export const pool = new Pool({
+  connectionString,
+  ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
+});
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
