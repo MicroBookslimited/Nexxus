@@ -1,0 +1,100 @@
+26-04-23 01:32:25.38
+fd7252cb
+User
+{"level":30,"time":1776889945381,"pid":19,"hostname":"localhost","req":{"id":20,"method":"POST","url":"/api/saas/login"},"res":{"statusCode":500},"err":{"type":"Error","message":"failed with status code 500","stack":"Error: failed with status code 500\n at onResFinished (/home/runner/workspace/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:115:39)\n at ServerResponse.onResponseComplete (/home/runner/workspace/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:178:14)\n at ServerResponse.emit (node:events:520:35)\n at onFinish (node:_http_outgoing:1026:10)\n at callback (node:internal/streams/writable:764:21)\n at afterWrite (node:internal/streams/writable:708:5)\n at afterWriteTick (node:internal/streams/writable:694:10)\n at process.processTicksAndRejections (node:internal/process/task_queues:88:21)"},"responseTime":562,"msg":"request errored"}
+2026-04-23 01:32:34.00
+fd7252cb
+User
+[login] db host=ep-curly-paper-am7qe1nb.c-5.us-east-1.aws.neon.tech db=neondb provider=neon source=SUPABASE_DATABASE_URL
+2026-04-23 01:32:34.51
+fd7252cb
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+2026-04-23 01:32:34.51
+fd7252cb
+User
+Error: Failed query: select "id", "business_name", "owner_name", "email", "phone", "address", "country", "slug", "status", "password_hash", "onboarding_step", "onboarding_complete", "reseller_id", "email_verified", "email_verification_token", "last_login_at", "sessions_invalidated_at", "business_type", "created_at", "updated_at" from "tenants" where "tenants"."id" = $1
+2026-04-23 01:32:34.51
+fd7252cb
+User
+at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+2026-04-23 01:32:34.51
+fd7252cb
+User
+params: 1
+2026-04-23 01:32:34.51
+fd7252cb
+User
+{"level":30,"time":1776889954513,"pid":19,"hostname":"localhost","req":{"id":21,"method":"POST","url":"/api/saas/login"},"res":{"statusCode":500},"err":{"type":"Error","message":"failed with status code 500","stack":"Error: failed with status code 500\n at onResFinished (/home/runner/workspace/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:115:39)\n at ServerResponse.onResponseComplete (/home/runner/workspace/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:178:14)\n at ServerResponse.emit (node:events:520:35)\n at onFinish (node:_http_outgoing:1026:10)\n at callback (node:internal/streams/writable:764:21)\n at afterWrite (node:internal/streams/writable:708:5)\n at afterWriteTick (node:internal/streams/writable:694:10)\n at process.processTicksAndRejections (node:internal/process/task_queues:88:21)"},"responseTime":506,"msg":"request errored"}
+2026-04-23 01:32:34.51
+fd7252cb
+User
+at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/saas-auth.ts:185:22)
+2026-04-23 01:32:34.51
+fd7252cb
+User
+at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+2026-04-23 01:32:36.88
+fd7252cb
+User
+[login] db host=ep-curly-paper-am7qe1nb.c-5.us-east-1.aws.neon.tech db=neondb provider=neon source=SUPABASE_DATABASE_URL
+2026-04-23 01:32:37.46
+fd7252cb
+User
+Error: Failed query: select "id", "business_name", "owner_name", "email", "phone", "address", "country", "slug", "status", "password_hash", "onboarding_step", "onboarding_complete", "reseller_id", "email_verified", "email_verification_token", "last_login_at", "sessions_invalidated_at", "business_type", "created_at", "updated_at" from "tenants" where "tenants"."id" = $1
+2026-04-23 01:32:37.46
+fd7252cb
+User
+params: 1
+2026-04-23 01:32:37.46
+fd7252cb
+User
+at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+2026-04-23 01:32:37.46
+fd7252cb
+User
+at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+2026-04-23 01:32:37.46
+fd7252cb
+User
+at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/saas-auth.ts:185:22)
+2026-04-23 01:32:37.46
+fd7252cb
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+2026-04-23 01:32:37.46
+fd7252cb
+User
+{"level":30,"time":1776889957460,"pid":19,"hostname":"localhost","req":{"id":22,"method":"POST","url":"/api/saas/login"},"res":{"statusCode":500},"err":{"type":"Error","message":"failed with status code 500","stack":"Error: failed with status code 500\n at onResFinished (/home/runner/workspace/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:115:39)\n at ServerResponse.onResponseComplete (/home/runner/workspace/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:178:14)\n at ServerResponse.emit (node:events:520:35)\n at onFinish (node:_http_outgoing:1026:10)\n at callback (node:internal/streams/writable:764:21)\n at afterWrite (node:internal/streams/writable:708:5)\n at afterWriteTick (node:internal/streams/writable:694:10)\n at process.processTicksAndRejections (node:internal/process/task_queues:88:21)"},"responseTime":587,"msg":"request errored"}
+2026-04-23 01:32:46.85
+fd7252cb
+User
+[login] db host=ep-curly-paper-am7qe1nb.c-5.us-east-1.aws.neon.tech db=neondb provider=neon source=SUPABASE_DATABASE_URL
+2026-04-23 01:32:47.44
+fd7252cb
+User
+at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/saas-auth.ts:185:22)
+2026-04-23 01:32:47.44
+fd7252cb
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+2026-04-23 01:32:47.44
+fd7252cb
+User
+{"level":30,"time":1776889967440,"pid":19,"hostname":"localhost","req":{"id":23,"method":"POST","url":"/api/saas/login"},"res":{"statusCode":500},"err":{"type":"Error","message":"failed with status code 500","stack":"Error: failed with status code 500\n at onResFinished (/home/runner/workspace/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:115:39)\n at ServerResponse.onResponseComplete (/home/runner/workspace/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:178:14)\n at ServerResponse.emit (node:events:520:35)\n at onFinish (node:_http_outgoing:1026:10)\n at callback (node:internal/streams/writable:764:21)\n at afterWrite (node:internal/streams/writable:708:5)\n at afterWriteTick (node:internal/streams/writable:694:10)\n at process.processTicksAndRejections (node:internal/process/task_queues:88:21)"},"responseTime":581,"msg":"request errored"}
+2026-04-23 01:32:47.44
+fd7252cb
+User
+Error: Failed query: select "id", "business_name", "owner_name", "email", "phone", "address", "country", "slug", "status", "password_hash", "onboarding_step", "onboarding_complete", "reseller_id", "email_verified", "email_verification_token", "last_login_at", "sessions_invalidated_at", "business_type", "created_at", "updated_at" from "tenants" where "tenants"."id" = $1
+2026-04-23 01:32:47.44
+fd7252cb
+User
+params: 1
+2026-04-23 01:32:47.44
+fd7252cb
+User
+at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+2026-04-23 01:32:47.44
+fd7252cb
+User
+at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@t
