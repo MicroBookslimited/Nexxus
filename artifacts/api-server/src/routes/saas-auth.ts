@@ -149,6 +149,22 @@ router.post("/saas/login", async (req, res): Promise<void> => {
   const { email: rawEmail, password } = parsed.data;
   const email = rawEmail.toLowerCase().trim();
 
+  try {
+    const dbUrl =
+      process.env.SUPABASE_DATABASE_URL ?? process.env.DATABASE_URL ?? "";
+    const u = new URL(dbUrl);
+    let provider = "unknown";
+    if (u.hostname.includes("supabase")) provider = "supabase";
+    else if (u.hostname.includes("neon")) provider = "neon";
+    else if (u.hostname.includes("replit") || u.hostname.includes("helium"))
+      provider = "replit";
+    console.log(
+      `[login] db host=${u.hostname} db=${u.pathname.replace("/", "")} provider=${provider} source=${process.env.SUPABASE_DATABASE_URL ? "SUPABASE_DATABASE_URL" : "DATABASE_URL"}`,
+    );
+  } catch {
+    console.log("[login] db host=<unparseable>");
+  }
+
   // 1. Check tenant_admin_users first (supports multi-admin per tenant)
   const [adminUser] = await db
     .select()
