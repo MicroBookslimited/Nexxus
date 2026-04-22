@@ -14,6 +14,11 @@ export const subscriptionPlansTable = pgTable("subscription_plans", {
   modules: text("modules").notNull().default('["pos","reports","inventory","customers","staff","cash","tables","kitchen","loyalty"]'),
   features: text("features").notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  // Promotional plans are visible only to superadmin (hidden from public /plans).
+  isPromotional: boolean("is_promotional").notNull().default(false),
+  // Optional override for trial / billing period length in days. Used by promotional
+  // plans like "1 Year Free" so the trial / current period is set to ~365 days.
+  durationDays: integer("duration_days"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -461,6 +461,7 @@ export interface Plan {
   priceMonthly: number; priceAnnual: number;
   maxStaff: number; maxProducts: number; maxLocations: number; maxInvoices: number;
   modules: string[]; features: string[]; isActive: boolean;
+  isPromotional?: boolean; durationDays?: number | null;
 }
 
 export interface TenantRow extends Tenant {

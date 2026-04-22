@@ -612,6 +612,8 @@ const PlanBody = z.object({
   modules: z.array(z.string()).default([]),
   features: z.array(z.string()).default([]),
   isActive: z.union([z.boolean(), z.enum(["true", "false"]).transform(v => v === "true")]).default(true),
+  isPromotional: z.union([z.boolean(), z.enum(["true", "false"]).transform(v => v === "true")]).default(false),
+  durationDays: coerceInt.pipe(z.number().int().min(1)).optional(),
 });
 
 router.post("/superadmin/plans", async (req, res): Promise<void> => {

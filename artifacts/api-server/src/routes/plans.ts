@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, subscriptionPlansTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -83,7 +83,11 @@ function parsePlan(p: typeof subscriptionPlansTable.$inferSelect) {
 }
 
 router.get("/plans", async (_req, res): Promise<void> => {
-  const plans = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.isActive, true));
+  // Hide promotional plans from the public listing — superadmin sees them via /superadmin/plans.
+  const plans = await db
+    .select()
+    .from(subscriptionPlansTable)
+    .where(and(eq(subscriptionPlansTable.isActive, true), eq(subscriptionPlansTable.isPromotional, false)));
   res.json(plans.map(parsePlan));
 });
 
