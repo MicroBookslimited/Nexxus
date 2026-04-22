@@ -1791,15 +1791,15 @@ export function POS() {
 
         {/* ── RIGHT: Bill preview + keypad ── */}
         <div className="w-[440px] shrink-0 border-l border-border flex flex-col bg-card">
-          {/* Bill summary */}
-          <div className="flex-1 overflow-y-auto p-3 border-b border-border">
+          {/* Bill summary — white receipt-style panel for at-a-glance readability */}
+          <div className="flex-1 overflow-y-auto p-3 border-b border-border bg-white text-slate-900">
             <div className="flex items-center gap-1.5 mb-2">
-              <Printer className="h-4 w-4 text-primary" />
-              <span className="text-sm font-semibold text-primary">Bill Preview</span>
-              {cart.length > 0 && <span className="ml-auto text-xs text-muted-foreground">{cart.reduce((s, i) => s + i.quantity, 0)} items</span>}
+              <Printer className="h-4 w-4 text-slate-700" />
+              <span className="text-sm font-semibold text-slate-900">Bill Preview</span>
+              {cart.length > 0 && <span className="ml-auto text-xs text-slate-500">{cart.reduce((s, i) => s + i.quantity, 0)} items</span>}
             </div>
             {cart.length === 0 ? (
-              <p className="text-center text-xs text-muted-foreground py-1 opacity-50">Add items to see bill</p>
+              <p className="text-center text-xs text-slate-500 py-1 opacity-70">Add items to see bill</p>
             ) : (
               <div className="space-y-1 text-sm">
                 {cart.map((item) => {
@@ -1815,54 +1815,54 @@ export function POS() {
                   const totalSavings = savingsPerUnit * item.quantity;
                   return (
                     <div key={item.cartKey}>
-                      <div className="flex justify-between text-foreground">
+                      <div className="flex justify-between text-slate-900">
                         <span className="truncate max-w-[180px]">{item.quantity}× {item.productName}</span>
                         <span className="font-mono shrink-0 ml-1">{fmtNum(lineTotal)}</span>
                       </div>
                       {tier && (
-                        <p className="text-xs text-emerald-400 font-medium pl-3 truncate">
+                        <p className="text-xs text-emerald-600 font-medium pl-3 truncate">
                           ↳ Tier {tier.minQty}{tier.maxQty != null ? `–${tier.maxQty}` : "+"}
                           {totalSavings > 0 && <> · save {fmtNum(totalSavings)}</>}
                         </p>
                       )}
                       {item.itemNote && (
-                        <p className="text-xs text-yellow-400 font-medium pl-3 truncate">↳ {item.itemNote}</p>
+                        <p className="text-xs text-amber-700 font-medium pl-3 truncate">↳ {item.itemNote}</p>
                       )}
                     </div>
                   );
                 })}
-                <div className="pt-2 mt-1 border-t border-border space-y-1">
-                  <div className="flex justify-between text-foreground/80">
+                <div className="pt-2 mt-1 border-t border-slate-200 space-y-1">
+                  <div className="flex justify-between text-slate-700">
                     <span>Subtotal</span><span className="font-mono">{fmtNum(subtotal)}</span>
                   </div>
                   {cartDiscountValue > 0 && (
-                    <div className="flex justify-between text-amber-400">
+                    <div className="flex justify-between text-amber-600">
                       <span>Discount</span><span className="font-mono">-{fmtNum(cartDiscountValue)}</span>
                     </div>
                   )}
                   {loyaltyDiscountValue > 0 && (
-                    <div className="flex justify-between text-amber-400">
+                    <div className="flex justify-between text-amber-600">
                       <span>Loyalty</span><span className="font-mono">-{fmtNum(loyaltyDiscountValue)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-foreground/80">
+                  <div className="flex justify-between text-slate-700">
                     <span>GCT {taxPct > 0 ? `(${taxPct}%)` : ""}{taxMode === "inclusive" ? " incl." : ""}</span><span className="font-mono">{fmtNum(tax)}</span>
                   </div>
-                  <div className="flex justify-between font-bold text-base pt-1 border-t border-border">
-                    <span>Total</span><span className="font-mono text-primary">{formatCurrency(total, baseCurrency)}</span>
+                  <div className="flex justify-between font-bold text-base pt-1 border-t border-slate-200 text-slate-900">
+                    <span>Total</span><span className="font-mono">{formatCurrency(total, baseCurrency)}</span>
                   </div>
                   {secondaryCurrency && exchangeRate > 0 && (
-                    <div className="flex justify-between text-xs text-muted-foreground italic">
+                    <div className="flex justify-between text-xs text-slate-500 italic">
                       <span>≈ {secondaryCurrency}</span>
                       <span className="font-mono">{formatCurrency(total * exchangeRate, secondaryCurrency)}</span>
                     </div>
                   )}
                   {paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0 && (
                     <>
-                      <div className="flex justify-between text-foreground/80">
+                      <div className="flex justify-between text-slate-700">
                         <span>Tendered</span><span className="font-mono">{fmtNum(parseFloat(numpadValue))}</span>
                       </div>
-                      <div className={`flex justify-between font-semibold ${parseFloat(numpadValue) >= total ? "text-emerald-400" : "text-red-400"}`}>
+                      <div className={`flex justify-between font-semibold ${parseFloat(numpadValue) >= total ? "text-emerald-600" : "text-red-600"}`}>
                         <span>{parseFloat(numpadValue) >= total ? "Change" : "Short"}</span>
                         <span className="font-mono">{fmtNum(Math.abs(parseFloat(numpadValue) - total))}</span>
                       </div>
@@ -1870,11 +1870,11 @@ export function POS() {
                   )}
                 </div>
                 {notes && (
-                  <div className="mt-2 pt-2 border-t border-border">
-                    <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1 mb-0.5">
+                  <div className="mt-2 pt-2 border-t border-slate-200">
+                    <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1 mb-0.5">
                       <ClipboardList className="h-2.5 w-2.5" />Note
                     </p>
-                    <p className="text-[10px] text-amber-400 italic leading-snug">{notes}</p>
+                    <p className="text-[10px] text-amber-700 italic leading-snug">{notes}</p>
                   </div>
                 )}
               </div>
