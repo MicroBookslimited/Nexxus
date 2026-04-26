@@ -1506,7 +1506,10 @@ export function POS() {
           </div>
 
           <ScrollArea className="flex-1">
-            <div className="grid grid-cols-5 sm:grid-cols-6 lg:grid-cols-6 gap-2 p-3">
+            <div
+              className="grid gap-2 p-3"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(118px, 1fr))" }}
+            >
               {loadingProducts
                 ? Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="aspect-square rounded-xl bg-secondary/30 animate-pulse" />
@@ -1517,25 +1520,25 @@ export function POS() {
                       <motion.div key={product.id} whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.02 }}>
                         <div
                           onClick={() => (!product.inStock && !allowOverselling) ? undefined : handleProductTap(product)}
-                          className={`relative cursor-pointer rounded-xl border ${palette.bg} ${palette.accent} aspect-square p-2 flex flex-col justify-between transition-all duration-150 ${(!product.inStock && !allowOverselling) ? "opacity-40 grayscale cursor-not-allowed" : "hover:brightness-110 hover:shadow-lg hover:shadow-black/30 active:scale-95"}`}
+                          className={`relative cursor-pointer rounded-xl border ${palette.bg} ${palette.accent} aspect-square p-2 flex flex-col justify-between overflow-hidden transition-all duration-150 ${(!product.inStock && !allowOverselling) ? "opacity-40 grayscale cursor-not-allowed" : "hover:brightness-110 hover:shadow-lg hover:shadow-black/30 active:scale-95"}`}
                         >
                           <div className={`absolute top-2 right-2 h-1.5 w-1.5 rounded-full ${palette.dot} opacity-70`} />
-                          <div className="pr-3">
-                            <p className="text-xs font-bold leading-snug line-clamp-2 text-white">{product.name}</p>
-                            <p className="text-[9px] text-white/50 mt-0.5">{product.category}</p>
+                          <div className="pr-3 min-w-0">
+                            <p className="text-xs font-bold leading-snug line-clamp-2 text-white break-words">{product.name}</p>
+                            <p className="text-[9px] text-white/50 mt-0.5 truncate">{product.category}</p>
                           </div>
-                          <div className="flex items-end justify-between gap-1">
-                            <p className="text-sm font-bold font-mono text-white leading-none">{formatCurrency(product.price)}</p>
-                            <div className="flex flex-col items-end gap-0.5">
-                              {(product.hasVariants || product.hasModifiers) && (
-                                <Settings2 className="h-3 w-3 text-white/60" />
-                              )}
+                          <div className="flex flex-col items-stretch gap-1 min-w-0">
+                            <p className="text-sm font-bold font-mono text-white leading-none truncate">{formatCurrency(product.price)}</p>
+                            <div className="flex items-center justify-between gap-1 min-w-0">
+                              {(product.hasVariants || product.hasModifiers) ? (
+                                <Settings2 className="h-3 w-3 text-white/60 shrink-0" />
+                              ) : <span />}
                               {!product.inStock ? (
-                                <span className="text-[9px] font-semibold bg-red-500/40 text-red-200 px-1 py-0.5 rounded leading-none">
+                                <span className="text-[9px] font-semibold bg-red-500/40 text-red-200 px-1 py-0.5 rounded leading-none truncate max-w-full">
                                   {allowOverselling ? `${product.stockCount} left` : "Out of stock"}
                                 </span>
                               ) : product.stockCount > 0 ? (
-                                <span className={`text-[9px] font-semibold px-1 py-0.5 rounded leading-none ${product.stockCount <= 5 ? "bg-amber-500/40 text-amber-100" : "bg-black/30 text-white/70"}`}>
+                                <span className={`text-[9px] font-semibold px-1 py-0.5 rounded leading-none truncate max-w-full ${product.stockCount <= 5 ? "bg-amber-500/40 text-amber-100" : "bg-black/30 text-white/70"}`}>
                                   {product.stockCount} left
                                 </span>
                               ) : null}
