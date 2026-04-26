@@ -693,6 +693,48 @@ export const replacePurchaseUnits = (
     method: "PUT", body: JSON.stringify({ units }), headers: tenantAuthHeaders(),
   });
 
+/* ─── Payment Methods ─── */
+export interface PaymentMethod {
+  id: number;
+  tenantId: number;
+  name: string;
+  type: "cash" | "card" | "split" | "credit" | "digital" | "custom";
+  isEnabled: boolean;
+  isDefault: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const listPaymentMethods = () =>
+  api<PaymentMethod[]>("/payment-methods", { headers: tenantAuthHeaders() });
+
+export const createPaymentMethod = (data: {
+  name: string;
+  type?: PaymentMethod["type"];
+  isEnabled?: boolean;
+  isDefault?: boolean;
+  sortOrder?: number;
+}) =>
+  api<PaymentMethod>("/payment-methods", {
+    method: "POST", body: JSON.stringify(data), headers: tenantAuthHeaders(),
+  });
+
+export const updatePaymentMethod = (
+  id: number,
+  data: { name?: string; isEnabled?: boolean; isDefault?: boolean; sortOrder?: number },
+) =>
+  api<PaymentMethod>(`/payment-methods/${id}`, {
+    method: "PUT", body: JSON.stringify(data), headers: tenantAuthHeaders(),
+  });
+
+export const deletePaymentMethod = (id: number) =>
+  fetch(`/api/payment-methods/${id}`, {
+    method: "DELETE", headers: tenantAuthHeaders(),
+  }).then((r) => {
+    if (!r.ok && r.status !== 204) throw new Error("Failed to delete payment method");
+  });
+
 /** Mirror of server-side applyVolumePricing for live POS preview. */
 export function previewTierPrice(basePrice: number, qty: number, tiers: PricingTier[]) {
   const sorted = [...tiers].sort((a, b) => a.minQty - b.minQty);

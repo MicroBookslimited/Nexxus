@@ -34,7 +34,7 @@ import {
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote,
 } from "lucide-react";
-import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels } from "@/lib/saas-api";
+import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
@@ -68,6 +68,12 @@ type CartItem = {
   itemNote?: string;
   variantChoices: ChoiceItem[];
   modifierChoices: ChoiceItem[];
+  /**
+   * For sell-by-weight items, the unit symbol (e.g. "kg", "lb") so the
+   * cart row can render "Bananas (1.75 kg) — JMD …" and quantity-step
+   * controls can be hidden.
+   */
+  weightUnit?: string;
 };
 
 function makeCartKey(productId: number, variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[]) {
@@ -488,7 +494,67 @@ export function POS() {
       cartBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [cart.length]);
-  const [paymentMethod, setPaymentMethod] = useState<"card" | "cash" | "split" | "credit">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+
+  // ── Payment methods (configurable per tenant) ──
+  // Falls back to the four built-ins if the API has nothing yet.
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    listPaymentMethods()
+      .then((rows) => {
+        if (cancelled) return;
+        const enabled = rows.filter(r => r.isEnabled).sort((a, b) => a.sortOrder - b.sortOrder);
+        setPaymentMethods(enabled);
+        // Pick the default method (or first enabled) on load.
+        const def = enabled.find(r => r.isDefault) ?? enabled[0];
+        if (def) setPaymentMethod(def.type === "custom" ? def.name : def.type);
+      })
+      .catch(() => {
+        // If the endpoint fails, leave the legacy hard-coded options intact.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── Subscription state (drives the read-only banner) ──
+  const [subscriptionExpired, setSubscriptionExpired] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  useEffect(() => {
+    saasMe()
+      .then((me) => {
+        const sub = me.subscription;
+        if (!sub) return;
+        setSubscriptionStatus(sub.status ?? null);
+        const status = (sub.status ?? "").toLowerCase();
+        const now = Date.now();
+        let expired = false;
+        if (status === "expired" || status === "suspended" || status === "cancelled") {
+          expired = true;
+        } else if (status === "trial" && sub.trialEndsAt) {
+          expired = new Date(sub.trialEndsAt).getTime() < now;
+        } else if (status === "active" && sub.currentPeriodEnd) {
+          expired = new Date(sub.currentPeriodEnd).getTime() < now;
+        }
+        setSubscriptionExpired(expired);
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── Sell-by-weight modal state ──
+  const [weightModalProduct, setWeightModalProduct] = useState<{
+    id: number;
+    name: string;
+    price: number;
+    unit: string;
+  } | null>(null);
+  const [weightModalValue, setWeightModalValue] = useState<string>("");
+
+  // ── Insufficient-stock 409 modal state ──
+  const [stockErrorModal, setStockErrorModal] = useState<{
+    productName: string;
+    available: number;
+    requested: number;
+  } | null>(null);
 
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
@@ -593,11 +659,59 @@ export function POS() {
 
   const handleProductTap = (product: NonNullable<typeof products>[0]) => {
     setSearchTerm("");
+    // Sell-by-weight items must go through the WeightModal so the cashier
+    // can enter the actual weight. We never auto-add quantity 1.
+    const p = product as typeof product & { soldByWeight?: boolean; unitOfMeasure?: string | null };
+    if (p.soldByWeight) {
+      setWeightModalProduct({
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        unit: p.unitOfMeasure ?? "kg",
+      });
+      setWeightModalValue("");
+      return;
+    }
     if (product.hasVariants || product.hasModifiers) {
       setCustomizingProductId(product.id);
     } else {
       addToCartDirect(product.id, product.name, product.price, [], []);
     }
+  };
+
+  /**
+   * Confirm the weight entry from the WeightModal and add a single
+   * cart line whose quantity is the entered weight (decimal).
+   */
+  const confirmWeightEntry = () => {
+    if (!weightModalProduct) return;
+    const w = parseFloat(weightModalValue);
+    if (!Number.isFinite(w) || w <= 0) {
+      toast({ title: "Invalid weight", description: "Enter a positive weight.", variant: "destructive" });
+      return;
+    }
+    const cartKey = `wt:${weightModalProduct.id}:${Date.now()}`;
+    setCart((prev) => [
+      ...prev,
+      {
+        cartKey,
+        productId: weightModalProduct.id,
+        productName: weightModalProduct.name,
+        basePrice: weightModalProduct.price,
+        effectivePrice: weightModalProduct.price,
+        quantity: w,
+        itemDiscount: 0,
+        variantChoices: [],
+        modifierChoices: [],
+        weightUnit: weightModalProduct.unit,
+      },
+    ]);
+    toast({
+      title: "Added by weight",
+      description: `${weightModalProduct.name} (${w.toFixed(3)} ${weightModalProduct.unit})`,
+    });
+    setWeightModalProduct(null);
+    setWeightModalValue("");
   };
 
   const addToCartDirect = (
@@ -1048,14 +1162,46 @@ export function POS() {
           queryClient.invalidateQueries({ queryKey: ["/api/kitchen"] });
           queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
         },
-        onError: () => {
+        onError: (err: unknown) => {
           // Order failed — release any reserved labels so they can be re-sold.
           if (scaleLabelIdsRef.current.length > 0) {
             const ids = [...scaleLabelIdsRef.current];
             scaleLabelIdsRef.current = [];
             void releaseWeightLabels(ids).catch(() => {});
           }
-          toast({ title: "Payment Failed", description: "There was an error processing the payment.", variant: "destructive" });
+          // Surface specific error codes from the server.
+          const apiErr = err as ApiError | undefined;
+          const body = apiErr?.body as { error?: string; message?: string; productName?: string; available?: number; requested?: number } | undefined;
+          if (apiErr?.status === 409 && body?.error === "INSUFFICIENT_STOCK") {
+            setStockErrorModal({
+              productName: body.productName ?? "Item",
+              available: body.available ?? 0,
+              requested: body.requested ?? 0,
+            });
+            return;
+          }
+          if (apiErr?.status === 402 && body?.error === "SUBSCRIPTION_EXPIRED") {
+            setSubscriptionExpired(true);
+            toast({
+              title: "Subscription expired",
+              description: body.message ?? "Renew to continue selling.",
+              variant: "destructive",
+            });
+            return;
+          }
+          if (apiErr?.status === 400 && body?.error === "PAYMENT_METHOD_DISABLED") {
+            toast({
+              title: "Payment method disabled",
+              description: body.message ?? `"${paymentMethod}" is no longer enabled.`,
+              variant: "destructive",
+            });
+            return;
+          }
+          toast({
+            title: "Payment Failed",
+            description: body?.message || apiErr?.message || "There was an error processing the payment.",
+            variant: "destructive",
+          });
         },
       },
     );
@@ -1986,22 +2132,64 @@ export function POS() {
 
           {/* Payment & action buttons */}
           <div className="p-3 space-y-2 shrink-0">
-            <div className="grid grid-cols-4 gap-2">
-              <Button variant={paymentMethod === "card" ? "default" : "outline"} onClick={() => { setPaymentMethod("card"); setNumpadValue(""); }} className="h-12 text-sm flex-col gap-0.5 px-1">
-                <CreditCard className="h-4 w-4 shrink-0" />Card
-              </Button>
-              <Button variant={paymentMethod === "cash" ? "default" : "outline"} onClick={() => setPaymentMethod("cash")} className="h-12 text-sm flex-col gap-0.5 px-1">
-                <Banknote className="h-4 w-4 shrink-0" />Cash
-              </Button>
-              {showSplitBills && (
-                <Button variant={paymentMethod === "split" ? "default" : "outline"} onClick={handleSplitClick} className="h-12 text-sm flex-col gap-0.5 px-1">
-                  <SplitSquareHorizontal className="h-4 w-4 shrink-0" />Split
-                </Button>
-              )}
-              <Button variant={paymentMethod === "credit" ? "default" : "outline"} onClick={() => { setPaymentMethod("credit"); setNumpadValue(""); }} className={`h-12 text-sm flex-col gap-0.5 px-1 ${paymentMethod === "credit" ? "" : "border-amber-500/40 text-amber-400 hover:bg-amber-500/10"}`}>
-                <BookOpen className="h-4 w-4 shrink-0" />Credit
-              </Button>
-            </div>
+            {subscriptionExpired && (
+              <div className="rounded-md border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs text-red-300 font-medium flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>Subscription expired – renew to continue selling</span>
+                <Button size="sm" variant="outline" className="ml-auto h-6 text-[10px] border-red-500/50 text-red-200 hover:bg-red-500/20"
+                  onClick={() => navigate("/subscription")}>Renew</Button>
+              </div>
+            )}
+            {(() => {
+              // Dynamic render of enabled payment methods. Built-in types
+              // keep their special icons + special-input UI flows. Custom
+              // methods just record their name; they have no extra UI.
+              const visibleMethods = paymentMethods.length > 0
+                ? paymentMethods.filter(m => m.type !== "split" || showSplitBills)
+                : [
+                    { id: -1, type: "card",   name: "Card",   isDefault: false },
+                    { id: -2, type: "cash",   name: "Cash",   isDefault: true  },
+                    ...(showSplitBills ? [{ id: -3, type: "split",  name: "Split",  isDefault: false }] : []),
+                    { id: -4, type: "credit", name: "Credit", isDefault: false },
+                  ] as Array<Pick<PaymentMethod, "id" | "type" | "name" | "isDefault">>;
+              const cols = Math.min(4, Math.max(2, visibleMethods.length));
+              const gridCols =
+                cols === 2 ? "grid-cols-2"
+                : cols === 3 ? "grid-cols-3"
+                : "grid-cols-4";
+              return (
+                <div className={`grid gap-2 ${gridCols}`}>
+                  {visibleMethods.map((m) => {
+                    const value = m.type === "custom" ? m.name : m.type;
+                    const selected = paymentMethod === value;
+                    const Icon = m.type === "card" ? CreditCard
+                      : m.type === "cash" ? Banknote
+                      : m.type === "split" ? SplitSquareHorizontal
+                      : m.type === "credit" ? BookOpen
+                      : DollarSign;
+                    const handleClick = () => {
+                      if (m.type === "split") { handleSplitClick(); return; }
+                      setPaymentMethod(value);
+                      if (m.type !== "cash") setNumpadValue("");
+                    };
+                    const creditAccent = m.type === "credit" && !selected
+                      ? "border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                      : "";
+                    return (
+                      <Button
+                        key={m.id}
+                        variant={selected ? "default" : "outline"}
+                        onClick={handleClick}
+                        className={`h-12 text-sm flex-col gap-0.5 px-1 ${creditAccent}`}
+                      >
+                        <Icon className="h-4 w-4 shrink-0" />
+                        {m.name}
+                      </Button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             {paymentMethod === "credit" && !selectedCustomerId && (
               <p className="text-amber-500 text-[10px] font-medium">⚠ Select a customer above to enable credit sale</p>
             )}
@@ -2029,8 +2217,12 @@ export function POS() {
               </Button>
             )}
             <Button className="w-full h-14 text-lg font-bold shadow-lg shadow-primary/20" size="lg" onClick={handleCharge}
-              disabled={cart.length === 0 || createOrder.isPending || (paymentMethod === "split" && !isSplitValid) || (paymentMethod === "credit" && !selectedCustomerId)}>
-              {createOrder.isPending ? "Processing…" : `Charge ${formatCurrency(total, baseCurrency)}`}
+              disabled={cart.length === 0 || createOrder.isPending || subscriptionExpired || (paymentMethod === "split" && !isSplitValid) || (paymentMethod === "credit" && !selectedCustomerId)}>
+              {subscriptionExpired
+                ? "Subscription Expired"
+                : createOrder.isPending
+                  ? "Processing…"
+                  : `Charge ${formatCurrency(total, baseCurrency)}`}
             </Button>
           </div>
         </div>
@@ -2045,6 +2237,79 @@ export function POS() {
           onConfirm={handleCustomizeConfirm}
         />
       )}
+
+      {/* Sell-by-weight modal */}
+      <Dialog
+        open={weightModalProduct !== null}
+        onOpenChange={(o) => { if (!o) { setWeightModalProduct(null); setWeightModalValue(""); } }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Enter Weight — {weightModalProduct?.name}</DialogTitle>
+          </DialogHeader>
+          {weightModalProduct && (
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                {formatCurrency(weightModalProduct.price, baseCurrency)} per {weightModalProduct.unit}
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.001"
+                  min="0"
+                  autoFocus
+                  value={weightModalValue}
+                  onChange={(e) => setWeightModalValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") confirmWeightEntry(); }}
+                  className="text-2xl font-mono h-14"
+                  placeholder="0.000"
+                />
+                <span className="text-lg text-muted-foreground font-medium">{weightModalProduct.unit}</span>
+              </div>
+              {parseFloat(weightModalValue) > 0 && (
+                <div className="text-right text-sm text-muted-foreground">
+                  Line total:{" "}
+                  <span className="text-foreground font-bold">
+                    {formatCurrency(parseFloat(weightModalValue) * weightModalProduct.price, baseCurrency)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setWeightModalProduct(null); setWeightModalValue(""); }}>Cancel</Button>
+            <Button onClick={confirmWeightEntry} disabled={!(parseFloat(weightModalValue) > 0)}>Add to Cart</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Insufficient stock 409 modal */}
+      <Dialog open={stockErrorModal !== null} onOpenChange={(o) => { if (!o) setStockErrorModal(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <AlertTriangle className="h-5 w-5" />
+              Not enough stock
+            </DialogTitle>
+          </DialogHeader>
+          {stockErrorModal && (
+            <div className="space-y-2 text-sm">
+              <p>
+                Only <span className="font-bold text-foreground">{stockErrorModal.available}</span>
+                {" "}of <span className="font-bold text-foreground">{stockErrorModal.productName}</span> available
+                — you tried to sell <span className="font-bold text-foreground">{stockErrorModal.requested}</span>.
+              </p>
+              <p className="text-muted-foreground">
+                Adjust the quantity in the cart, restock the product, or enable "allow overselling" in Settings.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setStockErrorModal(null)}>OK</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Manager Override — End Shift */}
       <Dialog open={closeShiftOverrideOpen} onOpenChange={(o) => !o && setCloseShiftOverrideOpen(false)}>

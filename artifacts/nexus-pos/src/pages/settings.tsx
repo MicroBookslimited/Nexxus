@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign, Bell, Send, Briefcase,
   ShieldCheck, Plus, Trash2, ChevronDown, ChevronRight, Edit2, Check, X, QrCode, Copy, Download, ExternalLink,
-  Boxes, UserCog, KeyRound, Eye, EyeOff, MailOpen, Crown, UserPlus, Loader2, Link,
+  Boxes, UserCog, KeyRound, Eye, EyeOff, MailOpen, Crown, UserPlus, Loader2, Link, CreditCard, Star, StarOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY,
@@ -235,6 +235,7 @@ export function AdminSettings() {
             { id: "section-email", label: "Email", icon: Mail },
             { id: "section-digest", label: "Notifications", icon: Bell },
             { id: "section-inventory", label: "Inventory", icon: Boxes },
+            { id: "section-payments", label: "Payment Methods", icon: CreditCard },
             { id: "section-qr", label: "QR Code", icon: QrCode },
             { id: "section-admins", label: "Admin Users", icon: UserCog },
             { id: "section-automation", label: "Automation", icon: MailOpen },
@@ -1054,6 +1055,11 @@ export function AdminSettings() {
           )}
         </CardContent>
       </Card>
+
+      {/* Payment Methods */}
+      <div id="section-payments">
+        <PaymentMethodsSection />
+      </div>
 
       {/* QR Code / Online Menu */}
       <div id="section-qr">
@@ -2253,6 +2259,201 @@ function BusinessProfileCard() {
           ))}
         </div>
       </CardContent>
+    </Card>
+  );
+}
+
+/* ─── Payment Methods Section ─── */
+function PaymentMethodsSection() {
+  const { toast } = useToast();
+  const [methods, setMethods] = useState<import("@/lib/saas-api").PaymentMethod[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const m = await import("@/lib/saas-api");
+      const rows = await m.listPaymentMethods();
+      setMethods(rows);
+    } catch (e) {
+      toast({ title: "Failed to load payment methods", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void refresh(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const onToggleEnabled = async (id: number, isEnabled: boolean) => {
+    setSavingId(id);
+    try {
+      const m = await import("@/lib/saas-api");
+      await m.updatePaymentMethod(id, { isEnabled });
+      await refresh();
+    } catch (e) {
+      const err = e as { body?: { message?: string }; message?: string };
+      toast({
+        title: "Could not update",
+        description: err.body?.message || err.message || "Failed",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const onSetDefault = async (id: number) => {
+    setSavingId(id);
+    try {
+      const m = await import("@/lib/saas-api");
+      await m.updatePaymentMethod(id, { isDefault: true });
+      await refresh();
+    } catch (e) {
+      toast({ title: "Failed", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const onDelete = async (id: number, name: string) => {
+    if (!confirm(`Delete payment method "${name}"? This cannot be undone.`)) return;
+    setSavingId(id);
+    try {
+      const m = await import("@/lib/saas-api");
+      await m.deletePaymentMethod(id);
+      await refresh();
+    } catch (e) {
+      const err = e as { body?: { message?: string }; message?: string };
+      toast({
+        title: "Could not delete",
+        description: err.body?.message || err.message || "Failed",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const onAdd = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    try {
+      const m = await import("@/lib/saas-api");
+      await m.createPaymentMethod({ name, type: "custom", isEnabled: true });
+      setAddOpen(false);
+      setNewName("");
+      await refresh();
+      toast({ title: "Payment method added", description: name });
+    } catch (e) {
+      const err = e as { body?: { message?: string }; message?: string };
+      toast({
+        title: "Could not add",
+        description: err.body?.message || err.message || "Failed",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <CreditCard className="h-4 w-4 text-primary" />
+          Payment Methods
+        </CardTitle>
+        <CardDescription>
+          Configure which payment methods appear in the POS. Built-in methods (Cash, Card, Split, Credit)
+          can be disabled but not deleted. Add custom methods like "Mobile Money" or "Bank Transfer".
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading && <p className="text-xs text-muted-foreground">Loading…</p>}
+        {!loading && methods && (
+          <div className="space-y-2">
+            {methods.map((pm) => {
+              const isBuiltIn = ["cash", "card", "split", "credit"].includes(pm.type);
+              return (
+                <div key={pm.id} className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={pm.isEnabled}
+                    disabled={savingId === pm.id}
+                    onClick={() => onToggleEnabled(pm.id, !pm.isEnabled)}
+                    className={cn(
+                      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+                      pm.isEnabled ? "bg-primary" : "bg-muted-foreground/30",
+                    )}
+                    aria-label={`${pm.isEnabled ? "Disable" : "Enable"} ${pm.name}`}
+                  >
+                    <span className={cn(
+                      "inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform",
+                      pm.isEnabled ? "translate-x-5" : "translate-x-0.5",
+                    )} />
+                  </button>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{pm.name}</span>
+                      {isBuiltIn && <Badge variant="outline" className="text-[10px]">Built-in</Badge>}
+                      {pm.isDefault && <Badge className="text-[10px] bg-primary/20 text-primary border-primary/40">Default</Badge>}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground capitalize">{pm.type}</div>
+                  </div>
+                  {pm.isEnabled && !pm.isDefault && (
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => onSetDefault(pm.id)} disabled={savingId === pm.id}>
+                      <Star className="h-3 w-3 mr-1" />Set default
+                    </Button>
+                  )}
+                  {pm.isDefault && (
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <StarOff className="h-3 w-3" />default
+                    </span>
+                  )}
+                  {!isBuiltIn && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => onDelete(pm.id, pm.name)} disabled={savingId === pm.id}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="pt-2">
+          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+            <Plus className="h-3 w-3 mr-1" />Add custom method
+          </Button>
+        </div>
+      </CardContent>
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add Payment Method</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="pm-name">Display name</Label>
+            <Input
+              id="pm-name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="e.g. Mobile Money"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") void onAdd(); }}
+            />
+            <p className="text-xs text-muted-foreground">
+              The cashier will see a button with this name. The sale records it as the payment method on receipts and reports.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+            <Button onClick={onAdd} disabled={!newName.trim()}>Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

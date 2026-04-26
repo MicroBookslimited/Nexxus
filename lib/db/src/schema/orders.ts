@@ -37,7 +37,8 @@ export const orderItemsTable = pgTable("order_items", {
   orderId: integer("order_id").notNull().references(() => ordersTable.id),
   productId: integer("product_id").notNull(),
   productName: text("product_name").notNull(),
-  quantity: integer("quantity").notNull(),
+  // `real` to support decimal quantities for sold-by-weight items (e.g. 1.75 kg).
+  quantity: real("quantity").notNull(),
   unitPrice: real("unit_price").notNull(),
   discountAmount: real("discount_amount"),
   variantAdjustment: real("variant_adjustment"),

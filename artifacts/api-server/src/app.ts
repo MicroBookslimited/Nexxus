@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { sessionRevocationMiddleware } from "./middleware/session-revocation";
+import { subscriptionGuardMiddleware } from "./middleware/subscription-guard";
 
 const app: Express = express();
 
@@ -45,6 +46,6 @@ app.use("/api/marketing/webhook", express.raw({ type: "application/json" }), (re
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
-app.use("/api", sessionRevocationMiddleware, router);
+app.use("/api", sessionRevocationMiddleware, subscriptionGuardMiddleware, router);
 
 export default app;

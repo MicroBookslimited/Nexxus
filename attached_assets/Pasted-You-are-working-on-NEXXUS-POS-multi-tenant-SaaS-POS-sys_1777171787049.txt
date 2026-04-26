@@ -1,0 +1,272 @@
+You are working on NEXXUS POS (multi-tenant SaaS POS system).
+Implement the following core features and fixes in a clean, scalable, production-ready way.
+
+========================================
+GOAL
+========================================
+Deliver a major system update with:
+
+1. Inventory protection (no negative stock)
+2. Subscription expiry (read-only mode instead of lockout)
+3. Payment method configuration (admin-controlled)
+4. Selling by weight (retail feature)
+5. Fix volume pricing tiers
+6. Fix unit of measure saving
+
+========================================
+SYSTEM CONTEXT
+========================================
+- Multi-tenant system (tenant_id required)
+- POS + Back Office
+- API-driven (frontend + backend)
+- Stock is tracked in BASE UNIT ("each")
+
+========================================
+1. INVENTORY PROTECTION (CRITICAL)
+========================================
+
+RULE:
+If overselling = false → NEVER allow stock < 0
+
+BACKEND:
+
+Use atomic query:
+
+UPDATE products
+SET stock = stock - :qty
+WHERE id = :product_id
+AND stock >= :qty;
+
+If affected rows == 0:
+Return:
+
+{
+  "error": "INSUFFICIENT_STOCK",
+  "message": "Not enough stock available",
+  "available": current_stock,
+  "requested": qty
+}
+
+POS:
+- Block checkout if invalid
+- Show modal: "Only X items available"
+
+========================================
+2. SUBSCRIPTION EXPIRY (READ-ONLY MODE)
+========================================
+
+DO NOT BLOCK LOGIN
+
+Add subscription_status:
+- active
+- expired
+- suspended
+
+MIDDLEWARE:
+
+if expired:
+    allow GET
+    block POST, PUT, DELETE
+
+Return:
+
+{
+  "error": "SUBSCRIPTION_EXPIRED",
+  "message": "Renew subscription to continue"
+}
+
+POS:
+- Disable Pay button
+- Show banner:
+  "Subscription expired – renew to continue selling"
+
+========================================
+3. PAYMENT METHOD CONFIGURATION
+========================================
+
+DATABASE:
+
+payment_methods:
+- id
+- tenant_id
+- name
+- type (cash, card, digital, custom)
+- is_enabled
+- is_default
+
+FEATURES:
+
+Admin Panel:
+Settings → Payments
+
+Allow:
+- Toggle ON/OFF
+- Add custom methods
+- Set default
+
+POS:
+- Show ONLY enabled methods
+- Preselect default
+
+VALIDATION:
+If disabled → block usage
+
+========================================
+4. SELLING BY WEIGHT
+========================================
+
+DATABASE:
+
+products:
+- is_weighted (boolean)
+- weight_unit (kg, lb)
+- price_per_unit
+
+POS FLOW:
+
+if product.is_weighted:
+    open modal
+
+MODAL:
+Input: decimal weight
+
+VALIDATION:
+- weight > 0
+- allow decimals
+
+CALCULATION:
+total = weight × price_per_unit
+
+CART:
+
+{
+  product_id,
+  quantity: weight,
+  unit: "kg",
+  unit_price,
+  total
+}
+
+DISPLAY:
+Chicken (1.75 kg) — $875
+
+========================================
+5. VOLUME PRICING FIX
+========================================
+
+DATABASE:
+
+volume_pricing:
+- id
+- product_id
+- min_qty
+- max_qty (nullable)
+- price
+
+VALIDATION:
+- min_qty > 0
+- max_qty >= min_qty OR NULL
+- no overlapping tiers
+
+MATCHING LOGIC:
+
+tiers sorted by min_qty DESC
+
+for tier:
+    if qty >= min_qty AND (max_qty IS NULL OR qty <= max_qty):
+        return tier.price
+
+Fallback:
+base price
+
+POS:
+- Override price dynamically
+
+========================================
+6. UNIT OF MEASURE FIX
+========================================
+
+DATABASE:
+
+units:
+- id
+- product_id
+- name
+- conversion_factor
+- can_buy
+- can_sell
+
+VALIDATION:
+- name required
+- conversion_factor > 0
+- at least one of can_buy/can_sell true
+- no duplicates per product
+
+PAYLOAD:
+
+{
+  product_id,
+  name,
+  conversion_factor,
+  can_buy,
+  can_sell
+}
+
+ERRORS:
+
+{
+  "error": "UNIT_EXISTS",
+  "message": "Unit already exists"
+}
+
+FRONTEND:
+- Show real error messages
+- Remove generic "Fail to save units"
+
+========================================
+7. GENERAL IMPROVEMENTS
+========================================
+
+- All numeric inputs must be validated (no strings)
+- Add logging for:
+  - oversell attempts
+  - invalid unit saves
+  - expired subscription actions
+
+========================================
+8. QA TEST CASES
+========================================
+
+INVENTORY:
+- Sell exact stock → PASS
+- Oversell → FAIL
+
+SUBSCRIPTION:
+- Expired user logs in → PASS
+- Cannot process sale → PASS
+
+PAYMENTS:
+- Disabled method hidden → PASS
+
+WEIGHT:
+- Enter 1.75 kg → correct total
+
+VOLUME:
+- Tier applies correctly
+
+UNITS:
+- Add valid unit → PASS
+- Duplicate → FAIL
+
+========================================
+OUTPUT REQUIRED
+========================================
+
+- Backend controllers
+- Middleware logic
+- SQL schema updates
+- POS frontend logic
+- Validation functions
+- Error handling responses
+
+Ensure code is clean, modular, and scalable.

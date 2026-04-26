@@ -20,3 +20,4 @@ export * from "./stock-movements";
 export * from "./audit";
 export * from "./topup";
 export * from "./scale";
+export * from "./payment-methods";

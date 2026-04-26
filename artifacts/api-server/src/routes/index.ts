@@ -42,6 +42,7 @@ import marketingUnsubscribeRouter from "./marketing-unsubscribe";
 import scaleRouter from "./scale";
 import businessProfileRouter from "./business-profile";
 import productPricingRouter from "./product-pricing";
+import paymentMethodsRouter from "./payment-methods";
 
 const router: IRouter = Router();
 
@@ -88,5 +89,6 @@ router.use(marketingUnsubscribeRouter);
 router.use(scaleRouter);
 router.use(businessProfileRouter);
 router.use(productPricingRouter);
+router.use(paymentMethodsRouter);
 
 export default router;

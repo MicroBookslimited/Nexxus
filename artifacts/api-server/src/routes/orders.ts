@@ -1,10 +1,36 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { logAudit } from "./audit";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable } from "@workspace/db";
 import { applyVolumePricing } from "../lib/pricing";
 import { getSetting } from "./settings";
+import { logger } from "../lib/logger";
 import { sendTemplateEmail } from "./email-templates";
+
+/**
+ * Thrown inside the order transaction when an item cannot be sold because
+ * doing so would push stock below zero (and overselling is disabled).
+ * Carries enough info for the POS to show "only X available".
+ */
+class InsufficientStockError extends Error {
+  constructor(
+    public productId: number,
+    public productName: string,
+    public available: number,
+    public requested: number,
+  ) {
+    super(`Insufficient stock for ${productName}`);
+    this.name = "InsufficientStockError";
+  }
+}
+
+class PaymentMethodDisabledError extends Error {
+  constructor(public method: string) {
+    super(`Payment method "${method}" is not enabled`);
+    this.name = "PaymentMethodDisabledError";
+  }
+}
+
 import {
   CreateOrderBody,
   GetOrderParams,
@@ -160,6 +186,50 @@ router.post("/orders", async (req, res): Promise<void> => {
     return;
   }
 
+  // Reject any non-positive item quantity early. The DB column is `real`
+  // so decimal weights are allowed (e.g. 1.75 kg) but never <= 0.
+  for (const item of parsed.data.items) {
+    if (typeof item.quantity !== "number" || !Number.isFinite(item.quantity) || item.quantity <= 0) {
+      res.status(400).json({
+        error: "INVALID_QUANTITY",
+        message: `Quantity for product ${item.productId} must be a positive number`,
+      });
+      return;
+    }
+  }
+
+  // Validate payment method is enabled for this tenant (when one is given).
+  // Built-in types (cash, card, split, credit) are always permitted if no
+  // payment_methods rows exist at all (back-compat for tenants pre-config).
+  if (parsed.data.paymentMethod) {
+    const enabled = await db
+      .select({ id: paymentMethodsTable.id })
+      .from(paymentMethodsTable)
+      .where(and(
+        eq(paymentMethodsTable.tenantId, tenantId),
+        eq(paymentMethodsTable.isEnabled, true),
+      ));
+    if (enabled.length > 0) {
+      const enabledTypes = await db
+        .select({ type: paymentMethodsTable.type, name: paymentMethodsTable.name })
+        .from(paymentMethodsTable)
+        .where(and(
+          eq(paymentMethodsTable.tenantId, tenantId),
+          eq(paymentMethodsTable.isEnabled, true),
+        ));
+      const ok = enabledTypes.some(
+        m => m.type === parsed.data.paymentMethod || m.name.toLowerCase() === parsed.data.paymentMethod!.toLowerCase()
+      );
+      if (!ok) {
+        res.status(400).json({
+          error: "PAYMENT_METHOD_DISABLED",
+          message: `Payment method "${parsed.data.paymentMethod}" is not enabled`,
+        });
+        return;
+      }
+    }
+  }
+
   let rawSubtotal = 0;
   type ChoiceItem = { groupId: number; groupName: string; optionId: number; optionName: string; priceAdjustment: number };
   const resolvedItems: Array<{
@@ -259,128 +329,196 @@ router.post("/orders", async (req, res): Promise<void> => {
   const seq = String((todayCount ?? 0) + 1).padStart(6, "0");
   const orderNumber = `ORD-${yymm}-${dd}-${seq}`;
 
-  const [order] = await db
-    .insert(ordersTable)
-    .values({
-      tenantId,
-      orderNumber,
-      status: isOpenOrder ? "open" : isPaid ? "completed" : "pending",
-      kitchenStatus: "pending",
-      subtotal,
-      discountType: parsed.data.discountType,
-      discountAmount: parsed.data.discountAmount,
-      discountValue: discountValue > 0 ? Math.round(discountValue * 100) / 100 : undefined,
-      tax,
-      total,
-      paymentMethod: parsed.data.paymentMethod,
-      splitCardAmount: parsed.data.splitCardAmount,
-      splitCashAmount: parsed.data.splitCashAmount,
-      cashTendered: parsed.data.cashTendered,
-      notes: parsed.data.notes,
-      customerId: parsed.data.customerId,
-      tableId: parsed.data.tableId,
-      staffId: parsed.data.staffId,
-      locationId: parsed.data.locationId,
-      orderType: parsed.data.orderType ?? "counter",
-      loyaltyPointsRedeemed: pointsToRedeem > 0 ? pointsToRedeem : undefined,
-      loyaltyDiscount: loyaltyDiscount > 0 ? loyaltyDiscount : undefined,
-      completedAt: isPaid ? new Date() : undefined,
-    })
-    .returning();
-
-  await db.insert(orderItemsTable).values(
-    resolvedItems.map((item) => ({
-      orderId: order.id,
-      productId: item.productId,
-      productName: item.productName,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      discountAmount: item.discountAmount,
-      variantAdjustment: item.variantAdjustment,
-      modifierAdjustment: item.modifierAdjustment,
-      variantChoices: item.variantChoices ?? null,
-      modifierChoices: item.modifierChoices ?? null,
-      lineTotal: item.lineTotal,
-      notes: item.notes ?? null,
-    })),
-  );
-
-  for (const item of resolvedItems) {
-    await db
-      .update(productsTable)
-      .set(
-        allowOverselling
-          ? {
+  // ──────────────────────────────────────────────────────────────────────
+  // Everything that mutates the DB happens inside a single transaction.
+  // If any per-item stock check fails (and overselling is off) we throw
+  // InsufficientStockError; the transaction rolls back cleanly and the
+  // POS gets a structured 409 it can surface in a modal.
+  // ──────────────────────────────────────────────────────────────────────
+  let order: typeof ordersTable.$inferSelect;
+  try {
+    order = await db.transaction(async (tx) => {
+      // 1. Atomically decrement stock per item BEFORE creating the order.
+      //    This is the only place that enforces "no negative stock".
+      for (const item of resolvedItems) {
+        if (allowOverselling) {
+          // Unconditional deduction; no guard.
+          await tx
+            .update(productsTable)
+            .set({ stockCount: sql`${productsTable.stockCount} - ${item.quantity}` })
+            .where(and(
+              eq(productsTable.id, item.productId),
+              eq(productsTable.tenantId, tenantId),
+            ));
+        } else {
+          // Conditional deduction: only succeeds if enough stock exists.
+          // Drizzle's `update().returning()` with a WHERE clause that
+          // includes the stock check is the atomic primitive we want.
+          const updated = await tx
+            .update(productsTable)
+            .set({
               stockCount: sql`${productsTable.stockCount} - ${item.quantity}`,
-            }
-          : {
-              stockCount: sql`GREATEST(0, ${productsTable.stockCount} - ${item.quantity})`,
               inStock: sql`CASE WHEN ${productsTable.stockCount} - ${item.quantity} <= 0 THEN false ELSE ${productsTable.inStock} END`,
-            }
-      )
-      .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+            })
+            .where(and(
+              eq(productsTable.id, item.productId),
+              eq(productsTable.tenantId, tenantId),
+              gte(productsTable.stockCount, item.quantity),
+            ))
+            .returning({ stockCount: productsTable.stockCount });
 
-    const [afterSale] = await db
-      .select({ stockCount: productsTable.stockCount })
-      .from(productsTable)
-      .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
-    await db.insert(stockMovementsTable).values({
-      tenantId,
-      productId: item.productId,
-      type: "sale",
-      quantity: -item.quantity,
-      balanceAfter: afterSale?.stockCount ?? 0,
-      referenceType: "order",
-      referenceId: order.id,
-      notes: `Sale – ${orderNumber}`,
-    });
-
-    if (parsed.data.locationId) {
-      await db
-        .update(locationInventoryTable)
-        .set({
-          stockCount: allowOverselling
-            ? sql`${locationInventoryTable.stockCount} - ${item.quantity}`
-            : sql`GREATEST(0, ${locationInventoryTable.stockCount} - ${item.quantity})`,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(locationInventoryTable.locationId, parsed.data.locationId),
-            eq(locationInventoryTable.productId, item.productId),
-          )
-        );
-    }
-
-    // Deduct ingredients from stock if this product has a recipe (BOM)
-    const [recipe] = await db.select().from(recipesTable)
-      .where(and(eq(recipesTable.productId, item.productId), eq(recipesTable.tenantId, tenantId)));
-
-    if (recipe) {
-      const rIngredients = await db
-        .select({
-          ingredientId: recipeIngredientsTable.ingredientId,
-          quantity: recipeIngredientsTable.quantity,
-        })
-        .from(recipeIngredientsTable)
-        .where(eq(recipeIngredientsTable.recipeId, recipe.id));
-
-      for (const ri of rIngredients) {
-        const toDeduct = (ri.quantity / recipe.yieldQuantity) * item.quantity;
-        await db.update(ingredientsTable)
-          .set({ stockQuantity: sql`GREATEST(0, ${ingredientsTable.stockQuantity} - ${toDeduct})`, updatedAt: new Date() })
-          .where(eq(ingredientsTable.id, ri.ingredientId));
-
-        await db.insert(ingredientUsageLogsTable).values({
-          tenantId,
-          ingredientId: ri.ingredientId,
-          quantity: toDeduct,
-          reason: "sale",
-          referenceId: order.id,
-          referenceType: "order",
-        });
+          if (updated.length === 0) {
+            // Fetch the current stock so we can report exactly how much is
+            // available. If the product was removed mid-flight, treat as 0.
+            const [cur] = await tx
+              .select({ stockCount: productsTable.stockCount })
+              .from(productsTable)
+              .where(and(
+                eq(productsTable.id, item.productId),
+                eq(productsTable.tenantId, tenantId),
+              ));
+            logger.info(
+              { tenantId, productId: item.productId, requested: item.quantity, available: cur?.stockCount ?? 0 },
+              "[oversell] blocked by INSUFFICIENT_STOCK guard",
+            );
+            throw new InsufficientStockError(
+              item.productId,
+              item.productName,
+              cur?.stockCount ?? 0,
+              item.quantity,
+            );
+          }
+        }
       }
+
+      // 2. Create the order header now that all stock is reserved.
+      const [created] = await tx
+        .insert(ordersTable)
+        .values({
+          tenantId,
+          orderNumber,
+          status: isOpenOrder ? "open" : isPaid ? "completed" : "pending",
+          kitchenStatus: "pending",
+          subtotal,
+          discountType: parsed.data.discountType,
+          discountAmount: parsed.data.discountAmount,
+          discountValue: discountValue > 0 ? Math.round(discountValue * 100) / 100 : undefined,
+          tax,
+          total,
+          paymentMethod: parsed.data.paymentMethod,
+          splitCardAmount: parsed.data.splitCardAmount,
+          splitCashAmount: parsed.data.splitCashAmount,
+          cashTendered: parsed.data.cashTendered,
+          notes: parsed.data.notes,
+          customerId: parsed.data.customerId,
+          tableId: parsed.data.tableId,
+          staffId: parsed.data.staffId,
+          locationId: parsed.data.locationId,
+          orderType: parsed.data.orderType ?? "counter",
+          loyaltyPointsRedeemed: pointsToRedeem > 0 ? pointsToRedeem : undefined,
+          loyaltyDiscount: loyaltyDiscount > 0 ? loyaltyDiscount : undefined,
+          completedAt: isPaid ? new Date() : undefined,
+        })
+        .returning();
+
+      // 3. Insert order_items.
+      await tx.insert(orderItemsTable).values(
+        resolvedItems.map((item) => ({
+          orderId: created.id,
+          productId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          discountAmount: item.discountAmount,
+          variantAdjustment: item.variantAdjustment,
+          modifierAdjustment: item.modifierAdjustment,
+          variantChoices: item.variantChoices ?? null,
+          modifierChoices: item.modifierChoices ?? null,
+          lineTotal: item.lineTotal,
+          notes: item.notes ?? null,
+        })),
+      );
+
+      // 4. Per-item stock-movement audit + location inventory + recipe BOM.
+      for (const item of resolvedItems) {
+        const [afterSale] = await tx
+          .select({ stockCount: productsTable.stockCount })
+          .from(productsTable)
+          .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+        await tx.insert(stockMovementsTable).values({
+          tenantId,
+          productId: item.productId,
+          type: "sale",
+          quantity: -item.quantity,
+          balanceAfter: afterSale?.stockCount ?? 0,
+          referenceType: "order",
+          referenceId: created.id,
+          notes: `Sale – ${orderNumber}`,
+        });
+
+        if (parsed.data.locationId) {
+          await tx
+            .update(locationInventoryTable)
+            .set({
+              stockCount: allowOverselling
+                ? sql`${locationInventoryTable.stockCount} - ${item.quantity}`
+                : sql`GREATEST(0, ${locationInventoryTable.stockCount} - ${item.quantity})`,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(locationInventoryTable.locationId, parsed.data.locationId),
+                eq(locationInventoryTable.productId, item.productId),
+              )
+            );
+        }
+
+        // Deduct ingredients from stock if this product has a recipe (BOM)
+        const [recipe] = await tx.select().from(recipesTable)
+          .where(and(eq(recipesTable.productId, item.productId), eq(recipesTable.tenantId, tenantId)));
+
+        if (recipe) {
+          const rIngredients = await tx
+            .select({
+              ingredientId: recipeIngredientsTable.ingredientId,
+              quantity: recipeIngredientsTable.quantity,
+            })
+            .from(recipeIngredientsTable)
+            .where(eq(recipeIngredientsTable.recipeId, recipe.id));
+
+          for (const ri of rIngredients) {
+            const toDeduct = (ri.quantity / recipe.yieldQuantity) * item.quantity;
+            await tx.update(ingredientsTable)
+              .set({ stockQuantity: sql`GREATEST(0, ${ingredientsTable.stockQuantity} - ${toDeduct})`, updatedAt: new Date() })
+              .where(eq(ingredientsTable.id, ri.ingredientId));
+
+            await tx.insert(ingredientUsageLogsTable).values({
+              tenantId,
+              ingredientId: ri.ingredientId,
+              quantity: toDeduct,
+              reason: "sale",
+              referenceId: created.id,
+              referenceType: "order",
+            });
+          }
+        }
+      }
+
+      return created;
+    });
+  } catch (e) {
+    if (e instanceof InsufficientStockError) {
+      res.status(409).json({
+        error: "INSUFFICIENT_STOCK",
+        message: `Only ${e.available} of "${e.productName}" available (you tried to sell ${e.requested})`,
+        productId: e.productId,
+        productName: e.productName,
+        available: e.available,
+        requested: e.requested,
+      });
+      return;
     }
+    throw e;
   }
 
   if (!isOpenOrder && parsed.data.customerId) {
@@ -433,7 +571,10 @@ router.post("/orders", async (req, res): Promise<void> => {
     const [cust] = await db
       .select({ name: customersTable.name })
       .from(customersTable)
-      .where(eq(customersTable.id, parsed.data.customerId));
+      .where(and(
+        eq(customersTable.id, parsed.data.customerId),
+        eq(customersTable.tenantId, tenantId),
+      ));
     if (cust) {
       await db.insert(accountsReceivableTable).values({
         tenantId,
@@ -581,6 +722,25 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
   if (!["open", "pending", "preparing", "ready"].includes(existing.status)) {
     res.status(400).json({ error: "Order cannot be charged in its current status" });
     return;
+  }
+
+  // Validate the chosen payment method is currently enabled for this tenant.
+  {
+    const all = await db
+      .select({ name: paymentMethodsTable.name, type: paymentMethodsTable.type, isEnabled: paymentMethodsTable.isEnabled })
+      .from(paymentMethodsTable)
+      .where(eq(paymentMethodsTable.tenantId, tenantId));
+    if (all.length > 0) {
+      const v = parsed.data.paymentMethod.toLowerCase();
+      const match = all.find(m => m.type.toLowerCase() === v || m.name.toLowerCase() === v);
+      if (!match || !match.isEnabled) {
+        res.status(400).json({
+          error: "PAYMENT_METHOD_DISABLED",
+          message: `Payment method "${parsed.data.paymentMethod}" is not enabled`,
+        });
+        return;
+      }
+    }
   }
 
   const [order] = await db
