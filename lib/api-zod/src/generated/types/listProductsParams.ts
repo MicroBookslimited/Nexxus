@@ -9,5 +9,4 @@
 export type ListProductsParams = {
   category?: string;
   search?: string;
-  locationId?: number;
 };

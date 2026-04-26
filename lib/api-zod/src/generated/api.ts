@@ -20,7 +20,6 @@ export const HealthCheckResponse = zod.object({
 export const ListProductsQueryParams = zod.object({
   category: zod.coerce.string().optional(),
   search: zod.coerce.string().optional(),
-  locationId: zod.coerce.number().int().optional(),
 });
 
 export const ListProductsResponseItem = zod.object({
@@ -312,9 +311,6 @@ export const ListOrdersQueryParams = zod.object({
     .enum(["open", "pending", "completed", "cancelled", "refunded", "voided"])
     .optional(),
   limit: zod.coerce.number().optional(),
-  from: zod.string().optional(),
-  to: zod.string().optional(),
-  staffId: zod.coerce.number().optional(),
 });
 
 export const ListOrdersResponseItem = zod.object({
@@ -348,6 +344,12 @@ export const ListOrdersResponseItem = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitPrice: zod.number(),
+      originalUnitPrice: zod
+        .number()
+        .nullish()
+        .describe(
+          "Original (pre-tier) unit price; used to compute volume-pricing savings on receipts.",
+        ),
       discountAmount: zod.number().nullish(),
       variantAdjustment: zod.number().nullish(),
       modifierAdjustment: zod.number().nullish(),
@@ -412,20 +414,17 @@ export const CreateOrderBody = zod.object({
           }),
         )
         .optional(),
-      notes: zod.string().optional(),
     }),
   ),
   paymentMethod: zod.string().optional(),
   splitCardAmount: zod.number().optional(),
   splitCashAmount: zod.number().optional(),
-  cashTendered: zod.number().optional(),
   discountType: zod.enum(["percent", "fixed"]).optional(),
   discountAmount: zod.number().optional(),
   notes: zod.string().optional(),
   customerId: zod.number().optional(),
   tableId: zod.number().optional(),
   staffId: zod.number().optional(),
-  locationId: zod.number().optional(),
   orderType: zod.enum(["counter", "dine-in", "takeout", "delivery"]).optional(),
   loyaltyPointsToRedeem: zod.number().optional(),
 });
@@ -458,7 +457,6 @@ export const GetOrderResponse = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
-  cashTendered: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -469,6 +467,12 @@ export const GetOrderResponse = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitPrice: zod.number(),
+      originalUnitPrice: zod
+        .number()
+        .nullish()
+        .describe(
+          "Original (pre-tier) unit price; used to compute volume-pricing savings on receipts.",
+        ),
       discountAmount: zod.number().nullish(),
       variantAdjustment: zod.number().nullish(),
       modifierAdjustment: zod.number().nullish(),
@@ -551,6 +555,12 @@ export const UpdateOrderStatusResponse = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitPrice: zod.number(),
+      originalUnitPrice: zod
+        .number()
+        .nullish()
+        .describe(
+          "Original (pre-tier) unit price; used to compute volume-pricing savings on receipts.",
+        ),
       discountAmount: zod.number().nullish(),
       variantAdjustment: zod.number().nullish(),
       modifierAdjustment: zod.number().nullish(),
@@ -627,6 +637,12 @@ export const ChargeOrderResponse = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitPrice: zod.number(),
+      originalUnitPrice: zod
+        .number()
+        .nullish()
+        .describe(
+          "Original (pre-tier) unit price; used to compute volume-pricing savings on receipts.",
+        ),
       discountAmount: zod.number().nullish(),
       variantAdjustment: zod.number().nullish(),
       modifierAdjustment: zod.number().nullish(),
@@ -779,6 +795,12 @@ export const GetRecentOrdersResponseItem = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitPrice: zod.number(),
+      originalUnitPrice: zod
+        .number()
+        .nullish()
+        .describe(
+          "Original (pre-tier) unit price; used to compute volume-pricing savings on receipts.",
+        ),
       discountAmount: zod.number().nullish(),
       variantAdjustment: zod.number().nullish(),
       modifierAdjustment: zod.number().nullish(),
@@ -980,6 +1002,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitPrice: zod.number(),
+      originalUnitPrice: zod
+        .number()
+        .nullish()
+        .describe(
+          "Original (pre-tier) unit price; used to compute volume-pricing savings on receipts.",
+        ),
       discountAmount: zod.number().nullish(),
       variantAdjustment: zod.number().nullish(),
       modifierAdjustment: zod.number().nullish(),
@@ -1155,7 +1183,6 @@ export const ListKitchenOrdersResponseItem = zod.object({
   orderNumber: zod.string(),
   status: zod.string(),
   tableId: zod.number().optional(),
-  tableName: zod.string().optional(),
   orderType: zod.string(),
   notes: zod.string().optional(),
   createdAt: zod.coerce.date(),
@@ -1479,8 +1506,6 @@ export const ListCashSessionsResponse = zod.array(ListCashSessionsResponseItem);
 export const OpenCashSessionBody = zod.object({
   staffName: zod.string(),
   staffId: zod.number().optional(),
-  locationId: zod.number().optional(),
-  locationName: zod.string().optional(),
   openingCash: zod.number(),
 });
 
@@ -1492,8 +1517,6 @@ export const GetCurrentCashSessionResponse = zod.object({
     id: zod.number(),
     staffId: zod.number().optional(),
     staffName: zod.string(),
-    locationId: zod.number().nullish(),
-    locationName: zod.string().nullish(),
     openingCash: zod.number(),
     status: zod.enum(["open", "closed"]),
     openedAt: zod.coerce.date(),
@@ -1545,8 +1568,6 @@ export const GetCashSessionResponse = zod.object({
     id: zod.number(),
     staffId: zod.number().optional(),
     staffName: zod.string(),
-    locationId: zod.number().nullish(),
-    locationName: zod.string().nullish(),
     openingCash: zod.number(),
     status: zod.enum(["open", "closed"]),
     openedAt: zod.coerce.date(),

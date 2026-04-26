@@ -40,6 +40,10 @@ export const orderItemsTable = pgTable("order_items", {
   // `real` to support decimal quantities for sold-by-weight items (e.g. 1.75 kg).
   quantity: real("quantity").notNull(),
   unitPrice: real("unit_price").notNull(),
+  // Original (pre-tier) unit price captured at sale time so receipts can show
+  // tier-pricing savings (originalUnitPrice - unitPrice) * quantity. Nullable
+  // for back-compat with rows created before this column existed.
+  originalUnitPrice: real("original_unit_price"),
   discountAmount: real("discount_amount"),
   variantAdjustment: real("variant_adjustment"),
   modifierAdjustment: real("modifier_adjustment"),

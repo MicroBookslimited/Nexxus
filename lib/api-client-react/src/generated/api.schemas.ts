@@ -70,6 +70,8 @@ export interface OrderItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  /** Original (pre-tier) unit price; used to compute volume-pricing savings on receipts. */
+  originalUnitPrice?: number | null;
   discountAmount?: number | null;
   variantAdjustment?: number | null;
   modifierAdjustment?: number | null;
@@ -105,7 +107,6 @@ export type CreateOrderBodyItemsItem = {
   discountAmount?: number;
   variantChoices?: ChoiceItem[];
   modifierChoices?: ChoiceItem[];
-  notes?: string;
 };
 
 export type CreateOrderBodyDiscountType =
@@ -687,7 +688,6 @@ export interface CloseCashSessionBody {
   actualCard: number;
   actualOther?: number;
   closingNotes?: string;
-  denominationBreakdown?: string;
 }
 
 /**

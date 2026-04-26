@@ -1554,6 +1554,11 @@ components:
         unitPrice:
           type: number
           format: float
+        originalUnitPrice:
+          type: number
+          format: float
+          nullable: true
+          description: Original (pre-tier) unit price; used to compute volume-pricing savings on receipts.
         discountAmount:
           type: number
           format: float

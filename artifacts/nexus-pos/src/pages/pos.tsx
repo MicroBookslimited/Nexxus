@@ -1089,18 +1089,33 @@ export function POS() {
         updatedAt: new Date().toISOString(),
         status: "completed" as const,
         paymentMethod,
-        items: cart.map((item, i) => ({
-          id: i,
-          orderId: -1,
-          productId: item.productId,
-          productName: item.productName,
-          quantity: item.quantity,
-          unitPrice: item.effectivePrice,
-          lineTotal: item.effectivePrice * item.quantity - item.itemDiscount,
-          discountAmount: item.itemDiscount || null,
-          variantChoices: item.variantChoices,
-          modifierChoices: item.modifierChoices,
-        })),
+        items: cart.map((item, i) => {
+          // Mirror the server's tier-aware unitPrice / lineTotal so offline
+          // receipts match online ones. `effectivePrice` already includes
+          // variant + modifier adjustments; we layer the tier price on top
+          // (via the basePrice ratio) the same way the live cart subtotal does.
+          const tiers = pricingTiersByProduct.get(item.productId) ?? [];
+          const { tier } = previewTierPrice(item.basePrice, item.quantity, tiers);
+          const tieredEff = tier
+            ? tier.unitPrice + (item.effectivePrice - item.basePrice)
+            : item.effectivePrice;
+          const lineTotal = tieredEff * item.quantity - item.itemDiscount;
+          return {
+            id: i,
+            orderId: -1,
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPrice: tieredEff,
+            // Persist the original (untiered) base unit price so the receipt
+            // can render the volume-pricing savings line.
+            originalUnitPrice: item.basePrice,
+            lineTotal,
+            discountAmount: item.itemDiscount || null,
+            variantChoices: item.variantChoices,
+            modifierChoices: item.modifierChoices,
+          };
+        }),
         subtotal,
         discountValue: cartDiscountValue + loyaltyDiscountValue,
         tax,

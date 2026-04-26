@@ -100,6 +100,7 @@ async function getOrderWithItems(orderId: number) {
       productName: item.productName,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
+      originalUnitPrice: item.originalUnitPrice ?? undefined,
       discountAmount: item.discountAmount ?? undefined,
       variantAdjustment: item.variantAdjustment ?? undefined,
       modifierAdjustment: item.modifierAdjustment ?? undefined,
@@ -161,6 +162,7 @@ router.get("/orders", async (req, res): Promise<void> => {
           productName: item.productName,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
+          originalUnitPrice: item.originalUnitPrice ?? undefined,
           discountAmount: item.discountAmount ?? undefined,
           variantAdjustment: item.variantAdjustment ?? undefined,
           modifierAdjustment: item.modifierAdjustment ?? undefined,
@@ -237,6 +239,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     productName: string;
     quantity: number;
     unitPrice: number;
+    originalUnitPrice: number;
     discountAmount: number | undefined;
     variantAdjustment: number | undefined;
     modifierAdjustment: number | undefined;
@@ -279,6 +282,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       productName: product.name,
       quantity: item.quantity,
       unitPrice: tierUnitPrice,
+      originalUnitPrice: product.price,
       discountAmount: itemDiscount > 0 ? itemDiscount : undefined,
       variantAdjustment: variantAdj !== 0 ? variantAdj : undefined,
       modifierAdjustment: modifierAdj !== 0 ? modifierAdj : undefined,
@@ -429,6 +433,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           productName: item.productName,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
+          originalUnitPrice: item.originalUnitPrice,
           discountAmount: item.discountAmount,
           variantAdjustment: item.variantAdjustment,
           modifierAdjustment: item.modifierAdjustment,

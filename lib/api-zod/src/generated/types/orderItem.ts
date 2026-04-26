@@ -13,6 +13,8 @@ export interface OrderItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  /** Original (pre-tier) unit price; used to compute volume-pricing savings on receipts. */
+  originalUnitPrice?: number | null;
   discountAmount?: number | null;
   variantAdjustment?: number | null;
   modifierAdjustment?: number | null;

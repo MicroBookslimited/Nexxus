@@ -17,8 +17,36 @@ export interface ReceiptOrderItem {
   quantity: number;
   productName: string;
   lineTotal: number;
+  unitPrice?: number;
+  // Original (pre-tier) unit price; when present and > unitPrice we treat the
+  // diff as volume-pricing savings and surface a "You saved" line on the
+  // receipt total.
+  originalUnitPrice?: number | null;
   variantChoices?: Array<{ optionName: string }> | null;
   modifierChoices?: Array<{ optionName: string }> | null;
+}
+
+/**
+ * Sum of (originalUnitPrice - unitPrice) * quantity across items where the
+ * order benefitted from volume/tier pricing. Returns 0 when no items have
+ * tier discounts (older orders without originalUnitPrice persisted, or
+ * orders that didn't qualify for any tier).
+ *
+ * Notes:
+ * - Variant/modifier price adjustments are baked into neither field — both
+ *   are unit-price level so they don't double-count toward savings.
+ * - Decimal quantities (sold-by-weight) work since we just multiply.
+ */
+export function totalTierSavings(items: ReceiptOrderItem[]): number {
+  let savings = 0;
+  for (const item of items) {
+    const orig = item.originalUnitPrice;
+    const unit = item.unitPrice;
+    if (orig != null && unit != null && orig > unit) {
+      savings += (orig - unit) * item.quantity;
+    }
+  }
+  return Math.round(savings * 100) / 100;
 }
 
 export interface ReceiptOrder {
@@ -125,6 +153,9 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     ? `<div class="refunded">&#9733; REFUNDED &#9733;</div>` : "";
   const discountHtml  = (order.discountValue ?? 0) > 0
     ? `<div class="row sub-row"><span>Discount</span><span class="nowrap discount">-${fmtNum(order.discountValue ?? 0)}</span></div>` : "";
+  const tierSavings   = totalTierSavings(order.items);
+  const savingsHtml   = tierSavings > 0
+    ? `<div class="row sub-row savings"><span>You saved (volume pricing):</span><span class="nowrap">-${fmtNum(tierSavings)}</span></div>` : "";
   const secondaryHtml = secondaryCurrency && exchangeRate > 0
     ? `<div class="row sub-row"><span>&asymp;&nbsp;${secondaryCurrency}</span><span class="nowrap">${fmt(order.total * exchangeRate, secondaryCurrency)}</span></div>` : "";
   const notesHtml     = order.notes
@@ -289,6 +320,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     .amount-due-row { display: flex; justify-content: space-between; align-items: baseline; font-size: ${is58mm ? "14px" : "15px"}; font-weight: 900; margin: 4px 0 2px; }
     .amount-due-row span { white-space: nowrap; }
     .discount { color: #c00; }
+    .savings { color: #0a7a0a; font-weight: 700; }
     .refunded { color: red; font-weight: bold; text-align: center; font-size: 12px; border: 1px solid red; padding: 3px; margin: 4px 0; letter-spacing: 1px; }
     .note { font-size: ${subFontSize}; font-style: italic; margin: 3px 0; }
     .footer-msg { text-align: center; margin: 6px 0 2px; }
@@ -309,6 +341,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
 
   <div class="row sub-row"><span>Subtotal:</span><span class="nowrap">${fmtNum(order.subtotal)}</span></div>
   ${discountHtml}
+  ${savingsHtml}
   <div class="row sub-row"><span>${taxName} (${taxRate}%):</span><span class="nowrap">${fmtNum(order.tax)}</span></div>
   <div class="total-row"><span>Total:</span><span>${fmt(order.total)}</span></div>
   ${secondaryHtml}
@@ -391,6 +424,10 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   lines.push(`Subtotal:   ${fmtNum(order.subtotal)}`);
   if ((order.discountValue ?? 0) > 0) {
     lines.push(`Discount:  -${fmtNum(order.discountValue ?? 0)}`);
+  }
+  const tierSavings = totalTierSavings(order.items);
+  if (tierSavings > 0) {
+    lines.push(`💰 You saved: -${fmtNum(tierSavings)} (volume pricing)`);
   }
   lines.push(`${taxName} (${taxRate}%): ${fmtNum(order.tax)}`);
   lines.push(`─────────────────────`);
