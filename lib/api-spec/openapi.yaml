@@ -1425,6 +1425,12 @@ components:
           type: boolean
         stockCount:
           type: integer
+        soldByWeight:
+          type: boolean
+        unitOfMeasure:
+          type: string
+          enum: [kg, lb, oz, g]
+          nullable: true
         hasVariants:
           type: boolean
         hasModifiers:
@@ -1439,6 +1445,7 @@ components:
         - category
         - inStock
         - stockCount
+        - soldByWeight
         - hasVariants
         - hasModifiers
         - createdAt
@@ -1462,7 +1469,13 @@ components:
         inStock:
           type: boolean
         stockCount:
-          type: integer
+          type: number
+          format: float
+        soldByWeight:
+          type: boolean
+        unitOfMeasure:
+          type: string
+          enum: [kg, lb, oz, g]
       required:
         - name
         - price

@@ -118,6 +118,13 @@ router.post("/products", async (req, res): Promise<void> => {
       barcode: parsed.data.barcode,
       inStock: parsed.data.inStock ?? true,
       stockCount: parsed.data.stockCount ?? 0,
+      soldByWeight: parsed.data.soldByWeight ?? false,
+      // Default a sensible unit when sold-by-weight is enabled but the
+      // caller didn't pick one. Leave NULL when the product is sold by
+      // each so weight-only flows can detect "no scale unit configured".
+      unitOfMeasure: parsed.data.soldByWeight
+        ? (parsed.data.unitOfMeasure ?? "kg")
+        : null,
     })
     .returning();
 
@@ -166,18 +173,34 @@ router.put("/products/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  // Build the update set so undefined fields don't overwrite existing
+  // columns with NULL. soldByWeight + unitOfMeasure are always paired:
+  // if the caller explicitly toggles soldByWeight off, also clear the
+  // unit so the DB reflects "this product is no longer weighed".
+  const updates: Record<string, unknown> = {
+    name: parsed.data.name,
+    description: parsed.data.description,
+    price: parsed.data.price,
+    category: parsed.data.category,
+    imageUrl: parsed.data.imageUrl,
+    barcode: parsed.data.barcode,
+    inStock: parsed.data.inStock,
+    stockCount: parsed.data.stockCount,
+  };
+  if (parsed.data.soldByWeight !== undefined) {
+    updates["soldByWeight"] = parsed.data.soldByWeight;
+    if (parsed.data.soldByWeight) {
+      updates["unitOfMeasure"] = parsed.data.unitOfMeasure ?? "kg";
+    } else {
+      updates["unitOfMeasure"] = null;
+    }
+  } else if (parsed.data.unitOfMeasure !== undefined) {
+    updates["unitOfMeasure"] = parsed.data.unitOfMeasure;
+  }
+
   const [product] = await db
     .update(productsTable)
-    .set({
-      name: parsed.data.name,
-      description: parsed.data.description,
-      price: parsed.data.price,
-      category: parsed.data.category,
-      imageUrl: parsed.data.imageUrl,
-      barcode: parsed.data.barcode,
-      inStock: parsed.data.inStock,
-      stockCount: parsed.data.stockCount,
-    })
+    .set(updates)
     .where(and(eq(productsTable.id, params.data.id), eq(productsTable.tenantId, tenantId)))
     .returning();
 

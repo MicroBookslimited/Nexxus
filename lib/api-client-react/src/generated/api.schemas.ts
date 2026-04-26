@@ -9,6 +9,17 @@ export interface HealthStatus {
   status: string;
 }
 
+export type ProductUnitOfMeasure =
+  | (typeof ProductUnitOfMeasure)[keyof typeof ProductUnitOfMeasure]
+  | null;
+
+export const ProductUnitOfMeasure = {
+  kg: "kg",
+  lb: "lb",
+  oz: "oz",
+  g: "g",
+} as const;
+
 export interface Product {
   id: number;
   name: string;
@@ -19,10 +30,22 @@ export interface Product {
   barcode?: string | null;
   inStock: boolean;
   stockCount: number;
+  soldByWeight: boolean;
+  unitOfMeasure?: ProductUnitOfMeasure;
   hasVariants: boolean;
   hasModifiers: boolean;
   createdAt: string;
 }
+
+export type CreateProductBodyUnitOfMeasure =
+  (typeof CreateProductBodyUnitOfMeasure)[keyof typeof CreateProductBodyUnitOfMeasure];
+
+export const CreateProductBodyUnitOfMeasure = {
+  kg: "kg",
+  lb: "lb",
+  oz: "oz",
+  g: "g",
+} as const;
 
 export interface CreateProductBody {
   name: string;
@@ -33,6 +56,8 @@ export interface CreateProductBody {
   barcode?: string;
   inStock?: boolean;
   stockCount?: number;
+  soldByWeight?: boolean;
+  unitOfMeasure?: CreateProductBodyUnitOfMeasure;
 }
 
 export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];

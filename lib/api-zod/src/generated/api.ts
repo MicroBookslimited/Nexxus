@@ -32,6 +32,8 @@ export const ListProductsResponseItem = zod.object({
   barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
+  soldByWeight: zod.boolean(),
+  unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
   createdAt: zod.coerce.date(),
@@ -50,6 +52,8 @@ export const CreateProductBody = zod.object({
   barcode: zod.string().optional(),
   inStock: zod.boolean().optional(),
   stockCount: zod.number().optional(),
+  soldByWeight: zod.boolean().optional(),
+  unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).optional(),
 });
 
 /**
@@ -69,6 +73,8 @@ export const GetProductResponse = zod.object({
   barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
+  soldByWeight: zod.boolean(),
+  unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
   createdAt: zod.coerce.date(),
@@ -90,6 +96,8 @@ export const UpdateProductBody = zod.object({
   barcode: zod.string().optional(),
   inStock: zod.boolean().optional(),
   stockCount: zod.number().optional(),
+  soldByWeight: zod.boolean().optional(),
+  unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).optional(),
 });
 
 export const UpdateProductResponse = zod.object({
@@ -102,6 +110,8 @@ export const UpdateProductResponse = zod.object({
   barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
+  soldByWeight: zod.boolean(),
+  unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
   createdAt: zod.coerce.date(),
@@ -1060,6 +1070,8 @@ export const GetLowStockProductsResponseItem = zod.object({
   barcode: zod.string().nullish(),
   inStock: zod.boolean(),
   stockCount: zod.number(),
+  soldByWeight: zod.boolean(),
+  unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
   createdAt: zod.coerce.date(),

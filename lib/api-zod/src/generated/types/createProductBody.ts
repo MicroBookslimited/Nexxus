@@ -5,6 +5,7 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateProductBodyUnitOfMeasure } from "./createProductBodyUnitOfMeasure";
 
 export interface CreateProductBody {
   name: string;
@@ -15,4 +16,6 @@ export interface CreateProductBody {
   barcode?: string;
   inStock?: boolean;
   stockCount?: number;
+  soldByWeight?: boolean;
+  unitOfMeasure?: CreateProductBodyUnitOfMeasure;
 }

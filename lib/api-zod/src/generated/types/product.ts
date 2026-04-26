@@ -5,6 +5,7 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProductUnitOfMeasure } from "./productUnitOfMeasure";
 
 export interface Product {
   id: number;
@@ -16,6 +17,8 @@ export interface Product {
   barcode?: string | null;
   inStock: boolean;
   stockCount: number;
+  soldByWeight: boolean;
+  unitOfMeasure?: ProductUnitOfMeasure;
   hasVariants: boolean;
   hasModifiers: boolean;
   createdAt: Date;

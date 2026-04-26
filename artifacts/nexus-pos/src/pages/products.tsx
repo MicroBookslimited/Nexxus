@@ -199,6 +199,7 @@ function emptyBillForm(): BillForm {
 }
 
 /* ─── Product form types ─── */
+type WeightUnit = "kg" | "lb" | "oz" | "g";
 type ProductForm = {
   name: string;
   description: string;
@@ -207,6 +208,8 @@ type ProductForm = {
   barcode: string;
   inStock: boolean;
   stockCount: string;
+  soldByWeight: boolean;
+  unitOfMeasure: WeightUnit;
 };
 
 const emptyForm = (): ProductForm => ({
@@ -217,6 +220,8 @@ const emptyForm = (): ProductForm => ({
   barcode: "",
   inStock: true,
   stockCount: "0",
+  soldByWeight: false,
+  unitOfMeasure: "kg",
 });
 
 /* ─── Variant/modifier editor types ─── */
@@ -1991,6 +1996,18 @@ export function Products() {
 
   const openEdit = (p: GetProductResponse) => {
     setEditingProduct(p);
+    // soldByWeight + unitOfMeasure live on the product (added to the
+    // OpenAPI Product schema). The cast is here only because the local
+    // GetProductResponse type may lag the codegen during dev rebuild;
+    // the backend always returns these fields.
+    const pp = p as GetProductResponse & {
+      soldByWeight?: boolean;
+      unitOfMeasure?: WeightUnit | string | null;
+    };
+    const unit: WeightUnit =
+      pp.unitOfMeasure === "lb" || pp.unitOfMeasure === "oz" || pp.unitOfMeasure === "g"
+        ? pp.unitOfMeasure
+        : "kg";
     setForm({
       name: p.name,
       description: p.description ?? "",
@@ -1999,6 +2016,8 @@ export function Products() {
       barcode: p.barcode ?? "",
       inStock: p.inStock,
       stockCount: p.stockCount.toString(),
+      soldByWeight: !!pp.soldByWeight,
+      unitOfMeasure: unit,
     });
     setDialogTab("details");
     setDialogOpen(true);
@@ -2017,6 +2036,8 @@ export function Products() {
       barcode: form.barcode || undefined,
       inStock: form.inStock,
       stockCount: parseInt(form.stockCount) || 0,
+      soldByWeight: form.soldByWeight,
+      unitOfMeasure: form.soldByWeight ? form.unitOfMeasure : undefined,
     };
 
     if (editingProduct) {
@@ -2885,6 +2906,47 @@ export function Products() {
                     <Switch id="inStock" checked={form.inStock} onCheckedChange={(v) => setForm((f) => ({ ...f, inStock: v }))} />
                     <Label htmlFor="inStock">In stock</Label>
                   </div>
+                </div>
+                <Separator />
+                {/* Sold-by-weight: when on, the cashier is prompted for a
+                    decimal weight at sale time instead of a whole-unit
+                    quantity. Unit picker only matters when the toggle
+                    is on, so keep it visually subordinate. */}
+                <div className="rounded-md border border-border bg-secondary/20 p-3 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="soldByWeight" className="text-sm">Sold by weight</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Cashier enters a decimal weight (e.g. 1.75) at checkout.
+                        Price is multiplied by the weight.
+                      </p>
+                    </div>
+                    <Switch
+                      id="soldByWeight"
+                      checked={form.soldByWeight}
+                      onCheckedChange={(v) => setForm((f) => ({ ...f, soldByWeight: v }))}
+                    />
+                  </div>
+                  {form.soldByWeight && (
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs">Unit of measure</Label>
+                      <Select
+                        value={form.unitOfMeasure}
+                        onValueChange={(v) => setForm((f) => ({ ...f, unitOfMeasure: v as WeightUnit }))}
+                      >
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="kg">Kilogram (kg)</SelectItem>
+                          <SelectItem value="lb">Pound (lb)</SelectItem>
+                          <SelectItem value="oz">Ounce (oz)</SelectItem>
+                          <SelectItem value="g">Gram (g)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Price above is treated as price per {form.unitOfMeasure}.
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <DialogFooter className="pt-2">
                   <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
