@@ -845,6 +845,23 @@ export function POS() {
     );
   };
 
+  // Direct quantity edit (typed in the cart row). Clamps to >=1, accepts
+  // decimals so sold-by-weight items can still be tweaked. Empty / NaN
+  // input is ignored so a half-typed value doesn't blow up the cart total
+  // mid-keystroke; we re-render with the previous quantity until the user
+  // finishes typing.
+  const setQuantity = (cartKey: string, raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === "") return;
+    const parsed = parseFloat(trimmed);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    setCart((prev) =>
+      prev.map((item) =>
+        item.cartKey === cartKey ? { ...item, quantity: parsed } : item,
+      ),
+    );
+  };
+
   const updateItemNote = (cartKey: string, note: string) => {
     setCart((prev) =>
       prev.map((item) =>
@@ -1761,7 +1778,18 @@ export function POS() {
                         </div>
                         <div className="flex items-center gap-1 mt-1.5">
                           <Button size="icon" variant="outline" className="h-6 w-6 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:border-red-500" onClick={() => updateQuantity(item.cartKey, -1)}><Minus className="h-3 w-3" /></Button>
-                          <span className="text-sm font-bold w-5 text-center">{item.quantity}</span>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            value={String(item.quantity)}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onChange={(e) => setQuantity(item.cartKey, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+                            }}
+                            aria-label={`Quantity for ${item.productName}`}
+                            className="h-6 w-12 px-1 text-sm font-bold text-center font-mono"
+                          />
                           <Button size="icon" variant="outline" className="h-6 w-6 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500" onClick={() => updateQuantity(item.cartKey, 1)}><Plus className="h-3 w-3" /></Button>
                           <button
                             onClick={() => setEditingNoteKey((k) => k === item.cartKey ? null : item.cartKey)}
