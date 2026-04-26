@@ -499,6 +499,10 @@ export function POS() {
   // ── Payment methods (configurable per tenant) ──
   // Falls back to the four built-ins if the API has nothing yet.
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  // Tenant-configured default payment method value (e.g. "cash" or a custom
+  // method's name). Used to reset the selection back to the default after
+  // every completed sale so the cashier doesn't get a "stuck" method.
+  const [defaultPaymentMethod, setDefaultPaymentMethod] = useState<string>("cash");
   useEffect(() => {
     let cancelled = false;
     listPaymentMethods()
@@ -508,7 +512,11 @@ export function POS() {
         setPaymentMethods(enabled);
         // Pick the default method (or first enabled) on load.
         const def = enabled.find(r => r.isDefault) ?? enabled[0];
-        if (def) setPaymentMethod(def.type === "custom" ? def.name : def.type);
+        if (def) {
+          const value = def.type === "custom" ? def.name : def.type;
+          setDefaultPaymentMethod(value);
+          setPaymentMethod(value);
+        }
       })
       .catch(() => {
         // If the endpoint fails, leave the legacy hard-coded options intact.
@@ -921,7 +929,7 @@ export function POS() {
     setPendingDiscountType("percent");
     setPendingDiscountAmount(0);
     setNotes("");
-    setPaymentMethod("card");
+    setPaymentMethod(defaultPaymentMethod);
     setSplitCardAmount(0);
     setSplitCashAmount(0);
     setSelectedCustomerId(null);
