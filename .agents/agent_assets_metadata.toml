@@ -24,3 +24,9 @@ id = "-Oi_8QEvVGXAU_DkBaPdm"
 uri = "file://.local/backups/nexus-pos-db-20260421_055629.sql.gz"
 type = "unspecified"
 title = "NEXXUS POS database backup (compressed, 38 KB)"
+
+[[outputs]]
+id = "pgyFXdAIzr4SrmuRhzQcE"
+uri = "file://docs/nexus-pos-chatfuel-qa.md"
+type = "text"
+title = "NEXXUS POS — Chatfuel Q&A Knowledge Base"
