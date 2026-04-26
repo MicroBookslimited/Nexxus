@@ -559,6 +559,7 @@ export function POS() {
 
   // ── Insufficient-stock 409 modal state ──
   const [stockErrorModal, setStockErrorModal] = useState<{
+    productId: number;
     productName: string;
     available: number;
     requested: number;
@@ -1178,36 +1179,46 @@ export function POS() {
             void releaseWeightLabels(ids).catch(() => {});
           }
           // Surface specific error codes from the server.
-          const apiErr = err as ApiError | undefined;
-          const body = apiErr?.body as { error?: string; message?: string; productName?: string; available?: number; requested?: number } | undefined;
-          if (apiErr?.status === 409 && body?.error === "INSUFFICIENT_STOCK") {
+          // The order mutation goes through the generated client whose ApiError
+          // exposes the JSON payload as `.data`; the saas-api ApiError uses `.body`.
+          // Read whichever is present so we always see the structured error code.
+          const apiErr = err as { status?: number; body?: unknown; data?: unknown; message?: string } | undefined;
+          const payload = (apiErr?.body ?? apiErr?.data) as
+            | { error?: string; message?: string; productName?: string; available?: number; requested?: number }
+            | undefined;
+          if (apiErr?.status === 409 && payload?.error === "INSUFFICIENT_STOCK") {
             setStockErrorModal({
-              productName: body.productName ?? "Item",
-              available: body.available ?? 0,
-              requested: body.requested ?? 0,
+              productId: (payload as { productId?: number }).productId ?? 0,
+              productName: payload.productName ?? "Item",
+              available: payload.available ?? 0,
+              requested: payload.requested ?? 0,
             });
             return;
           }
-          if (apiErr?.status === 402 && body?.error === "SUBSCRIPTION_EXPIRED") {
+          if (apiErr?.status === 402 && payload?.error === "SUBSCRIPTION_EXPIRED") {
             setSubscriptionExpired(true);
             toast({
               title: "Subscription expired",
-              description: body.message ?? "Renew to continue selling.",
+              description: payload.message ?? "Renew to continue selling.",
               variant: "destructive",
             });
             return;
           }
-          if (apiErr?.status === 400 && body?.error === "PAYMENT_METHOD_DISABLED") {
+          if (apiErr?.status === 400 && payload?.error === "PAYMENT_METHOD_DISABLED") {
             toast({
               title: "Payment method disabled",
-              description: body.message ?? `"${paymentMethod}" is no longer enabled.`,
+              description: payload.message ?? `"${paymentMethod}" is no longer enabled.`,
               variant: "destructive",
             });
             return;
           }
+          // Generic fallback — strip any "HTTP 409 Conflict:" prefix from the
+          // generated client's ApiError message so the user sees plain language.
+          const rawMsg = payload?.message || apiErr?.message || "";
+          const cleanMsg = rawMsg.replace(/^HTTP\s+\d+(\s+[A-Za-z ]+)?\s*:\s*/i, "").trim();
           toast({
             title: "Payment Failed",
-            description: body?.message || apiErr?.message || "There was an error processing the payment.",
+            description: cleanMsg || "There was an error processing the payment.",
             variant: "destructive",
           });
         },
@@ -2294,27 +2305,67 @@ export function POS() {
 
       {/* Insufficient stock 409 modal */}
       <Dialog open={stockErrorModal !== null} onOpenChange={(o) => { if (!o) setStockErrorModal(null); }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-400">
-              <AlertTriangle className="h-5 w-5" />
-              Not enough stock
-            </DialogTitle>
+            <DialogTitle className="sr-only">Not enough stock</DialogTitle>
           </DialogHeader>
           {stockErrorModal && (
-            <div className="space-y-2 text-sm">
-              <p>
-                Only <span className="font-bold text-foreground">{stockErrorModal.available}</span>
-                {" "}of <span className="font-bold text-foreground">{stockErrorModal.productName}</span> available
-                — you tried to sell <span className="font-bold text-foreground">{stockErrorModal.requested}</span>.
-              </p>
-              <p className="text-muted-foreground">
-                Adjust the quantity in the cart, restock the product, or enable "allow overselling" in Settings.
+            <div className="text-center space-y-4 py-2">
+              <div className="mx-auto w-16 h-16 rounded-full bg-amber-500/15 flex items-center justify-center">
+                <AlertTriangle className="h-8 w-8 text-amber-400" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold">Not enough in stock</h2>
+                <p className="text-sm text-muted-foreground">
+                  We can&apos;t complete this sale right now.
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-2 text-left">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Item</span>
+                  <span className="font-semibold truncate ml-3">{stockErrorModal.productName}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">You&apos;re selling</span>
+                  <span className="font-semibold">{stockErrorModal.requested}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Available</span>
+                  <span className="font-bold text-amber-400">{stockErrorModal.available}</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Lower the quantity in the cart, restock the item, or turn on
+                <span className="font-medium text-foreground"> Allow overselling </span>
+                in Settings.
               </p>
             </div>
           )}
-          <DialogFooter>
-            <Button onClick={() => setStockErrorModal(null)}>OK</Button>
+          <DialogFooter className="sm:flex-row sm:justify-stretch gap-2">
+            {stockErrorModal && stockErrorModal.available > 0 && stockErrorModal.productId > 0 && (
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  setCart((prev) =>
+                    prev.map((item) =>
+                      item.productId === stockErrorModal.productId
+                        ? { ...item, quantity: stockErrorModal.available }
+                        : item,
+                    ),
+                  );
+                  setStockErrorModal(null);
+                }}
+              >
+                Set qty to {stockErrorModal.available}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setStockErrorModal(null)}
+            >
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
