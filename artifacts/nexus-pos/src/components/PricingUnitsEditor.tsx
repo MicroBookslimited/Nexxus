@@ -37,10 +37,14 @@ export function PricingUnitsEditor({
   const tiersQ = useQuery({
     queryKey: ["pricing-tiers", productId],
     queryFn: () => getPricingTiers(productId),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   const unitsQ = useQuery({
     queryKey: ["purchase-units", productId],
     queryFn: () => getPurchaseUnits(productId),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   /* ─── draft state ─── */
@@ -89,7 +93,10 @@ export function PricingUnitsEditor({
       }
       return replacePricingTiers(productId, payload);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Write the server response directly into the cache so subsequent mounts
+      // see the saved state immediately, then invalidate so any other observers refetch.
+      qc.setQueryData(["pricing-tiers", productId], data);
       qc.invalidateQueries({ queryKey: ["pricing-tiers", productId] });
       toast({ title: "Pricing tiers saved" });
     },
@@ -117,7 +124,8 @@ export function PricingUnitsEditor({
       }
       return replacePurchaseUnits(productId, payload);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      qc.setQueryData(["purchase-units", productId], data);
       qc.invalidateQueries({ queryKey: ["purchase-units", productId] });
       toast({ title: "Units saved" });
     },
