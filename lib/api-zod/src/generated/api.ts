@@ -316,11 +316,30 @@ export const SaveProductModifiersResponse = zod.array(
 /**
  * @summary List orders
  */
+export const listOrdersQueryFromRegExp = new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const listOrdersQueryToRegExp = new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+
 export const ListOrdersQueryParams = zod.object({
   status: zod
     .enum(["open", "pending", "completed", "cancelled", "refunded", "voided"])
     .optional(),
   limit: zod.coerce.number().optional(),
+  from: zod.coerce
+    .string()
+    .regex(listOrdersQueryFromRegExp)
+    .optional()
+    .describe("Start date (YYYY-MM-DD, Jamaica timezone). Inclusive."),
+  to: zod.coerce
+    .string()
+    .regex(listOrdersQueryToRegExp)
+    .optional()
+    .describe(
+      "End date (YYYY-MM-DD, Jamaica timezone). Inclusive (end-of-day).",
+    ),
+  staffId: zod.coerce
+    .number()
+    .optional()
+    .describe("Filter to orders rung up by this staff member."),
 });
 
 export const ListOrdersResponseItem = zod.object({

@@ -745,6 +745,20 @@ export type ListProductsParams = {
 export type ListOrdersParams = {
   status?: ListOrdersStatus;
   limit?: number;
+  /**
+   * Start date (YYYY-MM-DD, Jamaica timezone). Inclusive.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  from?: string;
+  /**
+   * End date (YYYY-MM-DD, Jamaica timezone). Inclusive (end-of-day).
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  to?: string;
+  /**
+   * Filter to orders rung up by this staff member.
+   */
+  staffId?: number;
 };
 
 export type ListOrdersStatus =
