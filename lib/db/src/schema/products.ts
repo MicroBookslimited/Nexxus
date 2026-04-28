@@ -12,7 +12,7 @@ export const productsTable = pgTable("products", {
   imageUrl: text("image_url"),
   barcode: text("barcode"),
   inStock: boolean("in_stock").notNull().default(true),
-  stockCount: integer("stock_count").notNull().default(0),
+  stockCount: real("stock_count").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   // ── Weighing-scale support ──────────────────────────────────────────
   // When true, the product is sold by weight (price is per unit-of-measure).

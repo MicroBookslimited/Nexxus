@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, real, text, timestamp } from "drizzle-orm/pg-core";
 import { productsTable } from "./products";
 
 export const stockMovementsTable = pgTable("stock_movements", {
@@ -6,8 +6,8 @@ export const stockMovementsTable = pgTable("stock_movements", {
   tenantId: integer("tenant_id").notNull().default(0),
   productId: integer("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
   type: text("type").notNull(),
-  quantity: integer("quantity").notNull(),
-  balanceAfter: integer("balance_after").notNull(),
+  quantity: real("quantity").notNull(),
+  balanceAfter: real("balance_after").notNull(),
   referenceType: text("reference_type"),
   referenceId: integer("reference_id"),
   notes: text("notes"),

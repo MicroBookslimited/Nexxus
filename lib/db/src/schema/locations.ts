@@ -23,7 +23,7 @@ export const locationInventoryTable = pgTable("location_inventory", {
   id: serial("id").primaryKey(),
   locationId: integer("location_id").notNull().references(() => locationsTable.id, { onDelete: "cascade" }),
   productId: integer("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
-  stockCount: integer("stock_count").notNull().default(0),
+  stockCount: real("stock_count").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [unique("uq_location_product").on(t.locationId, t.productId)]);
 

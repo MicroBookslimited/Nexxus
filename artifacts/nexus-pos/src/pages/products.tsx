@@ -594,7 +594,7 @@ function LocationsEditor({ productId }: { productId: number }) {
           });
 
           if (d.stockCount !== "") {
-            const sc = parseInt(d.stockCount, 10);
+            const sc = parseFloat(d.stockCount);
             if (!isNaN(sc) && sc >= 0) {
               await fetch(`/api/locations/${row.locationId}/inventory/${productId}`, {
                 method: "PUT",
@@ -986,7 +986,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       if (!d.price?.trim()) { out.push({ row: i + 2, name: d.name, status: "error", error: "Price is required" }); continue; }
       const price = parseFloat(d.price.replace(/[^0-9.-]/g, ""));
       if (isNaN(price) || price < 0) { out.push({ row: i + 2, name: d.name, status: "error", error: "Invalid price" }); continue; }
-      const stockCount = parseInt(d.stockCount ?? "0") || 0;
+      const stockCount = parseFloat(d.stockCount ?? "0") || 0;
       const inStockRaw = (d.inStock ?? "yes").toLowerCase().trim();
       const inStock    = inStockRaw === "yes" || inStockRaw === "true" || inStockRaw === "1";
       const category   = d.category?.trim() || "General";
@@ -2035,7 +2035,7 @@ export function Products() {
       category: form.category,
       barcode: form.barcode || undefined,
       inStock: form.inStock,
-      stockCount: parseInt(form.stockCount) || 0,
+      stockCount: parseFloat(form.stockCount) || 0,
       soldByWeight: form.soldByWeight,
       unitOfMeasure: form.soldByWeight ? form.unitOfMeasure : undefined,
     };
