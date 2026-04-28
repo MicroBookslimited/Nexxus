@@ -34,7 +34,7 @@ import {
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote,
 } from "lucide-react";
-import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod } from "@/lib/saas-api";
+import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
@@ -45,7 +45,7 @@ import { getPricingTiers, previewTierPrice, type PricingTier } from "@/lib/saas-
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { format } from "date-fns";
 
@@ -74,6 +74,19 @@ type CartItem = {
    * controls can be hidden.
    */
   weightUnit?: string;
+  /**
+   * For multi-unit products (e.g. a soda sold individually OR by Case),
+   * the cashier-selected purchase unit. `unitFactor` is how many base
+   * units one of the chosen unit equals, so:
+   *   - quantity is always stored in BASE units (so stock decrements,
+   *     volume tiers, originalUnitPrice — all keep working unchanged)
+   *   - +/- buttons step by `unitFactor`, so adding "1 Case" of 24
+   *     bumps quantity by 24
+   *   - the cart row labels the line as "<count> <unitLabel>"
+   * Base-unit selections leave both fields undefined.
+   */
+  unitLabel?: string;
+  unitFactor?: number;
 };
 
 function makeCartKey(productId: number, variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[]) {
@@ -557,6 +570,15 @@ export function POS() {
   } | null>(null);
   const [weightModalValue, setWeightModalValue] = useState<string>("");
 
+  // ── Unit-picker modal: shown when a product has multiple sale units
+  // configured (e.g. each + Case + Dozen) so the cashier can pick which
+  // one this transaction is in. The picker also handles
+  // variants/modifiers for the chosen product after selection.
+  const [unitPickerState, setUnitPickerState] = useState<{
+    product: { id: number; name: string; price: number; hasVariants: boolean; hasModifiers: boolean };
+    units: PurchaseUnit[]; // sale-eligible units only (factor != 1)
+  } | null>(null);
+
   // ── Insufficient-stock 409 modal state ──
   const [stockErrorModal, setStockErrorModal] = useState<{
     productId: number;
@@ -650,6 +672,10 @@ export function POS() {
 
   // Customization dialog state
   const [customizingProductId, setCustomizingProductId] = useState<number | null>(null);
+  // When the cashier picks a non-base unit AND the product has variants
+  // or modifiers, we need to remember that unit choice across the
+  // customize-dialog round-trip so the final cart line still reflects it.
+  const [pendingCustomizationUnit, setPendingCustomizationUnit] = useState<{ unitId?: number; unitLabel: string; unitFactor: number } | null>(null);
 
   const categories = useMemo(() => {
     if (!products) return [];
@@ -666,7 +692,7 @@ export function POS() {
     return matchesSearch && matchesCategory;
   });
 
-  const handleProductTap = (product: NonNullable<typeof products>[0]) => {
+  const handleProductTap = async (product: NonNullable<typeof products>[0]) => {
     setSearchTerm("");
     // Sell-by-weight items must go through the WeightModal so the cashier
     // can enter the actual weight. We never auto-add quantity 1.
@@ -681,10 +707,69 @@ export function POS() {
       setWeightModalValue("");
       return;
     }
+
+    // Multi-unit products: if the product has any sale-eligible units
+    // configured (Case, Dozen, etc.), let the cashier pick which one
+    // they're ringing up. A failure here falls back to the regular
+    // single-unit flow so a flaky network can't break checkout — but we
+    // toast the cashier so they know the picker was skipped and the line
+    // will record as Each.
+    try {
+      const allUnits = await getPurchaseUnits(product.id);
+      const saleUnits = allUnits.filter((u) => u.isSale && u.conversionFactor && u.conversionFactor !== 1);
+      if (saleUnits.length > 0) {
+        setUnitPickerState({
+          product: {
+            id: product.id,
+            name: product.name,
+            price: product.price,
+            hasVariants: !!product.hasVariants,
+            hasModifiers: !!product.hasModifiers,
+          },
+          units: saleUnits,
+        });
+        return;
+      }
+    } catch {
+      toast({
+        title: "Unit options unavailable",
+        description: `Adding ${product.name} as a single unit. Check connection if this product has Case/Dozen pricing.`,
+        variant: "default",
+      });
+      /* fall through to default add */
+    }
+
     if (product.hasVariants || product.hasModifiers) {
       setCustomizingProductId(product.id);
     } else {
       addToCartDirect(product.id, product.name, product.price, [], []);
+    }
+  };
+
+  /**
+   * Continues the add-to-cart flow after the cashier picked a sale
+   * unit (or "each" for the base unit). For non-base units, sets
+   * unitLabel + unitFactor on the cart line so the line displays the
+   * unit name and the +/- buttons step in whole units of that kind.
+   * `unitId` (when present) is the DB id of the productPurchaseUnits row
+   * — used to derive a stable cartKey suffix so renames or whitespace
+   * edits to the unitName don't accidentally split/merge cart lines.
+   */
+  const continueAddWithUnit = (unit: { unitId?: number; unitName?: string; conversionFactor: number } | null) => {
+    if (!unitPickerState) return;
+    const product = unitPickerState.product;
+    setUnitPickerState(null);
+
+    const unitLabel = unit?.unitName;
+    const unitFactor = unit?.conversionFactor && unit.conversionFactor !== 1 ? unit.conversionFactor : undefined;
+    const unitId = unit?.unitId;
+
+    if (product.hasVariants || product.hasModifiers) {
+      // Stash the chosen unit so the customize-confirm flow can apply it.
+      setPendingCustomizationUnit(unitFactor ? { unitId, unitLabel: unitLabel!, unitFactor } : null);
+      setCustomizingProductId(product.id);
+    } else {
+      addToCartDirect(product.id, product.name, product.price, [], [], unitFactor ? { unitId, unitLabel: unitLabel!, unitFactor } : undefined);
     }
   };
 
@@ -729,21 +814,40 @@ export function POS() {
     basePrice: number,
     variantChoices: ChoiceItem[],
     modifierChoices: ChoiceItem[],
+    unit?: { unitId?: number; unitLabel: string; unitFactor: number },
   ) => {
     const adj = [...variantChoices, ...modifierChoices].reduce((s, c) => s + c.priceAdjustment, 0);
     const effectivePrice = basePrice + adj;
-    const cartKey = makeCartKey(productId, variantChoices, modifierChoices);
+    // Different unit choices for the same product are separate cart lines
+    // so they can be tracked, edited, and stepped independently. Prefer
+    // the stable DB unit id; fall back to factor-based suffix so renames
+    // of the unit name don't accidentally split or merge cart lines.
+    const unitSuffix = unit ? `:u${unit.unitId ?? `f${unit.unitFactor}`}` : "";
+    const cartKey = makeCartKey(productId, variantChoices, modifierChoices) + unitSuffix;
+    const stepQty = unit?.unitFactor ?? 1;
 
     setCart((prev) => {
       const existing = prev.find((item) => item.cartKey === cartKey);
       if (existing) {
         return prev.map((item) =>
-          item.cartKey === cartKey ? { ...item, quantity: item.quantity + 1 } : item,
+          item.cartKey === cartKey ? { ...item, quantity: item.quantity + stepQty } : item,
         );
       }
       return [
         ...prev,
-        { cartKey, productId, productName, basePrice, effectivePrice, quantity: 1, itemDiscount: 0, variantChoices, modifierChoices },
+        {
+          cartKey,
+          productId,
+          productName,
+          basePrice,
+          effectivePrice,
+          quantity: stepQty,
+          itemDiscount: 0,
+          variantChoices,
+          modifierChoices,
+          unitLabel: unit?.unitLabel,
+          unitFactor: unit?.unitFactor,
+        },
       ];
     });
   };
@@ -751,7 +855,8 @@ export function POS() {
   const handleCustomizeConfirm = (variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[]) => {
     const product = products?.find((p) => p.id === customizingProductId);
     if (!product) return;
-    addToCartDirect(product.id, product.name, product.price, variantChoices, modifierChoices);
+    addToCartDirect(product.id, product.name, product.price, variantChoices, modifierChoices, pendingCustomizationUnit ?? undefined);
+    setPendingCustomizationUnit(null);
     setCustomizingProductId(null);
   };
 
@@ -839,26 +944,55 @@ export function POS() {
 
   const updateQuantity = (cartKey: string, delta: number) => {
     setCart((prev) =>
-      prev.map((item) =>
-        item.cartKey === cartKey ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item,
-      ),
+      prev.map((item) => {
+        if (item.cartKey !== cartKey) return item;
+        // Multi-unit lines step by their unit factor (e.g. +1 Case = +24 base units).
+        const step = item.unitFactor ?? 1;
+        const minQty = step;
+        return { ...item, quantity: Math.max(minQty, item.quantity + delta * step) };
+      }),
     );
   };
 
-  // Direct quantity edit (typed in the cart row). Clamps to >=1, accepts
-  // decimals so sold-by-weight items can still be tweaked. Empty / NaN
-  // input is ignored so a half-typed value doesn't blow up the cart total
-  // mid-keystroke; we re-render with the previous quantity until the user
-  // finishes typing.
-  const setQuantity = (cartKey: string, raw: string) => {
+  // Per-row draft state for the quantity input. While the user is
+  // actively editing, the input shows the raw draft string; we only
+  // commit (parse + snap) on blur or Enter. This prevents intermediate
+  // keystrokes — e.g. typing "30" into a Case(24) line going "3" then
+  // "30" — from being snapped/interpreted mid-keystroke (which would
+  // turn "30" into "240").
+  const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
+
+  const beginQtyEdit = (cartKey: string, current: number) => {
+    setQtyDraft((d) => ({ ...d, [cartKey]: String(current) }));
+  };
+
+  const updateQtyDraft = (cartKey: string, raw: string) => {
+    setQtyDraft((d) => ({ ...d, [cartKey]: raw }));
+  };
+
+  const commitQtyDraft = (cartKey: string) => {
+    const raw = qtyDraft[cartKey];
+    setQtyDraft((d) => {
+      const { [cartKey]: _omit, ...rest } = d;
+      return rest;
+    });
+    if (raw === undefined) return;
     const trimmed = raw.trim();
     if (trimmed === "") return;
     const parsed = parseFloat(trimmed);
     if (!Number.isFinite(parsed) || parsed <= 0) return;
     setCart((prev) =>
-      prev.map((item) =>
-        item.cartKey === cartKey ? { ...item, quantity: parsed } : item,
-      ),
+      prev.map((item) => {
+        if (item.cartKey !== cartKey) return item;
+        // Multi-unit lines (Case/Dozen/etc.) snap to the nearest whole
+        // multiple of `unitFactor` so a Case(24) line cannot end up at
+        // 25 or 1.
+        if (item.unitFactor && item.unitFactor > 1) {
+          const units = Math.max(1, Math.round(parsed / item.unitFactor));
+          return { ...item, quantity: units * item.unitFactor };
+        }
+        return { ...item, quantity: parsed };
+      }),
     );
   };
 
@@ -1758,7 +1892,14 @@ export function POS() {
                       <div className="rounded-lg bg-secondary/30 p-2">
                         <div className="flex items-start justify-between gap-1">
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium leading-snug truncate">{item.productName}</p>
+                            <p className="text-sm font-medium leading-snug truncate">
+                              {item.productName}
+                              {item.unitLabel && item.unitFactor ? (
+                                <span className="ml-1 text-[10px] uppercase tracking-wider text-cyan-400/90">
+                                  · {item.quantity / item.unitFactor} {item.unitLabel}
+                                </span>
+                              ) : null}
+                            </p>
                             {item.variantChoices.length > 0 && <p className="text-xs text-primary/80">{choiceLabel(item.variantChoices)}</p>}
                             {item.modifierChoices.length > 0 && <p className="text-xs text-amber-400/90">+ {choiceLabel(item.modifierChoices)}</p>}
                             <p className="text-xs font-mono text-primary mt-0.5">
@@ -1781,9 +1922,10 @@ export function POS() {
                           <Input
                             type="text"
                             inputMode="decimal"
-                            value={String(item.quantity)}
-                            onFocus={(e) => e.currentTarget.select()}
-                            onChange={(e) => setQuantity(item.cartKey, e.target.value)}
+                            value={qtyDraft[item.cartKey] ?? String(item.quantity)}
+                            onFocus={(e) => { beginQtyEdit(item.cartKey, item.quantity); e.currentTarget.select(); }}
+                            onChange={(e) => updateQtyDraft(item.cartKey, e.target.value)}
+                            onBlur={() => commitQtyDraft(item.cartKey)}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
                             }}
@@ -2298,10 +2440,61 @@ export function POS() {
         <CustomizeDialog
           productId={customizingProductId}
           open={customizingProductId !== null}
-          onClose={() => setCustomizingProductId(null)}
+          onClose={() => { setCustomizingProductId(null); setPendingCustomizationUnit(null); }}
           onConfirm={handleCustomizeConfirm}
         />
       )}
+
+      {/* Unit-of-measure picker — opens for products with multiple sale units */}
+      <Dialog
+        open={unitPickerState !== null}
+        onOpenChange={(o) => { if (!o) setUnitPickerState(null); }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Choose unit — {unitPickerState?.product.name}</DialogTitle>
+            <DialogDescription>Select how this product is being sold for this transaction.</DialogDescription>
+          </DialogHeader>
+          {unitPickerState && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">How is this being sold?</p>
+              <button
+                onClick={() => continueAddWithUnit(null)}
+                className="w-full rounded-lg border border-border/60 bg-secondary/30 hover:bg-secondary/60 hover:border-primary/60 transition-colors p-3 text-left flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Each (single unit)</p>
+                  <p className="text-[11px] text-muted-foreground">Base price per item</p>
+                </div>
+                <span className="font-mono text-sm text-primary shrink-0">
+                  {formatCurrency(unitPickerState.product.price)}
+                </span>
+              </button>
+              {unitPickerState.units.map((u, idx) => {
+                const factor = u.conversionFactor || 1;
+                const unitPrice = unitPickerState.product.price * factor;
+                return (
+                  <button
+                    key={u.id ?? idx}
+                    onClick={() => continueAddWithUnit({ unitId: u.id, unitName: u.unitName, conversionFactor: factor })}
+                    className="w-full rounded-lg border border-border/60 bg-secondary/30 hover:bg-secondary/60 hover:border-primary/60 transition-colors p-3 text-left flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{u.unitName}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        1 {u.unitName} = {factor} {factor === 1 ? "unit" : "units"}
+                      </p>
+                    </div>
+                    <span className="font-mono text-sm text-primary shrink-0">
+                      {formatCurrency(unitPrice)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Sell-by-weight modal */}
       <Dialog
