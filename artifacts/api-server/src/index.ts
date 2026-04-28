@@ -13,6 +13,7 @@ import {
 } from "./jobs/scheduled-jobs";
 import { sendPendingForCampaign } from "./lib/campaign-sender";
 import { sendMail } from "./lib/mail";
+import { repairTimestampDefaults } from "./lib/repair-timestamp-defaults";
 
 const RESUME_ALERT_THRESHOLD = 3;
 
@@ -182,6 +183,12 @@ const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
+
+// Repair any timestamp DEFAULTs that the deploy-time migration may have
+// dropped (see lib/repair-timestamp-defaults.ts for full context). Must run
+// BEFORE we start serving requests, otherwise the first save into the
+// affected tables crashes with a not-null constraint violation.
+await repairTimestampDefaults();
 
 app.listen(port, async (err) => {
   if (err) {
