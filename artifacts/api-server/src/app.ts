@@ -6,6 +6,15 @@ import { logger } from "./lib/logger";
 import { sessionRevocationMiddleware } from "./middleware/session-revocation";
 import { subscriptionGuardMiddleware } from "./middleware/subscription-guard";
 
+// Refuse to boot in production if SESSION_SECRET is missing — otherwise the
+// JWT signing helpers throughout the codebase silently fall back to a hard-
+// coded development secret which would let anyone forge tenant tokens.
+if (!process.env["SESSION_SECRET"] && process.env["NODE_ENV"] === "production") {
+  // eslint-disable-next-line no-console
+  console.error("FATAL: SESSION_SECRET must be set in production. Refusing to start.");
+  process.exit(1);
+}
+
 const app: Express = express();
 
 app.use(
