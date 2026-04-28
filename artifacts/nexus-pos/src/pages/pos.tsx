@@ -2455,44 +2455,66 @@ export function POS() {
             <DialogTitle>Choose unit — {unitPickerState?.product.name}</DialogTitle>
             <DialogDescription>Select how this product is being sold for this transaction.</DialogDescription>
           </DialogHeader>
-          {unitPickerState && (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">How is this being sold?</p>
-              <button
-                onClick={() => continueAddWithUnit(null)}
-                className="w-full rounded-lg border border-border/60 bg-secondary/30 hover:bg-secondary/60 hover:border-primary/60 transition-colors p-3 text-left flex items-center justify-between gap-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">Each (single unit)</p>
-                  <p className="text-[11px] text-muted-foreground">Base price per item</p>
-                </div>
-                <span className="font-mono text-sm text-primary shrink-0">
-                  {formatCurrency(unitPickerState.product.price)}
-                </span>
-              </button>
-              {unitPickerState.units.map((u, idx) => {
-                const factor = u.conversionFactor || 1;
-                const unitPrice = unitPickerState.product.price * factor;
-                return (
-                  <button
-                    key={u.id ?? idx}
-                    onClick={() => continueAddWithUnit({ unitId: u.id, unitName: u.unitName, conversionFactor: factor })}
-                    className="w-full rounded-lg border border-border/60 bg-secondary/30 hover:bg-secondary/60 hover:border-primary/60 transition-colors p-3 text-left flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{u.unitName}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        1 {u.unitName} = {factor} {factor === 1 ? "unit" : "units"}
-                      </p>
-                    </div>
-                    <span className="font-mono text-sm text-primary shrink-0">
-                      {formatCurrency(unitPrice)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          {unitPickerState && (() => {
+            // Vibrant palette — each unit button gets its own solid colour
+            // (deterministic by position so the colours stay stable while the
+            // dialog is open instead of flickering on every re-render).
+            const UNIT_COLORS = [
+              "bg-blue-600 hover:bg-blue-700",
+              "bg-emerald-600 hover:bg-emerald-700",
+              "bg-amber-500 hover:bg-amber-600",
+              "bg-rose-600 hover:bg-rose-700",
+              "bg-violet-600 hover:bg-violet-700",
+              "bg-cyan-600 hover:bg-cyan-700",
+              "bg-orange-600 hover:bg-orange-700",
+              "bg-pink-600 hover:bg-pink-700",
+              "bg-teal-600 hover:bg-teal-700",
+              "bg-indigo-600 hover:bg-indigo-700",
+              "bg-lime-600 hover:bg-lime-700",
+              "bg-fuchsia-600 hover:bg-fuchsia-700",
+            ];
+            const baseColor = UNIT_COLORS[0]!;
+            return (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">How is this being sold?</p>
+                <button
+                  onClick={() => continueAddWithUnit(null)}
+                  className={`w-full rounded-lg ${baseColor} text-white transition-colors p-3 text-left flex items-center justify-between gap-3 shadow-sm`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">Each (single unit)</p>
+                    <p className="text-[11px] text-white/80">Base price per item</p>
+                  </div>
+                  <span className="font-mono text-sm text-white shrink-0">
+                    {formatCurrency(unitPickerState.product.price)}
+                  </span>
+                </button>
+                {unitPickerState.units.map((u, idx) => {
+                  const factor = u.conversionFactor || 1;
+                  const unitPrice = unitPickerState.product.price * factor;
+                  // Skip index 0 (used for "Each") so each row visibly differs.
+                  const color = UNIT_COLORS[(idx + 1) % UNIT_COLORS.length]!;
+                  return (
+                    <button
+                      key={u.id ?? idx}
+                      onClick={() => continueAddWithUnit({ unitId: u.id, unitName: u.unitName, conversionFactor: factor })}
+                      className={`w-full rounded-lg ${color} text-white transition-colors p-3 text-left flex items-center justify-between gap-3 shadow-sm`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate">{u.unitName}</p>
+                        <p className="text-[11px] text-white/80">
+                          1 {u.unitName} = {factor} {factor === 1 ? "unit" : "units"}
+                        </p>
+                      </div>
+                      <span className="font-mono text-sm text-white shrink-0">
+                        {formatCurrency(unitPrice)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
