@@ -94,10 +94,11 @@ export function PricingUnitsEditor({
       return replacePricingTiers(productId, payload);
     },
     onSuccess: (data) => {
-      // Write the server response directly into the cache so subsequent mounts
-      // see the saved state immediately, then invalidate so any other observers refetch.
+      // Write the server response directly into the cache.
+      // Do NOT invalidate here — invalidation triggers a background refetch
+      // which the service worker can serve from stale cache, wiping this data.
+      // refetchOnMount:"always" on tiersQ ensures fresh data on next open.
       qc.setQueryData(["pricing-tiers", productId], data);
-      qc.invalidateQueries({ queryKey: ["pricing-tiers", productId] });
       toast({ title: "Pricing tiers saved" });
     },
     onError: (e) => toast({
@@ -126,7 +127,6 @@ export function PricingUnitsEditor({
     },
     onSuccess: (data) => {
       qc.setQueryData(["purchase-units", productId], data);
-      qc.invalidateQueries({ queryKey: ["purchase-units", productId] });
       toast({ title: "Units saved" });
     },
     onError: (e) => toast({

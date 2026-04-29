@@ -67,7 +67,7 @@ if (!self.define) {
     });
   };
 }
-define(['./workbox-7cf1e716'], (function (workbox) { 'use strict';
+define(['./workbox-a731ab65'], (function (workbox) { 'use strict';
 
   self.skipWaiting();
   workbox.clientsClaim();
@@ -82,14 +82,15 @@ define(['./workbox-7cf1e716'], (function (workbox) { 'use strict';
     "revision": "f935fee1215d47eef7d227ef09bed8cd"
   }, {
     "url": "index.html",
-    "revision": "0.mmen3hglesc"
+    "revision": "0.8bel218ri6k"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
     allowlist: [/^\/$/]
   }));
-  workbox.registerRoute(/\/api\/products/, new workbox.StaleWhileRevalidate({
+  workbox.registerRoute(/\/api\/products/, new workbox.NetworkFirst({
     "cacheName": "api-products",
+    "networkTimeoutSeconds": 5,
     plugins: [new workbox.ExpirationPlugin({
       maxEntries: 500,
       maxAgeSeconds: 86400
@@ -97,8 +98,9 @@ define(['./workbox-7cf1e716'], (function (workbox) { 'use strict';
       statuses: [0, 200]
     })]
   }), 'GET');
-  workbox.registerRoute(/\/api\/settings/, new workbox.StaleWhileRevalidate({
+  workbox.registerRoute(/\/api\/settings/, new workbox.NetworkFirst({
     "cacheName": "api-settings",
+    "networkTimeoutSeconds": 5,
     plugins: [new workbox.ExpirationPlugin({
       maxEntries: 20,
       maxAgeSeconds: 86400
@@ -106,8 +108,9 @@ define(['./workbox-7cf1e716'], (function (workbox) { 'use strict';
       statuses: [0, 200]
     })]
   }), 'GET');
-  workbox.registerRoute(/\/api\/categories/, new workbox.StaleWhileRevalidate({
+  workbox.registerRoute(/\/api\/categories/, new workbox.NetworkFirst({
     "cacheName": "api-categories",
+    "networkTimeoutSeconds": 5,
     plugins: [new workbox.ExpirationPlugin({
       maxEntries: 100,
       maxAgeSeconds: 86400

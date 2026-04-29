@@ -66,28 +66,33 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         runtimeCaching: [
           {
+            // NetworkFirst: always go to the network so mutations are
+            // immediately visible. Falls back to cache only when offline.
             urlPattern: /\/api\/products/,
-            handler: "StaleWhileRevalidate",
+            handler: "NetworkFirst",
             options: {
               cacheName: "api-products",
+              networkTimeoutSeconds: 5,
               expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
           {
             urlPattern: /\/api\/settings/,
-            handler: "StaleWhileRevalidate",
+            handler: "NetworkFirst",
             options: {
               cacheName: "api-settings",
+              networkTimeoutSeconds: 5,
               expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
           {
             urlPattern: /\/api\/categories/,
-            handler: "StaleWhileRevalidate",
+            handler: "NetworkFirst",
             options: {
               cacheName: "api-categories",
+              networkTimeoutSeconds: 5,
               expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 },
               cacheableResponse: { statuses: [0, 200] },
             },
