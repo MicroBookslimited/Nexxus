@@ -1,0 +1,340 @@
+Build a Composite Product / Bundle SKU feature for NEXXUS POS.
+
+GOAL:
+Allow businesses to create sellable products that are made up of several other products, such as 6-pack, 12-pack, case of 24, mixed bundle, promo bundle, or kit.
+
+IMPORTANT:
+This must NOT be treated as simple unit conversion or normal volume pricing.
+This is a composite product structure where the parent product is sold at a fixed selling price, while inventory and costing come from the child products.
+
+--------------------------------------------------
+1. PRODUCT STRUCTURE MODEL
+--------------------------------------------------
+
+Add product structure support:
+
+products table:
+- id
+- tenant_id
+- name
+- sku
+- barcode
+- structure_type ENUM('simple', 'composite')
+- selling_price
+- cost_price
+- is_active
+
+Rules:
+- simple = normal product with its own stock and cost
+- composite = parent sellable product made from child products
+- composite selling_price is fixed/manual
+- composite cost is derived from child product costs
+- composite should not require its own stock unless future setting enables it
+
+--------------------------------------------------
+2. COMPOSITE COMPONENTS TABLE
+--------------------------------------------------
+
+Create table:
+
+composite_product_components:
+- id
+- tenant_id
+- parent_product_id
+- child_product_id
+- quantity_required
+- unit_id nullable
+- created_at
+- updated_at
+
+Example:
+Parent: Coke Case 24
+Child: Coke Single Bottle
+quantity_required: 24
+
+Example mixed bundle:
+Parent: Party Drink Pack
+Child 1: Coke Single Bottle, quantity 12
+Child 2: Pepsi Single Bottle, quantity 6
+Child 3: Water Bottle, quantity 6
+
+--------------------------------------------------
+3. FIXED SELLING PRICE LOGIC
+--------------------------------------------------
+
+Composite products must use a manually entered fixed selling price.
+
+Example:
+Single Coke selling price = $150
+Coke Case 24 fixed selling price = $3,000
+
+Do NOT calculate selling price as:
+24 x $150
+
+The selling price must remain independent.
+
+--------------------------------------------------
+4. DERIVED COST LOGIC
+--------------------------------------------------
+
+Composite cost must be calculated from child product unit costs.
+
+Formula:
+composite_cost = SUM(child_product.cost_price x quantity_required)
+
+Example:
+Child cost = $100
+Qty required = 24
+Composite cost = $2,400
+
+Use this derived cost for:
+- COGS
+- profit report
+- margin report
+- sales analysis
+
+Do not allow manual cost override at MVP stage unless admin setting is later added.
+
+--------------------------------------------------
+5. INVENTORY DEDUCTION LOGIC
+--------------------------------------------------
+
+When selling a composite product:
+- Do not deduct stock from parent product
+- Deduct stock from child products
+
+Example:
+Sell 1 Coke Case 24:
+- Deduct 24 Coke Single Bottle from inventory
+
+Example:
+Sell 2 Coke Case 24:
+- Deduct 48 Coke Single Bottle from inventory
+
+Respect existing overselling rule:
+If overselling is OFF and child stock is insufficient, block the sale.
+
+--------------------------------------------------
+6. AVAILABLE BUNDLE CALCULATION
+--------------------------------------------------
+
+Calculate available quantity for composite products based on child stock.
+
+Formula:
+available_bundles = MIN(
+  floor(child_stock / quantity_required)
+)
+
+Example:
+Coke stock = 50
+Case requires 24
+Available cases = floor(50 / 24) = 2
+
+For mixed bundles:
+Available bundles = lowest possible bundle count across all child products.
+
+--------------------------------------------------
+7. POS BEHAVIOR
+--------------------------------------------------
+
+Composite products should appear in POS like normal sellable products.
+
+When cashier selects composite product:
+- Add parent product name to cart
+- Use fixed selling price
+- Show optional label: "Includes X items"
+- On checkout, validate child stock
+- Deduct child stock
+- Record sale under parent product
+
+Cart display example:
+Coke Case 24 — $3,000
+
+Receipt display default:
+Coke Case 24 — $3,000
+
+Optional future receipt setting:
+Show child components under parent item.
+
+--------------------------------------------------
+8. VALIDATION RULES
+--------------------------------------------------
+
+When creating or editing composite product:
+- parent_product_id cannot equal child_product_id
+- child product must exist
+- quantity_required must be greater than 0
+- composite product must have at least one component
+- selling_price must be greater than 0
+- prevent circular references
+
+Circular reference example to block:
+Product A includes Product B
+Product B includes Product A
+
+--------------------------------------------------
+9. PRODUCT SETUP UI
+--------------------------------------------------
+
+In product form, add:
+
+Product Structure:
+[ Simple Product ] [ Composite Product ]
+
+If Composite Product is selected, show section:
+
+Composite Components:
+- Search/select child product
+- Quantity required
+- Add component button
+- Component list table
+
+Component list table columns:
+- Product
+- SKU
+- Quantity Required
+- Unit Cost
+- Total Cost
+- Remove button
+
+Show live calculated fields:
+- Derived Bundle Cost
+- Fixed Selling Price
+- Gross Profit
+- Gross Margin %
+
+Formula:
+gross_profit = fixed_selling_price - derived_bundle_cost
+gross_margin = gross_profit / fixed_selling_price x 100
+
+--------------------------------------------------
+10. REPORTING REQUIREMENTS
+--------------------------------------------------
+
+Sales reports:
+- Show composite product as the sold item
+- Revenue uses fixed selling price
+
+Inventory reports:
+- Show child stock deducted
+
+Profit reports:
+- Use derived cost from child products
+
+Product performance:
+- Show bundles sold separately from single products
+
+Audit trail:
+Log:
+- composite product created
+- components added/removed
+- fixed selling price changed
+- composite sale processed
+- child stock deducted
+
+--------------------------------------------------
+11. API ENDPOINTS
+--------------------------------------------------
+
+Create or update endpoints as needed:
+
+GET /products/:id/composite-components
+POST /products/:id/composite-components
+PUT /products/:id/composite-components/:componentId
+DELETE /products/:id/composite-components/:componentId
+
+GET /products/:id/composite-cost
+GET /products/:id/available-composite-quantity
+
+Update sale processing endpoint:
+- Detect composite product
+- Validate child inventory
+- Deduct child inventory
+- Post correct COGS
+
+--------------------------------------------------
+12. DATABASE TRANSACTION SAFETY
+--------------------------------------------------
+
+Sale processing must be atomic.
+
+During checkout:
+1. Validate all composite child stock
+2. Validate normal product stock
+3. Deduct all inventory
+4. Create sale record
+5. Create sale line records
+6. Create inventory movement records
+7. Commit transaction
+
+If any validation fails:
+- rollback entire transaction
+- return clear error
+
+Error example:
+{
+  "error": "INSUFFICIENT_COMPONENT_STOCK",
+  "message": "Not enough Coke Single Bottle to sell Coke Case 24.",
+  "product": "Coke Single Bottle",
+  "available": 10,
+  "required": 24
+}
+
+--------------------------------------------------
+13. INVENTORY MOVEMENT LOG
+--------------------------------------------------
+
+When composite product is sold, create inventory movements for child products.
+
+Example:
+Movement type: composite_sale
+Reference: sale_id
+Product deducted: Coke Single Bottle
+Quantity: -24
+Reason: Sold as Coke Case 24
+
+--------------------------------------------------
+14. EDGE CASES
+--------------------------------------------------
+
+Handle:
+- mixed bundles
+- insufficient stock for one component
+- quantity greater than 1 bundle
+- refunds
+- voids
+- deleted child products
+- inactive child products
+- updated child cost
+- multi-location inventory
+
+Refund behavior:
+If composite product is refunded:
+- Return child products to stock
+- Reverse COGS
+- Link refund to original sale
+
+Multi-location:
+Deduct child stock from the selling location only.
+
+--------------------------------------------------
+15. OUTPUT REQUIRED
+--------------------------------------------------
+
+Provide:
+- database migrations
+- backend models
+- API endpoints
+- POS sale processing logic
+- frontend product setup UI
+- validation logic
+- reporting updates
+- test cases
+
+Make the implementation clean, modular, multi-tenant safe, and compatible with existing NEXXUS POS features:
+- inventory protection
+- volume pricing
+- multiple units
+- sell by weight
+- reports
+- audit trail
