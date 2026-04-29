@@ -30,3 +30,9 @@ id = "pgyFXdAIzr4SrmuRhzQcE"
 uri = "file://docs/nexus-pos-chatfuel-qa.md"
 type = "text"
 title = "NEXXUS POS — Chatfuel Q&A Knowledge Base"
+
+[[outputs]]
+id = "HF9LB1ybr_msFwGOPNRvm"
+uri = "file://docs/manual/NEXXUS_POS_User_Manual.pdf"
+type = "pdf"
+title = "NEXXUS POS — User Manual (Edition 2026.04)"

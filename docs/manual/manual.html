@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NEXXUS POS — User Manual</title>
+<style>
+@page {
+  size: Letter;
+  margin: 0.85in 0.7in 0.95in 0.7in;
+  @bottom-left { content: "NEXXUS POS — Powered by MicroBooks"; font-size: 8.5pt; color: #6b7280; font-family: 'Helvetica', sans-serif; }
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8.5pt; color: #6b7280; font-family: 'Helvetica', sans-serif; }
+}
+@page :first { margin: 0; @bottom-left { content: ""; } @bottom-right { content: ""; } }
+
+* { box-sizing: border-box; }
+html { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10.5pt; color: #1f2937; line-height: 1.55; }
+body { margin: 0; }
+
+/* COVER */
+.cover {
+  page: cover;
+  background: linear-gradient(135deg, #0f1729 0%, #1e293b 50%, #0f1729 100%);
+  color: white;
+  height: 100vh;
+  width: 100%;
+  padding: 1.5in 0.85in 0.85in;
+  page-break-after: always;
+  position: relative;
+}
+.cover .logo-mark {
+  font-family: 'Helvetica', sans-serif;
+  font-size: 14pt;
+  letter-spacing: 0.3em;
+  color: #3b82f6;
+  font-weight: 700;
+}
+.cover h1 {
+  font-size: 56pt;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin: 0.6in 0 0.15in;
+  color: white;
+}
+.cover .subtitle {
+  font-size: 16pt;
+  color: #93c5fd;
+  font-weight: 400;
+  margin-bottom: 0.8in;
+  font-style: italic;
+}
+.cover .doc-type {
+  display: inline-block;
+  border: 1.5px solid #3b82f6;
+  color: #93c5fd;
+  padding: 6pt 14pt;
+  font-size: 10pt;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 0.5in;
+}
+.cover .meta {
+  position: absolute;
+  bottom: 0.85in;
+  left: 0.85in;
+  right: 0.85in;
+  font-size: 9.5pt;
+  color: #94a3b8;
+  border-top: 1px solid #334155;
+  padding-top: 12pt;
+  display: flex;
+  justify-content: space-between;
+}
+.cover .tagline {
+  font-size: 11pt;
+  color: #cbd5e1;
+  margin-top: 0.4in;
+  max-width: 5.2in;
+  line-height: 1.5;
+}
+
+/* TOC */
+.toc { page-break-after: always; }
+.toc h2 { font-size: 22pt; color: #0f1729; border-bottom: 3px solid #3b82f6; padding-bottom: 8pt; margin-bottom: 18pt; }
+.toc ol { list-style: none; padding: 0; counter-reset: chap; }
+.toc li { counter-increment: chap; padding: 5pt 0; border-bottom: 1px dotted #cbd5e1; font-size: 11pt; display: flex; }
+.toc li::before { content: counter(chap, decimal-leading-zero) "  "; color: #3b82f6; font-weight: 700; min-width: 0.5in; }
+.toc li .title { flex: 1; }
+.toc li .ch-page { color: #6b7280; font-size: 9.5pt; }
+
+/* SECTIONS */
+section { page-break-before: always; }
+section.no-break { page-break-before: avoid; }
+
+h1.chapter {
+  font-size: 26pt;
+  color: #0f1729;
+  margin: 0 0 4pt;
+  letter-spacing: -0.01em;
+}
+h1.chapter .chnum {
+  display: block;
+  font-size: 11pt;
+  color: #3b82f6;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  margin-bottom: 4pt;
+}
+h1.chapter + .lede {
+  font-size: 11.5pt;
+  color: #475569;
+  margin-bottom: 24pt;
+  padding-bottom: 14pt;
+  border-bottom: 2px solid #e2e8f0;
+  line-height: 1.5;
+}
+
+h2 { font-size: 15pt; color: #0f1729; margin: 22pt 0 8pt; }
+h3 { font-size: 12.5pt; color: #1e293b; margin: 16pt 0 6pt; }
+h4 { font-size: 11pt; color: #1e293b; margin: 12pt 0 4pt; text-transform: uppercase; letter-spacing: 0.05em; }
+
+p { margin: 0 0 8pt; }
+ul, ol { margin: 4pt 0 10pt; padding-left: 20pt; }
+li { margin: 3pt 0; }
+
+code, .kbd { font-family: 'Courier New', monospace; font-size: 9.5pt; background: #f1f5f9; padding: 1pt 5pt; border-radius: 3pt; color: #0f1729; }
+.kbd { border: 1px solid #cbd5e1; box-shadow: 0 1pt 0 #cbd5e1; }
+
+a { color: #2563eb; text-decoration: none; }
+
+/* CALLOUTS */
+.callout {
+  border-left: 4px solid #3b82f6;
+  background: #eff6ff;
+  padding: 10pt 14pt;
+  margin: 10pt 0 12pt;
+  border-radius: 0 4pt 4pt 0;
+  page-break-inside: avoid;
+}
+.callout.warn { border-left-color: #f59e0b; background: #fffbeb; }
+.callout.danger { border-left-color: #ef4444; background: #fef2f2; }
+.callout.tip { border-left-color: #10b981; background: #ecfdf5; }
+.callout-title { font-weight: 700; font-size: 9.5pt; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4pt; color: #1e3a8a; }
+.callout.warn .callout-title { color: #92400e; }
+.callout.danger .callout-title { color: #991b1b; }
+.callout.tip .callout-title { color: #065f46; }
+.callout p:last-child { margin-bottom: 0; }
+
+/* STEP LISTS */
+.steps { counter-reset: stp; padding-left: 0; list-style: none; }
+.steps > li { counter-increment: stp; position: relative; padding: 4pt 0 4pt 32pt; margin: 6pt 0; }
+.steps > li::before {
+  content: counter(stp);
+  position: absolute; left: 0; top: 4pt;
+  width: 22pt; height: 22pt; border-radius: 50%;
+  background: #3b82f6; color: white;
+  font-weight: 700; font-size: 10pt;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* TABLE */
+table { width: 100%; border-collapse: collapse; margin: 10pt 0 14pt; font-size: 9.5pt; page-break-inside: avoid; }
+thead th { background: #0f1729; color: white; padding: 6pt 8pt; text-align: left; font-weight: 600; }
+tbody td { padding: 6pt 8pt; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+tbody tr:nth-child(even) td { background: #f8fafc; }
+
+/* QUICK REF CARD */
+.qref {
+  border: 2px solid #0f1729;
+  border-radius: 6pt;
+  padding: 12pt 14pt;
+  margin: 10pt 0;
+  background: #f8fafc;
+  page-break-inside: avoid;
+}
+.qref h4 { margin: 0 0 6pt; color: #0f1729; }
+.qref dl { margin: 0; display: grid; grid-template-columns: 1.4in 1fr; row-gap: 4pt; column-gap: 10pt; font-size: 9.5pt; }
+.qref dt { font-weight: 700; color: #1e293b; }
+.qref dd { margin: 0; color: #334155; }
+
+/* BADGES */
+.badge { display: inline-block; padding: 1pt 7pt; border-radius: 9pt; font-size: 8.5pt; font-weight: 700; letter-spacing: 0.05em; }
+.badge.role { background: #dbeafe; color: #1e40af; }
+.badge.new { background: #fef3c7; color: #92400e; }
+.badge.req { background: #fee2e2; color: #991b1b; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14pt; }
+.two-col > div { page-break-inside: avoid; }
+
+hr { border: 0; border-top: 1px solid #e2e8f0; margin: 16pt 0; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ COVER ═══════════════════ -->
+<div class="cover">
+  <div class="logo-mark">N E X X U S &nbsp;&nbsp; P O S</div>
+  <div class="doc-type" style="margin-top: 0.4in;">User Manual</div>
+  <h1>Your Business,<br><span style="color:#3b82f6;">Connected.</span></h1>
+  <div class="subtitle">The all-in-one tablet point-of-sale system</div>
+  <div class="tagline">
+    A complete operator's guide to running your restaurant, retail shop,
+    or wholesale business on NEXXUS POS — from your first sale to your
+    end-of-month financial reports.
+  </div>
+  <div class="meta">
+    <div>Powered by MicroBooks</div>
+    <div>Edition 2026.04 &nbsp;·&nbsp; Updated April 2026</div>
+  </div>
+</div>
+
+<!-- ═══════════════════ TOC ═══════════════════ -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ol>
+    <li><span class="title">Welcome &amp; Getting Started</span></li>
+    <li><span class="title">Signing In &amp; Account Setup</span></li>
+    <li><span class="title">The Dashboard</span></li>
+    <li><span class="title">Selling at the Register (POS)</span></li>
+    <li><span class="title">Cash Drawer &amp; End-of-Shift</span></li>
+    <li><span class="title">Tables &amp; Restaurant Service</span></li>
+    <li><span class="title">Kitchen Display System</span></li>
+    <li><span class="title">Products &amp; Inventory</span></li>
+    <li><span class="title">Volume Pricing &amp; Units of Measure</span></li>
+    <li><span class="title">Sell by Weight</span></li>
+    <li><span class="title">Multi-Location Stock</span></li>
+    <li><span class="title">Customers &amp; Loyalty</span></li>
+    <li><span class="title">Recipes, Ingredients &amp; Production</span></li>
+    <li><span class="title">Vendors, Purchases &amp; Accounts Payable</span></li>
+    <li><span class="title">Accounts Receivable &amp; Credit Sales</span></li>
+    <li><span class="title">Reports &amp; Accounting</span></li>
+    <li><span class="title">Staff, Roles &amp; Permissions</span></li>
+    <li><span class="title">Settings &amp; Payment Methods</span></li>
+    <li><span class="title">Subscription &amp; Billing</span></li>
+    <li><span class="title">Hardware, Scales &amp; Receipts</span></li>
+    <li><span class="title">Phone Top-Up</span></li>
+    <li><span class="title">Online Store</span></li>
+    <li><span class="title">Offline Mode &amp; Syncing</span></li>
+    <li><span class="title">Audit Trail</span></li>
+    <li><span class="title">Troubleshooting &amp; Support</span></li>
+  </ol>
+</div>
+
+<!-- ═════════════ 1. WELCOME ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 01</span>Welcome &amp; Getting Started</h1>
+<p class="lede">Welcome to NEXXUS POS — the modern tablet point-of-sale system built for Caribbean and Americas businesses. This manual covers every screen and feature so you can get the most out of your day-to-day operations.</p>
+
+<h2>What you can do with NEXXUS POS</h2>
+<ul>
+  <li><strong>Sell faster</strong> — touch-friendly cart, barcode scanning, weight-based items, multiple units per product, automatic volume pricing.</li>
+  <li><strong>Manage smarter</strong> — real-time stock across multiple locations, ingredient-based recipes for restaurants, vendor purchases, and accounts payable.</li>
+  <li><strong>Grow further</strong> — built-in customer loyalty, online store, multi-tenant staff management with role-based permissions.</li>
+  <li><strong>Stay compliant</strong> — full double-entry accounting, audit trail of every action, and one-click QuickBooks sync.</li>
+</ul>
+
+<h2>What you'll need</h2>
+<ul>
+  <li>A modern tablet, laptop, or desktop with a recent browser (Chrome, Edge, Safari, or Firefox).</li>
+  <li>An active NEXXUS POS subscription (a free 14-day trial is available).</li>
+  <li>Optionally: a thermal receipt printer, barcode scanner, cash drawer, and / or weighing scale.</li>
+</ul>
+
+<div class="callout tip">
+<div class="callout-title">Tip — Install as an app</div>
+<p>NEXXUS POS is a Progressive Web App (PWA). On your tablet's browser, open the install prompt to add the app to your home screen. This gives you full-screen mode and offline capability.</p>
+</div>
+
+<h2>Conventions used in this manual</h2>
+<ul>
+  <li><span class="kbd">Ctrl + S</span> — keyboard shortcuts.</li>
+  <li><code>Settings → Payment Methods</code> — navigation breadcrumbs (menu path).</li>
+  <li><span class="badge role">Admin</span> — feature requires a specific role.</li>
+  <li><span class="badge new">New</span> — recently added feature.</li>
+</ul>
+
+<div class="qref">
+  <h4>Quick reference: prices and currency</h4>
+  <dl>
+    <dt>Currency</dt><dd>Jamaican Dollar (JMD), shown as <code>JMD 1,250.00</code></dd>
+    <dt>Tax rate</dt><dd>Default 10% (configurable per tenant)</dd>
+    <dt>Loyalty earn</dt><dd>1 point per JMD 10 spent</dd>
+    <dt>Loyalty redeem</dt><dd>100 points = JMD 1.00 discount</dd>
+  </dl>
+</div>
+</section>
+
+<!-- ═════════════ 2. SIGN IN ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 02</span>Signing In &amp; Account Setup</h1>
+<p class="lede">Whether you're a brand-new business or an existing tenant, here's how to get from zero to your first sale.</p>
+
+<h2>Creating a new account</h2>
+<ol class="steps">
+  <li>From the marketing site, click <strong>Start Free Trial</strong>.</li>
+  <li>Fill in your business name, your name, email, and a strong password (at least 8 characters with a mix of letters and numbers).</li>
+  <li>Verify your email address by clicking the link we send you. The banner at the top of the dashboard will remind you if verification is still pending.</li>
+  <li>Choose your business type — <em>Restaurant</em>, <em>Retail</em>, <em>Wholesale</em>, or <em>Hybrid</em>. This pre-enables the right features for you.</li>
+  <li>Complete the brief onboarding wizard: add your first staff member, set your tax rate, and (optionally) add a location.</li>
+</ol>
+
+<h2>Signing in</h2>
+<ol class="steps">
+  <li>Visit your tenant URL (typically <code>/app/login</code>).</li>
+  <li>Enter your email and password and tap <strong>Sign In</strong>.</li>
+  <li>If your business has multiple staff members, you'll be prompted for your 4-digit PIN at the start of each shift.</li>
+</ol>
+
+<div class="callout warn">
+<div class="callout-title">Forgot password?</div>
+<p>Click <strong>Forgot password?</strong> on the sign-in screen. We'll email a reset link that's valid for one hour.</p>
+</div>
+
+<h2>Switching between staff (PIN pad)</h2>
+<p>At the top-right of the POS, the staff badge shows who is currently logged in for sales. Tap it to bring up the PIN pad and let another team member take over the register without losing the current cart.</p>
+
+<h2>Multi-tenant: keeping your data private</h2>
+<p>Every account is fully isolated. Your products, customers, sales, and reports are only visible to your own staff. NEXXUS POS uses industry-standard authentication tokens (JWT) and encrypts all traffic over HTTPS.</p>
+</section>
+
+<!-- ═════════════ 3. DASHBOARD ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 03</span>The Dashboard</h1>
+<p class="lede">The dashboard is your daily home base — a live snapshot of how your business is doing right now.</p>
+
+<h2>What you see at a glance</h2>
+<table>
+  <thead><tr><th>Widget</th><th>What it tells you</th></tr></thead>
+  <tbody>
+    <tr><td>Today's Sales</td><td>Total revenue, transaction count, and average ticket size for today.</td></tr>
+    <tr><td>Sales Trend</td><td>7-day or 30-day revenue line chart for spotting weekly patterns.</td></tr>
+    <tr><td>Top Products</td><td>Your bestsellers by quantity and revenue.</td></tr>
+    <tr><td>Low Stock Alerts</td><td>Items at or below their reorder threshold — tap any item to jump to its product page.</td></tr>
+    <tr><td>Recent Orders</td><td>Latest 10 transactions, each tappable to view receipt details.</td></tr>
+    <tr><td>Cash Status</td><td>Whether your register is open or closed and current expected cash on hand.</td></tr>
+  </tbody>
+</table>
+
+<h2>Navigation menu</h2>
+<p>The left-hand sidebar (or top tab bar on tablets) groups features by category: Sell, Manage, Reports, Setup. The menu only shows what your role has permission to use.</p>
+</section>
+
+<!-- ═════════════ 4. POS ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 04</span>Selling at the Register</h1>
+<p class="lede">The POS is where the magic happens. Designed for one-handed tablet use with large touch targets, it stays out of your way so you can focus on the customer.</p>
+
+<h2>Anatomy of the POS screen</h2>
+<ul>
+  <li><strong>Product grid (left)</strong> — your menu of items, organised by category tabs at the top. Tap to add to cart.</li>
+  <li><strong>Search bar</strong> — type a name, SKU, or scan a barcode.</li>
+  <li><strong>Cart (right)</strong> — running list of items, with quantity steppers and per-line totals.</li>
+  <li><strong>Order panel</strong> — subtotal, tax, discount, tip, and grand total.</li>
+  <li><strong>Action bar</strong> — Hold, Discount, Customer, Charge.</li>
+</ul>
+
+<h2>Ringing up a sale</h2>
+<ol class="steps">
+  <li>Tap items in the product grid (or scan barcodes) to add them to the cart.</li>
+  <li>Adjust quantities with the <span class="kbd">+</span> / <span class="kbd">−</span> buttons, or tap the quantity number to type it directly.</li>
+  <li>(Optional) Tap <strong>Customer</strong> to attach a customer for loyalty points.</li>
+  <li>(Optional) Tap <strong>Discount</strong> to apply a percentage or fixed-amount discount to the whole sale.</li>
+  <li>Tap <strong>Charge</strong>. Choose a payment method — Cash, Card, Split, or any custom method you've configured.</li>
+  <li>If <strong>Cash</strong>: enter the amount tendered. Change owed is calculated automatically.</li>
+  <li>If <strong>Split</strong>: enter the amount for each method until the total is fully covered.</li>
+  <li>Tap <strong>Complete Sale</strong>. The receipt prints (or shows on screen) and the cart resets.</li>
+</ol>
+
+<h2>Holding and recalling carts</h2>
+<p>Need to step away or serve another customer first? Tap <strong>Hold</strong> to park the current cart with an optional name. Held carts appear in the <strong>Held Orders</strong> tray — tap to bring any back. Held orders survive page refreshes.</p>
+
+<h2>Refunds and voids</h2>
+<ol>
+  <li>Go to <code>Orders</code> in the menu.</li>
+  <li>Find the original sale (use the date filter or search by receipt number).</li>
+  <li>Tap <strong>Refund</strong> to return some or all items. Stock is automatically returned to inventory.</li>
+</ol>
+
+<div class="callout warn">
+<div class="callout-title">Permission required</div>
+<p>Refunds and voids require the <span class="badge role">Manager</span> or <span class="badge role">Admin</span> role by default. Configure this under <code>Settings → Roles</code>.</p>
+</div>
+
+<h2>Inventory protection (preventing overselling)</h2>
+<p>By default, NEXXUS POS will <strong>block any sale that would push stock below zero</strong>. If a customer tries to buy 5 of an item that only has 3 in stock, you'll see a clear modal: <em>"Only 3 of [item name] available."</em> Adjust the cart and try again.</p>
+<p>To allow overselling for specific items (e.g. services, made-to-order, pre-orders), open the product and toggle <strong>Allow Overselling</strong>.</p>
+</section>
+
+<!-- ═════════════ 5. CASH ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 05</span>Cash Drawer &amp; End-of-Shift</h1>
+<p class="lede">Open and close your cash drawer with confidence — every dollar in and out is tracked, including pay-ins, pay-outs, and cash drops.</p>
+
+<h2>Opening the register</h2>
+<ol class="steps">
+  <li>Tap <code>Cash</code> from the main menu.</li>
+  <li>Click <strong>Open Register</strong>.</li>
+  <li>Enter the starting cash amount (your float / opening balance).</li>
+  <li>Tap <strong>Open Session</strong>. The drawer is now active and ready for sales.</li>
+</ol>
+
+<h2>During the shift</h2>
+<ul>
+  <li><strong>Cash In</strong> — record any cash added (e.g. extra change, owner top-up). Choose a reason.</li>
+  <li><strong>Cash Out</strong> — record cash taken out (e.g. paying a supplier, petty cash). Always include a reason; this becomes part of your audit trail.</li>
+  <li><strong>Drop</strong> — moving cash to the safe. Reduces drawer cash without affecting expected total.</li>
+</ul>
+
+<h2>Closing (cash blind count)</h2>
+<ol class="steps">
+  <li>Tap <strong>Close Register</strong> at the end of the shift.</li>
+  <li>Count the cash drawer physically. Enter the actual amount counted.</li>
+  <li>NEXXUS calculates the variance (over / short) automatically based on opening cash + cash sales − cash out.</li>
+  <li>(Optional) Add a closing note explaining any variance.</li>
+  <li>Tap <strong>Close Session</strong>. A Z-report is generated and stored under <code>Register</code>.</li>
+</ol>
+
+<div class="callout">
+<div class="callout-title">Z-Reports</div>
+<p>Every closed session creates a Z-report — a permanent end-of-shift summary showing sales by payment method, refunds, taxes collected, and variance. Find them under <code>Reports → Z-Reports</code>.</p>
+</div>
+</section>
+
+<!-- ═════════════ 6. TABLES ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 06</span>Tables &amp; Restaurant Service</h1>
+<p class="lede">If you run a restaurant or café, the Tables screen turns NEXXUS POS into a full table-service system.</p>
+
+<h2>Setting up your floor plan</h2>
+<ol class="steps">
+  <li>Go to <code>Tables → Floor Plan</code>.</li>
+  <li>Add tables one by one (give each a name like "T1", "Patio 3", or "Bar Seat 5").</li>
+  <li>Set the seat count for each table — useful for reports.</li>
+  <li>(Optional) Group tables by section (e.g. "Patio", "Main", "Private Room").</li>
+</ol>
+
+<h2>Taking orders by table</h2>
+<ol class="steps">
+  <li>From the Tables screen, tap an empty table to open a new ticket.</li>
+  <li>Add items as you would in the POS. Items send to the Kitchen Display when you tap <strong>Send to Kitchen</strong>.</li>
+  <li>Tap a busy table again to add more items mid-meal.</li>
+  <li>When the meal ends, tap <strong>Pay</strong> to settle the bill (cash, card, or split).</li>
+</ol>
+
+<h2>Course management &amp; modifiers</h2>
+<p>Add modifiers (e.g. "no onions", "extra sauce") and group items into courses (Starters, Mains, Desserts) so the kitchen prepares them in the right order. Set this up in <code>Products → [item] → Modifiers</code>.</p>
+
+<h2>Splitting and merging bills</h2>
+<ul>
+  <li><strong>Split by item</strong> — drag items between guest tabs.</li>
+  <li><strong>Split evenly</strong> — divide the total across N guests.</li>
+  <li><strong>Merge</strong> — combine two table tickets into one (useful when a party joins another).</li>
+</ul>
+</section>
+
+<!-- ═════════════ 7. KDS ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 07</span>Kitchen Display System (KDS)</h1>
+<p class="lede">A second tablet or screen in the kitchen turns NEXXUS POS into a paperless ticket system.</p>
+
+<h2>Setup</h2>
+<ol class="steps">
+  <li>On your kitchen device, open the same NEXXUS URL and sign in with a kitchen role.</li>
+  <li>Navigate to <code>Kitchen</code>.</li>
+  <li>(Optional) Map specific categories to specific stations (Grill, Salads, Bar) under <code>Settings → Kitchen Stations</code>.</li>
+</ol>
+
+<h2>Working a ticket</h2>
+<ul>
+  <li>New tickets appear at the left, oldest first, with a live timer showing minutes since they came in.</li>
+  <li>Tap an item to mark it <strong>In Progress</strong>; tap again for <strong>Ready</strong>.</li>
+  <li>When all items are ready, swipe the ticket off the screen — the table is notified the food is up.</li>
+  <li>Tickets older than your service threshold (default 15 min) turn red so they don't slip through.</li>
+</ul>
+</section>
+
+<!-- ═════════════ 8. PRODUCTS ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 08</span>Products &amp; Inventory</h1>
+<p class="lede">Your product catalogue is the foundation of every sale, every report, and every stock decision.</p>
+
+<h2>Adding a product</h2>
+<ol class="steps">
+  <li>Go to <code>Products</code> and tap <strong>+ New Product</strong>.</li>
+  <li>Fill in the basics: name, category, SKU / barcode, base price, cost.</li>
+  <li>Set the base unit (each, kg, lb, litre, etc.) — this is how stock is counted internally.</li>
+  <li>Set the opening stock quantity and a low-stock reorder threshold.</li>
+  <li>(Optional) Upload a photo. Square images render best on the POS grid.</li>
+  <li>(Optional) Toggle <strong>Sold by weight</strong> if this is a per-kg item (see Chapter 10).</li>
+  <li>Save. The product is immediately live in the POS.</li>
+</ol>
+
+<h2>The Edit Product dialog tabs</h2>
+<table>
+  <thead><tr><th>Tab</th><th>What it's for</th></tr></thead>
+  <tbody>
+    <tr><td>Details</td><td>Name, price, category, photo, SKU, stock thresholds.</td></tr>
+    <tr><td>Variants</td><td>Required choices like Size or Colour — customers must pick one.</td></tr>
+    <tr><td>Modifiers</td><td>Optional add-ons like extra cheese, no onions, side choice.</td></tr>
+    <tr><td>Locations</td><td>Per-store stock when you have multiple outlets (Chapter 11).</td></tr>
+    <tr><td>Pricing &amp; Units</td><td>Volume tiers and alternate purchase / sale units (Chapter 9).</td></tr>
+    <tr><td>History</td><td>Stock movement log: every sale, return, transfer, count, and adjustment.</td></tr>
+  </tbody>
+</table>
+
+<h2>Bulk import / export</h2>
+<p>Tap the <strong>•••</strong> menu on the Products page to <strong>Export</strong> your full catalogue to CSV, or <strong>Import</strong> from a CSV template. Use this for bulk price updates, opening stock loads, or migrating from another system.</p>
+
+<h2>Stock adjustments &amp; counts</h2>
+<ul>
+  <li><strong>Adjust</strong> — for one-off corrections (e.g. damaged stock, write-offs). Always requires a reason.</li>
+  <li><strong>Stock Count</strong> — full inventory recount; enter actual counted quantity per item, NEXXUS records the variance.</li>
+  <li><strong>Transfer</strong> — move stock between locations (Chapter 11).</li>
+</ul>
+</section>
+
+<!-- ═════════════ 9. PRICING & UNITS ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 09</span>Volume Pricing &amp; Units of Measure</h1>
+<p class="lede">Sell the same product wholesale, retail, by the case, or by the dozen — without ever creating duplicate items.</p>
+
+<h2>Volume pricing tiers</h2>
+<p>Reward customers who buy more by automatically charging a lower price per unit at higher quantities.</p>
+<ol class="steps">
+  <li>Open a product → <strong>Pricing &amp; Units</strong> tab.</li>
+  <li>Under <em>Volume Pricing</em>, tap <strong>+ Tier</strong>.</li>
+  <li>Enter <strong>Min Qty</strong>, <strong>Max Qty</strong> (leave blank for "and up"), and the <strong>Unit Price</strong> for that band.</li>
+  <li>Add as many tiers as you like; ranges must not overlap. The open-ended tier (blank max) must be the last one.</li>
+  <li>Tap <strong>Save Pricing</strong>. The POS applies the correct tier automatically as customers add quantity to the cart.</li>
+</ol>
+
+<div class="callout tip">
+<div class="callout-title">Example</div>
+<p>Bottled water with base price JMD 200:<br>
+Tier 1: <strong>1–11 → JMD 200</strong> &nbsp;·&nbsp; Tier 2: <strong>12–47 → JMD 180</strong> &nbsp;·&nbsp; Tier 3: <strong>48 and up → JMD 150</strong></p>
+</div>
+
+<h2>Multi-unit sales (Cases, Dozens, Six-packs)</h2>
+<p>If you sell the same product in multiple packaging — singles, six-packs, cases — set up alternate units instead of duplicating the SKU.</p>
+<ol class="steps">
+  <li>Open a product → <strong>Pricing &amp; Units</strong> → <em>Purchase / Sale Units</em> section.</li>
+  <li>Tap <strong>+ Unit</strong>. Enter the unit name (e.g. "Case") and how many <strong>base units</strong> are in one (e.g. Case = 24).</li>
+  <li>Toggle <strong>Buy</strong> for units used when receiving stock; <strong>Sell</strong> for units shown to cashiers.</li>
+  <li>Save Units. In the POS, tapping that product opens a <strong>Choose Unit</strong> popup with a coloured button per sale unit, each showing its computed price.</li>
+</ol>
+<p>Stock is always tracked in the base unit, so selling 2 Cases of 24 deducts 48 individual bottles. Volume tiers continue to apply on the total quantity in base units.</p>
+
+<h2>Editing or deleting tiers and units</h2>
+<p>Use the trash icon next to any row to remove it. Always tap <strong>Save</strong> after edits — closing the dialog without saving discards changes.</p>
+</section>
+
+<!-- ═════════════ 10. WEIGHT ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 10</span>Sell by Weight</h1>
+<p class="lede">For deli counters, butchers, produce shops, bulk bins, candy by the pound — anything priced by weight.</p>
+
+<h2>Setting up a weight-based product</h2>
+<ol class="steps">
+  <li>Create or edit the product. Set the <strong>Base Unit</strong> to <code>kg</code>, <code>lb</code>, <code>g</code>, or <code>oz</code>.</li>
+  <li>Toggle <strong>Sold by Weight</strong> to ON.</li>
+  <li>Set the price <em>per base unit</em> (e.g. JMD 850 per kg).</li>
+  <li>Save.</li>
+</ol>
+
+<h2>Selling at the register</h2>
+<ol class="steps">
+  <li>In the POS, tap the weight item.</li>
+  <li>The <strong>Enter Weight</strong> dialog opens. Type the weight from your scale display (e.g. 1.75).</li>
+  <li>Tap <strong>Add to Cart</strong>. The line shows <em>"Beef Brisket (1.75 kg) — JMD 1,487.50"</em>.</li>
+  <li>Adjust by tapping the line and entering a new weight if needed.</li>
+</ol>
+
+<div class="callout">
+<div class="callout-title">Connected scales</div>
+<p>If you have a USB or serial scale paired in <code>Hardware</code>, the weight field auto-populates from the scale reading. See Chapter 20 for setup.</p>
+</div>
+</section>
+
+<!-- ═════════════ 11. LOCATIONS ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 11</span>Multi-Location Stock</h1>
+<p class="lede">Run two storefronts, a warehouse and a shop, or a food truck and a commissary — manage all stock from one account.</p>
+
+<h2>Creating locations</h2>
+<ol class="steps">
+  <li>Go to <code>Locations</code> and tap <strong>+ New Location</strong>.</li>
+  <li>Enter the location name, address, and (optionally) a contact phone.</li>
+  <li>Mark one location as the <strong>Primary</strong> — sales default here unless overridden.</li>
+</ol>
+
+<h2>Per-location stock</h2>
+<p>On each product's <strong>Locations</strong> tab you can set a different stock level per outlet. Sales decrement only the location where the sale was rung up. Reports can be filtered per location.</p>
+
+<h2>Stock transfers</h2>
+<ol class="steps">
+  <li>Go to <code>Locations → Transfers</code>.</li>
+  <li>Tap <strong>+ New Transfer</strong>.</li>
+  <li>Choose the source and destination locations.</li>
+  <li>Add line items with quantities to move.</li>
+  <li>Mark <strong>In Transit</strong> when items leave; <strong>Received</strong> when they arrive (with the actual received quantity, in case of shrinkage).</li>
+</ol>
+</section>
+
+<!-- ═════════════ 12. CUSTOMERS ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 12</span>Customers &amp; Loyalty</h1>
+<p class="lede">Build a regulars list, track purchase history, and reward repeat business automatically.</p>
+
+<h2>Adding a customer</h2>
+<ol class="steps">
+  <li>Go to <code>Customers</code> and tap <strong>+ New Customer</strong>.</li>
+  <li>Enter at minimum a name; phone or email helps with lookup later.</li>
+  <li>(Optional) Add a tax ID for invoicing, a credit limit for AR, and notes (e.g. "prefers stout").</li>
+</ol>
+
+<h2>Attaching a customer to a sale</h2>
+<p>In the POS, tap <strong>Customer</strong> in the cart action bar. Search by name or phone. Once selected, the customer's name appears at the top of the cart and they earn loyalty points on the sale.</p>
+
+<h2>Loyalty</h2>
+<table>
+  <thead><tr><th>Action</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td>Customer earns</td><td>1 point per JMD 10 of subtotal (before tax)</td></tr>
+    <tr><td>Customer redeems</td><td>100 points = JMD 1.00 off the next sale</td></tr>
+    <tr><td>Refund</td><td>Earned points are reversed automatically</td></tr>
+    <tr><td>Manual adjustment</td><td>Open the customer → tap <strong>Adjust Points</strong>; always include a reason</td></tr>
+  </tbody>
+</table>
+
+<h2>Customer history</h2>
+<p>Tap any customer to see lifetime spend, average ticket, last visit date, and a complete list of past orders — tap any order for the full receipt detail.</p>
+</section>
+
+<!-- ═════════════ 13. RECIPES ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 13</span>Recipes, Ingredients &amp; Production</h1>
+<p class="lede">For restaurants, bakeries, and manufacturers — track raw ingredients and have NEXXUS automatically deduct them as finished items are sold or produced.</p>
+
+<h2>Ingredients (raw materials)</h2>
+<ol class="steps">
+  <li>Go to <code>Ingredients</code> and tap <strong>+ New Ingredient</strong>.</li>
+  <li>Enter the name, base unit (e.g. g, ml, each), cost per unit, and current stock.</li>
+  <li>Set a low-stock threshold for reorder alerts.</li>
+</ol>
+
+<h2>Recipes (linking finished products to ingredients)</h2>
+<ol class="steps">
+  <li>Go to <code>Recipes → + New Recipe</code>.</li>
+  <li>Pick the <strong>finished product</strong> (e.g. "Beef Burger").</li>
+  <li>Add ingredient lines — for each, choose the ingredient and the quantity used per one finished unit (e.g. 150 g beef, 1 bun, 2 slices cheese).</li>
+  <li>NEXXUS computes the recipe cost so you can compare it to the sell price.</li>
+  <li>Save. From now on, every sale of "Beef Burger" deducts the recipe ingredients automatically.</li>
+</ol>
+
+<h2>Production runs</h2>
+<p>For pre-made batches (e.g. baking 60 loaves overnight, bottling 200 hot sauces), use Production:</p>
+<ol class="steps">
+  <li>Go to <code>Production</code> and tap <strong>+ New Run</strong>.</li>
+  <li>Choose the finished product and the quantity produced.</li>
+  <li>Confirm the recipe ingredients to consume.</li>
+  <li>Mark the run <strong>Complete</strong>. Ingredients are deducted, finished stock is increased, and a journal entry posts the cost.</li>
+</ol>
+</section>
+
+<!-- ═════════════ 14. VENDORS / AP ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 14</span>Vendors, Purchases &amp; Accounts Payable</h1>
+<p class="lede">Track who you owe, what's coming in, and how much each supplier costs you over time.</p>
+
+<h2>Vendors</h2>
+<p>Under <code>Vendors</code>, add each supplier with their contact info, payment terms (Net 30, Net 60, COD), and tax ID.</p>
+
+<h2>Recording a purchase</h2>
+<ol class="steps">
+  <li>Go to <code>Purchases → + New Purchase</code>.</li>
+  <li>Pick the vendor.</li>
+  <li>Add line items: product, quantity received, unit cost, and (optionally) tax.</li>
+  <li>Enter invoice number, invoice date, and due date.</li>
+  <li>Save as <strong>Draft</strong> to come back to, or <strong>Post</strong> to commit. Posting:
+    <ul>
+      <li>Increases stock by the received quantities</li>
+      <li>Updates the moving-average cost of each item</li>
+      <li>Creates an Accounts Payable entry under the vendor</li>
+    </ul>
+  </li>
+</ol>
+
+<h2>Raw-material purchases</h2>
+<p>For ingredient stock (rather than finished products), use <code>Raw Material Purchases</code> — same workflow, but the items are picked from your Ingredients list.</p>
+
+<h2>Paying bills</h2>
+<ol class="steps">
+  <li>Go to <code>Accounts Payable</code>.</li>
+  <li>Find the open bill and tap <strong>Pay</strong>.</li>
+  <li>Choose the payment method (cash, bank transfer, etc.) and enter the amount.</li>
+  <li>Partial payments are supported — the bill stays open with a reduced balance.</li>
+</ol>
+</section>
+
+<!-- ═════════════ 15. AR ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 15</span>Accounts Receivable &amp; Credit Sales</h1>
+<p class="lede">Sell on credit, send statements, and track outstanding balances per customer.</p>
+
+<h2>Enabling credit for a customer</h2>
+<ol class="steps">
+  <li>Open the customer's profile.</li>
+  <li>Set a <strong>Credit Limit</strong> (the most they're allowed to owe at any time).</li>
+  <li>Set <strong>Payment Terms</strong> (Net 7, Net 30, etc.).</li>
+</ol>
+
+<h2>Selling on credit</h2>
+<p>In the POS, after attaching the customer, choose <strong>Credit</strong> as the payment method (it appears only for customers with credit enabled). The sale completes and an AR entry is created.</p>
+
+<div class="callout warn">
+<div class="callout-title">Over-limit warning</div>
+<p>If the new sale would exceed the customer's credit limit, NEXXUS warns the cashier. A manager can override at the prompt with their PIN.</p>
+</div>
+
+<h2>Receiving a payment</h2>
+<ol class="steps">
+  <li>Go to <code>Accounts Receivable</code>.</li>
+  <li>Find the customer and tap <strong>Receive Payment</strong>.</li>
+  <li>Enter the amount and method. The payment is applied to the oldest open invoices first (FIFO) by default.</li>
+</ol>
+
+<h2>Aging report</h2>
+<p>The AR <strong>Aging</strong> view shows balances bucketed by days overdue (Current, 1–30, 31–60, 61–90, 90+). Tap any bucket to drill into specific customers.</p>
+</section>
+
+<!-- ═════════════ 16. REPORTS ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 16</span>Reports &amp; Accounting</h1>
+<p class="lede">Every transaction in NEXXUS POS posts to a real double-entry general ledger, so your financial reports are always accurate and audit-ready.</p>
+
+<h2>Operational reports</h2>
+<ul>
+  <li><strong>Sales Summary</strong> — daily/weekly/monthly totals, with comparison to previous period.</li>
+  <li><strong>Sales by Product / Category / Staff / Location</strong> — slice your numbers however you need.</li>
+  <li><strong>Z-Reports</strong> — end-of-shift summaries (Chapter 5).</li>
+  <li><strong>Inventory Valuation</strong> — current stock value at cost.</li>
+  <li><strong>Low Stock</strong> — items at or below their reorder point.</li>
+  <li><strong>Tax Report</strong> — tax collected by rate and period for filing.</li>
+</ul>
+
+<h2>Financial reports</h2>
+<table>
+  <thead><tr><th>Report</th><th>What it shows</th></tr></thead>
+  <tbody>
+    <tr><td>Profit &amp; Loss</td><td>Revenue, cost of goods sold, expenses, and net profit for the period.</td></tr>
+    <tr><td>Balance Sheet</td><td>Assets, liabilities, and equity at a point in time.</td></tr>
+    <tr><td>Trial Balance</td><td>All ledger accounts with their debit / credit balances — proves the books balance.</td></tr>
+    <tr><td>General Ledger</td><td>Drill into any account to see every journal entry that hit it.</td></tr>
+    <tr><td>Chart of Accounts</td><td>Master list of all your accounts (assets, liabilities, equity, revenue, expenses).</td></tr>
+  </tbody>
+</table>
+
+<h2>QuickBooks integration</h2>
+<p>If you connect QuickBooks Online under <code>Settings → Integrations</code>, every closed sale syncs as a Sales Receipt to QuickBooks automatically. You can also do a one-click historical sync for any date range.</p>
+
+<h2>Exporting</h2>
+<p>Most reports have an <strong>Export</strong> button — choose CSV (for Excel) or PDF (for sharing/printing).</p>
+</section>
+
+<!-- ═════════════ 17. STAFF ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 17</span>Staff, Roles &amp; Permissions</h1>
+<p class="lede">Give every team member the right access — no more, no less.</p>
+
+<h2>Adding a staff member</h2>
+<ol class="steps">
+  <li>Go to <code>Staff → + New Staff</code>.</li>
+  <li>Enter their name, email (optional, for sign-in), and a 4-digit PIN.</li>
+  <li>Assign a role — <em>Cashier</em>, <em>Manager</em>, <em>Admin</em>, or any custom role you create.</li>
+  <li>(Optional) Restrict them to specific locations.</li>
+  <li>Save. They can now sign in with their PIN at the POS, and full email/password if assigned.</li>
+</ol>
+
+<h2>Default roles</h2>
+<table>
+  <thead><tr><th>Role</th><th>Typical permissions</th></tr></thead>
+  <tbody>
+    <tr><td>Cashier</td><td>Take sales, hold/recall carts, attach customers. No refunds, no settings.</td></tr>
+    <tr><td>Manager</td><td>Cashier abilities + refunds, voids, discounts, open/close registers, view reports.</td></tr>
+    <tr><td>Admin</td><td>Everything: products, settings, staff, billing.</td></tr>
+    <tr><td>Kitchen</td><td>Kitchen Display only.</td></tr>
+  </tbody>
+</table>
+
+<h2>Custom roles</h2>
+<p>Under <code>Settings → Roles</code>, create custom roles by ticking exactly which permissions they have (e.g. "Inventory Clerk" with Products + Stock Counts but no sales access).</p>
+
+<h2>PIN policy</h2>
+<p>For security, NEXXUS requires unique 4-digit PINs across staff. PINs are hashed and never stored in plain text.</p>
+</section>
+
+<!-- ═════════════ 18. SETTINGS ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 18</span>Settings &amp; Payment Methods</h1>
+<p class="lede">Tailor NEXXUS POS to your business — from your logo on receipts to the exact list of accepted payment methods.</p>
+
+<h2>General settings</h2>
+<ul>
+  <li><strong>Business profile</strong> — name, address, logo, currency, tax rate.</li>
+  <li><strong>Receipt template</strong> — header text, footer message ("Thanks for shopping!"), what info to include.</li>
+  <li><strong>Tax</strong> — single rate or per-product / per-category overrides.</li>
+  <li><strong>Loyalty</strong> — turn on/off, change earn / redeem ratios.</li>
+  <li><strong>Tipping</strong> — enable suggested tip % buttons on the payment screen.</li>
+</ul>
+
+<h2>Payment Methods</h2>
+<p>Out of the box, NEXXUS POS includes <strong>Cash</strong> and <strong>Card</strong>. Add as many custom methods as you need (e.g. Bank Transfer, Lynk, GoTap, Cheque).</p>
+
+<ol class="steps">
+  <li>Go to <code>Settings → Payment Methods</code>.</li>
+  <li>Tap <strong>+ Add Method</strong>. Enter a display name (shown on the payment screen).</li>
+  <li>Choose a <strong>Type</strong> — this controls behaviour:
+    <ul>
+      <li><em>Cash</em> — opens cash-tendered input, calculates change.</li>
+      <li><em>Card</em> — single-tap charge.</li>
+      <li><em>Other</em> — single-tap, optional reference field.</li>
+    </ul>
+  </li>
+  <li>Tick <strong>Enabled</strong> to make it appear in the POS.</li>
+  <li>(Optional) Tick <strong>Default</strong> — pre-selected on the payment screen.</li>
+  <li>Drag the row to reorder. Save.</li>
+</ol>
+
+<div class="callout warn">
+<div class="callout-title">At least one method must be enabled</div>
+<p>You can't disable your only enabled method. Add another first, then disable.</p>
+</div>
+</section>
+
+<!-- ═════════════ 19. SUBSCRIPTION ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 19</span>Subscription &amp; Billing</h1>
+<p class="lede">Manage your plan, payment method, and renewal — all from inside the app.</p>
+
+<h2>Your trial</h2>
+<p>New accounts start with a 14-day free trial. The dashboard shows days remaining; subscribe before it ends to keep selling without interruption.</p>
+
+<h2>Choosing a plan</h2>
+<ol class="steps">
+  <li>Go to <code>Subscription</code>.</li>
+  <li>Compare available plans — Starter, Growth, Pro — by feature and price.</li>
+  <li>Tap <strong>Subscribe</strong> on the plan you want.</li>
+  <li>Enter your card details (PowerTranz / FAC, securely processed) or pay via PayPal.</li>
+  <li>Confirmation email is sent immediately. The dashboard banner clears.</li>
+</ol>
+
+<h2>If your subscription expires</h2>
+<p>NEXXUS POS goes into <strong>read-only mode</strong>: you can still view your data, run reports, and export, but new sales and edits are blocked. A banner at the top reminds you to renew. Settle the renewal and you're back to normal in seconds.</p>
+
+<h2>Cancelling</h2>
+<p>Cancel any time from <code>Subscription → Cancel</code>. You retain full access until the end of your current billing period.</p>
+</section>
+
+<!-- ═════════════ 20. HARDWARE ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 20</span>Hardware, Scales &amp; Receipts</h1>
+<p class="lede">Connect physical devices to make checkout faster and your shop floor more efficient.</p>
+
+<h2>Receipt printers</h2>
+<p>NEXXUS POS supports any browser-printable thermal printer (80 mm, 58 mm). For fully automatic printing without the browser dialog, we recommend an ESC/POS-compatible network printer paired via <code>Hardware → Printers → + Add Printer</code>.</p>
+
+<h2>Cash drawers</h2>
+<p>Most cash drawers are kicked open by the receipt printer (RJ-11 cable). Once your printer is configured, the drawer opens automatically on cash transactions.</p>
+
+<h2>Barcode scanners</h2>
+<p>Plug in any USB / Bluetooth scanner that emulates a keyboard. The POS search bar autofocuses on entry, so scans go straight into product lookup. No setup needed.</p>
+
+<h2>Weighing scales</h2>
+<p>Connect a USB or serial scale and pair it under <code>Hardware → Scales → + Add Scale</code>. Configure baud rate (typically 9600), units (kg/lb), and tare behaviour. The Weight dialog will then auto-fill from the live reading.</p>
+
+<h2>Customer-facing display</h2>
+<p>Open a second browser tab on a side-facing screen and navigate to <code>/store</code>. It mirrors the cart in real time so customers can verify their order as it's being rung up.</p>
+</section>
+
+<!-- ═════════════ 21. TOPUP ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 21</span>Phone Top-Up</h1>
+<p class="lede">Sell mobile phone credit (Digicel, FLOW, others) directly from the POS — powered by Ding Connect.</p>
+
+<h2>One-time setup</h2>
+<p>Top-up needs to be activated by your administrator. Once enabled, a <strong>Top-Up</strong> button appears on the POS action bar.</p>
+
+<h2>Selling top-up</h2>
+<ol class="steps">
+  <li>In the POS, tap <strong>Top-Up</strong>.</li>
+  <li>Enter the customer's phone number. NEXXUS detects the carrier automatically.</li>
+  <li>Choose a denomination (e.g. JMD 100, 200, 500, 1000).</li>
+  <li>Tap <strong>Send</strong>. Top-up is delivered in seconds; a receipt prints with the transaction confirmation.</li>
+  <li>The sale is recorded as a regular line in your reports under "Top-Up".</li>
+</ol>
+</section>
+
+<!-- ═════════════ 22. STORE ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 22</span>Online Store</h1>
+<p class="lede">Let customers browse your menu and place orders from any web browser.</p>
+
+<h2>Enabling the store</h2>
+<ol class="steps">
+  <li>Go to <code>Settings → Online Store</code>.</li>
+  <li>Toggle the store ON.</li>
+  <li>Choose which categories and products are visible online.</li>
+  <li>Set ordering options: Pickup, Delivery, or both. Configure delivery zones and minimums.</li>
+  <li>Share your store URL — it's typically <code>yourbusiness.nexxus.app/store</code>.</li>
+</ol>
+
+<h2>Order flow</h2>
+<p>When a customer places an order online, it appears in the <code>Orders</code> screen with a <strong>NEW</strong> badge. Accept it to start the kitchen ticket, or reject with a reason. Customers receive automatic email updates.</p>
+</section>
+
+<!-- ═════════════ 23. OFFLINE ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 23</span>Offline Mode &amp; Syncing</h1>
+<p class="lede">Internet down? You can keep selling. NEXXUS POS queues sales locally and syncs when you're back online.</p>
+
+<h2>How it works</h2>
+<ul>
+  <li>The PWA caches your product catalogue, prices, and configuration on every successful load.</li>
+  <li>If the network drops, an orange <strong>Offline</strong> banner appears at the top.</li>
+  <li>You can continue ringing up sales — they're stored in the device's local database.</li>
+  <li>When connectivity returns, the queued sales are submitted in order. The banner shows "Syncing N orders…" until done.</li>
+</ul>
+
+<div class="callout warn">
+<div class="callout-title">Limits while offline</div>
+<p>You cannot create new products, change settings, or process refunds while offline. Stock checks use the last-known quantities; if two devices both sell the same item offline you may end up briefly negative until they sync.</p>
+</div>
+</section>
+
+<!-- ═════════════ 24. AUDIT ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 24</span>Audit Trail</h1>
+<p class="lede">Every sensitive action is logged — who did it, when, and what changed.</p>
+
+<h2>What's tracked</h2>
+<ul>
+  <li>Sales, refunds, voids, discounts</li>
+  <li>Product creation, deletion, price changes</li>
+  <li>Stock adjustments, transfers, counts</li>
+  <li>Cash drawer opens, cash in / out, drops, closes</li>
+  <li>Staff sign-ins, role changes, PIN resets</li>
+  <li>Settings changes</li>
+</ul>
+
+<h2>Reviewing the trail</h2>
+<p>Go to <code>Audit</code>. Filter by user, date range, or action type. Tap any row to see before / after values.</p>
+<p>Audit log entries cannot be edited or deleted — they're a permanent record for your protection.</p>
+</section>
+
+<!-- ═════════════ 25. TROUBLESHOOTING ═════════════ -->
+<section>
+<h1 class="chapter"><span class="chnum">Chapter 25</span>Troubleshooting &amp; Support</h1>
+<p class="lede">Quick fixes for the most common issues, plus how to reach us if you need more help.</p>
+
+<h2>Common issues</h2>
+<table>
+  <thead><tr><th>Symptom</th><th>Try this first</th></tr></thead>
+  <tbody>
+    <tr><td>Page won't load / blank screen</td><td>Hard-refresh the browser (Ctrl+Shift+R / Cmd+Shift+R). Check internet. Try another tab to <code>/dashboard</code>.</td></tr>
+    <tr><td>"Subscription expired" banner won't go away</td><td>Visit <code>Subscription</code>, complete payment. The banner clears within 30 seconds.</td></tr>
+    <tr><td>Receipt printer not printing</td><td>Print a test page from <code>Hardware → Printers</code>. Check paper, USB / network connection.</td></tr>
+    <tr><td>Barcode scanner sends garbled text</td><td>Make sure the cursor is in the search bar. Reconfigure the scanner to "USB-HID Keyboard" mode.</td></tr>
+    <tr><td>Sale was charged but no receipt printed</td><td>Reprint from <code>Orders → [order] → Reprint Receipt</code>.</td></tr>
+    <tr><td>Stock looks wrong</td><td>Open the product → <strong>History</strong> tab to see every movement; do a Stock Count to reset.</td></tr>
+    <tr><td>Forgot admin password</td><td>Use Forgot Password on the sign-in screen, or contact support.</td></tr>
+    <tr><td>"Insufficient stock" blocks a sale</td><td>Adjust the cart, do a Stock Count, or toggle <strong>Allow Overselling</strong> on that product if appropriate.</td></tr>
+  </tbody>
+</table>
+
+<h2>Getting help</h2>
+<div class="qref">
+  <h4>Contact MicroBooks Support</h4>
+  <dl>
+    <dt>Website</dt><dd>microbookspos.com</dd>
+    <dt>Email</dt><dd>support@microbookssolutions.com</dd>
+    <dt>In-app chat</dt><dd>Tap the chat bubble bottom-right of any screen</dd>
+    <dt>Hours</dt><dd>Monday–Saturday, 8am–8pm (EST)</dd>
+  </dl>
+</div>
+
+<div class="callout tip">
+<div class="callout-title">Before contacting support</div>
+<p>Have your business name (or tenant ID), the device you're on, the exact error message, and the rough time of the issue. It helps us help you faster.</p>
+</div>
+
+<hr>
+
+<p style="text-align: center; color: #6b7280; margin-top: 30pt; font-size: 9.5pt;">
+  © 2026 MicroBooks Solutions Ltd. &nbsp;·&nbsp; NEXXUS POS Edition 2026.04 &nbsp;·&nbsp; All rights reserved.
+</p>
+</section>
+
+</body>
+</html>
