@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { logAudit } from "./audit";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable } from "@workspace/db";
 import { applyVolumePricing } from "../lib/pricing";
 import { getSetting } from "./settings";
 import { logger } from "../lib/logger";
@@ -21,6 +21,26 @@ class InsufficientStockError extends Error {
   ) {
     super(`Insufficient stock for ${productName}`);
     this.name = "InsufficientStockError";
+  }
+}
+
+/**
+ * Thrown when selling a composite (bundle) parent fails because one of
+ * its child components is short on stock. Distinct from
+ * InsufficientStockError so the POS can show a clearer message — the
+ * customer scanned the parent SKU but it's the *child* that ran out.
+ */
+class InsufficientComponentStockError extends Error {
+  constructor(
+    public parentProductId: number,
+    public parentName: string,
+    public childProductId: number | null,
+    public childName: string,
+    public available: number,
+    public requested: number,
+  ) {
+    super(`Insufficient component stock for ${parentName}`);
+    this.name = "InsufficientComponentStockError";
   }
 }
 
@@ -342,9 +362,133 @@ router.post("/orders", async (req, res): Promise<void> => {
   let order: typeof ordersTable.$inferSelect;
   try {
     order = await db.transaction(async (tx) => {
+      // 0. Pre-fetch structure type for every product in the order so
+      //    the loops below can dispatch on simple vs composite without
+      //    issuing N extra round-trips. Composite parents have stock
+      //    deducted from their *children*, not themselves.
+      const productIds = Array.from(new Set(resolvedItems.map(i => i.productId)));
+      const productMeta = productIds.length === 0 ? [] : await tx
+        .select({
+          id: productsTable.id,
+          structureType: productsTable.structureType,
+        })
+        .from(productsTable)
+        .where(and(
+          inArray(productsTable.id, productIds),
+          eq(productsTable.tenantId, tenantId),
+        ));
+      const metaMap = new Map(productMeta.map(p => [p.id, p]));
+
+      const compositeParentIds = productMeta
+        .filter(p => p.structureType === "composite")
+        .map(p => p.id);
+      const componentsByParent = new Map<number, Array<{
+        childProductId: number;
+        quantityRequired: number;
+        childName: string;
+      }>>();
+      if (compositeParentIds.length > 0) {
+        const compRows = await tx
+          .select({
+            parentId: compositeProductComponentsTable.parentProductId,
+            childId: compositeProductComponentsTable.childProductId,
+            qty: compositeProductComponentsTable.quantityRequired,
+            childName: productsTable.name,
+          })
+          .from(compositeProductComponentsTable)
+          .leftJoin(productsTable, eq(productsTable.id, compositeProductComponentsTable.childProductId))
+          .where(and(
+            eq(compositeProductComponentsTable.tenantId, tenantId),
+            inArray(compositeProductComponentsTable.parentProductId, compositeParentIds),
+          ));
+        for (const r of compRows) {
+          const arr = componentsByParent.get(r.parentId) ?? [];
+          arr.push({
+            childProductId: r.childId,
+            quantityRequired: r.qty,
+            childName: r.childName ?? "(deleted product)",
+          });
+          componentsByParent.set(r.parentId, arr);
+        }
+      }
+
       // 1. Atomically decrement stock per item BEFORE creating the order.
       //    This is the only place that enforces "no negative stock".
+      //    For composite parents we decrement each child's stock instead,
+      //    multiplied by both the cart quantity and the per-component
+      //    quantityRequired. A single failing child rolls back the whole
+      //    order.
       for (const item of resolvedItems) {
+        const isComposite = metaMap.get(item.productId)?.structureType === "composite";
+
+        if (isComposite) {
+          const components = componentsByParent.get(item.productId) ?? [];
+          if (components.length === 0) {
+            // Selling a "composite" with no components configured would
+            // silently bypass all stock guards. Fail loud instead.
+            logger.warn(
+              { tenantId, productId: item.productId },
+              "[composite] sale rejected — no components configured",
+            );
+            throw new InsufficientComponentStockError(
+              item.productId,
+              item.productName,
+              null,
+              "(no components configured)",
+              0,
+              1,
+            );
+          }
+          for (const comp of components) {
+            const need = comp.quantityRequired * item.quantity;
+            if (allowOverselling) {
+              await tx
+                .update(productsTable)
+                .set({ stockCount: sql`${productsTable.stockCount} - ${need}` })
+                .where(and(
+                  eq(productsTable.id, comp.childProductId),
+                  eq(productsTable.tenantId, tenantId),
+                ));
+            } else {
+              const updated = await tx
+                .update(productsTable)
+                .set({
+                  stockCount: sql`${productsTable.stockCount} - ${need}`,
+                  inStock: sql`CASE WHEN ${productsTable.stockCount} - ${need} <= 0 THEN false ELSE ${productsTable.inStock} END`,
+                })
+                .where(and(
+                  eq(productsTable.id, comp.childProductId),
+                  eq(productsTable.tenantId, tenantId),
+                  gte(productsTable.stockCount, need),
+                ))
+                .returning({ stockCount: productsTable.stockCount });
+
+              if (updated.length === 0) {
+                const [cur] = await tx
+                  .select({ stockCount: productsTable.stockCount })
+                  .from(productsTable)
+                  .where(and(
+                    eq(productsTable.id, comp.childProductId),
+                    eq(productsTable.tenantId, tenantId),
+                  ));
+                logger.info(
+                  { tenantId, parentId: item.productId, childId: comp.childProductId, requested: need, available: cur?.stockCount ?? 0 },
+                  "[composite] sale blocked by INSUFFICIENT_COMPONENT_STOCK",
+                );
+                throw new InsufficientComponentStockError(
+                  item.productId,
+                  item.productName,
+                  comp.childProductId,
+                  comp.childName,
+                  cur?.stockCount ?? 0,
+                  need,
+                );
+              }
+            }
+          }
+          continue;
+        }
+
         if (allowOverselling) {
           // Unconditional deduction; no guard.
           await tx
@@ -446,6 +590,61 @@ router.post("/orders", async (req, res): Promise<void> => {
 
       // 4. Per-item stock-movement audit + location inventory + recipe BOM.
       for (const item of resolvedItems) {
+        const isComposite = metaMap.get(item.productId)?.structureType === "composite";
+
+        if (isComposite) {
+          // Audit/decrement happens at the *child* level — the parent
+          // has no stock and is not tracked in stock_movements. Each
+          // child gets its own composite_sale row so reports can
+          // attribute the deduction back to the parent SKU.
+          const components = componentsByParent.get(item.productId) ?? [];
+          for (const comp of components) {
+            const used = comp.quantityRequired * item.quantity;
+            const [afterSale] = await tx
+              .select({ stockCount: productsTable.stockCount })
+              .from(productsTable)
+              .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
+            await tx.insert(stockMovementsTable).values({
+              tenantId,
+              productId: comp.childProductId,
+              type: "composite_sale",
+              quantity: -used,
+              balanceAfter: afterSale?.stockCount ?? 0,
+              referenceType: "order",
+              referenceId: created.id,
+              notes: `Sold as ${item.productName} – ${orderNumber}`,
+            });
+            if (parsed.data.locationId) {
+              await tx
+                .update(locationInventoryTable)
+                .set({
+                  stockCount: allowOverselling
+                    ? sql`${locationInventoryTable.stockCount} - ${used}`
+                    : sql`GREATEST(0, ${locationInventoryTable.stockCount} - ${used})`,
+                  updatedAt: new Date(),
+                })
+                .where(and(
+                  eq(locationInventoryTable.locationId, parsed.data.locationId),
+                  eq(locationInventoryTable.productId, comp.childProductId),
+                ));
+            }
+          }
+          await logAudit({
+            tenantId,
+            staffId: parsed.data.staffId,
+            action: "order.composite_sale",
+            entityType: "order",
+            entityId: created.id,
+            details: {
+              parentProductId: item.productId,
+              parentName: item.productName,
+              parentQuantity: item.quantity,
+              componentCount: components.length,
+            },
+          });
+          continue;
+        }
+
         const [afterSale] = await tx
           .select({ stockCount: productsTable.stockCount })
           .from(productsTable)
@@ -518,6 +717,19 @@ router.post("/orders", async (req, res): Promise<void> => {
         message: `Only ${e.available} of "${e.productName}" available (you tried to sell ${e.requested})`,
         productId: e.productId,
         productName: e.productName,
+        available: e.available,
+        requested: e.requested,
+      });
+      return;
+    }
+    if (e instanceof InsufficientComponentStockError) {
+      res.status(409).json({
+        error: "INSUFFICIENT_COMPONENT_STOCK",
+        message: `Cannot sell "${e.parentName}": only ${e.available} of "${e.childName}" available (need ${e.requested})`,
+        parentProductId: e.parentProductId,
+        parentName: e.parentName,
+        childProductId: e.childProductId,
+        childName: e.childName,
         available: e.available,
         requested: e.requested,
       });
@@ -661,7 +873,94 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 
   if (parsed.data.status === "refunded" || parsed.data.status === "voided") {
     const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+    const itemProductIds = Array.from(new Set(items.map(i => i.productId)));
+
+    // Pre-fetch structure type so refunds restore stock to the right
+    // place — composite parents return product to their *children*,
+    // simple products restore their own stock_count.
+    const productMeta = itemProductIds.length === 0 ? [] : await db
+      .select({ id: productsTable.id, structureType: productsTable.structureType })
+      .from(productsTable)
+      .where(and(
+        inArray(productsTable.id, itemProductIds),
+        eq(productsTable.tenantId, tenantId),
+      ));
+    const metaMap = new Map(productMeta.map(p => [p.id, p]));
+
+    const compositeIds = productMeta.filter(p => p.structureType === "composite").map(p => p.id);
+    const componentsByParent = new Map<number, Array<{
+      childProductId: number;
+      quantityRequired: number;
+    }>>();
+    if (compositeIds.length > 0) {
+      const compRows = await db
+        .select({
+          parentId: compositeProductComponentsTable.parentProductId,
+          childId: compositeProductComponentsTable.childProductId,
+          qty: compositeProductComponentsTable.quantityRequired,
+        })
+        .from(compositeProductComponentsTable)
+        .where(and(
+          eq(compositeProductComponentsTable.tenantId, tenantId),
+          inArray(compositeProductComponentsTable.parentProductId, compositeIds),
+        ));
+      for (const r of compRows) {
+        const arr = componentsByParent.get(r.parentId) ?? [];
+        arr.push({ childProductId: r.childId, quantityRequired: r.qty });
+        componentsByParent.set(r.parentId, arr);
+      }
+    }
+
+    const movementType = parsed.data.status === "refunded" ? "refund" : "void";
+    const compositeMovementType = parsed.data.status === "refunded" ? "composite_refund" : "composite_void";
+    const noteVerb = parsed.data.status === "refunded" ? "Refund" : "Void";
+
     for (const item of items) {
+      const isComposite = metaMap.get(item.productId)?.structureType === "composite";
+
+      if (isComposite) {
+        const components = componentsByParent.get(item.productId) ?? [];
+        for (const comp of components) {
+          const restored = comp.quantityRequired * item.quantity;
+          await db
+            .update(productsTable)
+            .set({
+              stockCount: sql`${productsTable.stockCount} + ${restored}`,
+              inStock: true,
+            })
+            .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
+
+          const [afterReturn] = await db
+            .select({ stockCount: productsTable.stockCount })
+            .from(productsTable)
+            .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
+          await db.insert(stockMovementsTable).values({
+            tenantId,
+            productId: comp.childProductId,
+            type: compositeMovementType,
+            quantity: restored,
+            balanceAfter: afterReturn?.stockCount ?? 0,
+            referenceType: "order",
+            referenceId: order.id,
+            notes: `${noteVerb} of ${item.productName} – Order #${order.id}`,
+          });
+
+          if (order.locationId) {
+            await db
+              .update(locationInventoryTable)
+              .set({
+                stockCount: sql`${locationInventoryTable.stockCount} + ${restored}`,
+                updatedAt: new Date(),
+              })
+              .where(and(
+                eq(locationInventoryTable.locationId, order.locationId),
+                eq(locationInventoryTable.productId, comp.childProductId),
+              ));
+          }
+        }
+        continue;
+      }
+
       await db
         .update(productsTable)
         .set({
@@ -677,13 +976,26 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
       await db.insert(stockMovementsTable).values({
         tenantId,
         productId: item.productId,
-        type: parsed.data.status === "refunded" ? "refund" : "void",
+        type: movementType,
         quantity: item.quantity,
         balanceAfter: afterReturn?.stockCount ?? 0,
         referenceType: "order",
         referenceId: order.id,
-        notes: `${parsed.data.status === "refunded" ? "Refund" : "Void"} – Order #${order.id}`,
+        notes: `${noteVerb} – Order #${order.id}`,
       });
+
+      if (order.locationId) {
+        await db
+          .update(locationInventoryTable)
+          .set({
+            stockCount: sql`${locationInventoryTable.stockCount} + ${item.quantity}`,
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(locationInventoryTable.locationId, order.locationId),
+            eq(locationInventoryTable.productId, item.productId),
+          ));
+      }
     }
   }
 

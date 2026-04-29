@@ -20,6 +20,17 @@ export const ProductUnitOfMeasure = {
   g: "g",
 } as const;
 
+/**
+ * Product structure. Composite parents derive cost from child components.
+ */
+export type ProductStructureType =
+  (typeof ProductStructureType)[keyof typeof ProductStructureType];
+
+export const ProductStructureType = {
+  simple: "simple",
+  composite: "composite",
+} as const;
+
 export interface Product {
   id: number;
   name: string;
@@ -32,8 +43,14 @@ export interface Product {
   stockCount: number;
   soldByWeight: boolean;
   unitOfMeasure?: ProductUnitOfMeasure;
+  /** Per-unit acquisition cost. Used for COGS / margin reports. */
+  costPrice?: number | null;
+  /** Product structure. Composite parents derive cost from child components. */
+  structureType: ProductStructureType;
   hasVariants: boolean;
   hasModifiers: boolean;
+  /** True when this product has at least one composite component row. */
+  isComposite: boolean;
   createdAt: string;
 }
 
@@ -47,6 +64,14 @@ export const CreateProductBodyUnitOfMeasure = {
   g: "g",
 } as const;
 
+export type CreateProductBodyStructureType =
+  (typeof CreateProductBodyStructureType)[keyof typeof CreateProductBodyStructureType];
+
+export const CreateProductBodyStructureType = {
+  simple: "simple",
+  composite: "composite",
+} as const;
+
 export interface CreateProductBody {
   name: string;
   description?: string;
@@ -58,6 +83,64 @@ export interface CreateProductBody {
   stockCount?: number;
   soldByWeight?: boolean;
   unitOfMeasure?: CreateProductBodyUnitOfMeasure;
+  costPrice?: number | null;
+  structureType?: CreateProductBodyStructureType;
+}
+
+/**
+ * One child product inside a composite (bundle) parent.
+ */
+export interface CompositeComponent {
+  id: number;
+  parentProductId: number;
+  childProductId: number;
+  childName: string;
+  childSku?: string | null;
+  childCostPrice?: number | null;
+  quantityRequired: number;
+  unitId?: number | null;
+  /** childCostPrice * quantityRequired (0 when childCostPrice is null) */
+  lineCost: number;
+}
+
+export interface CompositeComponentInput {
+  childProductId: number;
+  quantityRequired: number;
+  unitId?: number | null;
+}
+
+export interface SaveCompositeComponentsBody {
+  components: CompositeComponentInput[];
+}
+
+/**
+ * Live cost / margin breakdown for a composite parent.
+ */
+export interface CompositeCost {
+  productId: number;
+  sellingPrice: number;
+  derivedCost: number;
+  grossProfit: number;
+  grossMarginPct: number;
+  components: CompositeComponent[];
+}
+
+export interface AvailableCompositeComponent {
+  childProductId: number;
+  childName: string;
+  stock: number;
+  quantityRequired: number;
+  possibleBundles: number;
+}
+
+/**
+ * How many bundles can be assembled from current child stock.
+ */
+export interface AvailableComposite {
+  productId: number;
+  /** MIN(floor(child.stock / quantityRequired)) across components. */
+  available: number;
+  components: AvailableCompositeComponent[];
 }
 
 export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
@@ -740,6 +823,13 @@ export interface EmailSentResponse {
 export type ListProductsParams = {
   category?: string;
   search?: string;
+};
+
+export type GetAvailableCompositeParams = {
+  /**
+   * Optional — when set, calculation uses location_inventory instead of global product stock.
+   */
+  locationId?: number;
 };
 
 export type ListOrdersParams = {

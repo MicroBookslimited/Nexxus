@@ -587,6 +587,16 @@ export function POS() {
     requested: number;
   } | null>(null);
 
+  // ── Insufficient component stock (composite bundle) 409 modal ──
+  // Same idea as stockErrorModal but the failing item is a child of a
+  // composite parent, so we surface BOTH names.
+  const [compositeStockErrorModal, setCompositeStockErrorModal] = useState<{
+    parentName: string;
+    childName: string;
+    available: number;
+    required: number;
+  } | null>(null);
+
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
   const [discountType, setDiscountType] = useState<"percent" | "fixed" | null>(null);
@@ -1034,6 +1044,23 @@ export function POS() {
     pricingTiersByProduct.set(pid, (tierQueries[i]?.data as PricingTier[] | undefined) ?? []);
   });
 
+  // Quick lookup of composite metadata for items in the cart so we can
+  // render an "Includes N items" sublabel. We rely on `isComposite` (a
+  // count flag) returned by the products list endpoint.
+  const productById = new Map<number, GetProductResponse>();
+  (products ?? []).forEach((p) => productById.set(p.id, p));
+  const compositeInfo = (productId: number): { isComposite: boolean; childCount: number } => {
+    const p = productById.get(productId) as
+      | (GetProductResponse & { isComposite?: number; structureType?: string })
+      | undefined;
+    if (!p) return { isComposite: false, childCount: 0 };
+    const childCount = typeof p.isComposite === "number" ? p.isComposite : 0;
+    return {
+      isComposite: p.structureType === "composite" || childCount > 0,
+      childCount,
+    };
+  };
+
   // Subtotal honors tier pricing so totals match what we render per line.
   const subtotal = cart.reduce((sum, item) => {
     const tiers = pricingTiersByProduct.get(item.productId) ?? [];
@@ -1358,6 +1385,23 @@ export function POS() {
               productName: payload.productName ?? "Item",
               available: payload.available ?? 0,
               requested: payload.requested ?? 0,
+            });
+            return;
+          }
+          // Composite parents fail with a richer payload so the cashier
+          // can see WHICH child component is short, not just the bundle.
+          if (apiErr?.status === 409 && payload?.error === "INSUFFICIENT_COMPONENT_STOCK") {
+            const cp = payload as {
+              parentName?: string;
+              childName?: string;
+              available?: number;
+              required?: number;
+            };
+            setCompositeStockErrorModal({
+              parentName: cp.parentName ?? "Bundle",
+              childName: cp.childName ?? "Component",
+              available: cp.available ?? 0,
+              required: cp.required ?? 0,
             });
             return;
           }
@@ -1887,6 +1931,7 @@ export function POS() {
                     const { tier } = previewTierPrice(item.basePrice, item.quantity, tiers);
                     const tieredEff = tier ? tier.unitPrice + (item.effectivePrice - item.basePrice) : item.effectivePrice;
                     const lineTotal = tieredEff * item.quantity - item.itemDiscount;
+                    const ci = compositeInfo(item.productId);
                     return (
                     <motion.div key={item.cartKey} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}>
                       <div className="rounded-lg bg-secondary/30 p-2">
@@ -1894,12 +1939,18 @@ export function POS() {
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium leading-snug truncate">
                               {item.productName}
+                              {ci.isComposite && (
+                                <Layers className="inline h-3 w-3 ml-1 text-cyan-400/80 align-baseline" />
+                              )}
                               {item.unitLabel && item.unitFactor ? (
                                 <span className="ml-1 text-[10px] uppercase tracking-wider text-cyan-400/90">
                                   · {item.quantity / item.unitFactor} {item.unitLabel}
                                 </span>
                               ) : null}
                             </p>
+                            {ci.isComposite && ci.childCount > 0 && (
+                              <p className="text-[10px] text-cyan-400/80">Bundle · includes {ci.childCount} item{ci.childCount === 1 ? "" : "s"}</p>
+                            )}
                             {item.variantChoices.length > 0 && <p className="text-xs text-primary/80">{choiceLabel(item.variantChoices)}</p>}
                             {item.modifierChoices.length > 0 && <p className="text-xs text-amber-400/90">+ {choiceLabel(item.modifierChoices)}</p>}
                             <p className="text-xs font-mono text-primary mt-0.5">
@@ -2196,12 +2247,18 @@ export function POS() {
                     : item.effectivePrice;
                   const lineTotal = tieredEffective * item.quantity - item.itemDiscount;
                   const totalSavings = savingsPerUnit * item.quantity;
+                  const ci = compositeInfo(item.productId);
                   return (
                     <div key={item.cartKey}>
                       <div className="flex justify-between text-slate-900">
                         <span className="truncate max-w-[180px]">{item.quantity}× {item.productName}</span>
                         <span className="font-mono shrink-0 ml-1">{fmtNum(lineTotal)}</span>
                       </div>
+                      {ci.isComposite && ci.childCount > 0 && (
+                        <p className="text-xs text-cyan-700 font-medium pl-3 truncate">
+                          ↳ Bundle · includes {ci.childCount} item{ci.childCount === 1 ? "" : "s"}
+                        </p>
+                      )}
                       {tier && (
                         <p className="text-xs text-emerald-600 font-medium pl-3 truncate">
                           ↳ Tier {tier.minQty}{tier.maxQty != null ? `–${tier.maxQty}` : "+"}
@@ -2626,6 +2683,62 @@ export function POS() {
               onClick={() => setStockErrorModal(null)}
             >
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Composite-bundle insufficient component stock modal. We don't
+          offer a "set qty to N" shortcut here because the failure is on
+          a *child* of the bundle, not the bundle itself — there's no
+          1:1 mapping back to a cart line. Cashier must restock or
+          remove the bundle. */}
+      <Dialog
+        open={compositeStockErrorModal !== null}
+        onOpenChange={(o) => { if (!o) setCompositeStockErrorModal(null); }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="sr-only">Bundle component out of stock</DialogTitle>
+          </DialogHeader>
+          {compositeStockErrorModal && (
+            <div className="text-center space-y-4 py-2">
+              <div className="mx-auto w-16 h-16 rounded-full bg-amber-500/15 flex items-center justify-center">
+                <AlertTriangle className="h-8 w-8 text-amber-400" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold">Can&apos;t assemble bundle</h2>
+                <p className="text-sm text-muted-foreground">
+                  Cannot sell <span className="font-semibold text-foreground">{compositeStockErrorModal.parentName}</span>:
+                  not enough of one of its components.
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-2 text-left">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Component</span>
+                  <span className="font-semibold truncate ml-3">{compositeStockErrorModal.childName}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Need</span>
+                  <span className="font-semibold">{compositeStockErrorModal.required}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Available</span>
+                  <span className="font-bold text-amber-400">{compositeStockErrorModal.available}</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Restock <span className="font-medium text-foreground">{compositeStockErrorModal.childName}</span>{" "}
+                or remove this bundle from the cart.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              className="w-full"
+              onClick={() => setCompositeStockErrorModal(null)}
+            >
+              OK
             </Button>
           </DialogFooter>
         </DialogContent>

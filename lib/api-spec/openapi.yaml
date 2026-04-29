@@ -36,6 +36,8 @@ tags:
     description: Staff accounts and roles
   - name: cash
     description: Cash drawer and shift management
+  - name: composite
+    description: Composite (bundle) product management
 paths:
   /healthz:
     get:
@@ -260,6 +262,105 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ModifierGroup"
+
+  /products/{id}/composite-components:
+    get:
+      operationId: getCompositeComponents
+      tags: [composite]
+      summary: List components of a composite (bundle) product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Component list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CompositeComponent"
+        "404":
+          description: Parent product not found
+    put:
+      operationId: saveCompositeComponents
+      tags: [composite]
+      summary: Replace all components of a composite product (full overwrite)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveCompositeComponentsBody"
+      responses:
+        "200":
+          description: Saved component list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CompositeComponent"
+        "400":
+          description: Validation error (e.g. self-reference, circular reference, missing child)
+        "404":
+          description: Parent product not found
+
+  /products/{id}/composite-cost:
+    get:
+      operationId: getCompositeCost
+      tags: [composite]
+      summary: Get derived cost / margin for a composite product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cost breakdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompositeCost"
+        "404":
+          description: Product not found
+
+  /products/{id}/available-composite-quantity:
+    get:
+      operationId: getAvailableComposite
+      tags: [composite]
+      summary: How many bundles can be assembled from current child stock
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: locationId
+          in: query
+          description: Optional — when set, calculation uses location_inventory instead of global product stock.
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Available bundle count + per-component breakdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvailableComposite"
+        "404":
+          description: Product not found
 
   /orders:
     get:
@@ -1448,10 +1549,22 @@ components:
           type: string
           enum: [kg, lb, oz, g]
           nullable: true
+        costPrice:
+          type: number
+          format: float
+          nullable: true
+          description: Per-unit acquisition cost. Used for COGS / margin reports.
+        structureType:
+          type: string
+          enum: [simple, composite]
+          description: Product structure. Composite parents derive cost from child components.
         hasVariants:
           type: boolean
         hasModifiers:
           type: boolean
+        isComposite:
+          type: boolean
+          description: True when this product has at least one composite component row.
         createdAt:
           type: string
           format: date-time
@@ -1463,8 +1576,10 @@ components:
         - inStock
         - stockCount
         - soldByWeight
+        - structureType
         - hasVariants
         - hasModifiers
+        - isComposite
         - createdAt
 
     CreateProductBody:
@@ -1493,10 +1608,149 @@ components:
         unitOfMeasure:
           type: string
           enum: [kg, lb, oz, g]
+        costPrice:
+          type: number
+          format: float
+          nullable: true
+        structureType:
+          type: string
+          enum: [simple, composite]
       required:
         - name
         - price
         - category
+
+    CompositeComponent:
+      type: object
+      description: One child product inside a composite (bundle) parent.
+      properties:
+        id:
+          type: integer
+        parentProductId:
+          type: integer
+        childProductId:
+          type: integer
+        childName:
+          type: string
+        childSku:
+          type: string
+          nullable: true
+        childCostPrice:
+          type: number
+          format: float
+          nullable: true
+        quantityRequired:
+          type: number
+          format: float
+        unitId:
+          type: integer
+          nullable: true
+        lineCost:
+          type: number
+          format: float
+          description: childCostPrice * quantityRequired (0 when childCostPrice is null)
+      required:
+        - id
+        - parentProductId
+        - childProductId
+        - childName
+        - quantityRequired
+        - lineCost
+
+    CompositeComponentInput:
+      type: object
+      properties:
+        childProductId:
+          type: integer
+        quantityRequired:
+          type: number
+          format: float
+        unitId:
+          type: integer
+          nullable: true
+      required:
+        - childProductId
+        - quantityRequired
+
+    SaveCompositeComponentsBody:
+      type: object
+      properties:
+        components:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompositeComponentInput"
+      required:
+        - components
+
+    CompositeCost:
+      type: object
+      description: Live cost / margin breakdown for a composite parent.
+      properties:
+        productId:
+          type: integer
+        sellingPrice:
+          type: number
+          format: float
+        derivedCost:
+          type: number
+          format: float
+        grossProfit:
+          type: number
+          format: float
+        grossMarginPct:
+          type: number
+          format: float
+        components:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompositeComponent"
+      required:
+        - productId
+        - sellingPrice
+        - derivedCost
+        - grossProfit
+        - grossMarginPct
+        - components
+
+    AvailableCompositeComponent:
+      type: object
+      properties:
+        childProductId:
+          type: integer
+        childName:
+          type: string
+        stock:
+          type: number
+          format: float
+        quantityRequired:
+          type: number
+          format: float
+        possibleBundles:
+          type: integer
+      required:
+        - childProductId
+        - childName
+        - stock
+        - quantityRequired
+        - possibleBundles
+
+    AvailableComposite:
+      type: object
+      description: How many bundles can be assembled from current child stock.
+      properties:
+        productId:
+          type: integer
+        available:
+          type: integer
+          description: MIN(floor(child.stock / quantityRequired)) across components.
+        components:
+          type: array
+          items:
+            $ref: "#/components/schemas/AvailableCompositeComponent"
+      required:
+        - productId
+        - available
+        - components
 
     Order:
       type: object

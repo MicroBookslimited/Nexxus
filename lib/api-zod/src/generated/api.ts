@@ -34,8 +34,22 @@ export const ListProductsResponseItem = zod.object({
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
+  costPrice: zod
+    .number()
+    .nullish()
+    .describe("Per-unit acquisition cost. Used for COGS \/ margin reports."),
+  structureType: zod
+    .enum(["simple", "composite"])
+    .describe(
+      "Product structure. Composite parents derive cost from child components.",
+    ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
+  isComposite: zod
+    .boolean()
+    .describe(
+      "True when this product has at least one composite component row.",
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListProductsResponse = zod.array(ListProductsResponseItem);
@@ -54,6 +68,8 @@ export const CreateProductBody = zod.object({
   stockCount: zod.number().optional(),
   soldByWeight: zod.boolean().optional(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).optional(),
+  costPrice: zod.number().nullish(),
+  structureType: zod.enum(["simple", "composite"]).optional(),
 });
 
 /**
@@ -75,8 +91,22 @@ export const GetProductResponse = zod.object({
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
+  costPrice: zod
+    .number()
+    .nullish()
+    .describe("Per-unit acquisition cost. Used for COGS \/ margin reports."),
+  structureType: zod
+    .enum(["simple", "composite"])
+    .describe(
+      "Product structure. Composite parents derive cost from child components.",
+    ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
+  isComposite: zod
+    .boolean()
+    .describe(
+      "True when this product has at least one composite component row.",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -98,6 +128,8 @@ export const UpdateProductBody = zod.object({
   stockCount: zod.number().optional(),
   soldByWeight: zod.boolean().optional(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).optional(),
+  costPrice: zod.number().nullish(),
+  structureType: zod.enum(["simple", "composite"]).optional(),
 });
 
 export const UpdateProductResponse = zod.object({
@@ -112,8 +144,22 @@ export const UpdateProductResponse = zod.object({
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
+  costPrice: zod
+    .number()
+    .nullish()
+    .describe("Per-unit acquisition cost. Used for COGS \/ margin reports."),
+  structureType: zod
+    .enum(["simple", "composite"])
+    .describe(
+      "Product structure. Composite parents derive cost from child components.",
+    ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
+  isComposite: zod
+    .boolean()
+    .describe(
+      "True when this product has at least one composite component row.",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -312,6 +358,144 @@ export const SaveProductModifiersResponseItem = zod.object({
 export const SaveProductModifiersResponse = zod.array(
   SaveProductModifiersResponseItem,
 );
+
+/**
+ * @summary List components of a composite (bundle) product
+ */
+export const GetCompositeComponentsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCompositeComponentsResponseItem = zod
+  .object({
+    id: zod.number(),
+    parentProductId: zod.number(),
+    childProductId: zod.number(),
+    childName: zod.string(),
+    childSku: zod.string().nullish(),
+    childCostPrice: zod.number().nullish(),
+    quantityRequired: zod.number(),
+    unitId: zod.number().nullish(),
+    lineCost: zod
+      .number()
+      .describe(
+        "childCostPrice \* quantityRequired (0 when childCostPrice is null)",
+      ),
+  })
+  .describe("One child product inside a composite (bundle) parent.");
+export const GetCompositeComponentsResponse = zod.array(
+  GetCompositeComponentsResponseItem,
+);
+
+/**
+ * @summary Replace all components of a composite product (full overwrite)
+ */
+export const SaveCompositeComponentsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SaveCompositeComponentsBody = zod.object({
+  components: zod.array(
+    zod.object({
+      childProductId: zod.number(),
+      quantityRequired: zod.number(),
+      unitId: zod.number().nullish(),
+    }),
+  ),
+});
+
+export const SaveCompositeComponentsResponseItem = zod
+  .object({
+    id: zod.number(),
+    parentProductId: zod.number(),
+    childProductId: zod.number(),
+    childName: zod.string(),
+    childSku: zod.string().nullish(),
+    childCostPrice: zod.number().nullish(),
+    quantityRequired: zod.number(),
+    unitId: zod.number().nullish(),
+    lineCost: zod
+      .number()
+      .describe(
+        "childCostPrice \* quantityRequired (0 when childCostPrice is null)",
+      ),
+  })
+  .describe("One child product inside a composite (bundle) parent.");
+export const SaveCompositeComponentsResponse = zod.array(
+  SaveCompositeComponentsResponseItem,
+);
+
+/**
+ * @summary Get derived cost / margin for a composite product
+ */
+export const GetCompositeCostParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCompositeCostResponse = zod
+  .object({
+    productId: zod.number(),
+    sellingPrice: zod.number(),
+    derivedCost: zod.number(),
+    grossProfit: zod.number(),
+    grossMarginPct: zod.number(),
+    components: zod.array(
+      zod
+        .object({
+          id: zod.number(),
+          parentProductId: zod.number(),
+          childProductId: zod.number(),
+          childName: zod.string(),
+          childSku: zod.string().nullish(),
+          childCostPrice: zod.number().nullish(),
+          quantityRequired: zod.number(),
+          unitId: zod.number().nullish(),
+          lineCost: zod
+            .number()
+            .describe(
+              "childCostPrice \* quantityRequired (0 when childCostPrice is null)",
+            ),
+        })
+        .describe("One child product inside a composite (bundle) parent."),
+    ),
+  })
+  .describe("Live cost \/ margin breakdown for a composite parent.");
+
+/**
+ * @summary How many bundles can be assembled from current child stock
+ */
+export const GetAvailableCompositeParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetAvailableCompositeQueryParams = zod.object({
+  locationId: zod.coerce
+    .number()
+    .optional()
+    .describe(
+      "Optional — when set, calculation uses location_inventory instead of global product stock.",
+    ),
+});
+
+export const GetAvailableCompositeResponse = zod
+  .object({
+    productId: zod.number(),
+    available: zod
+      .number()
+      .describe(
+        "MIN(floor(child.stock \/ quantityRequired)) across components.",
+      ),
+    components: zod.array(
+      zod.object({
+        childProductId: zod.number(),
+        childName: zod.string(),
+        stock: zod.number(),
+        quantityRequired: zod.number(),
+        possibleBundles: zod.number(),
+      }),
+    ),
+  })
+  .describe("How many bundles can be assembled from current child stock.");
 
 /**
  * @summary List orders
@@ -1091,8 +1275,22 @@ export const GetLowStockProductsResponseItem = zod.object({
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
+  costPrice: zod
+    .number()
+    .nullish()
+    .describe("Per-unit acquisition cost. Used for COGS \/ margin reports."),
+  structureType: zod
+    .enum(["simple", "composite"])
+    .describe(
+      "Product structure. Composite parents derive cost from child components.",
+    ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
+  isComposite: zod
+    .boolean()
+    .describe(
+      "True when this product has at least one composite component row.",
+    ),
   createdAt: zod.coerce.date(),
 });
 export const GetLowStockProductsResponse = zod.array(

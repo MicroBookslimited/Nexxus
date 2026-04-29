@@ -21,6 +21,10 @@ import {
   useUpdateSettings,
   useGetProductStockHistory,
   useListVendors,
+  useGetCompositeComponents,
+  useSaveCompositeComponents,
+  useGetCompositeCost,
+  useGetAvailableComposite,
 } from "@workspace/api-client-react";
 import type { GetProductResponse } from "@workspace/api-zod";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
@@ -200,6 +204,7 @@ function emptyBillForm(): BillForm {
 
 /* ─── Product form types ─── */
 type WeightUnit = "kg" | "lb" | "oz" | "g";
+type StructureType = "simple" | "composite";
 type ProductForm = {
   name: string;
   description: string;
@@ -210,6 +215,12 @@ type ProductForm = {
   stockCount: string;
   soldByWeight: boolean;
   unitOfMeasure: WeightUnit;
+  // Cost basis for COGS / margin reports. Empty string = "not set" — we
+  // send null to the API in that case so the column stays NULL.
+  costPrice: string;
+  // Simple = standard SKU. Composite = bundle whose stock and cost are
+  // derived from its child components (see CompositeEditor).
+  structureType: StructureType;
 };
 
 const emptyForm = (): ProductForm => ({
@@ -222,6 +233,8 @@ const emptyForm = (): ProductForm => ({
   stockCount: "0",
   soldByWeight: false,
   unitOfMeasure: "kg",
+  costPrice: "",
+  structureType: "simple",
 });
 
 /* ─── Variant/modifier editor types ─── */
@@ -1703,6 +1716,303 @@ function MBPOSImportDialog({ open, onClose, onImported }: {
 }
 
 /* ─── Stock History Panel ─── */
+/* ─── Composite (bundle) editor ─── */
+type DraftComponent = {
+  tempId: string;
+  childProductId: number;
+  childName: string;
+  childCostPrice: number | null;
+  quantityRequired: string;
+};
+
+function CompositeEditor({
+  productId,
+  parentName,
+  sellingPrice,
+  allProducts,
+}: {
+  productId: number;
+  parentName: string;
+  sellingPrice: number;
+  allProducts: GetProductResponse[];
+}) {
+  const { data: serverComponents, queryKey: componentsQueryKey } = useGetCompositeComponents(productId);
+  const { data: cost } = useGetCompositeCost(productId);
+  const { data: available } = useGetAvailableComposite(productId);
+  const saveComponents = useSaveCompositeComponents();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [draft, setDraft] = useState<DraftComponent[]>([]);
+  const [dirty, setDirty] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+
+  // Hydrate the editor from the server response. Resets the dirty flag
+  // so the Save button doesn't appear when nothing has changed yet.
+  useEffect(() => {
+    if (!serverComponents) return;
+    setDraft(serverComponents.map((c) => ({
+      tempId: makeId(),
+      childProductId: c.childProductId,
+      childName: c.childName,
+      childCostPrice: c.childCostPrice ?? null,
+      quantityRequired: String(c.quantityRequired),
+    })));
+    setDirty(false);
+  }, [serverComponents]);
+
+  const addedIds = new Set(draft.map(d => d.childProductId));
+  // Candidate children: any *other* product the user can pick. We hide
+  // composites here too — nesting bundles is allowed by the schema but
+  // the UI keeps it flat to prevent accidental loops in the common case.
+  const candidates = allProducts.filter((p) => {
+    if (p.id === productId) return false;
+    if (addedIds.has(p.id)) return false;
+    const pp = p as GetProductResponse & { structureType?: string };
+    if (pp.structureType === "composite") return false;
+    if (!pickerQuery.trim()) return true;
+    const q = pickerQuery.toLowerCase();
+    return p.name.toLowerCase().includes(q) || (p.barcode ?? "").toLowerCase().includes(q);
+  }).slice(0, 50);
+
+  const addComponent = (p: GetProductResponse) => {
+    const pp = p as GetProductResponse & { costPrice?: number | null };
+    setDraft((d) => [...d, {
+      tempId: makeId(),
+      childProductId: p.id,
+      childName: p.name,
+      childCostPrice: pp.costPrice ?? null,
+      quantityRequired: "1",
+    }]);
+    setDirty(true);
+    setPickerQuery("");
+    setPickerOpen(false);
+  };
+
+  const updateQty = (tempId: string, qty: string) => {
+    setDraft((d) => d.map((x) => x.tempId === tempId ? { ...x, quantityRequired: qty } : x));
+    setDirty(true);
+  };
+
+  const removeComponent = (tempId: string) => {
+    setDraft((d) => d.filter((x) => x.tempId !== tempId));
+    setDirty(true);
+  };
+
+  // Live derived cost from the unsaved draft so the user sees the
+  // impact of their edits immediately (server-side cost only updates
+  // after a save succeeds).
+  const draftDerivedCost = draft.reduce((s, c) => {
+    const qty = parseFloat(c.quantityRequired) || 0;
+    return s + ((c.childCostPrice ?? 0) * qty);
+  }, 0);
+  const draftGrossProfit = sellingPrice - draftDerivedCost;
+  const draftMarginPct = sellingPrice > 0 ? (draftGrossProfit / sellingPrice) * 100 : 0;
+
+  const handleSave = () => {
+    // Reject obviously invalid quantities client-side so the user gets
+    // immediate feedback before the round-trip.
+    const cleaned = draft.map(c => ({
+      childProductId: c.childProductId,
+      quantityRequired: parseFloat(c.quantityRequired) || 0,
+    }));
+    if (cleaned.some(c => c.quantityRequired <= 0)) {
+      toast({ title: "All component quantities must be greater than 0", variant: "destructive" });
+      return;
+    }
+    saveComponents.mutate(
+      { id: productId, data: { components: cleaned } },
+      {
+        onSuccess: (rows) => {
+          toast({ title: "Components saved" });
+          // Mirror the pricing-tier fix: write straight into the cache
+          // and refetch derived endpoints. invalidateQueries here would
+          // race the offline-queue logic and make the just-saved rows
+          // disappear briefly.
+          queryClient.setQueryData(componentsQueryKey, rows);
+          queryClient.refetchQueries({
+            queryKey: [`/api/products/${productId}/composite-cost`],
+          });
+          queryClient.refetchQueries({
+            queryKey: [`/api/products/${productId}/available-composite-quantity`],
+          });
+          setDirty(false);
+        },
+        onError: (e) => {
+          const msg = (e as Error)?.message ?? "Save failed";
+          toast({ title: "Save failed", description: msg, variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-border/60 bg-secondary/20 p-3">
+        <p className="text-xs text-muted-foreground">
+          A composite product (bundle) is built from other products. When this bundle
+          is sold, stock is deducted from the components below — never from{" "}
+          <span className="font-medium">{parentName}</span> itself.
+        </p>
+      </div>
+
+      {/* Live summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="rounded-md bg-muted/40 p-2.5">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Selling price</div>
+          <div className="text-sm font-bold tabular-nums">{formatCurrency(sellingPrice)}</div>
+        </div>
+        <div className="rounded-md bg-muted/40 p-2.5">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Derived cost</div>
+          <div className="text-sm font-bold tabular-nums">{formatCurrency(draftDerivedCost)}</div>
+        </div>
+        <div className="rounded-md bg-muted/40 p-2.5">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Gross profit</div>
+          <div className={`text-sm font-bold tabular-nums ${draftGrossProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+            {formatCurrency(draftGrossProfit)}
+          </div>
+        </div>
+        <div className="rounded-md bg-muted/40 p-2.5">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Margin</div>
+          <div className={`text-sm font-bold tabular-nums ${draftMarginPct >= 0 ? "text-green-400" : "text-red-400"}`}>
+            {draftMarginPct.toFixed(1)}%
+          </div>
+        </div>
+      </div>
+
+      {/* Components table */}
+      <div className="rounded-md border border-border/60 overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/40">
+            <tr>
+              <th className="text-left px-2 py-1.5">Component</th>
+              <th className="text-right px-2 py-1.5 w-20">Qty</th>
+              <th className="text-right px-2 py-1.5 w-24">Unit cost</th>
+              <th className="text-right px-2 py-1.5 w-24">Line cost</th>
+              <th className="w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {draft.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="text-center text-muted-foreground py-4">
+                  No components yet. Add at least one component below.
+                </td>
+              </tr>
+            ) : draft.map((c) => {
+              const qty = parseFloat(c.quantityRequired) || 0;
+              const unit = c.childCostPrice ?? 0;
+              return (
+                <tr key={c.tempId} className="border-t border-border/40">
+                  <td className="px-2 py-1.5">{c.childName}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={c.quantityRequired}
+                      onChange={(e) => updateQty(c.tempId, e.target.value)}
+                      className="h-7 text-xs text-right tabular-nums"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {c.childCostPrice == null ? <span className="text-muted-foreground">—</span> : formatCurrency(unit)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{formatCurrency(unit * qty)}</td>
+                  <td className="px-1 py-1.5">
+                    <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => removeComponent(c.tempId)}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Add-component picker */}
+      <div className="rounded-md border border-border/60 p-2.5 space-y-2">
+        {!pickerOpen ? (
+          <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={() => setPickerOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />Add component
+          </Button>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <Search className="h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                autoFocus
+                placeholder="Search products by name or barcode…"
+                value={pickerQuery}
+                onChange={(e) => setPickerQuery(e.target.value)}
+                className="h-8 text-xs"
+              />
+              <Button size="sm" variant="ghost" onClick={() => { setPickerOpen(false); setPickerQuery(""); }}>
+                Cancel
+              </Button>
+            </div>
+            <div className="max-h-48 overflow-y-auto border-t border-border/40">
+              {candidates.length === 0 ? (
+                <div className="py-3 text-center text-xs text-muted-foreground">No matches.</div>
+              ) : candidates.map((p) => {
+                const pp = p as GetProductResponse & { costPrice?: number | null };
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => addComponent(p)}
+                    className="w-full text-left px-2 py-1.5 text-xs hover:bg-muted/40 flex items-center justify-between gap-2"
+                  >
+                    <span className="truncate">{p.name}</span>
+                    <span className="text-muted-foreground tabular-nums shrink-0">
+                      {pp.costPrice != null ? formatCurrency(pp.costPrice) : "no cost"}
+                      {" · "}{p.stockCount} in stock
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Available-bundles breakdown */}
+      {available && available.components.length > 0 && (
+        <div className="rounded-md border border-border/60 bg-secondary/10 p-2.5">
+          <div className="text-xs font-medium mb-1.5">
+            Available to assemble: <span className={available.available > 0 ? "text-green-400" : "text-red-400"}>{available.available}</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px] text-muted-foreground">
+            {available.components.map((b) => (
+              <div key={b.childProductId} className="flex items-center justify-between">
+                <span className="truncate">{b.childName}</span>
+                <span className="tabular-nums shrink-0">
+                  {b.stock} in stock / {b.quantityRequired} per bundle = {b.possibleBundles}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Server-derived cost (sanity check after save). Hidden until at
+          least one save has happened so initial state isn't confusing. */}
+      {cost && draft.length > 0 && !dirty && (
+        <p className="text-[10px] text-muted-foreground text-right">
+          Saved cost: {formatCurrency(cost.derivedCost)} · margin {cost.grossMarginPct.toFixed(1)}%
+        </p>
+      )}
+
+      {dirty && (
+        <Button onClick={handleSave} disabled={saveComponents.isPending} className="w-full">
+          {saveComponents.isPending ? "Saving…" : "Save Components"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function StockHistoryPanel({ productId }: { productId: number }) {
   const { data, isLoading } = useGetProductStockHistory(productId);
 
@@ -2003,11 +2313,14 @@ export function Products() {
     const pp = p as GetProductResponse & {
       soldByWeight?: boolean;
       unitOfMeasure?: WeightUnit | string | null;
+      costPrice?: number | null;
+      structureType?: StructureType | string;
     };
     const unit: WeightUnit =
       pp.unitOfMeasure === "lb" || pp.unitOfMeasure === "oz" || pp.unitOfMeasure === "g"
         ? pp.unitOfMeasure
         : "kg";
+    const struct: StructureType = pp.structureType === "composite" ? "composite" : "simple";
     setForm({
       name: p.name,
       description: p.description ?? "",
@@ -2018,6 +2331,8 @@ export function Products() {
       stockCount: p.stockCount.toString(),
       soldByWeight: !!pp.soldByWeight,
       unitOfMeasure: unit,
+      costPrice: pp.costPrice != null ? String(pp.costPrice) : "",
+      structureType: struct,
     });
     setDialogTab("details");
     setDialogOpen(true);
@@ -2028,16 +2343,22 @@ export function Products() {
       toast({ title: "Name, price and category are required.", variant: "destructive" });
       return;
     }
+    // Composite parents have no inventory of their own — the server
+    // forces stockCount=0 and we mirror that here so the UI stays in
+    // sync with what gets persisted.
+    const isComposite = form.structureType === "composite";
     const payload = {
       name: form.name.trim(),
       description: form.description || undefined,
       price: parseFloat(form.price),
       category: form.category,
       barcode: form.barcode || undefined,
-      inStock: form.inStock,
-      stockCount: parseFloat(form.stockCount) || 0,
+      inStock: isComposite ? true : form.inStock,
+      stockCount: isComposite ? 0 : (parseFloat(form.stockCount) || 0),
       soldByWeight: form.soldByWeight,
       unitOfMeasure: form.soldByWeight ? form.unitOfMeasure : undefined,
+      costPrice: form.costPrice.trim() === "" ? null : parseFloat(form.costPrice),
+      structureType: form.structureType,
     };
 
     if (editingProduct) {
@@ -2853,6 +3174,9 @@ export function Products() {
               <TabsTrigger value="modifiers" disabled={!editingProduct}>Modifiers</TabsTrigger>
               <TabsTrigger value="locations" disabled={!editingProduct}>Locations</TabsTrigger>
               <TabsTrigger value="pricing" disabled={!editingProduct}>Pricing & Units</TabsTrigger>
+              <TabsTrigger value="composite" disabled={!editingProduct || form.structureType !== "composite"}>
+                Composite
+              </TabsTrigger>
               <TabsTrigger value="history" disabled={!editingProduct}>
                 <History className="h-3.5 w-3.5 mr-1" />History
               </TabsTrigger>
@@ -2897,16 +3221,82 @@ export function Products() {
                   <Input value={form.barcode} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} placeholder="EAN / UPC" />
                 </div>
                 <Separator />
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-1.5">
-                    <Label>Stock count</Label>
-                    <Input type="number" min="0" value={form.stockCount} onChange={(e) => setForm((f) => ({ ...f, stockCount: e.target.value }))} />
+                {/* Product structure: Simple SKUs track their own stock;
+                    Composite SKUs (bundles) derive cost & availability
+                    from their child components and have no stock of
+                    their own. Switching to Composite hides the stock
+                    field below and unlocks the Composite tab above. */}
+                <div className="rounded-md border border-border bg-secondary/20 p-3 space-y-3">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm">Product structure</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Choose Composite for bundles like a "Case of 24" or a "Party Pack".
+                    </p>
                   </div>
-                  <div className="flex items-end gap-2 pb-0.5">
-                    <Switch id="inStock" checked={form.inStock} onCheckedChange={(v) => setForm((f) => ({ ...f, inStock: v }))} />
-                    <Label htmlFor="inStock">In stock</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, structureType: "simple" }))}
+                      className={`rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                        form.structureType === "simple"
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-background hover:bg-muted/40"
+                      }`}
+                    >
+                      <div className="font-medium">Simple</div>
+                      <div className="text-muted-foreground">Standard SKU. Tracks its own stock.</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, structureType: "composite" }))}
+                      className={`rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                        form.structureType === "composite"
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-background hover:bg-muted/40"
+                      }`}
+                    >
+                      <div className="font-medium">Composite (bundle)</div>
+                      <div className="text-muted-foreground">Made of other products. Stock derived.</div>
+                    </button>
                   </div>
+                  {form.structureType === "composite" && !editingProduct && (
+                    <p className="text-[11px] text-amber-400">
+                      Save first, then add components in the Composite tab.
+                    </p>
+                  )}
                 </div>
+                {form.structureType === "simple" ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-1.5">
+                      <Label>Stock count</Label>
+                      <Input type="number" min="0" value={form.stockCount} onChange={(e) => setForm((f) => ({ ...f, stockCount: e.target.value }))} />
+                    </div>
+                    <div className="flex items-end gap-2 pb-0.5">
+                      <Switch id="inStock" checked={form.inStock} onCheckedChange={(v) => setForm((f) => ({ ...f, inStock: v }))} />
+                      <Label htmlFor="inStock">In stock</Label>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                    Stock for composites is derived from child components. The Composite tab shows how many bundles can be assembled.
+                  </div>
+                )}
+                {/* Cost price drives margin reports for simple products
+                    and is the per-unit basis for composites. Hidden on
+                    composites because the cost is derived. */}
+                {form.structureType === "simple" && (
+                  <div className="grid gap-1.5">
+                    <Label>Cost price <span className="text-muted-foreground text-[11px]">(optional, for margin reports)</span></Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={form.costPrice}
+                      onChange={(e) => setForm((f) => ({ ...f, costPrice: e.target.value }))}
+                    />
+                  </div>
+                )}
                 <Separator />
                 {/* Sold-by-weight: when on, the cashier is prompted for a
                     decimal weight at sale time instead of a whole-unit
@@ -2977,6 +3367,17 @@ export function Products() {
                     productId={editingProduct.id}
                     basePrice={editingProduct.price}
                     baseUnit={(editingProduct as { baseUnit?: string }).baseUnit ?? "each"}
+                  />
+                )}
+              </TabsContent>
+
+              <TabsContent value="composite" className="mt-0">
+                {editingProduct && form.structureType === "composite" && (
+                  <CompositeEditor
+                    productId={editingProduct.id}
+                    parentName={editingProduct.name}
+                    sellingPrice={editingProduct.price}
+                    allProducts={products ?? []}
                   />
                 )}
               </TabsContent>

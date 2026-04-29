@@ -43,6 +43,7 @@ import scaleRouter from "./scale";
 import businessProfileRouter from "./business-profile";
 import productPricingRouter from "./product-pricing";
 import paymentMethodsRouter from "./payment-methods";
+import compositeProductsRouter from "./composite-products";
 
 const router: IRouter = Router();
 
@@ -90,5 +91,6 @@ router.use(scaleRouter);
 router.use(businessProfileRouter);
 router.use(productPricingRouter);
 router.use(paymentMethodsRouter);
+router.use(compositeProductsRouter);
 
 export default router;

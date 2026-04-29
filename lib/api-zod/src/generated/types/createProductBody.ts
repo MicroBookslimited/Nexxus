@@ -5,6 +5,7 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateProductBodyStructureType } from "./createProductBodyStructureType";
 import type { CreateProductBodyUnitOfMeasure } from "./createProductBodyUnitOfMeasure";
 
 export interface CreateProductBody {
@@ -18,4 +19,6 @@ export interface CreateProductBody {
   stockCount?: number;
   soldByWeight?: boolean;
   unitOfMeasure?: CreateProductBodyUnitOfMeasure;
+  costPrice?: number | null;
+  structureType?: CreateProductBodyStructureType;
 }

@@ -29,6 +29,16 @@ export const productsTable = pgTable("products", {
   // Base inventory unit. All stock_count values are stored in this unit.
   // Examples: "each", "kg", "g", "lb", "oz", "ml", "L". Defaults to "each".
   baseUnit: text("base_unit").notNull().default("each"),
+  // Per-unit acquisition cost. Used for COGS / margin reports and as the
+  // basis for derived cost on composite (bundle) parents. Nullable for
+  // legacy rows that haven't been costed yet.
+  costPrice: real("cost_price"),
+  // Product structure:
+  //  - "simple"    = stand-alone SKU with its own stock + cost
+  //  - "composite" = bundle SKU; selling price is fixed/manual on this row,
+  //                  stock and cost are derived from child components
+  //                  listed in composite_product_components.
+  structureType: text("structure_type").notNull().default("simple"),
 });
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({ id: true, createdAt: true });

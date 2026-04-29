@@ -5,6 +5,7 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProductStructureType } from "./productStructureType";
 import type { ProductUnitOfMeasure } from "./productUnitOfMeasure";
 
 export interface Product {
@@ -19,7 +20,13 @@ export interface Product {
   stockCount: number;
   soldByWeight: boolean;
   unitOfMeasure?: ProductUnitOfMeasure;
+  /** Per-unit acquisition cost. Used for COGS / margin reports. */
+  costPrice?: number | null;
+  /** Product structure. Composite parents derive cost from child components. */
+  structureType: ProductStructureType;
   hasVariants: boolean;
   hasModifiers: boolean;
+  /** True when this product has at least one composite component row. */
+  isComposite: boolean;
   createdAt: Date;
 }

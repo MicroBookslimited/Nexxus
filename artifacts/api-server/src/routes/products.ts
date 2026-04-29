@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, like, and, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
-import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable } from "@workspace/db";
+import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable, compositeProductComponentsTable } from "@workspace/db";
 import { logAudit } from "./audit";
 import {
   CreateProductBody,
@@ -34,6 +34,10 @@ async function withFlags(p: typeof productsTable.$inferSelect) {
     .select({ n: count() })
     .from(modifierGroupsTable)
     .where(eq(modifierGroupsTable.productId, p.id));
+  const [cCount] = await db
+    .select({ n: count() })
+    .from(compositeProductComponentsTable)
+    .where(eq(compositeProductComponentsTable.parentProductId, p.id));
 
   return {
     ...p,
@@ -42,6 +46,7 @@ async function withFlags(p: typeof productsTable.$inferSelect) {
     barcode: p.barcode ?? undefined,
     hasVariants: Number(vCount.n) > 0,
     hasModifiers: Number(mCount.n) > 0,
+    isComposite: Number(cCount.n) > 0,
   };
 }
 
@@ -106,6 +111,11 @@ router.post("/products", async (req, res): Promise<void> => {
     return;
   }
 
+  // Composite parents have no inventory of their own — stock is derived
+  // from child components. Force stockCount to 0 regardless of input so
+  // POS / reports never see a misleading number on the parent row.
+  const isComposite = parsed.data.structureType === "composite";
+
   const [product] = await db
     .insert(productsTable)
     .values({
@@ -117,7 +127,7 @@ router.post("/products", async (req, res): Promise<void> => {
       imageUrl: parsed.data.imageUrl,
       barcode: parsed.data.barcode,
       inStock: parsed.data.inStock ?? true,
-      stockCount: parsed.data.stockCount ?? 0,
+      stockCount: isComposite ? 0 : (parsed.data.stockCount ?? 0),
       soldByWeight: parsed.data.soldByWeight ?? false,
       // Default a sensible unit when sold-by-weight is enabled but the
       // caller didn't pick one. Leave NULL when the product is sold by
@@ -125,10 +135,12 @@ router.post("/products", async (req, res): Promise<void> => {
       unitOfMeasure: parsed.data.soldByWeight
         ? (parsed.data.unitOfMeasure ?? "kg")
         : null,
+      costPrice: parsed.data.costPrice ?? null,
+      structureType: parsed.data.structureType ?? "simple",
     })
     .returning();
 
-  await logAudit({ tenantId, action: "product.create", entityType: "product", entityId: product?.id, details: { name: parsed.data.name, price: parsed.data.price } });
+  await logAudit({ tenantId, action: "product.create", entityType: "product", entityId: product?.id, details: { name: parsed.data.name, price: parsed.data.price, structureType: product?.structureType } });
   res.status(201).json(GetProductResponse.parse(await withFlags(product)));
 });
 
@@ -196,6 +208,22 @@ router.put("/products/:id", async (req, res): Promise<void> => {
     }
   } else if (parsed.data.unitOfMeasure !== undefined) {
     updates["unitOfMeasure"] = parsed.data.unitOfMeasure;
+  }
+
+  // Cost basis & structure type. costPrice null is meaningful ("not yet
+  // costed"), so we only write when explicitly provided in the body.
+  if (parsed.data.costPrice !== undefined) {
+    updates["costPrice"] = parsed.data.costPrice;
+  }
+  if (parsed.data.structureType !== undefined) {
+    updates["structureType"] = parsed.data.structureType;
+    // Switching a product to composite means its parent stock is no
+    // longer authoritative — wipe it so reports / POS show 0 instead of
+    // a stale number that nothing increments. Available count comes
+    // from /products/:id/available-composite-quantity at sale time.
+    if (parsed.data.structureType === "composite") {
+      updates["stockCount"] = 0;
+    }
   }
 
   const [product] = await db

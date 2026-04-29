@@ -20,12 +20,15 @@ import type {
   AddCashPayoutBody,
   AppSettings,
   AuthenticateStaffBody,
+  AvailableComposite,
   CashPayout,
   CashSession,
   CashSessionDetail,
   CategorySales,
   CloseCashSessionBody,
   CompleteOrderBody,
+  CompositeComponent,
+  CompositeCost,
   CreateCustomerBody,
   CreateHeldOrderBody,
   CreateKdsScreenBody,
@@ -41,6 +44,7 @@ import type {
   DiningTable,
   EmailSentResponse,
   ExportOrdersParams,
+  GetAvailableCompositeParams,
   GetDailySalesParams,
   GetHourlySalesParams,
   GetLowStockProductsParams,
@@ -66,6 +70,7 @@ import type {
   PurchaseBill,
   PurchaseBillWithItems,
   ReportSummary,
+  SaveCompositeComponentsBody,
   SaveModifiersBody,
   SaveVariantsBody,
   SendEodReportEmailBody,
@@ -1040,6 +1045,389 @@ export const useSaveProductModifiers = <
 > => {
   return useMutation(getSaveProductModifiersMutationOptions(options));
 };
+
+/**
+ * @summary List components of a composite (bundle) product
+ */
+export const getGetCompositeComponentsUrl = (id: number) => {
+  return `/api/products/${id}/composite-components`;
+};
+
+export const getCompositeComponents = async (
+  id: number,
+  options?: RequestInit,
+): Promise<CompositeComponent[]> => {
+  return customFetch<CompositeComponent[]>(getGetCompositeComponentsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCompositeComponentsQueryKey = (id: number) => {
+  return [`/api/products/${id}/composite-components`] as const;
+};
+
+export const getGetCompositeComponentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCompositeComponents>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCompositeComponents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCompositeComponentsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCompositeComponents>>
+  > = ({ signal }) => getCompositeComponents(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCompositeComponents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCompositeComponentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCompositeComponents>>
+>;
+export type GetCompositeComponentsQueryError = ErrorType<void>;
+
+/**
+ * @summary List components of a composite (bundle) product
+ */
+
+export function useGetCompositeComponents<
+  TData = Awaited<ReturnType<typeof getCompositeComponents>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCompositeComponents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCompositeComponentsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Replace all components of a composite product (full overwrite)
+ */
+export const getSaveCompositeComponentsUrl = (id: number) => {
+  return `/api/products/${id}/composite-components`;
+};
+
+export const saveCompositeComponents = async (
+  id: number,
+  saveCompositeComponentsBody: SaveCompositeComponentsBody,
+  options?: RequestInit,
+): Promise<CompositeComponent[]> => {
+  return customFetch<CompositeComponent[]>(getSaveCompositeComponentsUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(saveCompositeComponentsBody),
+  });
+};
+
+export const getSaveCompositeComponentsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveCompositeComponents>>,
+    TError,
+    { id: number; data: BodyType<SaveCompositeComponentsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveCompositeComponents>>,
+  TError,
+  { id: number; data: BodyType<SaveCompositeComponentsBody> },
+  TContext
+> => {
+  const mutationKey = ["saveCompositeComponents"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveCompositeComponents>>,
+    { id: number; data: BodyType<SaveCompositeComponentsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return saveCompositeComponents(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveCompositeComponentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveCompositeComponents>>
+>;
+export type SaveCompositeComponentsMutationBody =
+  BodyType<SaveCompositeComponentsBody>;
+export type SaveCompositeComponentsMutationError = ErrorType<void>;
+
+/**
+ * @summary Replace all components of a composite product (full overwrite)
+ */
+export const useSaveCompositeComponents = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveCompositeComponents>>,
+    TError,
+    { id: number; data: BodyType<SaveCompositeComponentsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveCompositeComponents>>,
+  TError,
+  { id: number; data: BodyType<SaveCompositeComponentsBody> },
+  TContext
+> => {
+  return useMutation(getSaveCompositeComponentsMutationOptions(options));
+};
+
+/**
+ * @summary Get derived cost / margin for a composite product
+ */
+export const getGetCompositeCostUrl = (id: number) => {
+  return `/api/products/${id}/composite-cost`;
+};
+
+export const getCompositeCost = async (
+  id: number,
+  options?: RequestInit,
+): Promise<CompositeCost> => {
+  return customFetch<CompositeCost>(getGetCompositeCostUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCompositeCostQueryKey = (id: number) => {
+  return [`/api/products/${id}/composite-cost`] as const;
+};
+
+export const getGetCompositeCostQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCompositeCost>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCompositeCost>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCompositeCostQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCompositeCost>>
+  > = ({ signal }) => getCompositeCost(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCompositeCost>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCompositeCostQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCompositeCost>>
+>;
+export type GetCompositeCostQueryError = ErrorType<void>;
+
+/**
+ * @summary Get derived cost / margin for a composite product
+ */
+
+export function useGetCompositeCost<
+  TData = Awaited<ReturnType<typeof getCompositeCost>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCompositeCost>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCompositeCostQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary How many bundles can be assembled from current child stock
+ */
+export const getGetAvailableCompositeUrl = (
+  id: number,
+  params?: GetAvailableCompositeParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/products/${id}/available-composite-quantity?${stringifiedParams}`
+    : `/api/products/${id}/available-composite-quantity`;
+};
+
+export const getAvailableComposite = async (
+  id: number,
+  params?: GetAvailableCompositeParams,
+  options?: RequestInit,
+): Promise<AvailableComposite> => {
+  return customFetch<AvailableComposite>(
+    getGetAvailableCompositeUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetAvailableCompositeQueryKey = (
+  id: number,
+  params?: GetAvailableCompositeParams,
+) => {
+  return [
+    `/api/products/${id}/available-composite-quantity`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetAvailableCompositeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAvailableComposite>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  params?: GetAvailableCompositeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAvailableComposite>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAvailableCompositeQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAvailableComposite>>
+  > = ({ signal }) =>
+    getAvailableComposite(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAvailableComposite>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAvailableCompositeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAvailableComposite>>
+>;
+export type GetAvailableCompositeQueryError = ErrorType<void>;
+
+/**
+ * @summary How many bundles can be assembled from current child stock
+ */
+
+export function useGetAvailableComposite<
+  TData = Awaited<ReturnType<typeof getAvailableComposite>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  params?: GetAvailableCompositeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAvailableComposite>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAvailableCompositeQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List orders
