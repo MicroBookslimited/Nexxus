@@ -100,12 +100,14 @@ router.put("/products/:id/pricing-tiers", async (req, res): Promise<void> => {
   ));
 
   if (parsed.data.tiers.length > 0) {
+    const now = new Date();
     await db.insert(productPricingTiersTable).values(
       parsed.data.tiers.map(t => ({
         tenantId, productId,
         minQty: t.minQty,
         maxQty: t.maxQty ?? null,
         unitPrice: t.unitPrice,
+        createdAt: now,
       })),
     );
   }
@@ -212,6 +214,7 @@ router.put("/products/:id/purchase-units", async (req, res): Promise<void> => {
   ));
 
   if (parsed.data.units.length > 0) {
+    const now = new Date();
     await db.insert(productPurchaseUnitsTable).values(
       parsed.data.units.map(u => ({
         tenantId, productId,
@@ -219,6 +222,7 @@ router.put("/products/:id/purchase-units", async (req, res): Promise<void> => {
         conversionFactor: u.conversionFactor,
         isPurchase: u.isPurchase ?? true,
         isSale: u.isSale ?? false,
+        createdAt: now,
       })),
     );
   }

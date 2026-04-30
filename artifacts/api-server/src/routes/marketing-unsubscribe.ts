@@ -142,6 +142,7 @@ router.get("/unsubscribe", async (req, res): Promise<void> => {
       email: email.toLowerCase(),
       token,
       campaignId,
+      unsubscribedAt: new Date(),
     });
 
     res.type("html").send(SUCCESS_PAGE);

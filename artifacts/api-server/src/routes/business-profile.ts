@@ -175,8 +175,10 @@ router.put("/business-profile/features/:key", async (req, res): Promise<void> =>
       .set({ isEnabled: parsed.data.enabled, updatedAt: new Date() })
       .where(eq(tenantFeaturesTable.id, existing.id));
   } else {
+    const now = new Date();
     await db.insert(tenantFeaturesTable).values({
       tenantId, featureName: key, isEnabled: parsed.data.enabled,
+      createdAt: now, updatedAt: now,
     });
   }
   res.json({ feature: key, enabled: parsed.data.enabled });
