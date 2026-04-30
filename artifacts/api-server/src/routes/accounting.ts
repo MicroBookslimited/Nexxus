@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, accountingAccountsTable, journalEntriesTable, journalEntryLinesTable, quickbooksConnectionTable, ordersTable, orderItemsTable, productsTable, stockAdjustmentsTable, stockCountSessionsTable, stockCountItemsTable } from "@workspace/db";
-import { eq, and, gte, lte, sql, ne, inArray, desc } from "drizzle-orm";
+import { eq, and, gte, lte, sql, ne, inArray, desc, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
 
@@ -1010,6 +1010,385 @@ router.get("/accounting/stock-counts/categories", async (req, res): Promise<void
     .where(eq(productsTable.tenantId, tenantId))
     .orderBy(productsTable.category);
   res.json(cats.map(c => c.category));
+});
+
+/* ─── Bulk Stock Count: bulk-set physical counts ─── */
+const BulkItem = z.object({
+  productId: z.coerce.number().int().positive(),
+  physicalCount: z.coerce.number().int().min(0),
+});
+const BulkBody = z.object({ items: z.array(BulkItem).min(1).max(5000) });
+
+router.post("/accounting/stock-counts/:id/items/bulk", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const sessionId = parseInt(req.params["id"] ?? "0", 10);
+  const parsed = BulkBody.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+
+  const [session] = await db.select().from(stockCountSessionsTable)
+    .where(and(eq(stockCountSessionsTable.id, sessionId), eq(stockCountSessionsTable.tenantId, tenantId)));
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+  if (session.status === "completed" || session.status === "voided") {
+    res.status(400).json({ error: `Session is ${session.status}, cannot edit items` });
+    return;
+  }
+
+  // Snapshot existing items so we can compute discrepancy and detect unmatched.
+  const existing = await db.select().from(stockCountItemsTable)
+    .where(eq(stockCountItemsTable.sessionId, sessionId));
+  const byProduct = new Map(existing.map(i => [i.productId, i]));
+
+  let updated = 0;
+  const unmatched: Array<{ productId: number }> = [];
+
+  for (const { productId, physicalCount } of parsed.data.items) {
+    const item = byProduct.get(productId);
+    if (!item) { unmatched.push({ productId }); continue; }
+    if (item.isAdjusted) continue; // never overwrite already-applied items
+    const discrepancy = physicalCount - item.systemCount;
+    await db.update(stockCountItemsTable)
+      .set({ physicalCount, discrepancy })
+      .where(eq(stockCountItemsTable.id, item.id));
+    updated++;
+  }
+
+  res.json({ updated, unmatched, total: parsed.data.items.length });
+});
+
+/* ─── Bulk Stock Count: CSV export ─── */
+function csvEscape(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+router.get("/accounting/stock-counts/:id/export.csv", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const sessionId = parseInt(req.params["id"] ?? "0", 10);
+  const [session] = await db.select().from(stockCountSessionsTable)
+    .where(and(eq(stockCountSessionsTable.id, sessionId), eq(stockCountSessionsTable.tenantId, tenantId)));
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+  const items = await db
+    .select({
+      itemId:        stockCountItemsTable.id,
+      productId:     stockCountItemsTable.productId,
+      productName:   stockCountItemsTable.productName,
+      productCategory: stockCountItemsTable.productCategory,
+      systemCount:   stockCountItemsTable.systemCount,
+      physicalCount: stockCountItemsTable.physicalCount,
+      discrepancy:   stockCountItemsTable.discrepancy,
+      barcode:       productsTable.barcode,
+    })
+    .from(stockCountItemsTable)
+    .leftJoin(productsTable, and(
+      eq(productsTable.id, stockCountItemsTable.productId),
+      eq(productsTable.tenantId, tenantId),
+    ))
+    .where(eq(stockCountItemsTable.sessionId, sessionId))
+    .orderBy(stockCountItemsTable.productCategory, stockCountItemsTable.productName);
+
+  const header = ["productId","productName","barcode","category","systemCount","physicalCount","discrepancy"];
+  const lines = [header.join(",")];
+  for (const r of items) {
+    lines.push([
+      r.productId,
+      r.productName,
+      r.barcode ?? "",
+      r.productCategory ?? "",
+      r.systemCount,
+      r.physicalCount ?? "",
+      r.discrepancy ?? "",
+    ].map(csvEscape).join(","));
+  }
+
+  const filename = `stock-count-${sessionId}.csv`;
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(lines.join("\r\n") + "\r\n");
+});
+
+/* ─── Bulk Stock Count: CSV import ─── */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = false; }
+      } else { cur += ch; }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === ",") { row.push(cur); cur = ""; }
+      else if (ch === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+      else if (ch === "\r") { /* skip */ }
+      else { cur += ch; }
+    }
+  }
+  if (cur.length > 0 || row.length > 0) { row.push(cur); rows.push(row); }
+  return rows.filter(r => r.length > 0 && !(r.length === 1 && r[0] === ""));
+}
+
+const ImportBody = z.object({ csv: z.string().min(1).max(2_000_000) });
+
+router.post("/accounting/stock-counts/:id/import", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const sessionId = parseInt(req.params["id"] ?? "0", 10);
+  const parsed = ImportBody.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+
+  const [session] = await db.select().from(stockCountSessionsTable)
+    .where(and(eq(stockCountSessionsTable.id, sessionId), eq(stockCountSessionsTable.tenantId, tenantId)));
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+  if (session.status === "completed" || session.status === "voided") {
+    res.status(400).json({ error: `Session is ${session.status}, cannot import` });
+    return;
+  }
+
+  const rows = parseCsv(parsed.data.csv);
+  if (rows.length < 2) { res.status(400).json({ error: "CSV has no data rows" }); return; }
+
+  const header = rows[0]!.map(h => h.trim().toLowerCase());
+  const idxProductId = header.indexOf("productid");
+  const idxBarcode   = header.indexOf("barcode");
+  const idxPhysical  = header.indexOf("physicalcount");
+  if (idxPhysical < 0 || (idxProductId < 0 && idxBarcode < 0)) {
+    res.status(400).json({ error: "CSV must have a physicalCount column and either productId or barcode" });
+    return;
+  }
+
+  const items = await db.select().from(stockCountItemsTable)
+    .where(eq(stockCountItemsTable.sessionId, sessionId));
+  const byProduct = new Map(items.map(i => [i.productId, i]));
+
+  // If matching by barcode, build a lookup from products in this tenant.
+  let barcodeToProductId = new Map<string, number>();
+  if (idxBarcode >= 0) {
+    const prods = await db
+      .select({ id: productsTable.id, barcode: productsTable.barcode })
+      .from(productsTable)
+      .where(eq(productsTable.tenantId, tenantId));
+    for (const p of prods) {
+      if (p.barcode) barcodeToProductId.set(p.barcode.trim(), p.id);
+    }
+  }
+
+  let updated = 0;
+  let skipped = 0;
+  const unmatched: Array<{ row: number; reason: string; productId?: number; barcode?: string }> = [];
+
+  for (let r = 1; r < rows.length; r++) {
+    const cols = rows[r]!;
+    const physRaw = (cols[idxPhysical] ?? "").trim();
+    if (physRaw === "") { skipped++; continue; }
+    const physical = parseInt(physRaw, 10);
+    if (!Number.isFinite(physical) || physical < 0) {
+      unmatched.push({ row: r + 1, reason: `Invalid physicalCount "${physRaw}"` });
+      continue;
+    }
+
+    let productId: number | null = null;
+    if (idxProductId >= 0) {
+      const pidRaw = (cols[idxProductId] ?? "").trim();
+      const pid = parseInt(pidRaw, 10);
+      if (Number.isFinite(pid) && pid > 0) productId = pid;
+    }
+    if (productId === null && idxBarcode >= 0) {
+      const bc = (cols[idxBarcode] ?? "").trim();
+      if (bc) productId = barcodeToProductId.get(bc) ?? null;
+      if (productId === null && bc) {
+        unmatched.push({ row: r + 1, reason: "Barcode not found", barcode: bc });
+        continue;
+      }
+    }
+    if (productId === null) { unmatched.push({ row: r + 1, reason: "Missing productId/barcode" }); continue; }
+
+    const item = byProduct.get(productId);
+    if (!item) { unmatched.push({ row: r + 1, reason: "Product not in this count session", productId }); continue; }
+    if (item.isAdjusted) { skipped++; continue; }
+
+    const discrepancy = physical - item.systemCount;
+    await db.update(stockCountItemsTable)
+      .set({ physicalCount: physical, discrepancy })
+      .where(eq(stockCountItemsTable.id, item.id));
+    updated++;
+  }
+
+  res.json({ updated, skipped, unmatched, totalRows: rows.length - 1 });
+});
+
+/* ─── Stock Variance Report ─── */
+router.get("/accounting/reports/stock-variance", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const fromStr = String(req.query["from"] ?? "");
+  const toStr   = String(req.query["to"] ?? "");
+  const from = fromStr ? new Date(fromStr) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const to   = toStr ? new Date(toStr) : new Date();
+  if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+    res.status(400).json({ error: "Invalid from/to date" }); return;
+  }
+  // Make `to` end-of-day inclusive.
+  to.setHours(23, 59, 59, 999);
+
+  // Pull completed sessions in window.
+  const sessions = await db.select().from(stockCountSessionsTable)
+    .where(and(
+      eq(stockCountSessionsTable.tenantId, tenantId),
+      eq(stockCountSessionsTable.status, "completed"),
+      gte(stockCountSessionsTable.completedAt, from),
+      lte(stockCountSessionsTable.completedAt, to),
+    ))
+    .orderBy(desc(stockCountSessionsTable.completedAt));
+
+  if (sessions.length === 0) {
+    res.json({
+      from: from.toISOString(), to: to.toISOString(),
+      summary: { sessionsRun: 0, itemsCounted: 0, totalDiscrepancies: 0,
+        shrinkageUnits: 0, shrinkageValue: 0, overageUnits: 0, overageValue: 0,
+        netUnits: 0, netValue: 0 },
+      byCategory: [], topVariances: [], sessions: [],
+    });
+    return;
+  }
+
+  const sessionIds = sessions.map(s => s.id);
+  const items = await db.select().from(stockCountItemsTable)
+    .where(and(
+      inArray(stockCountItemsTable.sessionId, sessionIds),
+      // Only items that were actually counted (have a physical value).
+      isNotNull(stockCountItemsTable.physicalCount),
+    ));
+
+  // Aggregations
+  let itemsCounted = 0;
+  let totalDiscrepancies = 0;
+  let shrinkageUnits = 0, shrinkageValue = 0;
+  let overageUnits = 0, overageValue = 0;
+
+  type CatAgg = { category: string; items: number; discrepancies: number;
+    shrinkageUnits: number; shrinkageValue: number;
+    overageUnits: number; overageValue: number; netUnits: number; netValue: number };
+  const catMap = new Map<string, CatAgg>();
+
+  type SessionAgg = { sessionId: number; shrinkageValue: number; overageValue: number; discrepancies: number };
+  const sessAgg = new Map<number, SessionAgg>();
+
+  type TopRow = { productId: number; productName: string; category: string | null;
+    systemCount: number; physicalCount: number; discrepancy: number;
+    unitCost: number; absValue: number; signedValue: number;
+    sessionId: number; sessionName: string; completedAt: Date | null };
+  const topRows: TopRow[] = [];
+  const sessionNameById = new Map(sessions.map(s => [s.id, s.name]));
+  const sessionCompletedById = new Map(sessions.map(s => [s.id, s.completedAt]));
+
+  for (const it of items) {
+    if (it.physicalCount === null) continue;
+    itemsCounted++;
+    const disc = it.discrepancy ?? 0;
+    const cost = it.unitCost ?? 0;
+    const cat  = it.productCategory ?? "Uncategorized";
+
+    if (!catMap.has(cat)) {
+      catMap.set(cat, { category: cat, items: 0, discrepancies: 0,
+        shrinkageUnits: 0, shrinkageValue: 0, overageUnits: 0, overageValue: 0,
+        netUnits: 0, netValue: 0 });
+    }
+    const c = catMap.get(cat)!;
+    c.items++;
+
+    if (!sessAgg.has(it.sessionId)) {
+      sessAgg.set(it.sessionId, { sessionId: it.sessionId, shrinkageValue: 0, overageValue: 0, discrepancies: 0 });
+    }
+    const sa = sessAgg.get(it.sessionId)!;
+
+    if (disc !== 0) {
+      totalDiscrepancies++;
+      c.discrepancies++;
+      sa.discrepancies++;
+      const val = Math.abs(disc) * cost;
+      if (disc < 0) {
+        shrinkageUnits += Math.abs(disc); shrinkageValue += val;
+        c.shrinkageUnits += Math.abs(disc); c.shrinkageValue += val;
+        sa.shrinkageValue += val;
+      } else {
+        overageUnits += disc; overageValue += val;
+        c.overageUnits += disc; c.overageValue += val;
+        sa.overageValue += val;
+      }
+      c.netUnits += disc; c.netValue += disc * cost;
+
+      // Each (session, product) is its own row — most useful for spotting
+      // recurring shortages of the same item across multiple counts.
+      const signedValue = disc * cost;
+      topRows.push({
+        productId: it.productId,
+        productName: it.productName,
+        category: it.productCategory,
+        systemCount: it.systemCount,
+        physicalCount: it.physicalCount,
+        discrepancy: disc,
+        unitCost: cost,
+        absValue: Math.abs(signedValue),
+        signedValue,
+        sessionId: it.sessionId,
+        sessionName: sessionNameById.get(it.sessionId) ?? "",
+        completedAt: sessionCompletedById.get(it.sessionId) ?? null,
+      });
+    }
+  }
+
+  const topVariances = topRows
+    .sort((a, b) => b.absValue - a.absValue || Math.abs(b.discrepancy) - Math.abs(a.discrepancy))
+    .slice(0, 20);
+
+  const byCategory = Array.from(catMap.values())
+    .sort((a, b) => Math.abs(b.netValue) - Math.abs(a.netValue));
+
+  const sessionsOut = sessions.map(s => {
+    const a = sessAgg.get(s.id);
+    return {
+      id: s.id,
+      name: s.name,
+      startedAt: s.startedAt,
+      completedAt: s.completedAt,
+      totalItems: s.totalItems,
+      totalDiscrepancies: s.totalDiscrepancies ?? a?.discrepancies ?? 0,
+      shrinkageValue: a?.shrinkageValue ?? 0,
+      overageValue: a?.overageValue ?? 0,
+    };
+  });
+
+  res.json({
+    from: from.toISOString(),
+    to: to.toISOString(),
+    summary: {
+      sessionsRun: sessions.length,
+      itemsCounted,
+      totalDiscrepancies,
+      shrinkageUnits,
+      shrinkageValue,
+      overageUnits,
+      overageValue,
+      netUnits: overageUnits - shrinkageUnits,
+      netValue: overageValue - shrinkageValue,
+    },
+    byCategory,
+    topVariances,
+    sessions: sessionsOut,
+  });
 });
 
 export default router;

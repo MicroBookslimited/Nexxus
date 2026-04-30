@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,9 @@ import {
   AlertTriangle, BarChart2, ChevronRight, Building2, Calculator,
   ArrowUpRight, ArrowDownRight, Wallet, Package, ClipboardList,
   ArrowUp, ArrowDown, Search, ChevronDown, ChevronUp,
+  Download, Upload, Wand2,
 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { format, startOfMonth, endOfMonth, startOfYear } from "date-fns";
 
 /* ─── Types ─── */
@@ -810,6 +812,8 @@ function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number;
   const [applying, setApplying] = useState(false);
   const [createJE, setCreateJE] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -844,6 +848,73 @@ function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number;
       onApplied();
     } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
     finally { setApplying(false); }
+  }
+
+  async function bulkSet(mode: "match" | "zero" | "clear") {
+    const editable = items.filter(i => !i.isAdjusted);
+    if (editable.length === 0) { toast({ title: "Nothing to update" }); return; }
+
+    if (mode === "clear") {
+      // Local-only clear: just blank the inputs. There's no API to null out
+      // physicalCount; the user can re-type to overwrite, then Apply ignores
+      // null values anyway.
+      setCounts({});
+      toast({ title: "Cleared inputs" });
+      return;
+    }
+
+    const payload = editable.map(i => ({
+      productId: i.productId,
+      physicalCount: mode === "zero" ? 0 : i.systemCount,
+    }));
+
+    setBulkBusy(true);
+    try {
+      const r = await api<{ updated: number; unmatched: { productId: number }[] }>(
+        `/accounting/stock-counts/${sessionId}/items/bulk`,
+        { method: "POST", body: JSON.stringify({ items: payload }) },
+      );
+      toast({ title: `Updated ${r.updated} items` });
+      await load();
+    } catch (e: any) { toast({ title: "Bulk update failed", description: e.message, variant: "destructive" }); }
+    finally { setBulkBusy(false); }
+  }
+
+  async function exportCsv() {
+    const t = localStorage.getItem(TENANT_TOKEN_KEY);
+    if (!t) { toast({ title: "Not signed in", variant: "destructive" }); return; }
+    try {
+      const r = await fetch(`/api/accounting/stock-counts/${sessionId}/export.csv`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `stock-count-${sessionId}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) { toast({ title: "Export failed", description: e.message, variant: "destructive" }); }
+  }
+
+  async function importCsvFile(file: File) {
+    setBulkBusy(true);
+    try {
+      const csv = await file.text();
+      const r = await api<{ updated: number; skipped: number; unmatched: { row: number; reason: string }[]; totalRows: number }>(
+        `/accounting/stock-counts/${sessionId}/import`,
+        { method: "POST", body: JSON.stringify({ csv }) },
+      );
+      const detail = r.unmatched.length > 0
+        ? `${r.updated} updated, ${r.unmatched.length} skipped (${r.unmatched.slice(0, 3).map(u => `row ${u.row}: ${u.reason}`).join("; ")}${r.unmatched.length > 3 ? "…" : ""})`
+        : `${r.updated} updated of ${r.totalRows} rows`;
+      toast({ title: "CSV imported", description: detail });
+      await load();
+    } catch (e: any) { toast({ title: "Import failed", description: e.message, variant: "destructive" }); }
+    finally { setBulkBusy(false); }
   }
 
   const filteredItems = items.filter(i => !searchQ || i.productName.toLowerCase().includes(searchQ.toLowerCase()) || (i.productCategory ?? "").toLowerCase().includes(searchQ.toLowerCase()));
@@ -886,6 +957,51 @@ function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number;
           <span>{items.length - counted} remaining</span>
         </div>
       </div>
+
+      {/* Bulk actions + Search */}
+      {!isCompleted && session?.status !== "voided" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" disabled={bulkBusy}>
+                <Wand2 className="h-3.5 w-3.5" /> Quick Fill <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="text-xs">
+              <DropdownMenuItem onClick={() => bulkSet("match")}>Match System (set physical = system)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => bulkSet("zero")}>Set All to Zero</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => bulkSet("clear")}>Clear Inputs (local)</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={exportCsv} disabled={bulkBusy}>
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </Button>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (f) await importCsvFile(f);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={bulkBusy}
+          >
+            <Upload className="h-3.5 w-3.5" /> Import CSV
+          </Button>
+
+          {bulkBusy && <span className="text-xs text-muted-foreground">Working…</span>}
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative">

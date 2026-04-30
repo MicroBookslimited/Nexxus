@@ -24,7 +24,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, CreditCard, Banknote, Star,
   BarChart2, ChefHat, UserCheck, Calendar, Layers, ArrowUpRight, Tag,
   UtensilsCrossed, TrendingDown, Table2, Percent, Receipt, Activity,
-  ClipboardList, Eye, Printer, MapPin,
+  ClipboardList, Eye, Printer, MapPin, ScanLine,
 } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { useStaff } from "@/contexts/StaffContext";
@@ -1738,9 +1738,10 @@ const BASE_TABS = [
 
 const REGISTER_TAB  = { value: "register",    label: "Register Report",  icon: ClipboardList, num: "12" };
 const STAFF_SALES_TAB = { value: "staff-sales", label: "Sales by Staff",   icon: Users,         num: "13" };
+const STOCK_VARIANCE_TAB = { value: "stock-variance", label: "Stock Variance", icon: ScanLine, num: "14" };
 
 const TABS_WITH_OWN_DATE = new Set(["hourly"]);
-const TABS_WITH_RANGE    = new Set(["daily-sales","payment","product-sales","inventory","staff","discount-void","category","table-turnover","profit","tax","register","staff-sales"]);
+const TABS_WITH_RANGE    = new Set(["daily-sales","payment","product-sales","inventory","staff","discount-void","category","table-turnover","profit","tax","register","staff-sales","stock-variance"]);
 
 export function Reports() {
   const { staff } = useStaff();
@@ -1748,8 +1749,8 @@ export function Reports() {
   const canViewRegister = role === "admin" || role === "manager";
 
   const TABS = canViewRegister
-    ? [...BASE_TABS, REGISTER_TAB, STAFF_SALES_TAB]
-    : [...BASE_TABS, STAFF_SALES_TAB];
+    ? [...BASE_TABS, REGISTER_TAB, STAFF_SALES_TAB, STOCK_VARIANCE_TAB]
+    : [...BASE_TABS, STAFF_SALES_TAB, STOCK_VARIANCE_TAB];
   const tabCount = TABS.length;
 
   const [preset,    setPreset]    = useState<Preset>("today");
@@ -1797,8 +1798,215 @@ export function Reports() {
             <TabsContent value="register">    <RegisterReportTab range={range} /></TabsContent>
           )}
           <TabsContent value="staff-sales">   <SalesByStaffTab range={range} /></TabsContent>
+          <TabsContent value="stock-variance"><StockVarianceTab range={range} /></TabsContent>
         </div>
       </Tabs>
     </motion.div>
+  );
+}
+
+// ─── Stock Variance Tab ──────────────────────────────────────────────────────
+type VarianceRow = {
+  productId: number; productName: string; category: string | null;
+  systemCount: number; physicalCount: number; discrepancy: number;
+  unitCost: number; absValue: number; signedValue: number;
+  sessionId: number; sessionName: string; completedAt: string | null;
+};
+type CategoryRow = {
+  category: string; items: number; discrepancies: number;
+  shrinkageUnits: number; shrinkageValue: number;
+  overageUnits: number; overageValue: number;
+  netUnits: number; netValue: number;
+};
+type SessionRow = {
+  id: number; name: string; startedAt: string | null; completedAt: string | null;
+  totalItems: number | null; totalDiscrepancies: number;
+  shrinkageValue: number; overageValue: number;
+};
+type VarianceReport = {
+  from: string; to: string;
+  summary: {
+    sessionsRun: number; itemsCounted: number; totalDiscrepancies: number;
+    shrinkageUnits: number; shrinkageValue: number;
+    overageUnits: number; overageValue: number;
+    netUnits: number; netValue: number;
+  };
+  byCategory: CategoryRow[];
+  topVariances: VarianceRow[];
+  sessions: SessionRow[];
+};
+
+function StockVarianceTab({ range }: { range: { from: string; to: string } }) {
+  const { data, isLoading } = useReport<VarianceReport>(
+    ["stock-variance", range.from, range.to],
+    `/api/accounting/reports/stock-variance?from=${range.from}&to=${range.to}`,
+  );
+
+  if (isLoading || !data) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
+      </div>
+    );
+  }
+
+  const s = data.summary;
+  const empty = s.sessionsRun === 0;
+
+  return (
+    <div className="space-y-4">
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <Card>
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground"><ClipboardList className="h-3.5 w-3.5"/>Counts</div>
+            <div className="text-xl font-bold mt-1">{s.sessionsRun}</div>
+            <div className="text-[10px] text-muted-foreground">{s.itemsCounted} items checked</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground"><AlertTriangle className="h-3.5 w-3.5"/>Discrepancies</div>
+            <div className="text-xl font-bold mt-1">{s.totalDiscrepancies}</div>
+            <div className="text-[10px] text-muted-foreground">{s.itemsCounted ? `${((s.totalDiscrepancies/s.itemsCounted)*100).toFixed(1)}%` : "—"} of items</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2 text-xs text-red-400"><TrendingDown className="h-3.5 w-3.5"/>Shrinkage</div>
+            <div className="text-xl font-bold mt-1 text-red-400">{fc(s.shrinkageValue)}</div>
+            <div className="text-[10px] text-muted-foreground">{s.shrinkageUnits} units short</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2 text-xs text-green-400"><TrendingUp className="h-3.5 w-3.5"/>Overage</div>
+            <div className="text-xl font-bold mt-1 text-green-400">{fc(s.overageValue)}</div>
+            <div className="text-[10px] text-muted-foreground">{s.overageUnits} units extra</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground"><DollarSign className="h-3.5 w-3.5"/>Net Variance</div>
+            <div className={`text-xl font-bold mt-1 ${s.netValue < 0 ? "text-red-400" : s.netValue > 0 ? "text-green-400" : ""}`}>{fc(s.netValue)}</div>
+            <div className="text-[10px] text-muted-foreground">{s.netUnits >= 0 ? "+" : ""}{s.netUnits} units</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {empty && (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            No completed stock counts in this date range.
+          </CardContent>
+        </Card>
+      )}
+
+      {!empty && (
+        <>
+          {/* By category */}
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-base">By Category</CardTitle></CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="text-right">Items</TableHead>
+                    <TableHead className="text-right">Discrep.</TableHead>
+                    <TableHead className="text-right text-red-400">Shrinkage</TableHead>
+                    <TableHead className="text-right text-green-400">Overage</TableHead>
+                    <TableHead className="text-right">Net</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.byCategory.map(c => (
+                    <TableRow key={c.category}>
+                      <TableCell className="font-medium">{c.category}</TableCell>
+                      <TableCell className="text-right">{c.items}</TableCell>
+                      <TableCell className="text-right">{c.discrepancies}</TableCell>
+                      <TableCell className="text-right text-red-400">{fc(c.shrinkageValue)}</TableCell>
+                      <TableCell className="text-right text-green-400">{fc(c.overageValue)}</TableCell>
+                      <TableCell className={`text-right font-medium ${c.netValue < 0 ? "text-red-400" : c.netValue > 0 ? "text-green-400" : ""}`}>{fc(c.netValue)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Top variances */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Top Variances</CardTitle>
+              <CardDescription className="text-xs">Largest variance events ranked by value impact (top 20).</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="text-right">System</TableHead>
+                    <TableHead className="text-right">Physical</TableHead>
+                    <TableHead className="text-right">Diff</TableHead>
+                    <TableHead className="text-right">Value</TableHead>
+                    <TableHead>Session</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.topVariances.map((r, i) => (
+                    <TableRow key={`${r.sessionId}-${r.productId}-${i}`}>
+                      <TableCell className="font-medium">{r.productName}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{r.category ?? "—"}</TableCell>
+                      <TableCell className="text-right">{r.systemCount}</TableCell>
+                      <TableCell className="text-right">{r.physicalCount}</TableCell>
+                      <TableCell className={`text-right font-medium ${r.discrepancy < 0 ? "text-red-400" : "text-green-400"}`}>
+                        {r.discrepancy > 0 ? `+${r.discrepancy}` : r.discrepancy}
+                      </TableCell>
+                      <TableCell className={`text-right ${r.signedValue < 0 ? "text-red-400" : "text-green-400"}`}>{fc(r.signedValue)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{r.sessionName}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Sessions */}
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-base">Sessions in Range</CardTitle></CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Session</TableHead>
+                    <TableHead>Completed</TableHead>
+                    <TableHead className="text-right">Items</TableHead>
+                    <TableHead className="text-right">Discrep.</TableHead>
+                    <TableHead className="text-right text-red-400">Shrinkage</TableHead>
+                    <TableHead className="text-right text-green-400">Overage</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.sessions.map(sess => (
+                    <TableRow key={sess.id}>
+                      <TableCell className="font-medium">{sess.name}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {sess.completedAt ? format(new Date(sess.completedAt), "MMM d, yyyy h:mm a") : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">{sess.totalItems ?? "—"}</TableCell>
+                      <TableCell className="text-right">{sess.totalDiscrepancies}</TableCell>
+                      <TableCell className="text-right text-red-400">{fc(sess.shrinkageValue)}</TableCell>
+                      <TableCell className="text-right text-green-400">{fc(sess.overageValue)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
   );
 }
