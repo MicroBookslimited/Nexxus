@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect, KeyboardEvent } from "react";
 import nexxusLogoUrl from "@assets/EB8B578F-2602-4DD8-AB97-D02AF59C49D3_1775943434994.png";
 import { CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayMessage } from "@/lib/customer-display-channel";
 import { motion, AnimatePresence } from "framer-motion";
-import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt } from "@/lib/receipt";
+import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom } from "@/lib/receipt";
 import {
   useListProducts,
   useCreateOrder,
@@ -1382,13 +1382,27 @@ export function POS() {
             });
           }
           setReceiptOrder(data);
-          // Fetch fresh customer info (incl. updated loyalty balance and
-          // outstanding AR balance) so the receipt block reflects post-sale
-          // state. Failures here are non-fatal — the receipt still prints.
+          // Receipts can be printed/sent the moment the receipt dialog
+          // opens — sometimes faster than a network round-trip — so we
+          // seed customer info SYNCHRONOUSLY from the in-memory cart
+          // customer first, then upgrade it with fresh AR + loyalty data
+          // once the server responds. Failures keep the synchronous
+          // fallback so the customer block never disappears mid-print.
           if (data?.customerId) {
+            const fallback: CustomerReceiptInfo | null = selectedCustomer
+              ? {
+                  id: selectedCustomer.id,
+                  name: selectedCustomer.name,
+                  phone: selectedCustomer.phone ?? null,
+                  email: selectedCustomer.email ?? null,
+                  loyaltyPoints: selectedCustomer.loyaltyPoints,
+                  outstandingBalance: 0,
+                }
+              : null;
+            setReceiptCustomerInfo(fallback);
             fetchCustomerReceiptInfo(data.customerId)
-              .then(setReceiptCustomerInfo)
-              .catch(() => setReceiptCustomerInfo(null));
+              .then((fresh) => setReceiptCustomerInfo(fresh))
+              .catch(() => { /* keep synchronous fallback */ });
           } else {
             setReceiptCustomerInfo(null);
           }
@@ -3106,15 +3120,11 @@ export function POS() {
                   className="h-8 text-sm"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && whatsappPhone.replace(/\D/g, "").length >= 7 && receiptOrder) {
-                      const orderForWa = {
-                        ...receiptOrder,
-                        customerName: receiptCustomerInfo?.name ?? null,
-                        customerPhone: receiptCustomerInfo?.phone ?? null,
-                        customerEmail: receiptCustomerInfo?.email ?? null,
-                        customerLoyaltyBalance: receiptCustomerInfo?.loyaltyPoints ?? null,
-                        customerOutstandingBalance: receiptCustomerInfo?.outstandingBalance ?? null,
-                      } as unknown as Parameters<typeof openWhatsAppReceipt>[1];
-                      openWhatsAppReceipt(whatsappPhone, orderForWa, settings ?? {});
+                      openWhatsAppReceipt(
+                        whatsappPhone,
+                        receiptOrderFrom(receiptOrder, receiptCustomerInfo),
+                        settings ?? {},
+                      );
                       setWhatsappOpen(false);
                     }
                   }}
@@ -3125,15 +3135,11 @@ export function POS() {
                   className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
                   onClick={() => {
                     if (!receiptOrder) return;
-                    const orderForWa = {
-                      ...receiptOrder,
-                      customerName: receiptCustomerInfo?.name ?? null,
-                      customerPhone: receiptCustomerInfo?.phone ?? null,
-                      customerEmail: receiptCustomerInfo?.email ?? null,
-                      customerLoyaltyBalance: receiptCustomerInfo?.loyaltyPoints ?? null,
-                      customerOutstandingBalance: receiptCustomerInfo?.outstandingBalance ?? null,
-                    } as unknown as Parameters<typeof openWhatsAppReceipt>[1];
-                    openWhatsAppReceipt(whatsappPhone, orderForWa, settings ?? {});
+                    openWhatsAppReceipt(
+                      whatsappPhone,
+                      receiptOrderFrom(receiptOrder, receiptCustomerInfo),
+                      settings ?? {},
+                    );
                     setWhatsappOpen(false);
                     toast({ title: "Opening WhatsApp…", description: "Receipt text is pre-filled and ready to send." });
                   }}

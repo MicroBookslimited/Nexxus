@@ -77,6 +77,80 @@ export interface ReceiptOrder {
   loyaltyPointsRedeemed?: number | null;
 }
 
+/**
+ * Shape of the customer block we splice onto receipts. Matches what
+ * `GET /api/customers/:id/receipt-info` returns plus a few aliases for
+ * convenience when the caller already has a partial customer object
+ * (e.g. the in-memory `selectedCustomer` from the POS cart used during
+ * offline sales when we can't reach the server to compute AR).
+ */
+export interface ReceiptCustomerLike {
+  name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  loyaltyPoints?: number | null;
+  outstandingBalance?: number | null;
+}
+
+/**
+ * Build a strictly-typed `ReceiptOrder` from any wider order shape
+ * (e.g. an API `Order`, an offline receipt, or a kiosk-charge result)
+ * and optionally splice in fetched customer info. Keeping this in one
+ * place lets callers pass their native order types without `as any`
+ * casts and guarantees the receipt builders only see fields they
+ * actually understand.
+ */
+export function receiptOrderFrom(
+  order: {
+    orderNumber: string;
+    createdAt: string | Date;
+    items: ReceiptOrderItem[];
+    subtotal: number;
+    tax: number;
+    total: number;
+    discountValue?: number | null;
+    paymentMethod?: string | null;
+    splitCardAmount?: number | null;
+    splitCashAmount?: number | null;
+    cashTendered?: number | null;
+    notes?: string | null;
+    status?: string;
+    orderType?: string | null;
+    staffName?: string | null;
+    guestCount?: number | null;
+    customerName?: string | null;
+    loyaltyPointsEarned?: number | null;
+    loyaltyPointsRedeemed?: number | null;
+  },
+  customer?: ReceiptCustomerLike | null,
+): ReceiptOrder {
+  return {
+    orderNumber: order.orderNumber,
+    createdAt: order.createdAt,
+    items: order.items,
+    subtotal: order.subtotal,
+    tax: order.tax,
+    total: order.total,
+    discountValue: order.discountValue ?? null,
+    paymentMethod: order.paymentMethod ?? null,
+    splitCardAmount: order.splitCardAmount ?? null,
+    splitCashAmount: order.splitCashAmount ?? null,
+    cashTendered: order.cashTendered ?? null,
+    notes: order.notes ?? null,
+    status: order.status,
+    orderType: order.orderType ?? null,
+    staffName: order.staffName ?? null,
+    guestCount: order.guestCount ?? null,
+    customerName: customer?.name ?? order.customerName ?? null,
+    customerPhone: customer?.phone ?? null,
+    customerEmail: customer?.email ?? null,
+    customerLoyaltyBalance: customer?.loyaltyPoints ?? null,
+    customerOutstandingBalance: customer?.outstandingBalance ?? null,
+    loyaltyPointsEarned: order.loyaltyPointsEarned ?? null,
+    loyaltyPointsRedeemed: order.loyaltyPointsRedeemed ?? null,
+  };
+}
+
 function escHtml(str: string): string {
   return String(str)
     .replace(/&/g, "&amp;")

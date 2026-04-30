@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings, useListStaff } from "@workspace/api-client-react";
 import { useStaff } from "@/contexts/StaffContext";
-import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt } from "@/lib/receipt";
+import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom } from "@/lib/receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -986,15 +986,11 @@ export function Orders() {
                 onChange={(e) => setWhatsappPhone(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && whatsappPhone.replace(/\D/g, "").length >= 7 && whatsappOrder) {
-                    const enriched = {
-                      ...whatsappOrder,
-                      customerName: whatsappCustomerInfo?.name ?? whatsappOrder.customerName ?? null,
-                      customerPhone: whatsappCustomerInfo?.phone ?? null,
-                      customerEmail: whatsappCustomerInfo?.email ?? null,
-                      customerLoyaltyBalance: whatsappCustomerInfo?.loyaltyPoints ?? null,
-                      customerOutstandingBalance: whatsappCustomerInfo?.outstandingBalance ?? null,
-                    };
-                    openWhatsAppReceipt(whatsappPhone, enriched as any, settings ?? {});
+                    openWhatsAppReceipt(
+                      whatsappPhone,
+                      receiptOrderFrom(whatsappOrder, whatsappCustomerInfo),
+                      settings ?? {},
+                    );
                     setWhatsappDialogOpen(false);
                   }
                 }}
@@ -1011,15 +1007,11 @@ export function Orders() {
               className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
               onClick={() => {
                 if (!whatsappOrder) return;
-                const enriched = {
-                  ...whatsappOrder,
-                  customerName: whatsappCustomerInfo?.name ?? whatsappOrder.customerName ?? null,
-                  customerPhone: whatsappCustomerInfo?.phone ?? null,
-                  customerEmail: whatsappCustomerInfo?.email ?? null,
-                  customerLoyaltyBalance: whatsappCustomerInfo?.loyaltyPoints ?? null,
-                  customerOutstandingBalance: whatsappCustomerInfo?.outstandingBalance ?? null,
-                };
-                openWhatsAppReceipt(whatsappPhone, enriched as any, settings ?? {});
+                openWhatsAppReceipt(
+                  whatsappPhone,
+                  receiptOrderFrom(whatsappOrder, whatsappCustomerInfo),
+                  settings ?? {},
+                );
                 setWhatsappDialogOpen(false);
                 toast({ title: "Opening WhatsApp…", description: "Receipt is pre-filled and ready to send." });
               }}
