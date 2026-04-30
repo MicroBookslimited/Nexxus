@@ -4,6 +4,8 @@ import {
   accountsReceivableTable,
   arPaymentsTable,
   customersTable,
+  ordersTable,
+  orderItemsTable,
 } from "@workspace/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { verifyTenantToken } from "./saas-auth.js";
@@ -39,7 +41,13 @@ router.get("/ar", async (req, res) => {
         email: customersTable.email,
       })
       .from(accountsReceivableTable)
-      .leftJoin(customersTable, eq(accountsReceivableTable.customerId, customersTable.id))
+      .leftJoin(
+        customersTable,
+        and(
+          eq(accountsReceivableTable.customerId, customersTable.id),
+          eq(customersTable.tenantId, tenantId),
+        ),
+      )
       .where(eq(accountsReceivableTable.tenantId, tenantId))
       .orderBy(desc(accountsReceivableTable.createdAt));
 
@@ -80,16 +88,42 @@ router.get("/ar/summary", async (req, res) => {
   }
 });
 
-/* ── Single AR record with payments ─────────────────────── */
+/* ── Single AR record with payments + customer + order details ── */
 router.get("/ar/:id", async (req, res) => {
   try {
     const tenantId = getTenantId(req);
     if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
 
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "Invalid id" });
+    }
+
     const [ar] = await db
-      .select()
+      .select({
+        id: accountsReceivableTable.id,
+        tenantId: accountsReceivableTable.tenantId,
+        customerId: accountsReceivableTable.customerId,
+        customerName: accountsReceivableTable.customerName,
+        orderId: accountsReceivableTable.orderId,
+        orderNumber: accountsReceivableTable.orderNumber,
+        amount: accountsReceivableTable.amount,
+        amountPaid: accountsReceivableTable.amountPaid,
+        status: accountsReceivableTable.status,
+        notes: accountsReceivableTable.notes,
+        dueDate: accountsReceivableTable.dueDate,
+        createdAt: accountsReceivableTable.createdAt,
+        phone: customersTable.phone,
+        email: customersTable.email,
+      })
       .from(accountsReceivableTable)
+      .leftJoin(
+        customersTable,
+        and(
+          eq(accountsReceivableTable.customerId, customersTable.id),
+          eq(customersTable.tenantId, tenantId),
+        ),
+      )
       .where(and(eq(accountsReceivableTable.id, id), eq(accountsReceivableTable.tenantId, tenantId)));
 
     if (!ar) return res.status(404).json({ error: "Not found" });
@@ -100,7 +134,74 @@ router.get("/ar/:id", async (req, res) => {
       .where(eq(arPaymentsTable.arId, id))
       .orderBy(desc(arPaymentsTable.createdAt));
 
-    res.json({ ...ar, payments });
+    // Pull the original order header (subtotal, tax, total, location,
+    // staff, payment-method/status snapshot at sale time) plus its
+    // line items so the AR drawer can show exactly what was sold on
+    // credit. All of this is read-only — payments stay on the AR row.
+    let order: {
+      id: number;
+      orderNumber: string;
+      subtotal: number;
+      tax: number;
+      total: number;
+      discountAmount: number | null;
+      paymentMethod: string | null;
+      orderType: string | null;
+      orderNotes: string | null;
+      createdAt: Date;
+    } | null = null;
+    let items: Array<{
+      id: number;
+      productName: string;
+      quantity: number;
+      unitPrice: number;
+      lineTotal: number;
+      discountAmount: number | null;
+      variantAdjustment: number | null;
+      modifierAdjustment: number | null;
+    }> = [];
+
+    if (ar.orderId) {
+      const [o] = await db
+        .select({
+          id: ordersTable.id,
+          orderNumber: ordersTable.orderNumber,
+          subtotal: ordersTable.subtotal,
+          tax: ordersTable.tax,
+          total: ordersTable.total,
+          discountAmount: ordersTable.discountAmount,
+          paymentMethod: ordersTable.paymentMethod,
+          orderType: ordersTable.orderType,
+          orderNotes: ordersTable.notes,
+          createdAt: ordersTable.createdAt,
+        })
+        .from(ordersTable)
+        .where(and(eq(ordersTable.id, ar.orderId), eq(ordersTable.tenantId, tenantId)));
+
+      // Only fetch line items when the tenant-scoped order lookup succeeded.
+      // `order_items` has no `tenantId` column, so the only safe gate is the
+      // verified `o.id`. Using `ar.orderId` directly here would leak items
+      // from another tenant's order if `ar.orderId` were ever inconsistent.
+      if (o) {
+        order = o;
+        const itemRows = await db
+          .select({
+            id: orderItemsTable.id,
+            productName: orderItemsTable.productName,
+            quantity: orderItemsTable.quantity,
+            unitPrice: orderItemsTable.unitPrice,
+            lineTotal: orderItemsTable.lineTotal,
+            discountAmount: orderItemsTable.discountAmount,
+            variantAdjustment: orderItemsTable.variantAdjustment,
+            modifierAdjustment: orderItemsTable.modifierAdjustment,
+          })
+          .from(orderItemsTable)
+          .where(eq(orderItemsTable.orderId, o.id));
+        items = itemRows;
+      }
+    }
+
+    res.json({ ...ar, payments, order, items });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch AR record" });
