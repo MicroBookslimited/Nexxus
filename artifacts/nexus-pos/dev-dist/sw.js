@@ -82,11 +82,12 @@ define(['./workbox-a731ab65'], (function (workbox) { 'use strict';
     "revision": "f935fee1215d47eef7d227ef09bed8cd"
   }, {
     "url": "index.html",
-    "revision": "0.2hj6hh6msp8"
+    "revision": "0.oeabkfseofs"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
-    allowlist: [/^\/$/]
+    allowlist: [/^\/$/],
+    denylist: [/^\/api\//, /^\/__/, /^\/@/]
   }));
   workbox.registerRoute(/\/api\/products/, new workbox.NetworkFirst({
     "cacheName": "api-products",

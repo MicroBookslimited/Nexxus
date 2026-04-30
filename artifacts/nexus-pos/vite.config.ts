@@ -64,6 +64,16 @@ export default defineConfig({
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,woff,ttf}"],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+        // Take over immediately so a new SW (e.g. after a broken
+        // bundle was cached) replaces the old one without waiting for
+        // every tab to close. Prevents "blank screen" caused by a
+        // stale SW serving the previous broken index.html.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        // Anything matching the API path should NEVER be served by
+        // the navigation fallback (which would return cached HTML).
+        navigateFallbackDenylist: [/^\/api\//, /^\/__/, /^\/@/],
         runtimeCaching: [
           {
             // NetworkFirst: always go to the network so mutations are
