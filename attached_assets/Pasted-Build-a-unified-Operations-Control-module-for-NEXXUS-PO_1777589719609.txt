@@ -1,0 +1,306 @@
+Build a unified Operations Control module for NEXXUS POS that includes:
+
+1. Bulk Stock Count
+2. Stock Variance Reporting
+3. Staff Clock-In / Shift Tracking
+
+The system must integrate inventory, reporting, and staff activity into one cohesive workflow.
+
+--------------------------------------------------
+1. CORE ARCHITECTURE
+--------------------------------------------------
+
+All modules must be linked through:
+
+- tenant_id (multi-tenant)
+- location_id
+- user_id
+- session_id (NEW LINKING KEY)
+
+Every stock count and variance must be traceable to:
+→ a staff member
+→ a shift session
+
+--------------------------------------------------
+2. STAFF CLOCK-IN MODULE
+--------------------------------------------------
+
+Create table: staff_sessions
+
+Fields:
+- id
+- tenant_id
+- user_id
+- location_id
+- clock_in_time
+- clock_out_time
+- status ENUM('active','closed')
+- created_at
+- updated_at
+
+Rules:
+- Only one active session per user
+- Must clock in before performing stock count (configurable)
+
+API:
+POST /staff/clock-in
+POST /staff/clock-out
+GET /staff/sessions
+
+--------------------------------------------------
+3. STOCK COUNT SESSION MODULE
+--------------------------------------------------
+
+Create table: stock_count_sessions
+
+Fields:
+- id
+- tenant_id
+- location_id
+- session_id (FK → staff_sessions.id)
+- status ENUM('draft','in_progress','completed')
+- count_type ENUM('full','partial')
+- created_by
+- started_at
+- completed_at
+- notes
+
+Create table: stock_count_lines
+
+Fields:
+- id
+- session_id
+- product_id
+- system_qty
+- counted_qty
+- variance_qty
+- unit_cost
+- variance_value
+
+Logic:
+variance_qty = counted_qty - system_qty
+variance_value = variance_qty * unit_cost
+
+--------------------------------------------------
+4. BULK STOCK COUNT WORKFLOW
+--------------------------------------------------
+
+Step 1: Create session
+- link to active staff_session
+
+Step 2: Load products
+- snapshot system_qty
+
+Step 3: Enter counted_qty
+- via manual entry or barcode scan
+
+Step 4: Auto calculate variance
+
+Step 5: Review screen
+- highlight negative (red), positive (green)
+
+Step 6: Confirm
+- lock session
+- apply inventory adjustments
+
+--------------------------------------------------
+5. INVENTORY ADJUSTMENT ENGINE
+--------------------------------------------------
+
+Create inventory_movements:
+
+Fields:
+- id
+- tenant_id
+- product_id
+- location_id
+- quantity_change
+- before_qty
+- after_qty
+- movement_type ENUM('stock_count','manual_adjustment')
+- reference_id
+- created_by
+- created_at
+
+Rules:
+- Must be atomic transaction
+- Cannot partially apply adjustments
+
+--------------------------------------------------
+6. STOCK VARIANCE REPORT MODULE
+--------------------------------------------------
+
+Location:
+Reports → Inventory → Stock Variance
+
+ACCESS:
+Manager + Admin ONLY
+
+Middleware:
+authorizeRoles(['manager','admin'])
+
+--------------------------------------------------
+7. REPORT APIs
+--------------------------------------------------
+
+GET /reports/stock-variance
+
+Filters:
+- date range
+- location_id
+- product_id
+- category_id
+- staff_id
+- session_id
+
+Response fields:
+- product_name
+- sku
+- system_qty
+- counted_qty
+- variance_qty
+- unit_cost
+- variance_value
+- staff_name
+- session_id
+- date
+
+--------------------------------------------------
+8. SUMMARY CALCULATIONS
+--------------------------------------------------
+
+total_loss = SUM(variance_value WHERE < 0)
+total_gain = SUM(variance_value WHERE > 0)
+net_variance = total_gain + total_loss
+
+shrinkage_percentage =
+    total_loss / total_inventory_value * 100
+
+--------------------------------------------------
+9. STAFF INTEGRATION (CRITICAL)
+--------------------------------------------------
+
+Each stock count must store:
+
+- session_id
+- user_id
+
+This allows:
+- variance by staff
+- variance by shift
+- accountability tracking
+
+--------------------------------------------------
+10. STAFF VARIANCE REPORT
+--------------------------------------------------
+
+GET /reports/stock-variance/by-staff
+
+Return:
+- staff_name
+- total_variance_qty
+- total_variance_value
+- session_count
+
+--------------------------------------------------
+11. POS + STOCK COUNT INTEGRATION
+--------------------------------------------------
+
+Optional setting:
+require_clock_in_for_stock_count = true
+
+If enabled:
+- block stock count unless staff clocked in
+
+--------------------------------------------------
+12. FRONTEND UI REQUIREMENTS
+--------------------------------------------------
+
+Modules:
+
+1. Staff Clock Panel
+- Clock In button
+- Clock Out button
+- Active shift timer
+
+2. Stock Count Dashboard
+- Create session
+- Active sessions
+- Completed sessions
+
+3. Count Entry Screen
+- Product
+- System Qty
+- Counted Qty
+- Variance
+
+4. Variance Report Dashboard
+- Filters
+- Summary cards
+- Table
+- Export
+
+--------------------------------------------------
+13. EXPORT FEATURES
+--------------------------------------------------
+
+Allow:
+- CSV
+- Excel
+- PDF
+
+Endpoint:
+GET /reports/stock-variance/export
+
+--------------------------------------------------
+14. SECURITY & AUDIT TRAIL
+--------------------------------------------------
+
+Log all actions:
+
+- clock in/out
+- stock count creation
+- stock adjustments
+- report access
+
+Audit log:
+{
+  user_id,
+  action,
+  reference_id,
+  timestamp
+}
+
+--------------------------------------------------
+15. EDGE CASES
+--------------------------------------------------
+
+Handle:
+
+- double clock-in
+- missing clock-out (auto close)
+- concurrent sales during count (snapshot system_qty)
+- insufficient stock (prevent negative unless override)
+- multi-location filtering
+- offline mode (sync later)
+
+--------------------------------------------------
+16. OUTPUT REQUIRED
+--------------------------------------------------
+
+Provide:
+
+- database migrations
+- backend APIs
+- role-based middleware
+- POS integration logic
+- frontend UI
+- report aggregation queries
+- export functionality
+- test cases
+
+Ensure compatibility with existing NEXXUS features:
+- inventory protection
+- audit trail
+- multi-location
+- reporting system
