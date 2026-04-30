@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { SendMailClient } from "zeptomail";
 import nodemailer from "nodemailer";
-import { db, ordersTable, orderItemsTable, cashSessionsTable, cashPayoutsTable, productsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, cashSessionsTable, cashPayoutsTable, productsTable, customersTable, accountsReceivableTable } from "@workspace/db";
 import { eq, and, gte, lte, isNotNull, desc, sql, asc } from "drizzle-orm";
 import { z } from "zod";
 import { getSetting, getAllSettings } from "./settings";
@@ -108,6 +108,10 @@ function buildReceiptEmailHtml(order: {
   splitCardAmount?: number | null;
   notes?: string | null;
   customerName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  customerLoyaltyBalance?: number | null;
+  customerOutstandingBalance?: number | null;
 }) {
   const row = (left: string, right: string, bold = false, color = "") =>
     `<tr><td style="padding:2px 0;color:${color || "#333"};${bold ? "font-weight:bold;" : ""}">${left}</td><td style="padding:2px 0;text-align:right;${bold ? "font-weight:bold;" : ""}color:${color || "#333"};">${right}</td></tr>`;
@@ -139,8 +143,18 @@ function buildReceiptEmailHtml(order: {
     <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px;">
       ${row("Order:", order.orderNumber)}
       ${row("Date:", formatDate(order.createdAt))}
-      ${order.customerName ? row("Customer:", order.customerName) : ""}
     </table>
+
+    ${order.customerName ? `
+    <div style="border-top:1px dashed #ddd;margin:8px 0;"></div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      ${row("Customer:", order.customerName, true)}
+      ${order.customerPhone ? row("Tel:", order.customerPhone) : ""}
+      ${order.customerEmail ? row("Email:", order.customerEmail) : ""}
+      ${order.customerLoyaltyBalance != null ? row("Loyalty Balance:", `${order.customerLoyaltyBalance} pts`) : ""}
+      ${order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0 ? row("Account Balance Due:", fmt(order.customerOutstandingBalance), true, "#c00") : ""}
+    </table>
+    ` : ""}
 
     <div style="border-top:2px dashed #ddd;margin:8px 0;"></div>
 
@@ -543,6 +557,45 @@ router.post("/email/receipt", async (req, res): Promise<void> => {
 
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
 
+  // If the sale was attached to a customer, fetch contact + balance details
+  // so the emailed receipt mirrors what's printed at the till.
+  let customerName: string | null = null;
+  let customerPhone: string | null = null;
+  let customerEmail: string | null = null;
+  let customerLoyaltyBalance: number | null = null;
+  let customerOutstandingBalance: number | null = null;
+  if (order.customerId) {
+    const [cust] = await db
+      .select({
+        name: customersTable.name,
+        phone: customersTable.phone,
+        email: customersTable.email,
+        loyaltyPoints: customersTable.loyaltyPoints,
+      })
+      .from(customersTable)
+      .where(and(eq(customersTable.id, order.customerId), eq(customersTable.tenantId, tenantId)));
+    if (cust) {
+      customerName = cust.name;
+      customerPhone = cust.phone ?? null;
+      customerEmail = cust.email ?? null;
+      customerLoyaltyBalance = cust.loyaltyPoints;
+
+      const [arRow] = await db
+        .select({
+          outstanding: sql<number>`COALESCE(CAST(SUM(${accountsReceivableTable.amount} - ${accountsReceivableTable.amountPaid}) AS REAL), 0)`,
+        })
+        .from(accountsReceivableTable)
+        .where(
+          and(
+            eq(accountsReceivableTable.tenantId, tenantId),
+            eq(accountsReceivableTable.customerId, order.customerId),
+            sql`${accountsReceivableTable.status} != 'paid'`,
+          ),
+        );
+      customerOutstandingBalance = Number(arRow?.outstanding ?? 0);
+    }
+  }
+
   const orderData = {
     orderNumber: order.orderNumber,
     createdAt: order.createdAt,
@@ -561,6 +614,11 @@ router.post("/email/receipt", async (req, res): Promise<void> => {
     splitCashAmount: order.splitCashAmount,
     splitCardAmount: order.splitCardAmount,
     notes: order.notes,
+    customerName,
+    customerPhone,
+    customerEmail,
+    customerLoyaltyBalance,
+    customerOutstandingBalance,
   };
 
   const html = buildReceiptEmailHtml(orderData);

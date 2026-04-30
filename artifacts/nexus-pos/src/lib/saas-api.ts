@@ -239,6 +239,18 @@ export const superadminCloseImpersonationSession = (logId: number) =>
     method: "POST", headers: superadminAuthHeaders(),
   });
 
+export interface CustomerReceiptInfo {
+  id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  loyaltyPoints: number;
+  outstandingBalance: number;
+}
+
+export const fetchCustomerReceiptInfo = (id: number) =>
+  api<CustomerReceiptInfo>(`/customers/${id}/receipt-info`, { headers: tenantAuthHeaders() });
+
 export const fetchAuditLogs = async (params?: { action?: string; staffId?: number; entityType?: string; from?: string; to?: string; q?: string }): Promise<AuditLog[]> => {
   const headers = tenantAuthHeaders();
   const qs = params

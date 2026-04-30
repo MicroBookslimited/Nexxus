@@ -67,6 +67,12 @@ export interface ReceiptOrder {
   staffName?: string | null;
   guestCount?: number | null;
   customerName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  /** Customer's current loyalty-points balance (after this sale's earn/redeem). */
+  customerLoyaltyBalance?: number | null;
+  /** Customer's outstanding accounts-receivable balance across all open credit sales. */
+  customerOutstandingBalance?: number | null;
   loyaltyPointsEarned?: number | null;
   loyaltyPointsRedeemed?: number | null;
 }
@@ -266,6 +272,33 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       <div>${dateStr}</div>
     </div>`;
 
+  // ── Customer block ────────────────────────────────────────────────────────
+  // Rendered when a customer was attached to the sale. Shows contact details,
+  // current loyalty balance, and any outstanding AR balance so the customer
+  // sees what they owe across all open credit sales (not just this one).
+  let customerBlockHtml = "";
+  if (order.customerName) {
+    const lines: string[] = [];
+    lines.push(`<div style="font-weight:700;">Customer: ${escHtml(order.customerName)}</div>`);
+    if (order.customerPhone) {
+      lines.push(`<div class="sub-text">Tel: ${escHtml(order.customerPhone)}</div>`);
+    }
+    if (order.customerEmail) {
+      lines.push(`<div class="sub-text">${escHtml(order.customerEmail)}</div>`);
+    }
+    if (order.customerLoyaltyBalance != null) {
+      lines.push(`<div class="sub-text">Loyalty Balance: ${order.customerLoyaltyBalance} pts</div>`);
+    }
+    if (order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0) {
+      lines.push(`<div class="sub-text" style="font-weight:700;color:#c00;">Account Balance Due: ${fmt(order.customerOutstandingBalance)}</div>`);
+    }
+    customerBlockHtml = `
+    ${dividerHtml}
+    <div class="info-block" style="${infoAlign}">
+      ${lines.join("\n      ")}
+    </div>`;
+  }
+
   // ── Large number at the bottom ────────────────────────────────────────────
   const numberLabelHtml = tpl.numberLabel
     ? `<div style="font-size:9px;letter-spacing:3px;text-transform:uppercase;color:${tpl.numberExtraStyle.includes("color:#fff") ? "#ccc" : "#888"};margin-bottom:4px;">${tpl.numberLabel}</div>`
@@ -332,6 +365,8 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
 <body>
 
   ${headerHtml}
+
+  ${customerBlockHtml}
 
   ${dividerHtml}
 
@@ -408,6 +443,21 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   lines.push(`🧾 *${businessName}*`);
   lines.push(`Order #: ${orderNum}  |  Pickup: *${lastThree}*`);
   lines.push(`📅 ${dateStr}`);
+
+  // Customer block — only when a customer was attached to the sale.
+  if (order.customerName) {
+    lines.push(`─────────────────────`);
+    lines.push(`👤 *${order.customerName}*`);
+    if (order.customerPhone) lines.push(`📞 ${order.customerPhone}`);
+    if (order.customerEmail) lines.push(`✉️ ${order.customerEmail}`);
+    if (order.customerLoyaltyBalance != null) {
+      lines.push(`★ Loyalty Balance: ${order.customerLoyaltyBalance} pts`);
+    }
+    if (order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0) {
+      lines.push(`*⚠ Account Balance Due: ${fmt(order.customerOutstandingBalance)}*`);
+    }
+  }
+
   lines.push(`─────────────────────`);
 
   for (const item of order.items) {

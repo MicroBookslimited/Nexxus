@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, like, and, type SQL } from "drizzle-orm";
-import { db, customersTable, ordersTable, orderItemsTable } from "@workspace/db";
+import { eq, like, and, sql, type SQL } from "drizzle-orm";
+import { db, customersTable, ordersTable, orderItemsTable, accountsReceivableTable } from "@workspace/db";
 import { sendTemplateEmail } from "./email-templates";
 import { getSetting } from "./settings";
 import {
@@ -90,6 +90,65 @@ router.post("/customers", async (req, res): Promise<void> => {
   }
 
   res.status(201).json(GetCustomerResponse.parse(normalizeCustomer(customer)));
+});
+
+/**
+ * Compact customer payload used to enrich printed/email/WhatsApp receipts.
+ * Returns the same name/phone/email shown in the POS plus the customer's
+ * loyalty-points balance and current outstanding AR balance (sum of unpaid
+ * credit-sale balances). All scoped to the requesting tenant.
+ */
+router.get("/customers/:id/receipt-info", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(raw, 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+
+  const [customer] = await db
+    .select({
+      id: customersTable.id,
+      name: customersTable.name,
+      phone: customersTable.phone,
+      email: customersTable.email,
+      loyaltyPoints: customersTable.loyaltyPoints,
+    })
+    .from(customersTable)
+    .where(and(eq(customersTable.id, id), eq(customersTable.tenantId, tenantId)));
+
+  if (!customer) {
+    res.status(404).json({ error: "Customer not found" });
+    return;
+  }
+
+  // Outstanding AR: sum of (amount - amount_paid) across all non-paid
+  // credit-sale records for this customer in this tenant. Returns 0 when
+  // the customer has no open credit balance.
+  const [arRow] = await db
+    .select({
+      outstanding: sql<number>`COALESCE(CAST(SUM(${accountsReceivableTable.amount} - ${accountsReceivableTable.amountPaid}) AS REAL), 0)`,
+    })
+    .from(accountsReceivableTable)
+    .where(
+      and(
+        eq(accountsReceivableTable.tenantId, tenantId),
+        eq(accountsReceivableTable.customerId, id),
+        sql`${accountsReceivableTable.status} != 'paid'`,
+      ),
+    );
+
+  res.json({
+    id: customer.id,
+    name: customer.name,
+    phone: customer.phone ?? null,
+    email: customer.email ?? null,
+    loyaltyPoints: customer.loyaltyPoints,
+    outstandingBalance: Number(arRow?.outstanding ?? 0),
+  });
 });
 
 router.get("/customers/:id", async (req, res): Promise<void> => {

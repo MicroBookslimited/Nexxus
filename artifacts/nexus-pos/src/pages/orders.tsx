@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings, useListStaff } from "@workspace/api-client-react";
 import { useStaff } from "@/contexts/StaffContext";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt } from "@/lib/receipt";
+import { fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -90,6 +91,7 @@ export function Orders() {
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [whatsappOrder, setWhatsappOrder] = useState<NonNullable<typeof orders>[0] | null>(null);
   const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [whatsappCustomerInfo, setWhatsappCustomerInfo] = useState<CustomerReceiptInfo | null>(null);
 
   const [chargeDialogOpen, setChargeDialogOpen] = useState(false);
   const [orderToCharge, setOrderToCharge] = useState<{ id: number; orderNumber: string; total: number } | null>(null);
@@ -181,7 +183,16 @@ export function Orders() {
     );
   };
 
-  const handleReprintReceipt = (order: NonNullable<typeof orders>[0]) => {
+  const handleReprintReceipt = async (order: NonNullable<typeof orders>[0]) => {
+    // Best-effort customer fetch so the reprinted receipt matches the
+    // original — name, contact, loyalty + outstanding AR. Silent failure
+    // keeps the receipt printable even if the lookup errors.
+    let cust: CustomerReceiptInfo | null = null;
+    if (order.customerId) {
+      try {
+        cust = await fetchCustomerReceiptInfo(order.customerId);
+      } catch { /* receipt still prints without customer */ }
+    }
     const html = buildReceiptHtml(
       {
         orderNumber: order.orderNumber,
@@ -197,6 +208,11 @@ export function Orders() {
         cashTendered: order.cashTendered,
         notes: order.notes,
         status: order.status,
+        customerName: cust?.name ?? order.customerName ?? null,
+        customerPhone: cust?.phone ?? null,
+        customerEmail: cust?.email ?? null,
+        customerLoyaltyBalance: cust?.loyaltyPoints ?? null,
+        customerOutstandingBalance: cust?.outstandingBalance ?? null,
       },
       settings ?? {},
     );
@@ -728,7 +744,13 @@ export function Orders() {
                               onClick={() => {
                                 setWhatsappOrder(order);
                                 setWhatsappPhone("");
+                                setWhatsappCustomerInfo(null);
                                 setWhatsappDialogOpen(true);
+                                if (order.customerId) {
+                                  fetchCustomerReceiptInfo(order.customerId)
+                                    .then((info) => setWhatsappCustomerInfo(info))
+                                    .catch(() => { /* WhatsApp still works without customer */ });
+                                }
                               }}
                             >
                               <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current" aria-hidden="true">
@@ -964,7 +986,15 @@ export function Orders() {
                 onChange={(e) => setWhatsappPhone(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && whatsappPhone.replace(/\D/g, "").length >= 7 && whatsappOrder) {
-                    openWhatsAppReceipt(whatsappPhone, whatsappOrder as any, settings ?? {});
+                    const enriched = {
+                      ...whatsappOrder,
+                      customerName: whatsappCustomerInfo?.name ?? whatsappOrder.customerName ?? null,
+                      customerPhone: whatsappCustomerInfo?.phone ?? null,
+                      customerEmail: whatsappCustomerInfo?.email ?? null,
+                      customerLoyaltyBalance: whatsappCustomerInfo?.loyaltyPoints ?? null,
+                      customerOutstandingBalance: whatsappCustomerInfo?.outstandingBalance ?? null,
+                    };
+                    openWhatsAppReceipt(whatsappPhone, enriched as any, settings ?? {});
                     setWhatsappDialogOpen(false);
                   }
                 }}
@@ -981,7 +1011,15 @@ export function Orders() {
               className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
               onClick={() => {
                 if (!whatsappOrder) return;
-                openWhatsAppReceipt(whatsappPhone, whatsappOrder as any, settings ?? {});
+                const enriched = {
+                  ...whatsappOrder,
+                  customerName: whatsappCustomerInfo?.name ?? whatsappOrder.customerName ?? null,
+                  customerPhone: whatsappCustomerInfo?.phone ?? null,
+                  customerEmail: whatsappCustomerInfo?.email ?? null,
+                  customerLoyaltyBalance: whatsappCustomerInfo?.loyaltyPoints ?? null,
+                  customerOutstandingBalance: whatsappCustomerInfo?.outstandingBalance ?? null,
+                };
+                openWhatsAppReceipt(whatsappPhone, enriched as any, settings ?? {});
                 setWhatsappDialogOpen(false);
                 toast({ title: "Opening WhatsApp…", description: "Receipt is pre-filled and ready to send." });
               }}

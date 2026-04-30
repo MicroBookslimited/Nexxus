@@ -34,7 +34,7 @@ import {
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote, Layers,
 } from "lucide-react";
-import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit } from "@/lib/saas-api";
+import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
@@ -362,6 +362,7 @@ function CustomizeDialog({
 function printReceiptWindow(
   order: GetOrderResponse,
   settings: Record<string, string> = {},
+  customer?: CustomerReceiptInfo | null,
 ) {
   const LOYALTY_EARN_RATE = 10;
   const loyaltyPointsEarned = order.customerId ? Math.floor(order.total / LOYALTY_EARN_RATE) : undefined;
@@ -382,6 +383,11 @@ function printReceiptWindow(
       status: order.status,
       loyaltyPointsEarned,
       loyaltyPointsRedeemed: (order as any).loyaltyPointsRedeemed ?? undefined,
+      customerName: customer?.name ?? null,
+      customerPhone: customer?.phone ?? null,
+      customerEmail: customer?.email ?? null,
+      customerLoyaltyBalance: customer?.loyaltyPoints ?? null,
+      customerOutstandingBalance: customer?.outstandingBalance ?? null,
     },
     settings,
   );
@@ -612,6 +618,7 @@ export function POS() {
   const [splitCardAmount, setSplitCardAmount] = useState<number>(0);
   const [splitCashAmount, setSplitCashAmount] = useState<number>(0);
   const [receiptOrder, setReceiptOrder] = useState<GetOrderResponse | null>(null);
+  const [receiptCustomerInfo, setReceiptCustomerInfo] = useState<CustomerReceiptInfo | null>(null);
   const [receiptEmailOpen, setReceiptEmailOpen] = useState(false);
   const [receiptEmailAddr, setReceiptEmailAddr] = useState("");
   const [whatsappOpen, setWhatsappOpen] = useState(false);
@@ -1308,6 +1315,21 @@ export function POS() {
         locationId: sessionLocationId,
       } as unknown as GetOrderResponse;
       setReceiptOrder(offlineReceipt);
+      // Offline: we can't fetch outstanding AR balance, but we can still
+      // populate the customer name/contact/loyalty from the in-memory
+      // customer object so the printed receipt isn't blank.
+      if (selectedCustomer) {
+        setReceiptCustomerInfo({
+          id: selectedCustomer.id,
+          name: selectedCustomer.name,
+          phone: selectedCustomer.phone ?? null,
+          email: selectedCustomer.email ?? null,
+          loyaltyPoints: selectedCustomer.loyaltyPoints,
+          outstandingBalance: 0,
+        });
+      } else {
+        setReceiptCustomerInfo(null);
+      }
       resetCart();
       toast({
         title: "Sale Recorded Offline",
@@ -1360,6 +1382,16 @@ export function POS() {
             });
           }
           setReceiptOrder(data);
+          // Fetch fresh customer info (incl. updated loyalty balance and
+          // outstanding AR balance) so the receipt block reflects post-sale
+          // state. Failures here are non-fatal — the receipt still prints.
+          if (data?.customerId) {
+            fetchCustomerReceiptInfo(data.customerId)
+              .then(setReceiptCustomerInfo)
+              .catch(() => setReceiptCustomerInfo(null));
+          } else {
+            setReceiptCustomerInfo(null);
+          }
           resetCart();
           queryClient.invalidateQueries({ queryKey: ["/api/kitchen"] });
           queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
@@ -2879,6 +2911,7 @@ export function POS() {
         onOpenChange={(o) => {
           if (!o) {
             setReceiptOrder(null);
+            setReceiptCustomerInfo(null);
             // Snap focus back to the search bar when the receipt closes so
             // the next sale can start immediately. Two delayed attempts to
             // beat any toast/dialog that re-grabs focus.
@@ -3072,8 +3105,16 @@ export function POS() {
                   onChange={(e) => setWhatsappPhone(e.target.value)}
                   className="h-8 text-sm"
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && whatsappPhone.replace(/\D/g, "").length >= 7) {
-                      openWhatsAppReceipt(whatsappPhone, receiptOrder, settings ?? {});
+                    if (e.key === "Enter" && whatsappPhone.replace(/\D/g, "").length >= 7 && receiptOrder) {
+                      const orderForWa = {
+                        ...receiptOrder,
+                        customerName: receiptCustomerInfo?.name ?? null,
+                        customerPhone: receiptCustomerInfo?.phone ?? null,
+                        customerEmail: receiptCustomerInfo?.email ?? null,
+                        customerLoyaltyBalance: receiptCustomerInfo?.loyaltyPoints ?? null,
+                        customerOutstandingBalance: receiptCustomerInfo?.outstandingBalance ?? null,
+                      } as unknown as Parameters<typeof openWhatsAppReceipt>[1];
+                      openWhatsAppReceipt(whatsappPhone, orderForWa, settings ?? {});
                       setWhatsappOpen(false);
                     }
                   }}
@@ -3084,7 +3125,15 @@ export function POS() {
                   className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
                   onClick={() => {
                     if (!receiptOrder) return;
-                    openWhatsAppReceipt(whatsappPhone, receiptOrder, settings ?? {});
+                    const orderForWa = {
+                      ...receiptOrder,
+                      customerName: receiptCustomerInfo?.name ?? null,
+                      customerPhone: receiptCustomerInfo?.phone ?? null,
+                      customerEmail: receiptCustomerInfo?.email ?? null,
+                      customerLoyaltyBalance: receiptCustomerInfo?.loyaltyPoints ?? null,
+                      customerOutstandingBalance: receiptCustomerInfo?.outstandingBalance ?? null,
+                    } as unknown as Parameters<typeof openWhatsAppReceipt>[1];
+                    openWhatsAppReceipt(whatsappPhone, orderForWa, settings ?? {});
                     setWhatsappOpen(false);
                     toast({ title: "Opening WhatsApp…", description: "Receipt text is pre-filled and ready to send." });
                   }}
@@ -3098,7 +3147,7 @@ export function POS() {
           )}
 
           <DialogFooter className="flex-wrap gap-2 sm:gap-1.5">
-            <Button variant="outline" onClick={() => receiptOrder && printReceiptWindow(receiptOrder, settings ?? {})} className="gap-2 flex-1">
+            <Button variant="outline" onClick={() => receiptOrder && printReceiptWindow(receiptOrder, settings ?? {}, receiptCustomerInfo)} className="gap-2 flex-1">
               <Printer className="h-4 w-4" />Print
             </Button>
             <Button
@@ -3124,7 +3173,7 @@ export function POS() {
               </svg>
               WhatsApp
             </Button>
-            <Button onClick={() => { setReceiptOrder(null); setReceiptEmailOpen(false); setWhatsappOpen(false); setReceiptEmailAddr(""); setWhatsappPhone(""); }} className="flex-1">New Sale</Button>
+            <Button onClick={() => { setReceiptOrder(null); setReceiptCustomerInfo(null); setReceiptEmailOpen(false); setWhatsappOpen(false); setReceiptEmailAddr(""); setWhatsappPhone(""); }} className="flex-1">New Sale</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3251,10 +3300,17 @@ export function POS() {
                 chargeOrder.mutate(
                   { id: kioskChargeOrder.id, data: { paymentMethod: kioskPayMethod } },
                   {
-                    onSuccess: (order) => {
+                    onSuccess: async (order) => {
                       toast({ title: "Payment collected!", description: `${kioskChargeOrder.orderNumber} marked as completed.` });
                       setKioskChargeOrder(null);
                       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+                      // Pull customer info for the receipt block (best-effort).
+                      let cust: CustomerReceiptInfo | null = null;
+                      if (order?.customerId) {
+                        try {
+                          cust = await fetchCustomerReceiptInfo(order.customerId);
+                        } catch { /* receipt still prints without customer */ }
+                      }
                       // Show receipt
                       const html = buildReceiptHtml(
                         {
@@ -3268,7 +3324,11 @@ export function POS() {
                           paymentMethod: order.paymentMethod,
                           cashTendered: order.cashTendered,
                           notes: order.notes,
-                          customerName: order.customerName,
+                          customerName: cust?.name ?? null,
+                          customerPhone: cust?.phone ?? null,
+                          customerEmail: cust?.email ?? null,
+                          customerLoyaltyBalance: cust?.loyaltyPoints ?? null,
+                          customerOutstandingBalance: cust?.outstandingBalance ?? null,
                         },
                         settings ?? {},
                       );
