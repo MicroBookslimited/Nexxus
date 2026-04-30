@@ -39,6 +39,7 @@ import { MyHardware } from "@/pages/my-hardware";
 import StorePage from "@/pages/store";
 import { Register } from "@/pages/register";
 import { TopUp } from "@/pages/topup";
+import { ClockPage } from "@/pages/clock";
 import { ScalePage } from "@/pages/scale";
 import { Layout, PermissionGate } from "@/components/layout";
 
@@ -153,6 +154,7 @@ function POSRouter() {
       <Route path="/hardware"><ProtectedRoute component={MyHardware} permission="settings.view" /></Route>
       <Route path="/audit"><ProtectedRoute component={AuditTrail} permission="reports.view" /></Route>
       <Route path="/cash"><ProtectedRoute component={CashManagement} permission="cash.open_session" /></Route>
+      <Route path="/clock"><ProtectedRoute component={ClockPage} /></Route>
       <Route path="/register"><ProtectedRoute component={Register} permission="reports.view" /></Route>
       <Route path="/topup"><ProtectedRoute component={TopUp} permission="pos.sale" /></Route>
       <Route path="/scale"><ProtectedRoute component={ScalePage} permission="scale.use" /></Route>

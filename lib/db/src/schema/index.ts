@@ -4,6 +4,7 @@ export * from "./customers";
 export * from "./variants";
 export * from "./restaurant";
 export * from "./staff";
+export * from "./staff-sessions";
 export * from "./cash";
 export * from "./settings";
 export * from "./saas";

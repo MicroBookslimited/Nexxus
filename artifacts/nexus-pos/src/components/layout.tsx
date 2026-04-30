@@ -20,6 +20,7 @@ import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useStaff } from "@/contexts/StaffContext";
 import { PinPad } from "@/components/PinPad";
+import { ShiftClockButton } from "@/components/ShiftClockButton";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 
 type NavItem = {
@@ -50,6 +51,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/pos",          label: "POS",             icon: ShoppingCart,    color: "text-emerald-400", permission: "pos.sale",           alwaysShowLabel: true },
   { href: "/orders",       label: "Order List",      icon: ListOrdered,     color: "text-purple-400",  permission: "orders.view",        alwaysShowLabel: true },
   { href: "/cash",         label: "Cash Mgmt",       icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session",  alwaysShowLabel: true },
+  { href: "/clock",        label: "Time Clock",      icon: Clock,           color: "text-emerald-400", permission: null },
   { href: "/register",     label: "Cash Register",   icon: Banknote,        color: "text-teal-400",    permission: "reports.view",       alwaysShowLabel: true },
   // ── secondary items — show as icons, label only when active ──
   { href: "/dashboard",    label: "Dashboard",       icon: LayoutDashboard, color: "text-sky-400",     permission: null },
@@ -415,6 +417,8 @@ export function Layout({ children }: { children: ReactNode }) {
               <span className="text-[9px] text-muted-foreground hidden lg:inline">({staff.role})</span>
             </div>
           )}
+          {/* Clock In / Out widget */}
+          <ShiftClockButton />
           {/* Settings */}
           {can("settings.view") && (
             <Link
