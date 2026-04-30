@@ -624,6 +624,15 @@ export function POS() {
   const [whatsappOpen, setWhatsappOpen] = useState(false);
   const [whatsappPhone, setWhatsappPhone] = useState("");
 
+  // When a scanned/typed code matches MORE than one product (duplicate
+  // barcodes across SKUs — common in stores that share a generic UPC for
+  // bundles, store-brand items, etc.), we surface a picker so the cashier
+  // can pick the actual SKU instead of silently adding the first match.
+  const [barcodeAmbiguity, setBarcodeAmbiguity] = useState<{
+    code: string;
+    matches: NonNullable<typeof products>;
+  } | null>(null);
+
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [selectedCustomerOverride, setSelectedCustomerOverride] = useState<{ id: number; name: string; phone?: string | null; email?: string | null; loyaltyPoints: number } | null>(null);
   const [addingCustomer, setAddingCustomer] = useState(false);
@@ -921,12 +930,21 @@ export function POS() {
       setSearchTerm("");
       return true;
     }
-    const barcodeMatch = products?.find((p) => p.barcode === code);
-    if (barcodeMatch) {
+    const barcodeMatches =
+      products?.filter((p: NonNullable<typeof products>[number]) => p.barcode === code) ?? [];
+    if (barcodeMatches.length === 1) {
+      const [barcodeMatch] = barcodeMatches;
       handleProductTap(barcodeMatch);
       if (!barcodeMatch.hasVariants && !barcodeMatch.hasModifiers) {
         toast({ title: "Product added", description: barcodeMatch.name });
       }
+      setSearchTerm("");
+      return true;
+    }
+    if (barcodeMatches.length > 1) {
+      // Duplicate barcode: open the picker instead of silently adding the
+      // first match. The cashier confirms which SKU is being sold.
+      setBarcodeAmbiguity({ code, matches: barcodeMatches });
       setSearchTerm("");
       return true;
     }
@@ -941,15 +959,17 @@ export function POS() {
 
   // Auto-detect barcode scans where the scanner does NOT send a trailing Enter
   // (common on Bluetooth HID scanners on Android). When the search input value
-  // exactly matches a product barcode (or the EAN-13 weight-label pattern),
-  // add it to the cart immediately. Debounced briefly so partial typing of a
-  // matching numeric SKU doesn't fire prematurely.
+  // exactly matches one or more product barcodes (or the EAN-13 weight-label
+  // pattern), forward to tryConsumeCode — which adds the SKU directly when
+  // there's a single match, or opens the duplicate-barcode picker when more
+  // than one product shares the scanned code. Debounced briefly so partial
+  // typing of a matching numeric SKU doesn't fire prematurely.
   useEffect(() => {
     const code = searchTerm.trim();
     if (!code || !products) return;
     const isEan = /^2\d{12}$/.test(code);
-    const exactMatch = products.find((p) => p.barcode === code);
-    if (!isEan && !exactMatch) return;
+    const hasAnyMatch = products.some((p: NonNullable<typeof products>[number]) => p.barcode === code);
+    if (!isEan && !hasAnyMatch) return;
     const t = setTimeout(() => {
       tryConsumeCode(code);
     }, 120);
@@ -1105,6 +1125,7 @@ export function POS() {
   const resetCart = () => {
     setCart([]);
     scaleLabelIdsRef.current = [];
+    setBarcodeAmbiguity(null);
     // Snap focus back to the search bar so the next sale starts immediately.
     // Delay slightly so any closing dialog/toast doesn't steal focus back.
     setTimeout(() => searchInputRef.current?.focus(), 50);
@@ -3349,6 +3370,78 @@ export function POS() {
             >
               <CheckCircle2 className="h-4 w-4" />
               {chargeOrder.isPending ? "Processing…" : "Confirm & Charge"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicate-Barcode Picker — opens when a scanned/typed code matches
+          more than one product. Cashier picks the actual SKU being sold. */}
+      <Dialog
+        open={!!barcodeAmbiguity}
+        onOpenChange={(o) => { if (!o) setBarcodeAmbiguity(null); }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="h-4 w-4 text-primary" />
+              Multiple products share this barcode
+            </DialogTitle>
+          </DialogHeader>
+          {barcodeAmbiguity && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Barcode <span className="font-mono font-semibold text-foreground">{barcodeAmbiguity.code}</span> is set on{" "}
+                <span className="font-semibold text-foreground">{barcodeAmbiguity.matches.length}</span> products.
+                Pick the one being sold.
+              </p>
+              <div className="max-h-[60vh] overflow-y-auto -mx-1 px-1 space-y-1.5">
+                {barcodeAmbiguity.matches.map((p: NonNullable<typeof products>[number]) => {
+                  const palette = getProductPalette(p.id);
+                  const disabled = !p.inStock && !allowOverselling;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => {
+                        setBarcodeAmbiguity(null);
+                        handleProductTap(p);
+                        if (!p.hasVariants && !p.hasModifiers) {
+                          toast({ title: "Product added", description: p.name });
+                        }
+                      }}
+                      className={`w-full text-left rounded-lg border ${palette.bg} ${palette.accent} p-3 flex items-center gap-3 transition ${disabled ? "opacity-40 cursor-not-allowed" : "hover:brightness-110 active:scale-[0.99]"}`}
+                    >
+                      <div className={`h-2 w-2 rounded-full ${palette.dot} shrink-0`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-white truncate">{p.name}</p>
+                        <p className="text-[11px] text-white/60 truncate">
+                          {p.category}
+                          {p.sku ? <> &middot; SKU <span className="font-mono">{p.sku}</span></> : null}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold font-mono text-white leading-none">{formatCurrency(p.price)}</p>
+                        {!p.inStock ? (
+                          <span className="inline-block mt-1 text-[10px] font-semibold bg-red-500/40 text-red-200 px-1.5 py-0.5 rounded">
+                            {allowOverselling ? `${p.stockCount} left` : "Out of stock"}
+                          </span>
+                        ) : p.stockCount > 0 ? (
+                          <span className={`inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ${p.stockCount <= 5 ? "bg-amber-500/40 text-amber-100" : "bg-black/30 text-white/70"}`}>
+                            {p.stockCount} left
+                          </span>
+                        ) : null}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBarcodeAmbiguity(null)} className="w-full">
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>
