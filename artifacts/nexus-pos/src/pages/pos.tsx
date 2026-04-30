@@ -974,8 +974,18 @@ export function POS() {
   };
 
   const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && searchTerm.trim()) {
-      tryConsumeCode(searchTerm);
+    if (e.key === "Enter") {
+      // If the duplicate-barcode picker is already open, swallow the Enter.
+      // Many handheld scanners send Enter as a suffix; we don't want that
+      // trailing Enter to re-trigger tryConsumeCode (or, worse, activate a
+      // focused button inside the picker) and silently pick the first SKU.
+      if (barcodeAmbiguity) {
+        e.preventDefault();
+        return;
+      }
+      if (searchTerm.trim()) {
+        tryConsumeCode(searchTerm);
+      }
     }
   };
 
@@ -3405,12 +3415,23 @@ export function POS() {
       </Dialog>
 
       {/* Duplicate-Barcode Picker — opens when a scanned/typed code matches
-          more than one product. Cashier picks the actual SKU being sold. */}
+          more than one product. Cashier picks the actual SKU being sold.
+
+          IMPORTANT: scanners that send an Enter suffix (very common) would
+          otherwise have the trailing Enter activate whichever button Radix
+          auto-focuses on open — which would silently pick the first SKU.
+          We prevent both auto-focus events so focus stays on the search
+          input and the trailing Enter is harmlessly handled there (and
+          swallowed by handleSearchKeyDown while the picker is open). */}
       <Dialog
         open={!!barcodeAmbiguity}
         onOpenChange={(o) => { if (!o) setBarcodeAmbiguity(null); }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent
+          className="max-w-lg"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Search className="h-4 w-4 text-primary" />
@@ -3469,7 +3490,14 @@ export function POS() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBarcodeAmbiguity(null)} className="w-full">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBarcodeAmbiguity(null);
+                setSearchTerm("");
+              }}
+              className="w-full"
+            >
               Cancel
             </Button>
           </DialogFooter>
