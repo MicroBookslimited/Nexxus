@@ -720,6 +720,9 @@ export function POS() {
 
   const handleProductTap = async (product: NonNullable<typeof products>[0]) => {
     setSearchTerm("");
+    // If the duplicate-barcode picker is open, adding any product (whether
+    // chosen from the picker, the filtered grid, or elsewhere) should close it.
+    setBarcodeAmbiguity(null);
     // Sell-by-weight items must go through the WeightModal so the cashier
     // can enter the actual weight. We never auto-add quantity 1.
     const p = product as typeof product & { soldByWeight?: boolean; unitOfMeasure?: string | null };
@@ -920,6 +923,14 @@ export function POS() {
     }
   };
 
+  // Normalize a barcode for equality checks. Trim whitespace (some HID
+  // scanners append spaces/tabs) and lowercase (so "ABC123" and "abc123"
+  // count as the same code). This MUST mirror the predicate used in
+  // `filteredProducts` so the picker actually triggers whenever the
+  // visible grid would show more than one match.
+  const normalizeBarcode = (s: string | null | undefined): string =>
+    (s ?? "").trim().toLowerCase();
+
   // Process a scanned/typed code. Returns true if it was consumed.
   const tryConsumeCode = (raw: string): boolean => {
     const code = raw.trim();
@@ -930,8 +941,12 @@ export function POS() {
       setSearchTerm("");
       return true;
     }
+    const normalizedCode = normalizeBarcode(code);
     const barcodeMatches =
-      products?.filter((p: NonNullable<typeof products>[number]) => p.barcode === code) ?? [];
+      products?.filter(
+        (p: NonNullable<typeof products>[number]) =>
+          normalizeBarcode(p.barcode) === normalizedCode,
+      ) ?? [];
     if (barcodeMatches.length === 1) {
       const [barcodeMatch] = barcodeMatches;
       handleProductTap(barcodeMatch);
@@ -944,8 +959,15 @@ export function POS() {
     if (barcodeMatches.length > 1) {
       // Duplicate barcode: open the picker instead of silently adding the
       // first match. The cashier confirms which SKU is being sold.
+      // Intentionally do NOT clear searchTerm — the grid stays filtered
+      // to the matching products as a visual fallback in case the modal
+      // is missed (e.g. dismissed accidentally). Both surfaces let the
+      // cashier pick the right SKU.
       setBarcodeAmbiguity({ code, matches: barcodeMatches });
-      setSearchTerm("");
+      toast({
+        title: `${barcodeMatches.length} products share this barcode`,
+        description: "Tap one in the popup (or in the filtered grid below) to add it.",
+      });
       return true;
     }
     return false;
@@ -959,23 +981,30 @@ export function POS() {
 
   // Auto-detect barcode scans where the scanner does NOT send a trailing Enter
   // (common on Bluetooth HID scanners on Android). When the search input value
-  // exactly matches one or more product barcodes (or the EAN-13 weight-label
-  // pattern), forward to tryConsumeCode — which adds the SKU directly when
-  // there's a single match, or opens the duplicate-barcode picker when more
-  // than one product shares the scanned code. Debounced briefly so partial
-  // typing of a matching numeric SKU doesn't fire prematurely.
+  // matches one or more product barcodes (case/whitespace-insensitive) or the
+  // EAN-13 weight-label pattern, forward to tryConsumeCode — which adds the
+  // SKU directly when there's a single match, or opens the duplicate-barcode
+  // picker when more than one product shares the scanned code. Debounced
+  // briefly so partial typing of a matching numeric SKU doesn't fire
+  // prematurely. Suppressed while the picker is already open so a stray
+  // re-render can't re-add a product behind the dialog.
   useEffect(() => {
+    if (barcodeAmbiguity) return;
     const code = searchTerm.trim();
     if (!code || !products) return;
     const isEan = /^2\d{12}$/.test(code);
-    const hasAnyMatch = products.some((p: NonNullable<typeof products>[number]) => p.barcode === code);
+    const normalizedCode = normalizeBarcode(code);
+    const hasAnyMatch = products.some(
+      (p: NonNullable<typeof products>[number]) =>
+        normalizeBarcode(p.barcode) === normalizedCode,
+    );
     if (!isEan && !hasAnyMatch) return;
     const t = setTimeout(() => {
       tryConsumeCode(code);
     }, 120);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, products]);
+  }, [searchTerm, products, barcodeAmbiguity]);
 
   const [editingNoteKey, setEditingNoteKey] = useState<string | null>(null);
 
