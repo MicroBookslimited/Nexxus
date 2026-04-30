@@ -146,6 +146,17 @@ router.put("/products/:id/composite-components", async (req, res): Promise<void>
   const parent = await ensureProduct(tenantId, productId);
   if (!parent) { res.status(404).json({ error: "Product not found" }); return; }
 
+  // Spec: a composite product must have at least one component. Empty
+  // saves are rejected so callers cannot leave an orphaned composite
+  // parent that would derive cost=0 and available=0.
+  if (parsed.data.components.length === 0) {
+    res.status(400).json({
+      error: "COMPOSITE_REQUIRES_COMPONENT",
+      message: "A composite product must include at least one component",
+    });
+    return;
+  }
+
   // Detect duplicate children inside the submitted payload up front.
   const seen = new Set<number>();
   for (const c of parsed.data.components) {
@@ -205,23 +216,30 @@ router.put("/products/:id/composite-components", async (req, res): Promise<void>
 
   // Replace-all inside a transaction so a half-saved composite never
   // exists. Other endpoints (cost / availability / sale flow) read the
-  // full set, so partial state would produce wrong numbers.
+  // full set, so partial state would produce wrong numbers. Also flip
+  // the parent to structureType='composite' and zero its stock_count
+  // here — a composite product owns no inventory of its own.
   await db.transaction(async (tx) => {
     await tx.delete(compositeProductComponentsTable).where(and(
       eq(compositeProductComponentsTable.tenantId, tenantId),
       eq(compositeProductComponentsTable.parentProductId, productId),
     ));
 
-    if (parsed.data.components.length > 0) {
-      await tx.insert(compositeProductComponentsTable).values(
-        parsed.data.components.map(c => ({
-          tenantId,
-          parentProductId: productId,
-          childProductId: c.childProductId,
-          quantityRequired: c.quantityRequired,
-          unitId: c.unitId ?? null,
-        })),
-      );
+    await tx.insert(compositeProductComponentsTable).values(
+      parsed.data.components.map(c => ({
+        tenantId,
+        parentProductId: productId,
+        childProductId: c.childProductId,
+        quantityRequired: c.quantityRequired,
+        unitId: c.unitId ?? null,
+      })),
+    );
+
+    if (parent.structureType !== "composite" || (parent.stockCount ?? 0) !== 0) {
+      await tx
+        .update(productsTable)
+        .set({ structureType: "composite", stockCount: 0 })
+        .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
     }
   });
 

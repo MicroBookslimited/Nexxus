@@ -732,6 +732,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         childName: e.childName,
         available: e.available,
         requested: e.requested,
+        required: e.requested,
       });
       return;
     }
@@ -915,88 +916,93 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     const compositeMovementType = parsed.data.status === "refunded" ? "composite_refund" : "composite_void";
     const noteVerb = parsed.data.status === "refunded" ? "Refund" : "Void";
 
-    for (const item of items) {
-      const isComposite = metaMap.get(item.productId)?.structureType === "composite";
+    // Wrap all stock restores + movement inserts in a single
+    // transaction so a partial failure (e.g. a single bad row) cannot
+    // leave inventory + movements out of sync.
+    await db.transaction(async (tx) => {
+      for (const item of items) {
+        const isComposite = metaMap.get(item.productId)?.structureType === "composite";
 
-      if (isComposite) {
-        const components = componentsByParent.get(item.productId) ?? [];
-        for (const comp of components) {
-          const restored = comp.quantityRequired * item.quantity;
-          await db
-            .update(productsTable)
-            .set({
-              stockCount: sql`${productsTable.stockCount} + ${restored}`,
-              inStock: true,
-            })
-            .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
-
-          const [afterReturn] = await db
-            .select({ stockCount: productsTable.stockCount })
-            .from(productsTable)
-            .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
-          await db.insert(stockMovementsTable).values({
-            tenantId,
-            productId: comp.childProductId,
-            type: compositeMovementType,
-            quantity: restored,
-            balanceAfter: afterReturn?.stockCount ?? 0,
-            referenceType: "order",
-            referenceId: order.id,
-            notes: `${noteVerb} of ${item.productName} – Order #${order.id}`,
-          });
-
-          if (order.locationId) {
-            await db
-              .update(locationInventoryTable)
+        if (isComposite) {
+          const components = componentsByParent.get(item.productId) ?? [];
+          for (const comp of components) {
+            const restored = comp.quantityRequired * item.quantity;
+            await tx
+              .update(productsTable)
               .set({
-                stockCount: sql`${locationInventoryTable.stockCount} + ${restored}`,
-                updatedAt: new Date(),
+                stockCount: sql`${productsTable.stockCount} + ${restored}`,
+                inStock: true,
               })
-              .where(and(
-                eq(locationInventoryTable.locationId, order.locationId),
-                eq(locationInventoryTable.productId, comp.childProductId),
-              ));
+              .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
+
+            const [afterReturn] = await tx
+              .select({ stockCount: productsTable.stockCount })
+              .from(productsTable)
+              .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
+            await tx.insert(stockMovementsTable).values({
+              tenantId,
+              productId: comp.childProductId,
+              type: compositeMovementType,
+              quantity: restored,
+              balanceAfter: afterReturn?.stockCount ?? 0,
+              referenceType: "order",
+              referenceId: order.id,
+              notes: `${noteVerb} of ${item.productName} – Order #${order.id}`,
+            });
+
+            if (order.locationId) {
+              await tx
+                .update(locationInventoryTable)
+                .set({
+                  stockCount: sql`${locationInventoryTable.stockCount} + ${restored}`,
+                  updatedAt: new Date(),
+                })
+                .where(and(
+                  eq(locationInventoryTable.locationId, order.locationId),
+                  eq(locationInventoryTable.productId, comp.childProductId),
+                ));
+            }
           }
+          continue;
         }
-        continue;
-      }
 
-      await db
-        .update(productsTable)
-        .set({
-          stockCount: sql`${productsTable.stockCount} + ${item.quantity}`,
-          inStock: true,
-        })
-        .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
-
-      const [afterReturn] = await db
-        .select({ stockCount: productsTable.stockCount })
-        .from(productsTable)
-        .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
-      await db.insert(stockMovementsTable).values({
-        tenantId,
-        productId: item.productId,
-        type: movementType,
-        quantity: item.quantity,
-        balanceAfter: afterReturn?.stockCount ?? 0,
-        referenceType: "order",
-        referenceId: order.id,
-        notes: `${noteVerb} – Order #${order.id}`,
-      });
-
-      if (order.locationId) {
-        await db
-          .update(locationInventoryTable)
+        await tx
+          .update(productsTable)
           .set({
-            stockCount: sql`${locationInventoryTable.stockCount} + ${item.quantity}`,
-            updatedAt: new Date(),
+            stockCount: sql`${productsTable.stockCount} + ${item.quantity}`,
+            inStock: true,
           })
-          .where(and(
-            eq(locationInventoryTable.locationId, order.locationId),
-            eq(locationInventoryTable.productId, item.productId),
-          ));
+          .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+
+        const [afterReturn] = await tx
+          .select({ stockCount: productsTable.stockCount })
+          .from(productsTable)
+          .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+        await tx.insert(stockMovementsTable).values({
+          tenantId,
+          productId: item.productId,
+          type: movementType,
+          quantity: item.quantity,
+          balanceAfter: afterReturn?.stockCount ?? 0,
+          referenceType: "order",
+          referenceId: order.id,
+          notes: `${noteVerb} – Order #${order.id}`,
+        });
+
+        if (order.locationId) {
+          await tx
+            .update(locationInventoryTable)
+            .set({
+              stockCount: sql`${locationInventoryTable.stockCount} + ${item.quantity}`,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(locationInventoryTable.locationId, order.locationId),
+              eq(locationInventoryTable.productId, item.productId),
+            ));
+        }
       }
-    }
+    });
   }
 
   if (parsed.data.status === "voided" || parsed.data.status === "refunded") {
