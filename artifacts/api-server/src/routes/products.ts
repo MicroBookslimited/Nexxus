@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, like, and, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
+import { eq, like, and, inArray, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
 import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable, compositeProductComponentsTable } from "@workspace/db";
 import { logAudit } from "./audit";
 import {
@@ -88,12 +88,104 @@ router.get("/products", async (req, res): Promise<void> => {
 
   const stockMap = new Map(locationStock.map((s) => [s.productId, s.stockCount]));
 
+  // ── Composite product stock derivation ─────────────────────────────────
+  // For composite products, the persisted stock_count is always 0 (the row
+  // is a "recipe", not a stockable item). The real availability is the
+  // maximum number of bundles we can build from current component stock:
+  //
+  //   maxBuildable = min over each component of floor(componentStock / qty)
+  //
+  // We compute this in batch for ALL composite parents in the response so
+  // the client list naturally shows the correct quantity (and isn't a
+  // false "Out of stock"). Per-location stock is honored when a locationId
+  // is supplied.
+  const compositeIds = products
+    .filter((p) => p.structureType === "composite")
+    .map((p) => p.id);
+
+  const compositeStockMap = new Map<number, number>();
+  if (compositeIds.length > 0) {
+    const components = await db
+      .select({
+        parentProductId: compositeProductComponentsTable.parentProductId,
+        childProductId: compositeProductComponentsTable.childProductId,
+        quantityRequired: compositeProductComponentsTable.quantityRequired,
+        childGlobalStock: productsTable.stockCount,
+      })
+      .from(compositeProductComponentsTable)
+      .leftJoin(productsTable, eq(productsTable.id, compositeProductComponentsTable.childProductId))
+      .where(and(
+        eq(compositeProductComponentsTable.tenantId, tenantId),
+        inArray(compositeProductComponentsTable.parentProductId, compositeIds),
+      ));
+
+    // Resolve child stock: per-location when locationId is set, else global.
+    let childStockOf = (childId: number, fallbackGlobal: number) => fallbackGlobal;
+    if (locationId) {
+      const childIds = Array.from(new Set(components.map((c) => c.childProductId)));
+      const childInv = childIds.length
+        ? await db
+            .select({
+              productId: locationInventoryTable.productId,
+              stockCount: locationInventoryTable.stockCount,
+            })
+            .from(locationInventoryTable)
+            .where(and(
+              eq(locationInventoryTable.locationId, locationId),
+              inArray(locationInventoryTable.productId, childIds),
+            ))
+        : [];
+      const childInvMap = new Map(childInv.map((i) => [i.productId, i.stockCount]));
+      // When locationId is supplied, children without a row at this
+      // location contribute 0 — this matches the existing
+      // /products/:id/available-composite-quantity endpoint.
+      childStockOf = (childId: number) => childInvMap.get(childId) ?? 0;
+    }
+
+    // Group components by parent and reduce.
+    const byParent = new Map<number, { childProductId: number; quantityRequired: number; childGlobalStock: number | null }[]>();
+    for (const c of components) {
+      const list = byParent.get(c.parentProductId) ?? [];
+      list.push(c);
+      byParent.set(c.parentProductId, list);
+    }
+    for (const parentId of compositeIds) {
+      const list = byParent.get(parentId) ?? [];
+      if (list.length === 0) {
+        // Composite with no components yet → genuinely 0 buildable.
+        compositeStockMap.set(parentId, 0);
+        continue;
+      }
+      let max = Number.POSITIVE_INFINITY;
+      for (const c of list) {
+        const stock = childStockOf(c.childProductId, c.childGlobalStock ?? 0);
+        const possible = c.quantityRequired > 0
+          ? Math.floor(stock / c.quantityRequired)
+          : 0;
+        if (possible < max) max = possible;
+      }
+      compositeStockMap.set(parentId, Number.isFinite(max) ? max : 0);
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────
+
   const enriched = await Promise.all(
     products.map(async (p) => {
       const override = overrides.find((o) => o.productId === p.id);
       const effectivePrice = override?.priceOverride != null ? override.priceOverride : p.price;
-      const effectiveInStock = locationId ? (override ? override.isAvailable && p.inStock : p.inStock) : p.inStock;
-      const effectiveStockCount = locationId && stockMap.has(p.id) ? stockMap.get(p.id)! : p.stockCount;
+      const isComposite = p.structureType === "composite";
+      // Composite stock is derived; the persisted stock_count (and any
+      // location_inventory row) for a composite is meaningless.
+      const effectiveStockCount = isComposite
+        ? compositeStockMap.get(p.id) ?? 0
+        : (locationId && stockMap.has(p.id) ? stockMap.get(p.id)! : p.stockCount);
+      // Composites are "in stock" iff at least 1 bundle can be built.
+      // Simple products keep the existing per-location override semantics.
+      const effectiveInStock = isComposite
+        ? (locationId
+            ? (override ? override.isAvailable && effectiveStockCount > 0 : effectiveStockCount > 0)
+            : effectiveStockCount > 0)
+        : (locationId ? (override ? override.isAvailable && p.inStock : p.inStock) : p.inStock);
       return withFlags({ ...p, price: effectivePrice, inStock: effectiveInStock, stockCount: effectiveStockCount });
     })
   );
