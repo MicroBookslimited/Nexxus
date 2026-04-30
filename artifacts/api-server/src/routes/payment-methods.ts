@@ -36,8 +36,10 @@ async function ensureSeeded(tenantId: number): Promise<void> {
 
   // Concurrency-safe seed: take a Postgres advisory lock keyed on tenantId
   // so two concurrent first-callers cannot both insert the defaults.
-  // The DB also has a unique index on (tenant_id, lower(name)) which would
-  // reject a second-write race, but the lock avoids the partial-insert path.
+  // Case-insensitive duplicate-name prevention is enforced at the application
+  // layer (see POST/PATCH handlers below) — there is no DB-level unique index
+  // because functional indexes (lower(name)) don't survive deploy-time schema
+  // diffing cleanly.
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${42}, ${tenantId})`);
     const recheck = await tx
