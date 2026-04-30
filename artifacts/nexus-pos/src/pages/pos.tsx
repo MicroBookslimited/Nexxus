@@ -32,7 +32,7 @@ import {
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
-  ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote,
+  ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote, Layers,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
