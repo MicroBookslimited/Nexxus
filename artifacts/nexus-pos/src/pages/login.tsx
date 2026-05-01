@@ -295,6 +295,16 @@ export function Login() {
                   Start free trial
                 </button>
               </p>
+              <p className="text-center text-xs text-muted-foreground mt-2">
+                Technician/installer?{" "}
+                <button
+                  type="button"
+                  onClick={() => setLocation("/technician/login")}
+                  className="text-primary hover:text-primary/80 font-medium transition-colors"
+                >
+                  Sign in here
+                </button>
+              </p>
             </CardContent>
           </Card>
         </motion.div>

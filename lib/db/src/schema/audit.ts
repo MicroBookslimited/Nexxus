@@ -9,6 +9,10 @@ export const impersonationLogsTable = pgTable("impersonation_logs", {
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
   notes: text("notes"),
+  // "superadmin" (default for legacy rows) or "technician"
+  actorType: text("actor_type").notNull().default("superadmin"),
+  actorTechnicianId: integer("actor_technician_id"),
+  actorName: text("actor_name"),
 });
 
 export const auditLogsTable = pgTable("audit_logs", {

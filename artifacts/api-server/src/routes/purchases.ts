@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { and, eq, desc } from "drizzle-orm";
 import { db, purchasesTable, productsTable, stockMovementsTable, productPurchaseUnitsTable } from "@workspace/db";
 import { z } from "zod";
-import { verifyTenantToken } from "./saas-auth";
+import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { convertToBaseUnit } from "../lib/pricing";
 
 const router: IRouter = Router();
@@ -66,6 +66,7 @@ router.get("/purchases", async (req, res): Promise<void> => {
 });
 
 router.post("/purchases", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -138,6 +139,7 @@ router.post("/purchases", async (req, res): Promise<void> => {
 });
 
 router.delete("/purchases/:id", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 

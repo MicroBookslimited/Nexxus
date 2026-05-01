@@ -4,7 +4,7 @@ import {
   db, apEntriesTable, apPaymentsTable, apCreditsTable, vendorsTable,
   rawMaterialPurchasesTable,
 } from "@workspace/db";
-import { verifyTenantToken } from "./saas-auth";
+import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { z } from "zod/v4";
 
 const router: IRouter = Router();
@@ -105,6 +105,7 @@ const CreateEntryBody = z.object({
 });
 
 router.post("/ap/entries", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -133,6 +134,7 @@ router.post("/ap/entries", async (req, res): Promise<void> => {
 /* ─── Cancel AP entry ─────────────────────────────────────────────────────── */
 
 router.patch("/ap/entries/:id/cancel", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -163,6 +165,7 @@ const RecordPaymentBody = z.object({
 });
 
 router.post("/ap/payments", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 

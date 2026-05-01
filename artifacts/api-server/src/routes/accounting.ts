@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, accountingAccountsTable, journalEntriesTable, journalEntryLinesTable, quickbooksConnectionTable, ordersTable, orderItemsTable, productsTable, stockAdjustmentsTable, stockCountSessionsTable, stockCountItemsTable } from "@workspace/db";
 import { eq, and, gte, lte, sql, ne, inArray, desc, isNotNull } from "drizzle-orm";
 import { z } from "zod";
-import { verifyTenantToken } from "./saas-auth";
+import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 
 const router: IRouter = Router();
 
@@ -74,6 +74,7 @@ const AccountBody = z.object({
 });
 
 router.post("/accounting/accounts", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -88,6 +89,7 @@ router.post("/accounting/accounts", async (req, res): Promise<void> => {
 });
 
 router.patch("/accounting/accounts/:id", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -102,6 +104,7 @@ router.patch("/accounting/accounts/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/accounting/accounts/:id", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -181,6 +184,7 @@ const JournalEntryBody = z.object({
 });
 
 router.post("/accounting/journal-entries", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -204,6 +208,7 @@ router.post("/accounting/journal-entries", async (req, res): Promise<void> => {
 });
 
 router.delete("/accounting/journal-entries/:id", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -522,7 +527,8 @@ router.get("/accounting/quickbooks/callback", async (req, res): Promise<void> =>
   res.redirect("/app/accounting?qb=connected");
 });
 
-router.post("/accounting/quickbooks/disconnect", async (_req, res): Promise<void> => {
+router.post("/accounting/quickbooks/disconnect", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   await db.update(quickbooksConnectionTable).set({ isActive: false });
   res.json({ success: true });
 });
@@ -550,6 +556,7 @@ async function refreshQbToken(conn: { id: number; refreshToken: string | null })
 }
 
 router.post("/accounting/quickbooks/sync", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 

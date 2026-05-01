@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, and, gte, lte, isNotNull, isNull, or, sql, desc } from "drizzle-orm";
 import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable } from "@workspace/db";
 import { z } from "zod";
-import { verifyTenantToken } from "./saas-auth";
+import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { logAudit } from "./audit";
 
 const router: IRouter = Router();
@@ -380,6 +380,7 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
 });
 
 router.post("/cash/sessions", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -422,6 +423,7 @@ router.post("/cash/sessions", async (req, res): Promise<void> => {
 });
 
 router.post("/cash/sessions/:id/payouts", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -454,6 +456,7 @@ router.post("/cash/sessions/:id/payouts", async (req, res): Promise<void> => {
 
 /* Force-close any stuck open session for this tenant (manager recovery) */
 router.post("/cash/sessions/force-close", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -484,6 +487,7 @@ router.post("/cash/sessions/force-close", async (req, res): Promise<void> => {
 });
 
 router.post("/cash/sessions/:id/close", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -520,6 +524,7 @@ router.post("/cash/sessions/:id/close", async (req, res): Promise<void> => {
 
 /* ─── POST /cash/sessions/:id/admin-close — manager force-closes any session ─── */
 router.post("/cash/sessions/:id/admin-close", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 

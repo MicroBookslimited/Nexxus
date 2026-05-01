@@ -5,11 +5,12 @@ import {
   Eye, X, AlertTriangle, Plus, Building2, Banknote, FileCheck,
   LayoutDashboard, Settings, Pencil, Trash2, Download, ChevronRight,
   LogIn, KeyRound, Check, Package, ToggleLeft, ToggleRight, Mail,
-  Cpu, Globe, ShoppingBag, ClipboardList, Megaphone,
+  Cpu, Globe, ShoppingBag, ClipboardList, Megaphone, Wrench,
 } from "lucide-react";
 import { EmailTab } from "./superadmin-email-tab";
 import { SuperadminMarketingTab } from "./superadmin-marketing-tab";
 import { SuperadminStoreTab } from "./superadmin-store-tab";
+import { TechniciansTab } from "./superadmin-technicians-tab";
 import {
   SUPERADMIN_TOKEN_KEY, TENANT_TOKEN_KEY,
   superadminLogin, superadminStats, superadminTenants,
@@ -29,7 +30,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "users" | "tenants" | "payments" | "plans" | "email" | "marketing" | "gateway" | "settings" | "store" | "impersonation-logs";
+type Tab = "overview" | "users" | "tenants" | "technicians" | "payments" | "plans" | "email" | "marketing" | "gateway" | "settings" | "store" | "impersonation-logs";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -79,6 +80,10 @@ function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
               {loading ? "Signing in…" : "Sign In"}
             </button>
           </form>
+          <p className="mt-5 text-center text-xs text-[#94a3b8]">
+            Are you a technician/installer?{" "}
+            <a href="/technician/login" className="text-[#3b82f6] hover:text-blue-400 font-medium">Technician sign in</a>
+          </p>
         </div>
       </div>
     </div>
@@ -939,6 +944,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "users", label: "Users", icon: Users, badge: stats?.totalTenants },
     { id: "tenants", label: "Businesses", icon: Building2 },
+    { id: "technicians", label: "Technicians", icon: Wrench },
     { id: "payments", label: "Payments", icon: Banknote, badge: stats?.pendingProofs || undefined },
     { id: "plans", label: "Plans", icon: Package },
     { id: "email", label: "Email", icon: Mail },
@@ -1445,6 +1451,8 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
         )}
 
         {/* ── EMAIL ── */}
+        {tab === "technicians" && <TechniciansTab />}
+
         {tab === "email" && <EmailTab />}
 
         {tab === "marketing" && <SuperadminMarketingTab />}

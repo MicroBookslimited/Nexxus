@@ -8,7 +8,7 @@ import {
   orderItemsTable,
 } from "@workspace/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { verifyTenantToken } from "./saas-auth.js";
+import { verifyTenantToken, requireFullTenant } from "./saas-auth.js";
 
 const router: IRouter = Router();
 
@@ -211,6 +211,7 @@ router.get("/ar/:id", async (req, res) => {
 /* ── Record a payment ────────────────────────────────────── */
 router.post("/ar/:id/payments", async (req, res) => {
   try {
+    if (!requireFullTenant(req as never, res as never)) return;
     const tenantId = getTenantId(req);
     if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -261,6 +262,7 @@ router.post("/ar/:id/payments", async (req, res) => {
 /* ── Update notes / due date ─────────────────────────────── */
 router.patch("/ar/:id", async (req, res) => {
   try {
+    if (!requireFullTenant(req as never, res as never)) return;
     const tenantId = getTenantId(req);
     if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
 

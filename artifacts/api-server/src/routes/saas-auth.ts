@@ -17,14 +17,50 @@ function signToken(tenantId: number, email: string, adminUserId?: number, isPrim
   return jwt.sign({ tenantId, email, type: "tenant", adminUserId, isPrimary }, getJwtSecret(), { expiresIn: "90d" });
 }
 
-export function verifyTenantToken(token: string): { tenantId: number; email: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean; impersonationLogId?: number } | null {
+export function verifyTenantToken(token: string): { tenantId: number; email: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean; impersonationLogId?: number; restrictedRole?: string; actorTechnicianId?: number; actorName?: string } | null {
   try {
-    const payload = jwt.verify(token, getJwtSecret()) as { tenantId: number; email: string; type: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean; impersonationLogId?: number };
+    const payload = jwt.verify(token, getJwtSecret()) as { tenantId: number; email: string; type: string; adminUserId?: number; isPrimary?: boolean; impersonation?: boolean; impersonationLogId?: number; restrictedRole?: string; actorTechnicianId?: number; actorName?: string };
     if (payload.type !== "tenant") return null;
-    return { tenantId: payload.tenantId, email: payload.email, adminUserId: payload.adminUserId, isPrimary: payload.isPrimary, impersonation: payload.impersonation, impersonationLogId: payload.impersonationLogId };
+    return {
+      tenantId: payload.tenantId,
+      email: payload.email,
+      adminUserId: payload.adminUserId,
+      isPrimary: payload.isPrimary,
+      impersonation: payload.impersonation,
+      impersonationLogId: payload.impersonationLogId,
+      restrictedRole: payload.restrictedRole,
+      actorTechnicianId: payload.actorTechnicianId,
+      actorName: payload.actorName,
+    };
   } catch {
     return null;
   }
+}
+
+/**
+ * Returns true and lets the request proceed if the tenant token has full access.
+ * Returns false (and writes a 403) if the token is restricted (e.g. technician).
+ * Use to gate write operations that technicians must not perform.
+ */
+export function requireFullTenant(
+  req: { headers: { authorization?: string } },
+  res: { status: (n: number) => { json: (b: object) => void } },
+): boolean {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
+  }
+  const payload = verifyTenantToken(auth.slice(7));
+  if (!payload) {
+    res.status(401).json({ error: "Invalid token" });
+    return false;
+  }
+  if (payload.restrictedRole === "technician") {
+    res.status(403).json({ error: "Technicians cannot perform sales or financial operations" });
+    return false;
+  }
+  return true;
 }
 
 function getAppBase(): string {

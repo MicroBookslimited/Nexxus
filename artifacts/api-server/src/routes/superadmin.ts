@@ -3,8 +3,9 @@ import {
   db, tenantsTable, subscriptionsTable, subscriptionPlansTable,
   bankAccountSettingsTable, bankTransferProofsTable, appSettingsTable,
   impersonationLogsTable, tenantAdminUsersTable,
+  techniciansTable, technicianAssignmentsTable,
 } from "@workspace/db";
-import { eq, desc, count, sql, ilike, or, and, isNull } from "drizzle-orm";
+import { eq, desc, count, sql, ilike, or, and, isNull, inArray } from "drizzle-orm";
 import { getSetting } from "./settings";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
@@ -797,6 +798,203 @@ router.patch("/superadmin/gateway", async (req, res): Promise<void> => {
     }
   }
   res.json({ success: true });
+});
+
+/* ────────────────────────── Technicians (Installers) ────────────────────────── */
+
+router.get("/superadmin/technicians", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const status = (req.query["status"] as string | undefined)?.trim();
+  const baseQuery = db.select({
+    id: techniciansTable.id,
+    name: techniciansTable.name,
+    email: techniciansTable.email,
+    phone: techniciansTable.phone,
+    status: techniciansTable.status,
+    createdAt: techniciansTable.createdAt,
+    approvedAt: techniciansTable.approvedAt,
+    approvedBy: techniciansTable.approvedBy,
+    lastLoginAt: techniciansTable.lastLoginAt,
+    assignmentCount: sql<number>`(SELECT COUNT(*)::int FROM technician_assignments a WHERE a.technician_id = ${techniciansTable.id})`,
+  }).from(techniciansTable);
+
+  const rows = status
+    ? await baseQuery.where(eq(techniciansTable.status, status)).orderBy(desc(techniciansTable.createdAt))
+    : await baseQuery.orderBy(desc(techniciansTable.createdAt));
+
+  res.json(rows);
+});
+
+router.get("/superadmin/technicians/:id", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "", 10);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [tech] = await db.select().from(techniciansTable).where(eq(techniciansTable.id, id));
+  if (!tech) { res.status(404).json({ error: "Technician not found" }); return; }
+
+  const assignments = await db.select({
+    id: technicianAssignmentsTable.id,
+    tenantId: technicianAssignmentsTable.tenantId,
+    assignedAt: technicianAssignmentsTable.assignedAt,
+    assignedBy: technicianAssignmentsTable.assignedBy,
+    businessName: tenantsTable.businessName,
+    email: tenantsTable.email,
+    status: tenantsTable.status,
+  })
+    .from(technicianAssignmentsTable)
+    .leftJoin(tenantsTable, eq(tenantsTable.id, technicianAssignmentsTable.tenantId))
+    .where(eq(technicianAssignmentsTable.technicianId, id))
+    .orderBy(tenantsTable.businessName);
+
+  // strip the password hash
+  const { passwordHash: _ph, ...safe } = tech;
+  void _ph;
+  res.json({ ...safe, assignments });
+});
+
+const PatchTechBody = z.object({
+  status: z.enum(["pending", "approved", "suspended", "rejected"]).optional(),
+  name: z.string().min(2).max(120).optional(),
+  phone: z.string().max(40).optional(),
+});
+
+router.patch("/superadmin/technicians/:id", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "", 10);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = PatchTechBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+
+  const [tech] = await db.select().from(techniciansTable).where(eq(techniciansTable.id, id));
+  if (!tech) { res.status(404).json({ error: "Technician not found" }); return; }
+
+  const updates: Record<string, unknown> = {};
+  if (parsed.data.name !== undefined) updates["name"] = parsed.data.name;
+  if (parsed.data.phone !== undefined) updates["phone"] = parsed.data.phone;
+  if (parsed.data.status !== undefined) {
+    updates["status"] = parsed.data.status;
+    if (parsed.data.status === "approved" && tech.status !== "approved") {
+      updates["approvedAt"] = new Date();
+      updates["approvedBy"] = getSuperadminEmailFromRequest(req);
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    const { passwordHash: _ph0, ...safe0 } = tech;
+    void _ph0;
+    res.json(safe0);
+    return;
+  }
+
+  const [updated] = await db.update(techniciansTable)
+    .set(updates)
+    .where(eq(techniciansTable.id, id))
+    .returning();
+
+  if (!updated) { res.status(500).json({ error: "Update failed" }); return; }
+  const { passwordHash: _ph, ...safe } = updated;
+  void _ph;
+  res.json(safe);
+});
+
+router.delete("/superadmin/technicians/:id", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "", 10);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  await db.delete(techniciansTable).where(eq(techniciansTable.id, id));
+  res.json({ success: true });
+});
+
+const ResetTechPwBody = z.object({ newPassword: z.string().min(8) });
+
+router.post("/superadmin/technicians/:id/reset-password", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "", 10);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = ResetTechPwBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Password must be at least 8 characters" }); return; }
+
+  const passwordHash = await bcryptjs.hash(parsed.data.newPassword, 10);
+  const [updated] = await db.update(techniciansTable)
+    .set({ passwordHash })
+    .where(eq(techniciansTable.id, id))
+    .returning({ id: techniciansTable.id });
+  if (!updated) { res.status(404).json({ error: "Technician not found" }); return; }
+  res.json({ success: true });
+});
+
+const AssignBody = z.object({ tenantId: z.number().int().positive() });
+
+router.post("/superadmin/technicians/:id/assignments", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const technicianId = parseInt(req.params["id"] ?? "", 10);
+  if (!Number.isFinite(technicianId)) { res.status(400).json({ error: "Invalid technician id" }); return; }
+
+  const parsed = AssignBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+
+  const [tech] = await db.select({ id: techniciansTable.id }).from(techniciansTable).where(eq(techniciansTable.id, technicianId));
+  if (!tech) { res.status(404).json({ error: "Technician not found" }); return; }
+
+  const [tenant] = await db.select({ id: tenantsTable.id, businessName: tenantsTable.businessName }).from(tenantsTable).where(eq(tenantsTable.id, parsed.data.tenantId));
+  if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
+
+  const [existing] = await db.select({ id: technicianAssignmentsTable.id })
+    .from(technicianAssignmentsTable)
+    .where(and(
+      eq(technicianAssignmentsTable.technicianId, technicianId),
+      eq(technicianAssignmentsTable.tenantId, parsed.data.tenantId),
+    ));
+  if (existing) { res.status(409).json({ error: "Already assigned" }); return; }
+
+  const [created] = await db.insert(technicianAssignmentsTable).values({
+    technicianId,
+    tenantId: parsed.data.tenantId,
+    assignedBy: getSuperadminEmailFromRequest(req),
+  }).returning();
+
+  res.status(201).json({ ...created, businessName: tenant.businessName });
+});
+
+router.delete("/superadmin/technicians/:id/assignments/:tenantId", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const technicianId = parseInt(req.params["id"] ?? "", 10);
+  const tenantId = parseInt(req.params["tenantId"] ?? "", 10);
+  if (!Number.isFinite(technicianId) || !Number.isFinite(tenantId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  await db.delete(technicianAssignmentsTable).where(and(
+    eq(technicianAssignmentsTable.technicianId, technicianId),
+    eq(technicianAssignmentsTable.tenantId, tenantId),
+  ));
+  res.json({ success: true });
+});
+
+/* ─── Tenant search for assignment dialog (lightweight) ─── */
+router.get("/superadmin/tenants-lite", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const q = (req.query["q"] as string | undefined)?.trim();
+  const baseQuery = db.select({
+    id: tenantsTable.id,
+    businessName: tenantsTable.businessName,
+    email: tenantsTable.email,
+    status: tenantsTable.status,
+  }).from(tenantsTable);
+
+  const rows = q
+    ? await baseQuery.where(or(
+        ilike(tenantsTable.businessName, `%${q}%`),
+        ilike(tenantsTable.email, `%${q}%`),
+      )).orderBy(tenantsTable.businessName).limit(50)
+    : await baseQuery.orderBy(tenantsTable.businessName).limit(50);
+
+  // mark which are unused (helps avoid re-importing inArray for nothing)
+  void inArray;
+  res.json(rows);
 });
 
 export default router;

@@ -22,6 +22,7 @@ import { useStaff } from "@/contexts/StaffContext";
 import { PinPad } from "@/components/PinPad";
 import { ShiftClockButton } from "@/components/ShiftClockButton";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
+import { isTechnicianRestricted, TECHNICIAN_ALLOWED_PATHS } from "@/lib/tenant-token";
 
 type NavItem = {
   alwaysShowLabel?: boolean;
@@ -282,11 +283,14 @@ export function Layout({ children }: { children: ReactNode }) {
   const pad = (n: number) => String(n).padStart(2, "0");
 
   const { isRestaurant } = useBusinessProfile();
+  const technicianMode = isTechnicianRestricted();
 
   // Filter entries: for groups, filter children too. Also hide restaurant-only
   // items for non-restaurant tenants (retail / wholesale).
+  // Technicians (limited tenant session) only see Inventory/Hardware/Reports/Settings/Audit.
   const canSeeItem = (item: NavItem): boolean => {
     if (item.restaurantOnly && !isRestaurant) return false;
+    if (technicianMode && !TECHNICIAN_ALLOWED_PATHS.some(p => item.href === p || item.href.startsWith(`${p}/`))) return false;
     return !item.permission || can(item.permission);
   };
   const canSeeEntry = (entry: NavEntry): boolean => {

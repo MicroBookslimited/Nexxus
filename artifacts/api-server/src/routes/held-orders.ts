@@ -8,7 +8,7 @@ import {
   DeleteHeldOrderParams,
   ListHeldOrdersResponse,
 } from "@workspace/api-zod";
-import { verifyTenantToken } from "./saas-auth";
+import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 
 const router: IRouter = Router();
 
@@ -39,6 +39,7 @@ router.get("/held-orders", async (req, res): Promise<void> => {
 });
 
 router.post("/held-orders", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -88,6 +89,7 @@ router.get("/held-orders/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/held-orders/:id", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 

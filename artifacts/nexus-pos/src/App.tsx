@@ -41,7 +41,11 @@ import { Register } from "@/pages/register";
 import { TopUp } from "@/pages/topup";
 import { ClockPage } from "@/pages/clock";
 import { ScalePage } from "@/pages/scale";
+import { TechnicianRegister } from "@/pages/technician-register";
+import { TechnicianLogin } from "@/pages/technician-login";
+import { TechnicianPortal } from "@/pages/technician-portal";
 import { Layout, PermissionGate } from "@/components/layout";
+import { isPathAllowedForTechnician, isTechnicianRestricted } from "@/lib/tenant-token";
 
 // ─── Lazy section imports ───────────────────────────────────────────────────
 const Landing = lazy(() => import("@/sections/landing/Landing"));
@@ -110,6 +114,14 @@ function SectionDispatch() {
 // ─── POS app internals ──────────────────────────────────────────────────────
 
 function ProtectedRoute({ component: Component, permission }: { component: React.ComponentType<any>; permission?: string }) {
+  const [location, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (isTechnicianRestricted() && !isPathAllowedForTechnician(location)) {
+      setLocation("/dashboard");
+    }
+  }, [location, setLocation]);
+
   return (
     <Layout>
       {permission ? (
@@ -166,6 +178,9 @@ function POSRouter() {
       <Route path="/verify-email" component={VerifyEmail} />
       <Route path="/admin-invite" component={AdminInvitePage} />
       <Route path="/superadmin" component={Superadmin} />
+      <Route path="/technician/register" component={TechnicianRegister} />
+      <Route path="/technician/login" component={TechnicianLogin} />
+      <Route path="/technician" component={TechnicianPortal} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -758,3 +758,110 @@ export function previewTierPrice(basePrice: number, qty: number, tiers: PricingT
   const unitPrice = chosen ? chosen.unitPrice : basePrice;
   return { unitPrice, tier: chosen, savingsPerUnit: Math.max(0, basePrice - unitPrice) };
 }
+
+/* ─── Technicians (Installers) ─── */
+export const TECHNICIAN_TOKEN_KEY = "nexus_technician_token";
+
+function technicianAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TECHNICIAN_TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export interface Technician {
+  id: number;
+  name: string;
+  email: string;
+  phone?: string | null;
+  status: "pending" | "approved" | "suspended" | "rejected";
+  createdAt: string;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  lastLoginAt?: string | null;
+}
+
+export interface TechnicianAssignedTenant {
+  id: number;
+  businessName: string;
+  email: string;
+  ownerName?: string | null;
+  status: string;
+  country?: string | null;
+  assignedAt: string;
+}
+
+export const technicianRegister = (data: { name: string; email: string; password: string; phone?: string }) =>
+  api<{ id: number; status: string }>("/technician/register", {
+    method: "POST", body: JSON.stringify(data),
+  });
+
+export const technicianLogin = (email: string, password: string) =>
+  api<{ token: string; technician: Technician }>("/technician/login", {
+    method: "POST", body: JSON.stringify({ email, password }),
+  });
+
+export const technicianMe = () =>
+  api<{ technician: Technician }>("/technician/me", { headers: technicianAuthHeaders() });
+
+export const technicianListTenants = () =>
+  api<TechnicianAssignedTenant[]>("/technician/tenants", { headers: technicianAuthHeaders() });
+
+export const technicianLoginAs = (tenantId: number) =>
+  api<{ token: string; tenant: { id: number; email: string; businessName: string }; impersonationLogId: number; restrictedRole: string }>(
+    `/technician/tenants/${tenantId}/login-as`,
+    { method: "POST", headers: technicianAuthHeaders() },
+  );
+
+export const technicianImpersonationEnd = (logId: number) =>
+  api<{ success: boolean }>("/technician/impersonation-end", {
+    method: "POST", body: JSON.stringify({ logId }), headers: technicianAuthHeaders(),
+  });
+
+/* ─── Superadmin: Technicians management ─── */
+export interface TechnicianRow extends Technician {
+  assignmentCount: number;
+}
+export interface TechnicianAssignment {
+  id: number;
+  tenantId: number;
+  assignedAt: string;
+  assignedBy?: string | null;
+  businessName?: string | null;
+  email?: string | null;
+  status?: string | null;
+}
+export interface TechnicianDetail extends Technician {
+  assignments: TechnicianAssignment[];
+}
+export interface TenantLite { id: number; businessName: string; email: string; status: string }
+
+export const superadminListTechnicians = (status?: string) =>
+  api<TechnicianRow[]>(`/superadmin/technicians${status ? `?status=${encodeURIComponent(status)}` : ""}`, { headers: superadminAuthHeaders() });
+
+export const superadminGetTechnician = (id: number) =>
+  api<TechnicianDetail>(`/superadmin/technicians/${id}`, { headers: superadminAuthHeaders() });
+
+export const superadminPatchTechnician = (id: number, body: Partial<Pick<Technician, "name" | "phone" | "status">>) =>
+  api<Technician>(`/superadmin/technicians/${id}`, {
+    method: "PATCH", body: JSON.stringify(body), headers: superadminAuthHeaders(),
+  });
+
+export const superadminDeleteTechnician = (id: number) =>
+  api<{ success: boolean }>(`/superadmin/technicians/${id}`, { method: "DELETE", headers: superadminAuthHeaders() });
+
+export const superadminResetTechnicianPassword = (id: number, newPassword: string) =>
+  api<{ success: boolean }>(`/superadmin/technicians/${id}/reset-password`, {
+    method: "POST", body: JSON.stringify({ newPassword }), headers: superadminAuthHeaders(),
+  });
+
+export const superadminAssignTechnician = (technicianId: number, tenantId: number) =>
+  api<TechnicianAssignment>(`/superadmin/technicians/${technicianId}/assignments`, {
+    method: "POST", body: JSON.stringify({ tenantId }), headers: superadminAuthHeaders(),
+  });
+
+export const superadminUnassignTechnician = (technicianId: number, tenantId: number) =>
+  api<{ success: boolean }>(`/superadmin/technicians/${technicianId}/assignments/${tenantId}`, {
+    method: "DELETE", headers: superadminAuthHeaders(),
+  });
+
+export const superadminSearchTenantsLite = (q?: string) =>
+  api<TenantLite[]>(`/superadmin/tenants-lite${q ? `?q=${encodeURIComponent(q)}` : ""}`, { headers: superadminAuthHeaders() });

@@ -23,3 +23,4 @@ export * from "./topup";
 export * from "./scale";
 export * from "./payment-methods";
 export * from "./composite-products";
+export * from "./technicians";

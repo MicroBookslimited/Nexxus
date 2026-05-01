@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, topupTransactionsTable, topupWalletsTable, topupWalletLedgerTable } from "@workspace/db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
-import { verifyTenantToken } from "./saas-auth";
+import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { logAudit } from "./audit";
 
 const router: IRouter = Router();
@@ -177,6 +177,7 @@ router.get("/topup/diagnostics", async (req, res): Promise<void> => {
 /* ─── SEND TOP-UP ─── */
 
 router.post("/topup/send", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -304,6 +305,7 @@ router.get("/topup/wallet/ledger", async (req, res): Promise<void> => {
 });
 
 router.post("/topup/wallet/fund", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const { amount, description } = req.body as { amount: number; description?: string };

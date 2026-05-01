@@ -64,7 +64,7 @@ import {
   ChargeOrderBody,
   ChargeOrderResponse,
 } from "@workspace/api-zod";
-import { verifyTenantToken } from "./saas-auth";
+import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 
 const router: IRouter = Router();
 
@@ -199,6 +199,7 @@ router.get("/orders", async (req, res): Promise<void> => {
 });
 
 router.post("/orders", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -834,6 +835,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
 });
 
 router.patch("/orders/:id", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -1016,6 +1018,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 });
 
 router.post("/orders/:id/charge", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
