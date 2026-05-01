@@ -830,7 +830,10 @@ router.post("/accounting/stock-counts", async (req, res): Promise<void> => {
   if (!name) { res.status(400).json({ error: "Name is required" }); return; }
 
   let productQuery = db.select().from(productsTable)
-    .where(eq(productsTable.tenantId, tenantId))
+    .where(and(
+      eq(productsTable.tenantId, tenantId),
+      ne(productsTable.productType, "composite"),
+    ))
     .$dynamic();
   if (categoryFilter) productQuery = productQuery.where(eq(productsTable.category, categoryFilter));
   const products = await productQuery.orderBy(productsTable.category, productsTable.name);
