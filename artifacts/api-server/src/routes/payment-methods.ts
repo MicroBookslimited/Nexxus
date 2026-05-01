@@ -164,10 +164,6 @@ router.put("/payment-methods/:id", async (req, res): Promise<void> => {
 
   // If the rename collides with another row's name, reject.
   if (parsed.data.name && parsed.data.name.toLowerCase() !== existing.name.toLowerCase()) {
-    const collisions = await db
-      .select({ id: paymentMethodsTable.id })
-      .from(paymentMethodsTable)
-      .where(eq(paymentMethodsTable.tenantId, tenantId));
     const all = await db
       .select({ id: paymentMethodsTable.id, name: paymentMethodsTable.name })
       .from(paymentMethodsTable)
@@ -179,7 +175,6 @@ router.put("/payment-methods/:id", async (req, res): Promise<void> => {
       });
       return;
     }
-    void collisions;
   }
 
   if (parsed.data.isDefault === true) {

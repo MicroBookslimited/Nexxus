@@ -5,7 +5,7 @@ import {
   impersonationLogsTable, tenantAdminUsersTable,
   techniciansTable, technicianAssignmentsTable,
 } from "@workspace/db";
-import { eq, desc, count, sql, ilike, or, and, isNull, inArray } from "drizzle-orm";
+import { eq, desc, count, sql, ilike, or, and, isNull } from "drizzle-orm";
 import { getSetting } from "./settings";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
@@ -38,6 +38,20 @@ function getSuperadminEmailFromRequest(req: { headers: Record<string, string | u
   } catch {
     return "superadmin";
   }
+}
+
+function publicTechnician(t: typeof techniciansTable.$inferSelect) {
+  return {
+    id: t.id,
+    name: t.name,
+    email: t.email,
+    phone: t.phone,
+    status: t.status,
+    createdAt: t.createdAt,
+    approvedAt: t.approvedAt,
+    approvedBy: t.approvedBy,
+    lastLoginAt: t.lastLoginAt,
+  };
 }
 
 function verifySuperAdminToken(token: string): boolean {
@@ -848,10 +862,7 @@ router.get("/superadmin/technicians/:id", async (req, res): Promise<void> => {
     .where(eq(technicianAssignmentsTable.technicianId, id))
     .orderBy(tenantsTable.businessName);
 
-  // strip the password hash
-  const { passwordHash: _ph, ...safe } = tech;
-  void _ph;
-  res.json({ ...safe, assignments });
+  res.json({ ...publicTechnician(tech), assignments });
 });
 
 const PatchTechBody = z.object({
@@ -883,9 +894,7 @@ router.patch("/superadmin/technicians/:id", async (req, res): Promise<void> => {
   }
 
   if (Object.keys(updates).length === 0) {
-    const { passwordHash: _ph0, ...safe0 } = tech;
-    void _ph0;
-    res.json(safe0);
+    res.json(publicTechnician(tech));
     return;
   }
 
@@ -895,9 +904,7 @@ router.patch("/superadmin/technicians/:id", async (req, res): Promise<void> => {
     .returning();
 
   if (!updated) { res.status(500).json({ error: "Update failed" }); return; }
-  const { passwordHash: _ph, ...safe } = updated;
-  void _ph;
-  res.json(safe);
+  res.json(publicTechnician(updated));
 });
 
 router.delete("/superadmin/technicians/:id", async (req, res): Promise<void> => {
@@ -992,8 +999,6 @@ router.get("/superadmin/tenants-lite", async (req, res): Promise<void> => {
       )).orderBy(tenantsTable.businessName).limit(50)
     : await baseQuery.orderBy(tenantsTable.businessName).limit(50);
 
-  // mark which are unused (helps avoid re-importing inArray for nothing)
-  void inArray;
   res.json(rows);
 });
 
