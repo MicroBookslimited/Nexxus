@@ -738,6 +738,7 @@ router.get("/accounting/stock-adjustments", async (req, res): Promise<void> => {
 });
 
 router.post("/accounting/stock-adjustments", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -830,6 +831,7 @@ router.get("/accounting/stock-counts", async (req, res): Promise<void> => {
 });
 
 router.post("/accounting/stock-counts", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -887,6 +889,7 @@ router.get("/accounting/stock-counts/:id", async (req, res): Promise<void> => {
 });
 
 router.patch("/accounting/stock-counts/:id/items/:itemId", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -916,6 +919,7 @@ router.patch("/accounting/stock-counts/:id/items/:itemId", async (req, res): Pro
 });
 
 router.post("/accounting/stock-counts/:id/apply", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -1002,6 +1006,7 @@ router.post("/accounting/stock-counts/:id/apply", async (req, res): Promise<void
 });
 
 router.delete("/accounting/stock-counts/:id", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -1030,6 +1035,7 @@ const BulkItem = z.object({
 const BulkBody = z.object({ items: z.array(BulkItem).min(1).max(5000) });
 
 router.post("/accounting/stock-counts/:id/items/bulk", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -1151,6 +1157,7 @@ function parseCsv(text: string): string[][] {
 const ImportBody = z.object({ csv: z.string().min(1).max(2_000_000) });
 
 router.post("/accounting/stock-counts/:id/import", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 

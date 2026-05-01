@@ -1088,15 +1088,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                staffId:
-                  type: integer
-                pin:
-                  type: string
-              required:
-                - staffId
-                - pin
+              $ref: "#/components/schemas/VerifyStaffPinBody"
       responses:
         "200":
           description: Staff member

@@ -916,11 +916,6 @@ export type UpdateKitchenOrderStatus200 = {
   status: string;
 };
 
-export type VerifyStaffPinBody = {
-  staffId: number;
-  pin: string;
-};
-
 export type AuthenticateStaffBody = {
   pin: string;
   requiredRoles?: string[];

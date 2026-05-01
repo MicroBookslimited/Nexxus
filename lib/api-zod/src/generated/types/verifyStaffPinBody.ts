@@ -10,8 +10,3 @@ export interface VerifyStaffPinBody {
   staffId: number;
   pin: string;
 }
-
-export type VerifyStaffPinBody = {
-  staffId: number;
-  pin: string;
-};
