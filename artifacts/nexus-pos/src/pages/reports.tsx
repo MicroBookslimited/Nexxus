@@ -470,8 +470,8 @@ function InventoryTab({ range }: { range: { from: string; to: string } }) {
 
   const handleExport = () => {
     downloadCsv(`inventory-${range.from}-to-${range.to}.csv`,
-      ["Product", "Category", "Price", "Stock", "Status", "Sold (Period)", "Revenue (Period)", "Avg Cost", "COGS"],
-      products.map(p => [p.name, p.category, p.price, p.stockCount, p.status, p.soldThisPeriod, p.revenueThisPeriod, p.avgCost, p.cogs])
+      ["Product", "Category", "Price", "Opening Stock", "Purchased", "Sold (Period)", "Adjustments", "Closing Stock", "Current Stock", "Status", "Revenue (Period)", "Avg Cost", "COGS"],
+      products.map(p => [p.name, p.category, p.price, p.openingStock ?? 0, p.purchasedThisPeriod ?? 0, p.soldThisPeriod, p.adjustedThisPeriod ?? 0, p.closingStock ?? 0, p.stockCount, p.status, p.revenueThisPeriod, p.avgCost, p.cogs])
     );
   };
 
@@ -502,6 +502,15 @@ function InventoryTab({ range }: { range: { from: string; to: string } }) {
             </span>
           </div>
 
+          {(summary.totalOpeningValue !== undefined || summary.totalClosingValue !== undefined) && (
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+              <StatCard title="Opening Stock (units)" value={(summary.totalOpeningStock ?? 0).toLocaleString()} icon={Package} loading={false} sub={`Value: ${fc(summary.totalOpeningValue ?? 0)}`} />
+              <StatCard title="Closing Stock (units)" value={(summary.totalClosingStock ?? 0).toLocaleString()} icon={Package} loading={false} sub={`Value: ${fc(summary.totalClosingValue ?? 0)}`} />
+              <StatCard title="Sold (Period)"        value={(summary.totalSoldInPeriod ?? 0).toLocaleString()}  icon={CheckCircle2} loading={false} />
+              <StatCard title="Net Movement"         value={((summary.totalClosingStock ?? 0) - (summary.totalOpeningStock ?? 0)).toLocaleString()} icon={AlertTriangle} loading={false} />
+            </div>
+          )}
+
           <Card>
             <CardHeader><CardTitle className="text-base">Product Inventory & Consumption</CardTitle></CardHeader>
             <CardContent>
@@ -509,8 +518,14 @@ function InventoryTab({ range }: { range: { from: string; to: string } }) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Product</TableHead><TableHead>Category</TableHead>
-                    <TableHead className="text-right">Price</TableHead><TableHead className="text-right">Stock</TableHead>
-                    <TableHead className="text-right">Sold (Period)</TableHead><TableHead className="text-right">Revenue</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    <TableHead className="text-right">Opening</TableHead>
+                    <TableHead className="text-right">Purchased</TableHead>
+                    <TableHead className="text-right">Sold</TableHead>
+                    <TableHead className="text-right">Adj.</TableHead>
+                    <TableHead className="text-right">Closing</TableHead>
+                    <TableHead className="text-right">Current</TableHead>
+                    <TableHead className="text-right">Revenue</TableHead>
                     <TableHead className="text-right">Avg Cost</TableHead><TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -520,14 +535,18 @@ function InventoryTab({ range }: { range: { from: string; to: string } }) {
                       <TableCell className="font-medium">{p.name}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{p.category}</TableCell>
                       <TableCell className="text-right font-mono">{fc(p.price)}</TableCell>
+                      <TableCell className="text-right font-mono">{p.openingStock ?? 0}</TableCell>
+                      <TableCell className="text-right font-mono text-emerald-400">{p.purchasedThisPeriod ? `+${p.purchasedThisPeriod}` : "—"}</TableCell>
+                      <TableCell className="text-right font-mono text-red-400">{p.soldThisPeriod ? `−${p.soldThisPeriod}` : "—"}</TableCell>
+                      <TableCell className={`text-right font-mono ${(p.adjustedThisPeriod ?? 0) > 0 ? "text-emerald-400" : (p.adjustedThisPeriod ?? 0) < 0 ? "text-red-400" : "text-muted-foreground"}`}>{p.adjustedThisPeriod ? (p.adjustedThisPeriod > 0 ? `+${p.adjustedThisPeriod}` : p.adjustedThisPeriod) : "—"}</TableCell>
+                      <TableCell className="text-right font-mono font-semibold">{p.closingStock ?? 0}</TableCell>
                       <TableCell className={`text-right font-mono font-bold ${statusColor(p.status)}`}>{p.stockCount}</TableCell>
-                      <TableCell className="text-right">{p.soldThisPeriod || "—"}</TableCell>
                       <TableCell className="text-right font-mono">{p.revenueThisPeriod > 0 ? fc(p.revenueThisPeriod) : "—"}</TableCell>
                       <TableCell className="text-right font-mono text-sm text-muted-foreground">{p.avgCost > 0 ? fc(p.avgCost) : "—"}</TableCell>
                       <TableCell><Badge variant={statusVariant(p.status)} className="text-xs">{statusLabel(p.status)}</Badge></TableCell>
                     </TableRow>
                   ))}
-                  {filtered.length === 0 && <TableRow><TableCell colSpan={8}><Empty message="No products match this filter" /></TableCell></TableRow>}
+                  {filtered.length === 0 && <TableRow><TableCell colSpan={12}><Empty message="No products match this filter" /></TableCell></TableRow>}
                 </TableBody>
               </Table>
             </CardContent>

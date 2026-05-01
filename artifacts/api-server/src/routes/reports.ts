@@ -4,7 +4,7 @@ import {
   db, ordersTable, orderItemsTable, customersTable, staffTable,
   productsTable, cashSessionsTable, cashPayoutsTable, appSettingsTable,
 } from "@workspace/db";
-import { diningTablesTable, purchasesTable } from "@workspace/db";
+import { diningTablesTable, purchasesTable, stockAdjustmentsTable } from "@workspace/db";
 import {
   GetReportSummaryResponse,
   GetReportSummaryQueryParams,
@@ -243,8 +243,51 @@ router.get("/reports/inventory", async (req, res): Promise<void> => {
     .where(eq(purchasesTable.tenantId, tenantId))
     .groupBy(purchasesTable.productId);
 
+  // ── Movements AFTER the period end (used to back-calculate closing stock at `to`)
+  const soldAfter = await db.select({
+    productId: orderItemsTable.productId,
+    qty:       sql<number>`COALESCE(SUM(${orderItemsTable.quantity}), 0)`,
+  }).from(orderItemsTable)
+    .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), sql`${ordersTable.createdAt} > ${to}`))
+    .groupBy(orderItemsTable.productId);
+
+  const purchasedAfter = await db.select({
+    productId: purchasesTable.productId,
+    qty:       sql<number>`COALESCE(SUM(${purchasesTable.quantity}), 0)`,
+  }).from(purchasesTable)
+    .where(and(eq(purchasesTable.tenantId, tenantId), sql`${purchasesTable.createdAt} > ${to}`))
+    .groupBy(purchasesTable.productId);
+
+  const adjAfter = await db.select({
+    productId: stockAdjustmentsTable.productId,
+    netQty:    sql<number>`COALESCE(SUM(CASE WHEN ${stockAdjustmentsTable.adjustmentType} = 'increase' THEN ${stockAdjustmentsTable.quantity} ELSE -${stockAdjustmentsTable.quantity} END), 0)`,
+  }).from(stockAdjustmentsTable)
+    .where(and(eq(stockAdjustmentsTable.tenantId, tenantId), sql`${stockAdjustmentsTable.createdAt} > ${to}`))
+    .groupBy(stockAdjustmentsTable.productId);
+
+  // ── Movements WITHIN the period (used to back-calculate opening stock from closing)
+  const purchasedInPeriod = await db.select({
+    productId: purchasesTable.productId,
+    qty:       sql<number>`COALESCE(SUM(${purchasesTable.quantity}), 0)`,
+  }).from(purchasesTable)
+    .where(and(eq(purchasesTable.tenantId, tenantId), gte(purchasesTable.createdAt, from), lte(purchasesTable.createdAt, to)))
+    .groupBy(purchasesTable.productId);
+
+  const adjInPeriod = await db.select({
+    productId: stockAdjustmentsTable.productId,
+    netQty:    sql<number>`COALESCE(SUM(CASE WHEN ${stockAdjustmentsTable.adjustmentType} = 'increase' THEN ${stockAdjustmentsTable.quantity} ELSE -${stockAdjustmentsTable.quantity} END), 0)`,
+  }).from(stockAdjustmentsTable)
+    .where(and(eq(stockAdjustmentsTable.tenantId, tenantId), gte(stockAdjustmentsTable.createdAt, from), lte(stockAdjustmentsTable.createdAt, to)))
+    .groupBy(stockAdjustmentsTable.productId);
+
   const soldMap = new Map(soldInPeriod.map(r => [r.productId, { sold: Number(r.sold), revenue: Number(r.revenue) }]));
   const costMap = new Map(costData.map(r => [r.productId, { avgCost: Number(r.avgCost), totalPurchased: Number(r.totalPurchased), totalCost: Number(r.totalCost) }]));
+  const soldAfterMap      = new Map(soldAfter.map(r => [r.productId, Number(r.qty)]));
+  const purchasedAfterMap = new Map(purchasedAfter.map(r => [r.productId, Number(r.qty)]));
+  const adjAfterMap       = new Map(adjAfter.map(r => [r.productId, Number(r.netQty)]));
+  const purchasedInPeriodMap = new Map(purchasedInPeriod.map(r => [r.productId, Number(r.qty)]));
+  const adjInPeriodMap       = new Map(adjInPeriod.map(r => [r.productId, Number(r.netQty)]));
 
   const allTimeSold = await db.select({
     productId: orderItemsTable.productId,
@@ -256,31 +299,53 @@ router.get("/reports/inventory", async (req, res): Promise<void> => {
 
   const allTimeSoldMap = new Map(allTimeSold.map(r => [r.productId, Number(r.sold)]));
 
+  // Closing stock at `to` = current stock + sales after `to` − purchases after `to` − adjustments after `to`
+  // Opening stock at `from` = closing stock − purchases in period + sales in period − adjustments in period
+  const productsOut = products.map(p => {
+    const s         = soldMap.get(p.id) ?? { sold: 0, revenue: 0 };
+    const c         = costMap.get(p.id) ?? { avgCost: 0, totalPurchased: 0, totalCost: 0 };
+    const purchasedInP = purchasedInPeriodMap.get(p.id) ?? 0;
+    const adjInP       = adjInPeriodMap.get(p.id) ?? 0;
+    const soldAfterP      = soldAfterMap.get(p.id) ?? 0;
+    const purchasedAfterP = purchasedAfterMap.get(p.id) ?? 0;
+    const adjAfterP       = adjAfterMap.get(p.id) ?? 0;
+    const closingStock = p.stockCount + soldAfterP - purchasedAfterP - adjAfterP;
+    const openingStock = closingStock - purchasedInP + s.sold - adjInP;
+    return {
+      id:             p.id,
+      name:           p.name,
+      category:       p.category,
+      price:          p.price,
+      inStock:        p.inStock,
+      stockCount:     p.stockCount,
+      openingStock,
+      closingStock,
+      purchasedThisPeriod: purchasedInP,
+      adjustedThisPeriod:  adjInP,
+      soldThisPeriod: s.sold,
+      revenueThisPeriod: Math.round(s.revenue * 100) / 100,
+      soldAllTime:    allTimeSoldMap.get(p.id) ?? 0,
+      avgCost:        Math.round(c.avgCost     * 100) / 100,
+      cogs:           Math.round(c.avgCost * s.sold * 100) / 100,
+      status:         !p.inStock ? "out" : p.stockCount <= 0 ? "out" : p.stockCount <= 5 ? "low" : "ok",
+    };
+  });
+
+  const totalOpeningValue = productsOut.reduce((acc, p) => acc + p.openingStock * p.avgCost, 0);
+  const totalClosingValue = productsOut.reduce((acc, p) => acc + p.closingStock * p.avgCost, 0);
+
   res.json({
-    products: products.map(p => {
-      const s = soldMap.get(p.id) ?? { sold: 0, revenue: 0 };
-      const c = costMap.get(p.id) ?? { avgCost: 0, totalPurchased: 0, totalCost: 0 };
-      return {
-        id:             p.id,
-        name:           p.name,
-        category:       p.category,
-        price:          p.price,
-        inStock:        p.inStock,
-        stockCount:     p.stockCount,
-        soldThisPeriod: s.sold,
-        revenueThisPeriod: Math.round(s.revenue * 100) / 100,
-        soldAllTime:    allTimeSoldMap.get(p.id) ?? 0,
-        avgCost:        Math.round(c.avgCost     * 100) / 100,
-        cogs:           Math.round(c.avgCost * s.sold * 100) / 100,
-        status:         !p.inStock ? "out" : p.stockCount <= 0 ? "out" : p.stockCount <= 5 ? "low" : "ok",
-      };
-    }),
+    products: productsOut,
     summary: {
       total:      products.length,
       inStock:    products.filter(p => p.inStock && p.stockCount > 0).length,
       outOfStock: products.filter(p => !p.inStock || p.stockCount === 0).length,
       lowStock:   products.filter(p => p.inStock && p.stockCount > 0 && p.stockCount <= 5).length,
       totalSoldInPeriod: soldInPeriod.reduce((s, r) => s + Number(r.sold), 0),
+      totalOpeningStock: productsOut.reduce((acc, p) => acc + p.openingStock, 0),
+      totalClosingStock: productsOut.reduce((acc, p) => acc + p.closingStock, 0),
+      totalOpeningValue: Math.round(totalOpeningValue * 100) / 100,
+      totalClosingValue: Math.round(totalClosingValue * 100) / 100,
     },
   });
 });
