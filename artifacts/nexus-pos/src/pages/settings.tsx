@@ -44,7 +44,7 @@ export function AdminSettings() {
   const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
   const [receiptFooter, setReceiptFooter] = useState("");
   const [receiptSize, setReceiptSize] = useState<"58mm" | "80mm">("80mm");
-  const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket">("classic");
+  const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple">("classic");
   const [baseCurrency, setBaseCurrency] = useState("JMD");
   const [secondaryCurrency, setSecondaryCurrency] = useState("");
   const [currencyRate, setCurrencyRate] = useState("");
@@ -90,7 +90,7 @@ export function AdminSettings() {
     setTaxMode((settings.tax_mode as "exclusive" | "inclusive") ?? "exclusive");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
     setReceiptSize((settings.receipt_size as "58mm" | "80mm") ?? "80mm");
-    setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold" | "supermarket") ?? "classic");
+    setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple") ?? "classic");
     setBaseCurrency(settings.base_currency ?? "JMD");
     setSecondaryCurrency(settings.secondary_currency ?? "");
     setCurrencyRate(settings.currency_rate ?? "");
@@ -583,6 +583,77 @@ export function AdminSettings() {
                       <div className="flex justify-end gap-2 font-black"><span>TOTAL</span><span>5.32</span></div>
                       <div className="flex justify-end gap-2 text-muted-foreground"><span>CREDIT TEND</span><span>5.32</span></div>
                       <div className="text-center font-black text-[8px] tracking-widest mt-1"># ITEMS SOLD 2</div>
+                      <div className="flex justify-center gap-px h-3 mt-0.5">
+                        {Array.from({ length: 24 }).map((_, i) => (
+                          <span key={i} className={cn("inline-block h-full", i % 2 === 0 ? "bg-foreground" : "bg-transparent")} style={{ width: ((i % 3) + 1) + "px" }} />
+                        ))}
+                      </div>
+                      <div className="text-center text-[5px] tracking-widest font-bold mt-0.5">*** CUSTOMER COPY ***</div>
+                    </div>
+                  ),
+                },
+                {
+                  id: "convenience",
+                  name: "Convenience Store",
+                  desc: "7-Eleven style — THANKS FOR SHOPPING header, tax indicators, large payment method, card detail block",
+                  preview: (
+                    <div className="font-mono text-[7px] leading-tight py-1 space-y-px">
+                      <div className="font-black text-[9px] text-center tracking-wider">BUSINESS NAME</div>
+                      <div className="text-muted-foreground text-[6px] text-center">123 MAIN ST · (888) 555-0000</div>
+                      <div className="text-muted-foreground text-[6px] text-center">STORE #: 34343</div>
+                      <div className="text-muted-foreground text-[6px] text-center">THANKS FOR SHOPPING</div>
+                      <div className="border-t border-muted-foreground/40 my-0.5" />
+                      <div className="grid grid-cols-[auto_1fr_auto] gap-1">
+                        <span>1</span><span>AZ Sweet TEA</span><span>1.00B</span>
+                      </div>
+                      <div className="grid grid-cols-[auto_1fr_auto] gap-1">
+                        <span>2</span><span>Energy Drink</span><span>14.00T</span>
+                      </div>
+                      <div className="border-t border-muted-foreground/40 my-0.5" />
+                      <div className="flex justify-between"><span>SUBTOTAL</span><span>15.00</span></div>
+                      <div className="flex justify-between font-black"><span>TOTAL DUE</span><span>15.00</span></div>
+                      <div className="border-t border-muted-foreground/40 my-0.5" />
+                      <div className="flex justify-between font-black text-[9px]"><span>VISA</span><span>15.00</span></div>
+                      <div className="text-[5px] text-muted-foreground space-y-px mt-0.5">
+                        <div className="flex justify-between"><span>ACCT# :</span><span>************</span></div>
+                        <div className="flex justify-between"><span>APPROVAL# : 889621</span><span>AUTH: 22</span></div>
+                        <div>ENTRY : CHIP · APPROVED</div>
+                      </div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="text-center text-[5px] leading-tight">CUSTOMER AGREES TO PAY THE ABOVE<br />TOTAL AMOUNT</div>
+                    </div>
+                  ),
+                },
+                {
+                  id: "staple",
+                  name: "Large-Format Retail",
+                  desc: "Office / furniture store style — giant store name, QTY/SKU/PRICE columns, TOTAL ITEMS footer, barcode",
+                  preview: (
+                    <div className="font-mono text-[7px] leading-tight py-1 space-y-px">
+                      <div className="font-black text-[14px] text-center leading-tight tracking-wide">STORE NAME</div>
+                      <div className="text-muted-foreground text-[5px] text-center">LOW PRICES, EVERY DAY</div>
+                      <div className="text-muted-foreground text-[6px] text-center">2344 Main Rd, City</div>
+                      <div className="border-t border-muted-foreground/40 my-0.5" />
+                      <div className="flex justify-between text-[6px]">
+                        <span className="font-bold">SALE</span>
+                        <span className="text-muted-foreground">279813494…</span>
+                        <span className="text-muted-foreground">10:23</span>
+                      </div>
+                      <div className="border-t border-muted-foreground/40 my-0.5" />
+                      <div className="grid grid-cols-[auto_1fr_auto] gap-1 font-bold border-b border-muted-foreground/40 pb-0.5 mb-0.5">
+                        <span>QTY</span><span>SKU</span><span>PRICE</span>
+                      </div>
+                      <div className="grid grid-cols-[auto_1fr_auto] gap-1">
+                        <span>1</span>
+                        <span><div>HAND TOWEL</div><div className="text-muted-foreground text-[5px]">023404213519</div></span>
+                        <span>2.97 N</span>
+                      </div>
+                      <div className="border-t border-muted-foreground/40 my-0.5" />
+                      <div className="flex justify-between text-muted-foreground"><span>SUBTOTAL</span><span>$2.97</span></div>
+                      <div className="flex justify-between font-black"><span>TOTAL</span><span>$3.27</span></div>
+                      <div className="border-t border-muted-foreground/40 my-0.5" />
+                      <div className="text-muted-foreground text-[5px]"><div>CREDIT · Card No.: ***9999</div><div>Auth No.: 688880</div></div>
+                      <div className="font-black text-[9px] text-center tracking-widest mt-1"># TOTAL ITEMS 1</div>
                       <div className="flex justify-center gap-px h-3 mt-0.5">
                         {Array.from({ length: 24 }).map((_, i) => (
                           <span key={i} className={cn("inline-block h-full", i % 2 === 0 ? "bg-foreground" : "bg-transparent")} style={{ width: ((i % 3) + 1) + "px" }} />

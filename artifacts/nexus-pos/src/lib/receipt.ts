@@ -10,7 +10,7 @@ export interface ReceiptSettings {
   secondary_currency?: string;
   currency_rate?: string;
   receipt_size?: string;       // "58mm" | "80mm"
-  receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket"
+  receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple"
 }
 
 export interface ReceiptOrderItem {
@@ -207,12 +207,28 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   const lastThree = orderNum.replace(/\D/g, "").slice(-3).padStart(3, "0");
 
   // ── Supermarket template — render its own document and early-return ───────
-  // Layout mirrors the classic US grocery / big-box receipt: centered store
-  // header, fixed-column item rows with a barcode column, right-aligned totals
-  // block, payment-method TEND line, change due, sequence + transaction
-  // identifiers, big CSS-stripe barcode, and a CUSTOMER COPY footer.
   if (template === "supermarket") {
     return buildSupermarketReceiptHtml(order, settings, {
+      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+      businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
+      taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
+      secondaryCurrency, exchangeRate,
+    });
+  }
+
+  // ── Convenience-store template ─────────────────────────────────────────────
+  if (template === "convenience") {
+    return buildConvenienceReceiptHtml(order, settings, {
+      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+      businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
+      taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
+      secondaryCurrency, exchangeRate,
+    });
+  }
+
+  // ── Staple-store template ──────────────────────────────────────────────────
+  if (template === "staple") {
+    return buildStapleReceiptHtml(order, settings, {
       escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
       businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
       taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
@@ -869,6 +885,626 @@ function buildSupermarketReceiptHtml(
   </div>
   <div class="sm-customer-copy">*** CUSTOMER COPY ***</div>
   <div class="sm-powered">Powered by NEXXUS POS</div>
+
+</body>
+</html>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Convenience-store receipt — 7-Eleven / corner store style
+// Header: centered name → address → phone → store# → "THANKS FOR SHOPPING"
+// Items: QTY  Name                       Price T/B
+// Totals: SUBTOTAL / TOTAL DUE
+// Payment: large bold method name + amount
+// Card block: ACCT#, ACCT TYPE, APPROVAL#, AUTH CODE, APPROVAL TIME,
+//             network, STORE#, TERM#, TERM SEQ#, REF#, ENTRY, APPROVED
+// Footer: customer agreement, marketing message, T# OP TRN timestamp
+// ─────────────────────────────────────────────────────────────────────────────
+type ReceiptCtx = {
+  escHtml: (s: string) => string;
+  fmt: (n: number, cur?: string) => string;
+  fmtNum: (n: number) => string;
+  dateStr: string;
+  orderNum: string;
+  businessName: string;
+  businessAddress: string;
+  businessPhone: string;
+  businessLogoUrl: string;
+  receiptFooter: string;
+  receiptSize: string;
+  taxRate: string;
+  taxName: string;
+  baseFontSize: string;
+  subFontSize: string;
+  bodyPadding: string;
+  is58mm: boolean;
+  secondaryCurrency: string;
+  exchangeRate: number;
+};
+
+function buildConvenienceReceiptHtml(
+  order: ReceiptOrder,
+  _settings: ReceiptSettings,
+  ctx: ReceiptCtx,
+): string {
+  const {
+    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+    businessPhone, businessLogoUrl, receiptFooter, receiptSize,
+    baseFontSize, subFontSize, bodyPadding, is58mm,
+    secondaryCurrency, exchangeRate,
+  } = ctx;
+
+  // Derive stable store/terminal/ref codes from the order number
+  const digits = orderNum.replace(/\D/g, "").padStart(8, "0");
+  const storeNum = digits.slice(-5);
+  const termNum  = digits.slice(-10).padStart(10, "1");
+  const seqNum   = digits.slice(-6).padStart(6, "2");
+  const approvalNum = (parseInt(digits.slice(-6), 10) % 999999).toString().padStart(6, "8");
+  const authCode    = (parseInt(digits.slice(-2), 10) % 99).toString().padStart(2, "0");
+  const refNum      = `${digits.slice(-5)} ${digits.slice(-2)} ${digits.slice(-3)} 1`;
+
+  // Approval time derived from order timestamp (HH:MM:HHMM format on reference)
+  const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
+  const hh = createdAt.getHours().toString().padStart(2, "0");
+  const mm = createdAt.getMinutes().toString().padStart(2, "0");
+  const ss = createdAt.getSeconds().toString().padStart(2, "0");
+  const approvalTime = `${hh}${mm}:${hh}${mm}${ss}`;
+
+  // Tax indicator: "T" for taxable (when order has tax), "B" for non-taxable
+  const taxInd = order.tax > 0 ? "T" : "B";
+
+  // Address lines
+  const addressLines = (businessAddress || "")
+    .split(/\r?\n|,/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  // Logo
+  const logoHtml = businessLogoUrl
+    ? `<div class="cv-center"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:54px;max-width:140px;object-fit:contain;margin-bottom:3px;" /></div>`
+    : "";
+
+  // Items — each line: QTY  Name  Price T/B
+  const itemRowsHtml = order.items.map(item => {
+    const qtyStr = String(item.quantity).padStart(1, " ");
+    let html = `
+      <div class="cv-item">
+        <span class="cv-item-qty">${escHtml(qtyStr)}</span>
+        <span class="cv-item-name">${escHtml(item.productName)}</span>
+        <span class="cv-item-price">${fmtNum(item.lineTotal)}${taxInd}</span>
+      </div>`;
+    for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
+      html += `<div class="cv-mod">&nbsp;&nbsp;↳ ${escHtml(v.optionName)}</div>`;
+    }
+    for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
+      html += `<div class="cv-mod">&nbsp;&nbsp;+ ${escHtml(m.optionName)}</div>`;
+    }
+    return html;
+  }).join("");
+
+  // Discount as a negative line item (like the "1 PROMOTION" line in the reference)
+  const discountLineHtml = (order.discountValue ?? 0) > 0 ? `
+    <div class="cv-item">
+      <span class="cv-item-qty">1</span>
+      <span class="cv-item-name">PROMOTION / DISCOUNT</span>
+      <span class="cv-item-price" style="color:#c00;">-${fmtNum(order.discountValue ?? 0)}${taxInd}</span>
+    </div>` : "";
+
+  // Totals
+  const secondaryLineHtml = (secondaryCurrency && exchangeRate > 0) ? `
+    <div class="cv-tot-row cv-sub">
+      <span>≈ ${escHtml(secondaryCurrency)}</span>
+      <span>${fmt(order.total * exchangeRate, secondaryCurrency)}</span>
+    </div>` : "";
+
+  // Payment block — large bold method + amount like "VISA  14.00"
+  const isCard   = order.paymentMethod === "card" || order.paymentMethod === "credit";
+  const isSplit  = order.paymentMethod === "split";
+  const isCash   = order.paymentMethod === "cash";
+  const methodLabel = (() => {
+    if (isCash)   return "CASH";
+    if (isCard)   return "VISA";
+    if (isSplit)  return "SPLIT";
+    if (order.paymentMethod === "topup") return "TOPUP";
+    if (order.paymentMethod === "loyalty") return "LOYALTY";
+    return (order.paymentMethod ?? "TENDER").toUpperCase();
+  })();
+  const tenderedAmt = isCash && order.cashTendered ? order.cashTendered : order.total;
+  const changeDue   = isCash && order.cashTendered ? Math.max(0, order.cashTendered - order.total) : 0;
+
+  const paymentHeaderHtml = `
+    <div class="cv-payment-row">
+      <span class="cv-payment-method">${escHtml(methodLabel)}</span>
+      <span class="cv-payment-amount">${fmtNum(order.total)}</span>
+    </div>`;
+
+  const cashChangeHtml = (isCash && order.cashTendered) ? `
+    <div class="cv-card-row"><span>CASH TENDERED</span><span>${fmtNum(tenderedAmt)}</span></div>
+    <div class="cv-card-row"><span>CHANGE DUE</span><span>${fmtNum(changeDue)}</span></div>` : "";
+
+  const splitHtml = isSplit ? `
+    <div class="cv-card-row"><span>CARD</span><span>${fmtNum(order.splitCardAmount ?? 0)}</span></div>
+    <div class="cv-card-row"><span>CASH</span><span>${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : "";
+
+  // Card detail block — shown for any card-ish payment
+  const hashNum = (s: string, len: number) => {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return String(h).padStart(len, "0").slice(-len);
+  };
+  const isCardish = isCard || isSplit;
+  const cardBlockHtml = isCardish ? `
+    <div class="cv-card-row"><span>ACCT# :</span><span>************</span></div>
+    <div class="cv-card-row"><span>ACCT TYPE :</span><span>DDA</span></div>
+    <div class="cv-card-row"><span>APPROVAL# : ${escHtml(approvalNum)}</span><span>AUTH CODE: ${escHtml(authCode)}</span></div>
+    <div class="cv-card-row"><span>APPROVAL TIME : ${escHtml(approvalTime)}</span></div>
+    <div class="cv-card-single">Maestro</div>
+    <div class="cv-card-row"><span>STORE#  :</span><span>${escHtml(storeNum)}</span></div>
+    <div class="cv-card-row"><span>TERM#   :</span><span>${escHtml(termNum)}</span></div>
+    <div class="cv-card-row"><span>TERM SEQ#:</span><span>${escHtml(seqNum)}</span></div>
+    <div class="cv-card-row"><span>REF#    :</span><span>${escHtml(refNum)}</span></div>
+    <div class="cv-card-row"><span>ENTRY   :</span><span>CHIP</span></div>
+    <div class="cv-card-single">APPROVED</div>` : "";
+
+  // Loyalty
+  const loyaltyHtml = (order.loyaltyPointsEarned || order.loyaltyPointsRedeemed) ? `
+    <div class="cv-center cv-loyalty">
+      ★ LOYALTY POINTS ★
+      ${order.loyaltyPointsEarned   ? `<div>+ ${order.loyaltyPointsEarned} pts earned</div>`   : ""}
+      ${order.loyaltyPointsRedeemed ? `<div>- ${order.loyaltyPointsRedeemed} pts redeemed</div>` : ""}
+    </div>` : "";
+
+  const refundedHtml = order.status === "refunded" ? `<div class="cv-refunded">★ REFUNDED ★</div>` : "";
+
+  const outstandingHtml = (order.customerName && order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0)
+    ? `<div class="cv-center cv-outstanding">ACCOUNT BALANCE DUE: ${fmt(order.customerOutstandingBalance)}</div>` : "";
+
+  const notesHtml = order.notes ? `<div class="cv-note">Note: ${escHtml(order.notes)}</div>` : "";
+
+  // Footer: T# OP TRN date/time (reference image bottom line)
+  const tNum  = `T${storeNum.slice(-2)}`;
+  const opNum = hashNum(order.staffName ?? orderNum, 4).toUpperCase();
+  const trnNum = `TRN${digits.slice(-4)}`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Receipt — ${escHtml(orderNum)}</title>
+  <meta charset="utf-8">
+  <style>
+    @page { size: ${receiptSize} auto; margin: 4mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      padding: ${bodyPadding};
+      font-family: 'Courier New', Courier, monospace;
+      font-size: ${baseFontSize};
+      line-height: 1.55;
+      color: #000;
+    }
+    .cv-center { text-align: center; }
+    .cv-sub    { font-size: ${subFontSize}; }
+    .cv-blank  { height: 5px; }
+    .cv-name {
+      text-align: center;
+      font-weight: 900;
+      font-size: ${is58mm ? "16px" : "18px"};
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    .cv-div    { border-top: 1px solid #555; margin: 4px 0; }
+    .cv-div-d  { border-top: 1px dashed #888; margin: 3px 0; }
+
+    .cv-item {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 4px;
+      font-size: ${baseFontSize};
+      margin: 1px 0;
+    }
+    .cv-item-qty   { white-space: nowrap; }
+    .cv-item-name  { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cv-item-price { white-space: nowrap; text-align: right; }
+    .cv-mod        { padding-left: 14px; font-size: ${subFontSize}; color: #444; }
+
+    .cv-tot-row {
+      display: flex; justify-content: space-between;
+      font-size: ${baseFontSize};
+      margin: 1px 0;
+    }
+    .cv-tot-row.cv-total { font-weight: 900; font-size: ${is58mm ? "13px" : "14px"}; margin-top: 2px; }
+
+    .cv-payment-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-weight: 900;
+      font-size: ${is58mm ? "18px" : "22px"};
+      letter-spacing: 1px;
+      margin: 4px 0 2px;
+    }
+    .cv-payment-method { }
+    .cv-payment-amount { }
+
+    .cv-card-row {
+      display: flex; justify-content: space-between; gap: 6px;
+      font-size: ${subFontSize};
+      margin: 0.5px 0;
+    }
+    .cv-card-single { font-size: ${subFontSize}; margin: 1px 0; }
+
+    .cv-agreement {
+      text-align: center;
+      font-size: ${subFontSize};
+      margin: 5px 0 3px;
+      line-height: 1.5;
+    }
+    .cv-footer-line {
+      text-align: center;
+      font-size: ${subFontSize};
+      margin: 1px 0;
+    }
+    .cv-footer-marketing {
+      text-align: center;
+      font-weight: 700;
+      font-size: ${baseFontSize};
+      margin: 5px 0 3px;
+    }
+    .cv-tid {
+      text-align: center;
+      font-size: ${subFontSize};
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+    .cv-loyalty { font-weight: bold; font-size: ${baseFontSize}; margin: 5px 0 2px; }
+    .cv-outstanding { font-size: ${subFontSize}; font-weight: 700; color: #c00; margin: 3px 0; }
+    .cv-note { font-size: ${subFontSize}; font-style: italic; margin: 3px 0; }
+    .cv-refunded { color: red; font-weight: bold; text-align: center; font-size: 12px; border: 1px solid red; padding: 3px; margin: 4px 0; letter-spacing: 1px; }
+    .cv-powered { text-align: center; font-size: 8px; color: #aaa; margin-top: 6px; letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+
+  ${logoHtml}
+  <div class="cv-name">${escHtml(businessName.toUpperCase())}</div>
+  ${addressLines.map(l => `<div class="cv-center cv-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
+  ${businessPhone ? `<div class="cv-center cv-sub">${escHtml(businessPhone)}</div>` : ""}
+  <div class="cv-center cv-sub">STORE #: ${escHtml(storeNum)}</div>
+  <div class="cv-center cv-sub">THANKS FOR SHOPPING</div>
+  <div class="cv-center cv-sub">with ${escHtml(businessName)}</div>
+
+  <div class="cv-blank"></div>
+  <div class="cv-div"></div>
+
+  ${itemRowsHtml}
+  ${discountLineHtml}
+
+  <div class="cv-div"></div>
+
+  <div class="cv-tot-row"><span>SUBTOTAL</span><span>${fmtNum(order.subtotal)}</span></div>
+  <div class="cv-tot-row cv-total"><span>TOTAL DUE</span><span>${fmtNum(order.total)}</span></div>
+  ${secondaryLineHtml}
+
+  <div class="cv-div"></div>
+
+  ${paymentHeaderHtml}
+  ${cashChangeHtml}
+  ${splitHtml}
+  ${cardBlockHtml}
+  ${notesHtml}
+  ${loyaltyHtml}
+  ${refundedHtml}
+  ${outstandingHtml}
+
+  <div class="cv-div"></div>
+
+  <div class="cv-agreement">CUSTOMER AGREES TO PAY THE ABOVE<br>TOTAL AMOUNT ACCORDING TO THE<br>CARD HOLDERS AGREEMENT</div>
+
+  ${receiptFooter ? `<div class="cv-footer-marketing">${escHtml(receiptFooter)}</div>` : ""}
+
+  <div class="cv-div-d"></div>
+  <div class="cv-tid">${escHtml(tNum)} ${escHtml(opNum)} ${escHtml(trnNum)} ${escHtml(dateStr)}</div>
+  <div class="cv-powered">Powered by NEXXUS POS</div>
+
+</body>
+</html>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Staple-store receipt — large-format retail / office-supply store style
+// Header: very large bold store name + tagline + address
+// SALE row: transaction ID + HH:MM + date
+// Table: QTY | product name / SKU | PRICE N
+// Totals: SUBTOTAL $x / Tax x.xx% $x / TOTAL $x
+// Payment: CREDIT/CASH + card no. + chip + auth + AID
+// Footer: large "# TOTAL ITEMS N" + CSS barcode + *** CUSTOMER COPY ***
+// ─────────────────────────────────────────────────────────────────────────────
+function buildStapleReceiptHtml(
+  order: ReceiptOrder,
+  _settings: ReceiptSettings,
+  ctx: ReceiptCtx,
+): string {
+  const {
+    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+    businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
+    baseFontSize, subFontSize, bodyPadding, is58mm,
+    secondaryCurrency, exchangeRate,
+  } = ctx;
+
+  // Stable hash helper
+  const hashStr = (s: string, len: number) => {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return String(h).padStart(len, "0").slice(-len);
+  };
+
+  const digits = orderNum.replace(/\D/g, "").padStart(10, "0");
+  const transactionId = digits.padStart(18, "2");
+
+  // Parse time for the SALE row
+  const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
+  const saleTime  = `${createdAt.getHours().toString().padStart(2,"0")}:${createdAt.getMinutes().toString().padStart(2,"0")}`;
+  const saleDate  = `${(createdAt.getMonth()+1).toString().padStart(2,"0")}/${createdAt.getDate().toString().padStart(2,"0")}/${createdAt.getFullYear()}`;
+
+  // SKU: use barcode if present, else productId padded, else hash
+  const itemSku = (item: ReceiptOrderItem, idx: number): string => {
+    if (item.barcode && item.barcode.trim()) return item.barcode.replace(/\s+/g,"").slice(0,13);
+    if (item.productId != null) return String(item.productId).padStart(12,"0");
+    return hashStr(item.productName + idx, 12);
+  };
+
+  // Tax indicator — "N" means non-exempt taxable (reference shows N on all items)
+  const taxInd = order.tax > 0 ? " N" : "";
+
+  const logoHtml = businessLogoUrl
+    ? `<div class="st-center"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:60px;max-width:160px;object-fit:contain;margin-bottom:4px;" /></div>`
+    : "";
+
+  const addressLines = (businessAddress || "")
+    .split(/\r?\n|,/).map(s => s.trim()).filter(Boolean);
+
+  // Item rows — QTY | name\nSKU | price N
+  const itemRowsHtml = order.items.map((item, i) => {
+    const sku = itemSku(item, i);
+    const mods = [
+      ...((item.variantChoices as { optionName: string }[] | null) ?? []).map(v => `↳ ${v.optionName}`),
+      ...((item.modifierChoices as { optionName: string }[] | null) ?? []).map(m => `+ ${m.optionName}`),
+    ];
+    return `
+      <div class="st-item-row">
+        <span class="st-qty">${item.quantity}</span>
+        <span class="st-name-sku">
+          <span class="st-name">${escHtml(item.productName)}</span>
+          <span class="st-sku">${escHtml(sku)}</span>
+          ${mods.map(m => `<span class="st-mod">${escHtml(m)}</span>`).join("")}
+        </span>
+        <span class="st-price">${fmtNum(item.lineTotal)}${escHtml(taxInd)}</span>
+      </div>`;
+  }).join("");
+
+  const discountLineHtml = (order.discountValue ?? 0) > 0 ? `
+    <div class="st-tot-row">
+      <span class="st-tot-label">DISCOUNT</span>
+      <span class="st-tot-val" style="color:#c00;">-$${fmtNum(order.discountValue ?? 0)}</span>
+    </div>` : "";
+
+  const secondaryLineHtml = (secondaryCurrency && exchangeRate > 0) ? `
+    <div class="st-tot-row">
+      <span class="st-tot-label">≈ ${escHtml(secondaryCurrency)}</span>
+      <span class="st-tot-val">${fmt(order.total * exchangeRate, secondaryCurrency)}</span>
+    </div>` : "";
+
+  // Payment block
+  const isCard  = order.paymentMethod === "card" || order.paymentMethod === "credit";
+  const isSplit = order.paymentMethod === "split";
+  const isCash  = order.paymentMethod === "cash";
+  const payLabel = (() => {
+    if (isCash)  return "CASH";
+    if (isCard)  return "CREDIT";
+    if (isSplit) return "SPLIT";
+    if (order.paymentMethod === "topup") return "TOPUP";
+    if (order.paymentMethod === "loyalty") return "LOYALTY";
+    return (order.paymentMethod ?? "PAYMENT").toUpperCase();
+  })();
+  const tenderedAmt = isCash && order.cashTendered ? order.cashTendered : order.total;
+  const changeDue   = isCash && order.cashTendered ? Math.max(0, order.cashTendered - order.total) : 0;
+  const authNo  = hashStr(orderNum + "auth", 6).toUpperCase();
+  const aidCode = `${hashStr(orderNum+"aid1",4).toUpperCase()}${hashStr(orderNum+"aid2",2).toUpperCase()}${hashStr(orderNum+"aid3",4).toUpperCase()}${hashStr(orderNum+"aid4",4)}`;
+
+  const isCardish = isCard || isSplit;
+  const paymentBlockHtml = `
+    <div class="st-pay-label">${escHtml(payLabel)}</div>
+    ${isCardish ? `
+    <div class="st-pay-row"><span>Card No. :</span><span>************ ${digits.slice(-4)}</span></div>
+    <div class="st-pay-single">Chip Read</div>
+    <div class="st-pay-row"><span>Auth No. :</span><span>${escHtml(authNo)}</span></div>
+    <div class="st-pay-row"><span>AID. :</span><span>${escHtml(aidCode)}</span></div>` : ""}
+    ${isCash ? `
+    <div class="st-pay-row"><span>CASH TENDERED</span><span>$${fmtNum(tenderedAmt)}</span></div>
+    <div class="st-pay-row"><span>CHANGE DUE</span><span>$${fmtNum(changeDue)}</span></div>` : ""}
+    ${isSplit ? `
+    <div class="st-pay-row"><span>CARD</span><span>$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
+    <div class="st-pay-row"><span>CASH</span><span>$${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}`;
+
+  // Total items count
+  const totalQty  = order.items.reduce((s, i) => s + (i.quantity || 0), 0);
+  const itemCount = Number.isInteger(totalQty) ? totalQty : Math.round(totalQty * 100) / 100;
+
+  // Loyalty
+  const loyaltyHtml = (order.loyaltyPointsEarned || order.loyaltyPointsRedeemed) ? `
+    <div class="st-center st-loyalty">
+      ★ LOYALTY POINTS ★
+      ${order.loyaltyPointsEarned   ? `<div>+ ${order.loyaltyPointsEarned} pts earned</div>`   : ""}
+      ${order.loyaltyPointsRedeemed ? `<div>- ${order.loyaltyPointsRedeemed} pts redeemed</div>` : ""}
+    </div>` : "";
+
+  const notesHtml = order.notes ? `<div class="st-note">Note: ${escHtml(order.notes)}</div>` : "";
+  const refundedHtml = order.status === "refunded" ? `<div class="st-refunded">★ REFUNDED ★</div>` : "";
+  const outstandingHtml = (order.customerName && order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0)
+    ? `<div class="st-center" style="font-size:${subFontSize};font-weight:700;color:#c00;margin:3px 0;">ACCOUNT BALANCE DUE: ${fmt(order.customerOutstandingBalance)}</div>` : "";
+
+  // CSS barcode (same deterministic approach as supermarket template)
+  const seed = orderNum.repeat(8);
+  const bars: string[] = [];
+  for (let i = 0; i < 60; i++) {
+    const code = seed.charCodeAt(i % seed.length);
+    const w = 1 + (code % 4);
+    const isBar = (i + code) % 2 === 0;
+    bars.push(`<span style="display:inline-block;width:${w}px;height:100%;background:${isBar?"#000":"transparent"};"></span>`);
+  }
+  const barcodeHtml = `
+    <div style="text-align:center;margin:6px 0 2px;">
+      <div style="display:inline-flex;align-items:stretch;height:${is58mm?"40px":"52px"};padding:0 4px;">${bars.join("")}</div>
+      <div style="font-size:${subFontSize};letter-spacing:2px;margin-top:2px;">${escHtml(orderNum.slice(-16).padStart(16,"0"))}</div>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Receipt — ${escHtml(orderNum)}</title>
+  <meta charset="utf-8">
+  <style>
+    @page { size: ${receiptSize} auto; margin: 4mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      padding: ${bodyPadding};
+      font-family: 'Courier New', Courier, monospace;
+      font-size: ${baseFontSize};
+      line-height: 1.55;
+      color: #000;
+    }
+    .st-center { text-align: center; }
+    .st-sub    { font-size: ${subFontSize}; }
+    .st-div    { border-top: 1px solid #666; margin: 4px 0; }
+    .st-div-d  { border-top: 1px dashed #999; margin: 3px 0; }
+
+    .st-store-name {
+      text-align: center;
+      font-weight: 900;
+      font-size: ${is58mm ? "22px" : "28px"};
+      letter-spacing: 1px;
+      line-height: 1.15;
+      margin-bottom: 3px;
+    }
+    .st-tagline {
+      text-align: center;
+      font-size: ${subFontSize};
+      margin-bottom: 2px;
+    }
+
+    .st-sale-row {
+      display: flex; justify-content: space-between;
+      font-size: ${baseFontSize};
+      margin: 2px 0;
+    }
+    .st-sale-label { font-weight: 700; }
+
+    /* 3-column item grid: QTY | name+sku | price */
+    .st-col-header {
+      display: grid;
+      grid-template-columns: ${is58mm ? "24px 1fr auto" : "28px 1fr auto"};
+      gap: 4px;
+      font-weight: 700;
+      font-size: ${baseFontSize};
+      border-bottom: 1px solid #666;
+      padding-bottom: 2px;
+      margin-bottom: 2px;
+    }
+    .st-item-row {
+      display: grid;
+      grid-template-columns: ${is58mm ? "24px 1fr auto" : "28px 1fr auto"};
+      gap: 4px;
+      font-size: ${baseFontSize};
+      margin: 2px 0;
+      align-items: start;
+    }
+    .st-qty   { }
+    .st-name-sku { display: flex; flex-direction: column; }
+    .st-name  { font-weight: 700; word-break: break-word; }
+    .st-sku   { font-size: ${subFontSize}; color: #444; }
+    .st-mod   { font-size: ${subFontSize}; color: #555; padding-left: 8px; }
+    .st-price { text-align: right; white-space: nowrap; }
+
+    .st-tot-row {
+      display: flex; justify-content: space-between; gap: 8px;
+      font-size: ${baseFontSize}; margin: 1px 0;
+    }
+    .st-tot-label { }
+    .st-tot-val   { text-align: right; white-space: nowrap; }
+    .st-tot-row.st-total { font-weight: 900; font-size: ${is58mm?"13px":"14px"}; margin-top: 2px; }
+
+    .st-pay-label  { font-size: ${baseFontSize}; font-weight: 700; margin: 3px 0 1px; }
+    .st-pay-row    { display: flex; justify-content: space-between; gap: 6px; font-size: ${subFontSize}; margin: 0.5px 0; }
+    .st-pay-single { font-size: ${subFontSize}; margin: 1px 0; }
+
+    .st-items-sold {
+      text-align: center;
+      font-weight: 900;
+      font-size: ${is58mm?"18px":"24px"};
+      letter-spacing: 2px;
+      margin: 10px 0 4px;
+    }
+    .st-customer-copy {
+      text-align: center;
+      font-weight: 700;
+      letter-spacing: 2px;
+      font-size: ${baseFontSize};
+      margin-top: 4px;
+    }
+    .st-loyalty { font-weight: bold; font-size: ${baseFontSize}; margin: 5px 0 2px; }
+    .st-note    { font-size: ${subFontSize}; font-style: italic; margin: 3px 0; }
+    .st-refunded { color: red; font-weight: bold; text-align: center; font-size: 12px; border: 1px solid red; padding: 3px; margin: 4px 0; letter-spacing: 1px; }
+    .st-powered { text-align: center; font-size: 8px; color: #aaa; margin-top: 6px; letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+
+  ${logoHtml}
+  <div class="st-store-name">${escHtml(businessName.toUpperCase())}</div>
+  ${receiptFooter ? `<div class="st-tagline">${escHtml(receiptFooter)}</div>` : ""}
+  ${addressLines.map(l => `<div class="st-center st-sub">${escHtml(l)}</div>`).join("")}
+  ${businessPhone ? `<div class="st-center st-sub">${escHtml(businessPhone)}</div>` : ""}
+
+  <div class="st-div"></div>
+
+  <div class="st-sale-row">
+    <span class="st-sale-label">SALE</span>
+    <span class="st-sub" style="text-align:right;">${escHtml(transactionId)}<br>${escHtml(saleDate)}</span>
+    <span class="st-sub" style="text-align:right;white-space:nowrap;">&nbsp;${escHtml(saleTime)}</span>
+  </div>
+
+  ${order.staffName ? `<div class="st-sub">Cashier: ${escHtml(order.staffName)}</div>` : ""}
+  ${order.customerName ? `<div class="st-sub">Customer: ${escHtml(order.customerName)}</div>` : ""}
+
+  <div class="st-div"></div>
+
+  <div class="st-col-header">
+    <span>QTY</span>
+    <span>SKU</span>
+    <span>PRICE</span>
+  </div>
+
+  ${itemRowsHtml}
+
+  <div class="st-div"></div>
+
+  <div class="st-tot-row"><span class="st-tot-label">SUBTOTAL</span><span class="st-tot-val">$${fmtNum(order.subtotal)}</span></div>
+  ${discountLineHtml}
+  ${order.tax > 0 ? `<div class="st-tot-row"><span class="st-tot-label">Simple Tax&nbsp;&nbsp;${escHtml(taxRate)}%</span><span class="st-tot-val">$${fmtNum(order.tax)}</span></div>` : ""}
+  <div class="st-tot-row st-total"><span class="st-tot-label">TOTAL</span><span class="st-tot-val">$${fmtNum(order.total)}</span></div>
+  ${secondaryLineHtml}
+
+  <div class="st-div"></div>
+
+  ${paymentBlockHtml}
+  ${notesHtml}
+  ${loyaltyHtml}
+  ${refundedHtml}
+  ${outstandingHtml}
+
+  <div class="st-items-sold"># TOTAL ITEMS ${itemCount}</div>
+
+  ${barcodeHtml}
+
+  <div class="st-customer-copy">*** CUSTOMER COPY ***</div>
+  <div class="st-powered">Powered by NEXXUS POS</div>
 
 </body>
 </html>`;
