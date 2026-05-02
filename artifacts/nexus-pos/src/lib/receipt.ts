@@ -10,7 +10,7 @@ export interface ReceiptSettings {
   secondary_currency?: string;
   currency_rate?: string;
   receipt_size?: string;       // "58mm" | "80mm"
-  receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold"
+  receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket"
 }
 
 export interface ReceiptOrderItem {
@@ -24,6 +24,12 @@ export interface ReceiptOrderItem {
   originalUnitPrice?: number | null;
   variantChoices?: Array<{ optionName: string }> | null;
   modifierChoices?: Array<{ optionName: string }> | null;
+  // Optional product identifiers used by the supermarket template to render a
+  // per-line "barcode" column. Both are optional so existing callers stay
+  // type-compatible; when missing we derive a stable 12-digit code from the
+  // product name + line index so the receipt still looks supermarket-ish.
+  productId?: number | null;
+  barcode?: string | null;
 }
 
 /**
@@ -199,6 +205,20 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   // Last 3 digits of order number (the prominent pickup number)
   const orderNum  = String(order.orderNumber);
   const lastThree = orderNum.replace(/\D/g, "").slice(-3).padStart(3, "0");
+
+  // ── Supermarket template — render its own document and early-return ───────
+  // Layout mirrors the classic US grocery / big-box receipt: centered store
+  // header, fixed-column item rows with a barcode column, right-aligned totals
+  // block, payment-method TEND line, change due, sequence + transaction
+  // identifiers, big CSS-stripe barcode, and a CUSTOMER COPY footer.
+  if (template === "supermarket") {
+    return buildSupermarketReceiptHtml(order, settings, {
+      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+      businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
+      taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
+      secondaryCurrency, exchangeRate,
+    });
+  }
 
   // ── Items ─────────────────────────────────────────────────────────────────
   const itemsHtml = order.items.map(item => {
@@ -480,6 +500,375 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   ${dividerHtml}
 
   ${bigNumberHtml}
+
+</body>
+</html>`;
+}
+
+/**
+ * Render the "supermarket" receipt template — a US grocery / big-box style
+ * receipt with a centered store header, fixed-column item table including
+ * a per-line "barcode" code, right-aligned totals, payment-method TEND line,
+ * change due, sequence + transaction identifiers, a large CSS-stripe barcode,
+ * and a CUSTOMER COPY footer.
+ */
+function buildSupermarketReceiptHtml(
+  order: ReceiptOrder,
+  _settings: ReceiptSettings,
+  ctx: {
+    escHtml: (s: string) => string;
+    fmt: (n: number, cur?: string) => string;
+    fmtNum: (n: number) => string;
+    dateStr: string;
+    orderNum: string;
+    businessName: string;
+    businessAddress: string;
+    businessPhone: string;
+    businessLogoUrl: string;
+    receiptFooter: string;
+    receiptSize: string;
+    taxRate: string;
+    taxName: string;
+    baseFontSize: string;
+    subFontSize: string;
+    bodyPadding: string;
+    is58mm: boolean;
+    secondaryCurrency: string;
+    exchangeRate: number;
+  },
+): string {
+  const {
+    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+    businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
+    taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
+    secondaryCurrency, exchangeRate,
+  } = ctx;
+
+  // Stable 12-digit numeric code from a string — used as a derived "barcode"
+  // when an item has no productId / barcode of its own. djb2-ish hash so the
+  // same product always gets the same code on every reprint.
+  const hashCode = (s: string): string => {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return String(h).padStart(12, "0").slice(-12);
+  };
+  const lineBarcode = (item: ReceiptOrderItem): string => {
+    if (item.barcode && item.barcode.trim()) return item.barcode.replace(/\s+/g, "").slice(0, 14);
+    if (item.productId != null) return String(item.productId).padStart(12, "0");
+    return hashCode(item.productName);
+  };
+
+  // Map our internal payment method onto a supermarket-style TEND label.
+  const tendLabel = (() => {
+    const m = (order.paymentMethod ?? "").toLowerCase();
+    if (m === "cash")   return "CASH TEND";
+    if (m === "card")   return "CREDIT TEND";
+    if (m === "split")  return "SPLIT TEND";
+    if (m === "credit") return "ACCOUNT CHARGE";
+    if (m === "topup")  return "TOPUP TEND";
+    if (m === "loyalty") return "LOYALTY TEND";
+    return (order.paymentMethod ?? "TEND").toUpperCase();
+  })();
+
+  const totalQty = order.items.reduce((s, i) => s + (i.quantity || 0), 0);
+  const itemsSold = Number.isInteger(totalQty) ? totalQty : Math.round(totalQty * 100) / 100;
+
+  // Cash → real change. Card/credit → 0.00 (matches reference receipt where
+  // CREDIT TEND line is followed by CHANGE DUE 0.00).
+  const changeDue = (order.paymentMethod === "cash" && order.cashTendered)
+    ? Math.max(0, order.cashTendered - order.total)
+    : 0;
+
+  const tenderedAmount = (() => {
+    if (order.paymentMethod === "cash" && order.cashTendered) return order.cashTendered;
+    if (order.paymentMethod === "split") {
+      return (order.splitCardAmount ?? 0) + (order.splitCashAmount ?? 0);
+    }
+    return order.total;
+  })();
+
+  // ── Items table ──────────────────────────────────────────────────────────
+  // Three columns: name (left), barcode (center, monospace), price + " X"
+  // taxable indicator (right, only when the order is taxed). Modifier/variant
+  // lines are indented under their parent.
+  const taxIndicator = order.tax > 0 ? "&nbsp;X" : "";
+  const itemRowsHtml = order.items.map(item => {
+    const bc = lineBarcode(item);
+    const qtyPrefix = item.quantity !== 1 ? `${item.quantity}× ` : "";
+    let html = `
+      <div class="sm-item">
+        <span class="sm-item-name">${escHtml(qtyPrefix + item.productName.toUpperCase())}</span>
+        <span class="sm-item-bc">${escHtml(bc)}</span>
+        <span class="sm-item-price">${fmtNum(item.lineTotal)}${taxIndicator}</span>
+      </div>`;
+    for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
+      html += `<div class="sm-mod">&nbsp;&nbsp;↳ ${escHtml(v.optionName)}</div>`;
+    }
+    for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
+      html += `<div class="sm-mod">&nbsp;&nbsp;+ ${escHtml(m.optionName)}</div>`;
+    }
+    return html;
+  }).join("");
+
+  // ── Header identifier row: ST# / OP# / TE# / TR# ─────────────────────────
+  // We have no real terminal/operator IDs, so derive from order number and
+  // staff name. The point is to look like a supermarket header — these are
+  // informational only.
+  const orderDigits = orderNum.replace(/\D/g, "").padStart(4, "0");
+  const stNum = orderDigits.slice(-4);
+  const trNum = orderDigits.slice(-4).split("").reverse().join("");
+  const opCode = order.staffName
+    ? hashCode(order.staffName).slice(-8)
+    : "00000000";
+  const teNum = String((parseInt(orderDigits, 10) % 99) + 1).padStart(2, "0");
+
+  const idRowHtml = `
+    <div class="sm-id-row">
+      <span>ST# ${stNum}</span>
+      <span>OP# ${opCode}</span>
+      <span>TE# ${teNum}</span>
+      <span>TR# ${trNum}</span>
+    </div>`;
+
+  // ── Tax line(s) — the reference image shows two tax bands but we only have
+  // one configured rate, so render a single TAX line matching settings. If
+  // the order has no taxable amount, suppress.
+  const taxLineHtml = order.tax > 0 ? `
+    <div class="sm-tot-row">
+      <span class="sm-tot-label">${escHtml(taxName)} ${escHtml(taxRate)}%</span>
+      <span class="sm-tot-val">${fmtNum(order.tax)}</span>
+    </div>` : "";
+
+  const discountLineHtml = (order.discountValue ?? 0) > 0 ? `
+    <div class="sm-tot-row">
+      <span class="sm-tot-label">DISCOUNT</span>
+      <span class="sm-tot-val">-${fmtNum(order.discountValue ?? 0)}</span>
+    </div>` : "";
+
+  // Secondary-currency conversion line (≈ USD 12.34) shown right under TOTAL
+  // when the business has a secondary currency + non-zero rate configured.
+  const secondaryLineHtml = (secondaryCurrency && exchangeRate > 0) ? `
+    <div class="sm-tot-row">
+      <span class="sm-tot-label">≈ ${escHtml(secondaryCurrency)}</span>
+      <span class="sm-tot-val">${fmt(order.total * exchangeRate, secondaryCurrency)}</span>
+    </div>` : "";
+
+  // Order note line (italic, full-width) — only when the cashier added one.
+  const notesLineHtml = order.notes ? `
+    <div class="sm-note">Note: ${escHtml(order.notes)}</div>` : "";
+
+  // Loyalty earned/redeemed block — mirrors the standard templates so customers
+  // still see their points activity on supermarket-style receipts.
+  const loyaltyHtml = (order.loyaltyPointsEarned || order.loyaltyPointsRedeemed) ? `
+    <div class="sm-loyalty">
+      ★ LOYALTY POINTS ★
+      ${order.loyaltyPointsEarned   ? `<div>+ ${order.loyaltyPointsEarned} pts earned</div>`   : ""}
+      ${order.loyaltyPointsRedeemed ? `<div>- ${order.loyaltyPointsRedeemed} pts redeemed</div>` : ""}
+    </div>` : "";
+
+  // Customer outstanding-balance warning — same as classic templates.
+  const customerOutstandingHtml = (order.customerName && order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0) ? `
+    <div class="sm-balance-due">ACCOUNT BALANCE DUE: ${fmt(order.customerOutstandingBalance)}</div>` : "";
+
+  // ── Account / approval / ref / terminal block ────────────────────────────
+  // Card data isn't captured by the POS today, so for non-card payments we
+  // show all four lines blanked out (matches the reference's spacing). For
+  // card/credit we still don't have a PAN — show masked all-stars.
+  const isCardish = order.paymentMethod === "card" || order.paymentMethod === "split" || order.paymentMethod === "credit";
+  const acctMasked = isCardish ? "**** **** **** ****" : "&nbsp;";
+  const approvalHash = isCardish ? hashCode(orderNum + "ap").slice(-6).toUpperCase() : "";
+  const refHash      = isCardish ? hashCode(orderNum + "rf").slice(-12) : "";
+  const termHash     = isCardish ? hashCode(orderNum + "tm").slice(-10) : "";
+  const accountBlockHtml = `
+    <div class="sm-acct">
+      <div class="sm-acct-row"><span>ACCOUNT  #</span><span class="sm-acct-val">${acctMasked}</span></div>
+      <div class="sm-acct-row"><span>APPROVAL #</span><span class="sm-acct-val">${escHtml(approvalHash)}</span></div>
+      <div class="sm-acct-row"><span>REF      #</span><span class="sm-acct-val">${escHtml(refHash)}</span></div>
+      <div class="sm-acct-row"><span>TERMINAL #</span><span class="sm-acct-val">${escHtml(termHash)}</span></div>
+    </div>`;
+
+  // ── Big TC# transaction code (groups of 4 digits) ────────────────────────
+  const tcRaw = (hashCode(orderNum + "tc") + hashCode(dateStr + "tc")).slice(0, 20);
+  const tcGrouped = tcRaw.match(/.{1,4}/g)?.join(" ") ?? tcRaw;
+
+  // ── CSS stripe barcode (deterministic widths from order number) ──────────
+  // Generates ~50 vertical bars with widths driven by char codes in orderNum
+  // so reprints render the same pattern.
+  const seed = orderNum.repeat(8);
+  const bars: string[] = [];
+  for (let i = 0; i < 60; i++) {
+    const code = seed.charCodeAt(i % seed.length);
+    const w = 1 + (code % 4); // 1–4 px
+    const isBar = (i + code) % 2 === 0;
+    bars.push(`<span class="sm-bar" style="width:${w}px;background:${isBar ? "#000" : "transparent"};"></span>`);
+  }
+  const barcodeHtml = `
+    <div class="sm-barcode-wrap">
+      <div class="sm-barcode">${bars.join("")}</div>
+      <div class="sm-barcode-num">${escHtml(tcGrouped.slice(0, 19))}</div>
+    </div>`;
+
+  const refundedHtml = order.status === "refunded"
+    ? `<div class="sm-refunded">★ REFUNDED ★</div>` : "";
+
+  const logoHtml = businessLogoUrl
+    ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:60px;max-width:160px;object-fit:contain;" /></div>`
+    : "";
+
+  // Address may contain commas / line breaks — split on commas/newlines so each
+  // chunk renders on its own centered line like the reference image.
+  const addressLines = (businessAddress || "")
+    .split(/\r?\n|,/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Receipt — ${escHtml(orderNum)}</title>
+  <meta charset="utf-8">
+  <style>
+    @page { size: ${receiptSize} auto; margin: 4mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      padding: ${bodyPadding};
+      font-family: 'Courier New', Courier, monospace;
+      font-size: ${baseFontSize};
+      line-height: 1.5;
+      color: #000;
+    }
+    .sm-store-name {
+      text-align: center;
+      font-weight: 900;
+      font-size: ${is58mm ? "16px" : "20px"};
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+    .sm-center  { text-align: center; }
+    .sm-sub     { font-size: ${subFontSize}; }
+    .sm-blank   { height: 6px; }
+
+    .sm-id-row {
+      display: flex; justify-content: space-between; gap: 6px;
+      font-size: ${subFontSize};
+      margin: 6px 0 4px;
+      border-top: 1px dashed #555;
+      border-bottom: 1px dashed #555;
+      padding: 3px 0;
+    }
+    .sm-id-row span { white-space: nowrap; }
+
+    .sm-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 6px;
+      font-size: ${baseFontSize};
+      align-items: baseline;
+      margin: 1px 0;
+    }
+    .sm-item-name  { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sm-item-bc    { font-family: 'Courier New', Courier, monospace; color: #222; letter-spacing: 0.5px; }
+    .sm-item-price { white-space: nowrap; font-weight: 700; }
+    .sm-mod        { padding-left: 12px; font-size: ${subFontSize}; color: #444; }
+
+    .sm-tot-block {
+      margin-top: 6px;
+      padding-top: 4px;
+      border-top: 1px dashed #555;
+    }
+    .sm-tot-row {
+      display: flex; justify-content: flex-end; gap: 16px;
+      font-size: ${baseFontSize};
+      margin: 1px 0;
+    }
+    .sm-tot-label { text-align: right; min-width: 90px; }
+    .sm-tot-val   { text-align: right; min-width: 60px; white-space: nowrap; }
+    .sm-tot-row.total { font-weight: 900; font-size: ${is58mm ? "13px" : "14px"}; margin-top: 2px; }
+
+    .sm-acct {
+      margin-top: 6px;
+      font-size: ${subFontSize};
+    }
+    .sm-acct-row { display: flex; gap: 8px; }
+    .sm-acct-val { flex: 1; text-align: right; letter-spacing: 1px; }
+
+    .sm-items-sold {
+      text-align: center;
+      font-weight: 900;
+      font-size: ${is58mm ? "16px" : "20px"};
+      letter-spacing: 2px;
+      margin: 10px 0 4px;
+    }
+    .sm-tc { text-align: center; font-size: ${subFontSize}; letter-spacing: 1px; margin: 2px 0 6px; }
+
+    .sm-barcode-wrap { text-align: center; margin: 4px 0; }
+    .sm-barcode {
+      display: inline-flex; align-items: stretch;
+      height: ${is58mm ? "40px" : "52px"};
+      padding: 0 4px;
+    }
+    .sm-bar { display: inline-block; height: 100%; }
+    .sm-barcode-num { font-size: ${subFontSize}; letter-spacing: 2px; margin-top: 2px; }
+
+    .sm-footer {
+      text-align: center;
+      margin-top: 8px;
+      font-size: ${baseFontSize};
+    }
+    .sm-footer .line { margin: 1px 0; }
+    .sm-customer-copy {
+      text-align: center;
+      font-weight: 700;
+      letter-spacing: 2px;
+      margin-top: 4px;
+      font-size: ${baseFontSize};
+    }
+    .sm-powered { text-align: center; font-size: 8px; color: #aaa; margin-top: 6px; letter-spacing: 1px; }
+    .sm-refunded { color: red; font-weight: bold; text-align: center; font-size: 12px; border: 1px solid red; padding: 3px; margin: 4px 0; letter-spacing: 1px; }
+    .sm-note { font-size: ${subFontSize}; font-style: italic; margin: 4px 0; }
+    .sm-loyalty { text-align: center; font-weight: bold; font-size: ${baseFontSize}; margin: 6px 0 2px; }
+    .sm-balance-due { font-size: ${subFontSize}; font-weight: 700; color: #c00; margin: 4px 0; text-align: center; }
+  </style>
+</head>
+<body>
+
+  ${logoHtml}
+  <div class="sm-store-name">${escHtml(businessName.toUpperCase())}</div>
+  ${businessPhone ? `<div class="sm-center sm-sub">${escHtml(businessPhone)}</div>` : ""}
+  ${order.staffName ? `<div class="sm-center sm-sub">CASHIER ${escHtml(order.staffName.toUpperCase())}</div>` : ""}
+  ${addressLines.map(l => `<div class="sm-center sm-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
+
+  ${idRowHtml}
+
+  ${itemRowsHtml}
+
+  <div class="sm-tot-block">
+    <div class="sm-tot-row"><span class="sm-tot-label">SUBTOTAL</span><span class="sm-tot-val">${fmtNum(order.subtotal)}</span></div>
+    ${discountLineHtml}
+    ${taxLineHtml}
+    <div class="sm-tot-row total"><span class="sm-tot-label">TOTAL</span><span class="sm-tot-val">${fmtNum(order.total)}</span></div>
+    ${secondaryLineHtml}
+    <div class="sm-tot-row"><span class="sm-tot-label">${escHtml(tendLabel)}</span><span class="sm-tot-val">${fmtNum(tenderedAmount)}</span></div>
+    <div class="sm-tot-row"><span class="sm-tot-label">CHANGE DUE</span><span class="sm-tot-val">${fmtNum(changeDue)}</span></div>
+  </div>
+
+  ${accountBlockHtml}
+  ${notesLineHtml}
+  ${customerOutstandingHtml}
+  ${loyaltyHtml}
+  ${refundedHtml}
+
+  <div class="sm-items-sold"># ITEMS SOLD ${itemsSold}</div>
+  <div class="sm-tc">TC# ${escHtml(tcGrouped)}</div>
+
+  ${barcodeHtml}
+
+  <div class="sm-footer">
+    <div class="line">${escHtml(receiptFooter)}</div>
+    <div class="line">${escHtml(dateStr)}</div>
+  </div>
+  <div class="sm-customer-copy">*** CUSTOMER COPY ***</div>
+  <div class="sm-powered">Powered by NEXXUS POS</div>
 
 </body>
 </html>`;

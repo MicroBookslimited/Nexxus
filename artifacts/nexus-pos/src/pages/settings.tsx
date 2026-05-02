@@ -44,7 +44,7 @@ export function AdminSettings() {
   const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
   const [receiptFooter, setReceiptFooter] = useState("");
   const [receiptSize, setReceiptSize] = useState<"58mm" | "80mm">("80mm");
-  const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold">("classic");
+  const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket">("classic");
   const [baseCurrency, setBaseCurrency] = useState("JMD");
   const [secondaryCurrency, setSecondaryCurrency] = useState("");
   const [currencyRate, setCurrencyRate] = useState("");
@@ -90,7 +90,7 @@ export function AdminSettings() {
     setTaxMode((settings.tax_mode as "exclusive" | "inclusive") ?? "exclusive");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
     setReceiptSize((settings.receipt_size as "58mm" | "80mm") ?? "80mm");
-    setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold") ?? "classic");
+    setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold" | "supermarket") ?? "classic");
     setBaseCurrency(settings.base_currency ?? "JMD");
     setSecondaryCurrency(settings.secondary_currency ?? "");
     setCurrencyRate(settings.currency_rate ?? "");
@@ -550,6 +550,45 @@ export function AdminSettings() {
                       <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
                       <div className="text-[5px] tracking-widest text-muted-foreground">YOUR ORDER</div>
                       <div className="font-black text-[18px] leading-none tracking-widest">042</div>
+                    </div>
+                  ),
+                },
+                {
+                  id: "supermarket",
+                  name: "Supermarket",
+                  desc: "Big-box / grocery style — item barcodes, TEND line, # ITEMS SOLD, large barcode",
+                  preview: (
+                    <div className="font-mono text-[7px] leading-tight py-1 space-y-px">
+                      <div className="font-black text-[9px] text-center tracking-wider">BUSINESS NAME</div>
+                      <div className="text-muted-foreground text-[6px] text-center">(888) 888-8888</div>
+                      <div className="text-muted-foreground text-[6px] text-center">123 MAIN ST</div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="flex justify-between text-muted-foreground text-[5px]">
+                        <span>ST# 1042</span><span>OP# 0001</span><span>TR# 2401</span>
+                      </div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="grid grid-cols-[1fr_auto_auto] gap-1">
+                        <span>HAND TOWEL</span>
+                        <span className="text-muted-foreground">075953630184</span>
+                        <span>2.97 X</span>
+                      </div>
+                      <div className="grid grid-cols-[1fr_auto_auto] gap-1">
+                        <span>GATORADE</span>
+                        <span className="text-muted-foreground">068949055223</span>
+                        <span>2.00 X</span>
+                      </div>
+                      <div className="border-t border-dashed border-muted-foreground/40 my-0.5" />
+                      <div className="flex justify-end gap-2 text-muted-foreground"><span>SUBTOTAL</span><span>4.97</span></div>
+                      <div className="flex justify-end gap-2 text-muted-foreground"><span>TAX 7%</span><span>0.35</span></div>
+                      <div className="flex justify-end gap-2 font-black"><span>TOTAL</span><span>5.32</span></div>
+                      <div className="flex justify-end gap-2 text-muted-foreground"><span>CREDIT TEND</span><span>5.32</span></div>
+                      <div className="text-center font-black text-[8px] tracking-widest mt-1"># ITEMS SOLD 2</div>
+                      <div className="flex justify-center gap-px h-3 mt-0.5">
+                        {Array.from({ length: 24 }).map((_, i) => (
+                          <span key={i} className={cn("inline-block h-full", i % 2 === 0 ? "bg-foreground" : "bg-transparent")} style={{ width: ((i % 3) + 1) + "px" }} />
+                        ))}
+                      </div>
+                      <div className="text-center text-[5px] tracking-widest font-bold mt-0.5">*** CUSTOMER COPY ***</div>
                     </div>
                   ),
                 },
