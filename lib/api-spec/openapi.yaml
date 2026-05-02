@@ -2252,6 +2252,13 @@ components:
           format: float
         position:
           type: integer
+        stockCount:
+          type: number
+          format: float
+          nullable: true
+        sku:
+          type: string
+          nullable: true
       required:
         - id
         - groupId
@@ -2363,6 +2370,9 @@ components:
           items:
             type: object
             properties:
+              groupId:
+                type: integer
+                description: Present for existing groups (enables upsert instead of delete-recreate)
               name:
                 type: string
               required:
@@ -2372,11 +2382,21 @@ components:
                 items:
                   type: object
                   properties:
+                    optionId:
+                      type: integer
+                      description: Present for existing options (preserves stockCount)
                     name:
                       type: string
                     priceAdjustment:
                       type: number
                       format: float
+                    stockCount:
+                      type: number
+                      format: float
+                      nullable: true
+                    sku:
+                      type: string
+                      nullable: true
                   required:
                     - name
             required:

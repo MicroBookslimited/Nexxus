@@ -8,6 +8,8 @@
 import type { SaveVariantsBodyGroupsItemOptionsItem } from "./saveVariantsBodyGroupsItemOptionsItem";
 
 export type SaveVariantsBodyGroupsItem = {
+  /** Present for existing groups (enables upsert instead of delete-recreate) */
+  groupId?: number;
   name: string;
   required?: boolean;
   options: SaveVariantsBodyGroupsItemOptionsItem[];

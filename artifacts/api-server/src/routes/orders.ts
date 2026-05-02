@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { logAudit } from "./audit";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable } from "@workspace/db";
 import { applyVolumePricing } from "../lib/pricing";
 import { getSetting } from "./settings";
 import { logger } from "../lib/logger";
@@ -428,6 +428,34 @@ router.post("/orders", async (req, res): Promise<void> => {
         }
       }
 
+      // Pre-fetch variant option stock for items that carry variant choices.
+      // When any chosen option has a non-null stockCount the product uses
+      // per-variant tracking; product.stockCount becomes SUM(option.stockCount).
+      const allChosenOptionIds = resolvedItems
+        .flatMap((i) => (i.variantChoices ?? []).map((c) => c.optionId))
+        .filter((id): id is number => typeof id === "number" && id > 0);
+
+      type VORow = { optionId: number; stockCount: number | null; productId: number };
+      const variantOptionRows: VORow[] = allChosenOptionIds.length > 0
+        ? await tx
+          .select({
+            optionId: variantOptionsTable.id,
+            stockCount: variantOptionsTable.stockCount,
+            productId: variantGroupsTable.productId,
+          })
+          .from(variantOptionsTable)
+          .innerJoin(variantGroupsTable, eq(variantGroupsTable.id, variantOptionsTable.groupId))
+          .where(inArray(variantOptionsTable.id, allChosenOptionIds))
+        : [];
+
+      const optionStockMap = new Map<number, VORow>(variantOptionRows.map((r) => [r.optionId, r]));
+      // Products where at least one chosen option has per-variant stock configured
+      const variantTrackedProducts = new Set<number>(
+        variantOptionRows.filter((r) => r.stockCount !== null).map((r) => r.productId),
+      );
+      // Track which products need product.stockCount re-synced after the loop
+      const variantSyncIds = new Set<number>();
+
       // 1. Atomically decrement stock per item BEFORE creating the order.
       //    This is the only place that enforces "no negative stock".
       //    For composite parents we decrement each child's stock instead,
@@ -505,6 +533,46 @@ router.post("/orders", async (req, res): Promise<void> => {
           continue;
         }
 
+        // ── Per-variant stock deduction ─────────────────────────────────────
+        // If any chosen option for this product has per-variant stock, deduct
+        // from that option rather than the product row directly.
+        // product.stockCount is reconciled as SUM(option.stockCount) below.
+        if (variantTrackedProducts.has(item.productId) && (item.variantChoices ?? []).length > 0) {
+          for (const choice of (item.variantChoices ?? [])) {
+            const optRow = optionStockMap.get(choice.optionId);
+            if (!optRow || optRow.stockCount === null) continue;
+
+            if (allowOverselling) {
+              await tx.update(variantOptionsTable)
+                .set({ stockCount: sql`${variantOptionsTable.stockCount} - ${item.quantity}` })
+                .where(eq(variantOptionsTable.id, choice.optionId));
+            } else {
+              const updated = await tx.update(variantOptionsTable)
+                .set({ stockCount: sql`${variantOptionsTable.stockCount} - ${item.quantity}` })
+                .where(and(
+                  eq(variantOptionsTable.id, choice.optionId),
+                  sql`${variantOptionsTable.stockCount} >= ${item.quantity}`,
+                ))
+                .returning({ stockCount: variantOptionsTable.stockCount });
+
+              if (updated.length === 0) {
+                const [cur] = await tx
+                  .select({ stockCount: variantOptionsTable.stockCount })
+                  .from(variantOptionsTable)
+                  .where(eq(variantOptionsTable.id, choice.optionId));
+                throw new InsufficientStockError(
+                  item.productId,
+                  `${item.productName} – ${choice.optionName}`,
+                  cur?.stockCount ?? 0,
+                  item.quantity,
+                );
+              }
+            }
+          }
+          variantSyncIds.add(item.productId);
+          continue; // skip product-level deduction for variant-tracked products
+        }
+
         if (allowOverselling) {
           // Unconditional deduction; no guard.
           await tx
@@ -553,6 +621,32 @@ router.post("/orders", async (req, res): Promise<void> => {
             );
           }
         }
+      }
+
+      // Reconcile product.stockCount for per-variant-tracked products:
+      // set it to SUM of all non-null option stockCounts so the product row
+      // always reflects total available inventory across its variants.
+      for (const pid of variantSyncIds) {
+        await tx.execute(sql`
+          UPDATE products
+          SET
+            stock_count = COALESCE((
+              SELECT SUM(vo.stock_count)
+              FROM variant_options vo
+              JOIN variant_groups vg ON vg.id = vo.group_id
+              WHERE vg.product_id = ${pid} AND vo.stock_count IS NOT NULL
+            ), 0),
+            in_stock = CASE
+              WHEN COALESCE((
+                SELECT SUM(vo.stock_count)
+                FROM variant_options vo
+                JOIN variant_groups vg ON vg.id = vo.group_id
+                WHERE vg.product_id = ${pid} AND vo.stock_count IS NOT NULL
+              ), 0) > 0 THEN true
+              ELSE false
+            END
+          WHERE id = ${pid} AND tenant_id = ${tenantId}
+        `);
       }
 
       // 2. Create the order header now that all stock is reserved.
@@ -981,6 +1075,39 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
             }
           }
           continue;
+        }
+
+        // Restore per-variant option stock on refund/void
+        {
+          const choices = (item.variantChoices as Array<{ optionId: number; optionName: string }> | null) ?? [];
+          if (choices.length > 0) {
+            const choiceOptIds = choices.map((c) => c.optionId).filter((id): id is number => typeof id === "number");
+            if (choiceOptIds.length > 0) {
+              const trackedOpts = await tx
+                .select({ id: variantOptionsTable.id })
+                .from(variantOptionsTable)
+                .where(and(inArray(variantOptionsTable.id, choiceOptIds), isNotNull(variantOptionsTable.stockCount)));
+              if (trackedOpts.length > 0) {
+                for (const opt of trackedOpts) {
+                  await tx.update(variantOptionsTable)
+                    .set({ stockCount: sql`${variantOptionsTable.stockCount} + ${item.quantity}` })
+                    .where(eq(variantOptionsTable.id, opt.id));
+                }
+                await tx.execute(sql`
+                  UPDATE products
+                  SET
+                    stock_count = COALESCE((
+                      SELECT SUM(vo.stock_count) FROM variant_options vo
+                      JOIN variant_groups vg ON vg.id = vo.group_id
+                      WHERE vg.product_id = ${item.productId} AND vo.stock_count IS NOT NULL
+                    ), 0),
+                    in_stock = true
+                  WHERE id = ${item.productId} AND tenant_id = ${tenantId}
+                `);
+                continue;
+              }
+            }
+          }
         }
 
         await tx

@@ -241,13 +241,13 @@ const emptyForm = (): ProductForm => ({
 });
 
 /* ─── Variant/modifier editor types ─── */
-type DraftOption = { tempId: string; name: string; priceAdjustment: string };
-type DraftVariantGroup = { tempId: string; name: string; required: boolean; options: DraftOption[] };
+type DraftOption = { tempId: string; name: string; priceAdjustment: string; stockCount: string; optionId: number | null; sku: string };
+type DraftVariantGroup = { tempId: string; name: string; required: boolean; options: DraftOption[]; groupId: number | null };
 type DraftModifierGroup = { tempId: string; name: string; required: boolean; minSelections: string; maxSelections: string; options: DraftOption[] };
 
 function makeId() { return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
-function emptyOption(): DraftOption { return { tempId: makeId(), name: "", priceAdjustment: "0" }; }
-function emptyVariantGroup(): DraftVariantGroup { return { tempId: makeId(), name: "", required: true, options: [emptyOption()] }; }
+function emptyOption(): DraftOption { return { tempId: makeId(), name: "", priceAdjustment: "0", stockCount: "", optionId: null, sku: "" }; }
+function emptyVariantGroup(): DraftVariantGroup { return { tempId: makeId(), name: "", required: true, options: [emptyOption()], groupId: null }; }
 function emptyModifierGroup(): DraftModifierGroup { return { tempId: makeId(), name: "", required: false, minSelections: "0", maxSelections: "0", options: [emptyOption()] }; }
 
 function formatCurrency(v: number) {
@@ -271,10 +271,14 @@ function VariantEditor({ productId }: { productId: number }) {
         tempId: makeId(),
         name: g.name,
         required: g.required,
+        groupId: g.id,
         options: g.options.map((o) => ({
           tempId: makeId(),
           name: o.name,
           priceAdjustment: o.priceAdjustment.toString(),
+          stockCount: o.stockCount != null ? String(o.stockCount) : "",
+          optionId: o.id,
+          sku: o.sku ?? "",
         })),
       })),
     );
@@ -308,14 +312,18 @@ function VariantEditor({ productId }: { productId: number }) {
       {
         id: productId,
         data: {
-          groups: groups.map((g) => ({
+          groups: groups.filter((g) => g.name.trim()).map((g) => ({
+            groupId: g.groupId ?? undefined,
             name: g.name,
             required: g.required,
             options: g.options.filter((o) => o.name.trim()).map((o) => ({
+              optionId: o.optionId ?? undefined,
               name: o.name,
               priceAdjustment: parseFloat(o.priceAdjustment) || 0,
+              stockCount: o.stockCount.trim() !== "" ? parseFloat(o.stockCount) : null,
+              sku: o.sku.trim() || undefined,
             })),
-          })).filter((g) => g.name.trim()),
+          })),
         },
       },
       {
@@ -352,6 +360,12 @@ function VariantEditor({ productId }: { productId: number }) {
               </Button>
             </div>
             <div className="space-y-2 pl-2 border-l-2 border-border/40">
+              <div className="flex items-center gap-2 pb-0.5">
+                <span className="flex-1 text-[10px] text-muted-foreground/60">Option</span>
+                <span className="w-20 text-[10px] text-muted-foreground/60 text-center">Price adj.</span>
+                <span className="w-16 text-[10px] text-muted-foreground/60 text-center">Qty</span>
+                <span className="w-7" />
+              </div>
               {group.options.map((opt) => (
                 <div key={opt.tempId} className="flex items-center gap-2">
                   <Input
@@ -370,6 +384,15 @@ function VariantEditor({ productId }: { productId: number }) {
                       className="w-20 h-7 text-xs pl-5"
                     />
                   </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="—"
+                    value={opt.stockCount}
+                    onChange={(e) => updateOption(group.tempId, opt.tempId, { stockCount: e.target.value })}
+                    className="w-16 h-7 text-xs text-center"
+                    title="Stock quantity for this variant. Leave blank to use the product-level stock instead."
+                  />
                   <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeOption(group.tempId, opt.tempId)}>
                     <X className="h-3 w-3" />
                   </Button>
@@ -417,6 +440,9 @@ function ModifierEditor({ productId }: { productId: number }) {
           tempId: makeId(),
           name: o.name,
           priceAdjustment: o.priceAdjustment.toString(),
+          stockCount: "",
+          optionId: null,
+          sku: "",
         })),
       })),
     );

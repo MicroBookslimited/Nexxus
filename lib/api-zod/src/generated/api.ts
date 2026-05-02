@@ -221,6 +221,8 @@ export const GetProductCustomizationResponse = zod.object({
           name: zod.string(),
           priceAdjustment: zod.number(),
           position: zod.number(),
+          stockCount: zod.number().nullish(),
+          sku: zod.string().nullish(),
         }),
       ),
     }),
@@ -265,6 +267,8 @@ export const GetProductVariantsResponseItem = zod.object({
       name: zod.string(),
       priceAdjustment: zod.number(),
       position: zod.number(),
+      stockCount: zod.number().nullish(),
+      sku: zod.string().nullish(),
     }),
   ),
 });
@@ -282,12 +286,24 @@ export const SaveProductVariantsParams = zod.object({
 export const SaveProductVariantsBody = zod.object({
   groups: zod.array(
     zod.object({
+      groupId: zod
+        .number()
+        .optional()
+        .describe(
+          "Present for existing groups (enables upsert instead of delete-recreate)",
+        ),
       name: zod.string(),
       required: zod.boolean().optional(),
       options: zod.array(
         zod.object({
+          optionId: zod
+            .number()
+            .optional()
+            .describe("Present for existing options (preserves stockCount)"),
           name: zod.string(),
           priceAdjustment: zod.number().optional(),
+          stockCount: zod.number().nullish(),
+          sku: zod.string().nullish(),
         }),
       ),
     }),
@@ -306,6 +322,8 @@ export const SaveProductVariantsResponseItem = zod.object({
       name: zod.string(),
       priceAdjustment: zod.number(),
       position: zod.number(),
+      stockCount: zod.number().nullish(),
+      sku: zod.string().nullish(),
     }),
   ),
 });

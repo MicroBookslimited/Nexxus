@@ -15,6 +15,11 @@ export const variantOptionsTable = pgTable("variant_options", {
   name: text("name").notNull(),
   priceAdjustment: real("price_adjustment").notNull().default(0),
   position: integer("position").notNull().default(0),
+  // Per-variant stock tracking. NULL = not tracked (falls back to parent product stock).
+  // When non-null, the parent product's stockCount is computed as the SUM of all option stockCounts.
+  stockCount: real("stock_count"),
+  // Optional SKU / barcode for this specific variant option.
+  sku: text("sku"),
 });
 
 export const modifierGroupsTable = pgTable("modifier_groups", {

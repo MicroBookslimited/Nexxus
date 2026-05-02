@@ -404,6 +404,8 @@ export interface VariantOption {
   name: string;
   priceAdjustment: number;
   position: number;
+  stockCount?: number | null;
+  sku?: string | null;
 }
 
 export interface VariantGroup {
@@ -441,11 +443,17 @@ export interface ProductCustomization {
 }
 
 export type SaveVariantsBodyGroupsItemOptionsItem = {
+  /** Present for existing options (preserves stockCount) */
+  optionId?: number;
   name: string;
   priceAdjustment?: number;
+  stockCount?: number | null;
+  sku?: string | null;
 };
 
 export type SaveVariantsBodyGroupsItem = {
+  /** Present for existing groups (enables upsert instead of delete-recreate) */
+  groupId?: number;
   name: string;
   required?: boolean;
   options: SaveVariantsBodyGroupsItemOptionsItem[];

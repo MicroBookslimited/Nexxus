@@ -12,4 +12,6 @@ export interface VariantOption {
   name: string;
   priceAdjustment: number;
   position: number;
+  stockCount?: number | null;
+  sku?: string | null;
 }

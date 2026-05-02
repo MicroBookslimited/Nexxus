@@ -7,6 +7,10 @@
  */
 
 export type SaveVariantsBodyGroupsItemOptionsItem = {
+  /** Present for existing options (preserves stockCount) */
+  optionId?: number;
   name: string;
   priceAdjustment?: number;
+  stockCount?: number | null;
+  sku?: string | null;
 };
