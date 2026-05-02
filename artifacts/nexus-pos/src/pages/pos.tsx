@@ -33,6 +33,7 @@ import {
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote, Layers,
+  Tag, PenLine,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -87,6 +88,12 @@ type CartItem = {
    */
   unitLabel?: string;
   unitFactor?: number;
+  /** Manager-overridden unit price. When set, tier pricing is bypassed. */
+  priceOverrideValue?: number | null;
+  /** Name of the manager/admin who authorized the price override. */
+  priceOverrideBy?: string | null;
+  /** Name of the manager/admin who authorized the per-line discount. */
+  lineDiscountBy?: string | null;
 };
 
 function makeCartKey(productId: number, variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[]) {
@@ -613,6 +620,19 @@ export function POS() {
   const [discountEntryOpen, setDiscountEntryOpen] = useState(false);
   const [pendingDiscountType, setPendingDiscountType] = useState<"percent" | "fixed">("percent");
   const [pendingDiscountAmount, setPendingDiscountAmount] = useState<number>(0);
+
+  // ── Per-line override state (discount + price edit, both require manager PIN) ──
+  const [lineOverrideOpen, setLineOverrideOpen] = useState(false);
+  const [lineEntryOpen, setLineEntryOpen] = useState(false);
+  const [lineOverridePending, setLineOverridePending] = useState<{
+    cartKey: string;
+    mode: "discount" | "price";
+    productName: string;
+    currentPrice: number;
+  } | null>(null);
+  const [lineOverrideAuthorizedBy, setLineOverrideAuthorizedBy] = useState<string | null>(null);
+  const [lineOverrideInput, setLineOverrideInput] = useState<string>("");
+  const [lineOverrideDiscountType, setLineOverrideDiscountType] = useState<"percent" | "fixed">("percent");
   const [notes, setNotes] = useState("");
 
   const [splitCardAmount, setSplitCardAmount] = useState<number>(0);
@@ -1097,6 +1117,44 @@ export function POS() {
   // ── Volume-pricing: fetch tiers for every product currently in the cart.
   // Uses the same query key as the editor for cache hits. Tiers default to
   // empty so previewTierPrice falls back to basePrice cleanly.
+  // ── Per-line helper: effective unit price respecting manager price override
+  // and volume tier pricing. Price override always wins (bypasses tiers).
+  const getItemEff = (item: CartItem) => {
+    if (item.priceOverrideValue != null) return item.priceOverrideValue;
+    const tiers = pricingTiersByProduct.get(item.productId) ?? [];
+    const { tier } = previewTierPrice(item.basePrice, item.quantity, tiers);
+    return tier ? tier.unitPrice + (item.effectivePrice - item.basePrice) : item.effectivePrice;
+  };
+
+  // Apply a per-line discount (requires prior manager override).
+  const applyLineDiscount = (cartKey: string, type: "percent" | "fixed", amount: number, authorizedBy: string) => {
+    setCart((prev) => prev.map((item) => {
+      if (item.cartKey !== cartKey) return item;
+      const unitP = item.priceOverrideValue ?? item.effectivePrice;
+      const lineMax = unitP * item.quantity;
+      let discount = type === "percent" ? lineMax * amount / 100 : amount;
+      discount = Math.min(Math.max(0, discount), lineMax);
+      return { ...item, itemDiscount: discount, lineDiscountBy: authorizedBy };
+    }));
+  };
+
+  // Apply a manager-overridden unit price; clears any separate line discount.
+  const applyLinePrice = (cartKey: string, newPrice: number, authorizedBy: string) => {
+    setCart((prev) => prev.map((item) => {
+      if (item.cartKey !== cartKey) return item;
+      return { ...item, priceOverrideValue: Math.max(0, newPrice), priceOverrideBy: authorizedBy, itemDiscount: 0, lineDiscountBy: null };
+    }));
+  };
+
+  // Remove a line override (discount or price).
+  const removeLineOverride = (cartKey: string, mode: "discount" | "price") => {
+    setCart((prev) => prev.map((item) => {
+      if (item.cartKey !== cartKey) return item;
+      if (mode === "discount") return { ...item, itemDiscount: 0, lineDiscountBy: null };
+      return { ...item, priceOverrideValue: null, priceOverrideBy: null };
+    }));
+  };
+
   const cartProductIds = Array.from(new Set(cart.map(c => c.productId).filter(id => id > 0)));
   const tierQueries = useQueries({
     queries: cartProductIds.map(pid => ({
@@ -1127,12 +1185,9 @@ export function POS() {
     };
   };
 
-  // Subtotal honors tier pricing so totals match what we render per line.
+  // Subtotal honors tier pricing and per-line manager overrides.
   const subtotal = cart.reduce((sum, item) => {
-    const tiers = pricingTiersByProduct.get(item.productId) ?? [];
-    const { tier } = previewTierPrice(item.basePrice, item.quantity, tiers);
-    const eff = tier ? tier.unitPrice + (item.effectivePrice - item.basePrice) : item.effectivePrice;
-    return sum + eff * item.quantity - item.itemDiscount;
+    return sum + getItemEff(item) * item.quantity - item.itemDiscount;
   }, 0);
 
   let cartDiscountValue = 0;
@@ -1174,6 +1229,12 @@ export function POS() {
     setDiscountAuthorizedBy(null);
     setPendingDiscountType("percent");
     setPendingDiscountAmount(0);
+    setLineOverrideOpen(false);
+    setLineEntryOpen(false);
+    setLineOverridePending(null);
+    setLineOverrideAuthorizedBy(null);
+    setLineOverrideInput("");
+    setLineOverrideDiscountType("percent");
     setNotes("");
     setPaymentMethod(defaultPaymentMethod);
     setSplitCardAmount(0);
@@ -1279,7 +1340,15 @@ export function POS() {
         items: cart.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
-          discountAmount: item.itemDiscount || undefined,
+          // Combine explicit line discount + price-override reduction into one
+          // discountAmount so the server's lineTotal = unitPrice*qty - discount.
+          discountAmount: (() => {
+            let d = item.itemDiscount || 0;
+            if (item.priceOverrideValue != null) {
+              d += Math.max(0, (item.effectivePrice - item.priceOverrideValue) * item.quantity);
+            }
+            return d > 0 ? d : undefined;
+          })(),
           variantChoices: item.variantChoices.length > 0 ? item.variantChoices : undefined,
           modifierChoices: item.modifierChoices.length > 0 ? item.modifierChoices : undefined,
           notes: item.itemNote || undefined,
@@ -1336,22 +1405,17 @@ export function POS() {
         paymentMethod,
         items: cart.map((item, i) => {
           // Mirror the server's tier-aware unitPrice / lineTotal so offline
-          // receipts match online ones. `effectivePrice` already includes
-          // variant + modifier adjustments; we layer the tier price on top
-          // (via the basePrice ratio) the same way the live cart subtotal does.
-          const tiers = pricingTiersByProduct.get(item.productId) ?? [];
-          const { tier } = previewTierPrice(item.basePrice, item.quantity, tiers);
-          const tieredEff = tier
-            ? tier.unitPrice + (item.effectivePrice - item.basePrice)
-            : item.effectivePrice;
-          const lineTotal = tieredEff * item.quantity - item.itemDiscount;
+          // receipts match online ones. getItemEff handles tiered pricing AND
+          // manager price overrides so the offline receipt stays consistent.
+          const itemEffOffline = getItemEff(item);
+          const lineTotal = itemEffOffline * item.quantity - item.itemDiscount;
           return {
             id: i,
             orderId: -1,
             productId: item.productId,
             productName: item.productName,
             quantity: item.quantity,
-            unitPrice: tieredEff,
+            unitPrice: itemEffOffline,
             // Persist the original (untiered) base unit price so the receipt
             // can render the volume-pricing savings line.
             originalUnitPrice: item.basePrice,
@@ -1406,7 +1470,13 @@ export function POS() {
           items: cart.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
-            discountAmount: item.itemDiscount || undefined,
+            discountAmount: (() => {
+              let d = item.itemDiscount || 0;
+              if (item.priceOverrideValue != null) {
+                d += Math.max(0, (item.effectivePrice - item.priceOverrideValue) * item.quantity);
+              }
+              return d > 0 ? d : undefined;
+            })(),
             variantChoices: item.variantChoices.length > 0 ? item.variantChoices : undefined,
             modifierChoices: item.modifierChoices.length > 0 ? item.modifierChoices : undefined,
             notes: item.itemNote || undefined,
@@ -2035,8 +2105,9 @@ export function POS() {
                   cart.map((item) => {
                     const tiers = pricingTiersByProduct.get(item.productId) ?? [];
                     const { tier } = previewTierPrice(item.basePrice, item.quantity, tiers);
-                    const tieredEff = tier ? tier.unitPrice + (item.effectivePrice - item.basePrice) : item.effectivePrice;
-                    const lineTotal = tieredEff * item.quantity - item.itemDiscount;
+                    // getItemEff respects manager price override (wins over tiers)
+                    const itemEff = getItemEff(item);
+                    const lineTotal = itemEff * item.quantity - item.itemDiscount;
                     const ci = compositeInfo(item.productId);
                     return (
                     <motion.div key={item.cartKey} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}>
@@ -2059,23 +2130,65 @@ export function POS() {
                             )}
                             {item.variantChoices.length > 0 && <p className="text-xs text-primary/80">{choiceLabel(item.variantChoices)}</p>}
                             {item.modifierChoices.length > 0 && <p className="text-xs text-amber-400/90">+ {choiceLabel(item.modifierChoices)}</p>}
-                            <p className="text-xs font-mono text-primary mt-0.5">
-                              {tier ? (
+                            <p className="text-xs font-mono text-primary mt-0.5 flex flex-wrap items-center gap-x-1">
+                              {item.priceOverrideValue != null ? (
                                 <>
-                                  <span className="line-through text-muted-foreground/60 mr-1">{formatCurrency(item.effectivePrice)}</span>
-                                  <span className="text-emerald-400">{formatCurrency(tieredEff)}</span> ea
+                                  <span className="line-through text-muted-foreground/60">{formatCurrency(item.effectivePrice)}</span>
+                                  <span className="text-violet-400 font-bold">{formatCurrency(item.priceOverrideValue)}</span>
+                                  <span className="text-[9px] text-violet-400/80">ea · override by {item.priceOverrideBy}</span>
+                                </>
+                              ) : tier ? (
+                                <>
+                                  <span className="line-through text-muted-foreground/60">{formatCurrency(item.effectivePrice)}</span>
+                                  <span className="text-emerald-400">{formatCurrency(itemEff)}</span>
+                                  <span className="text-muted-foreground/70">ea</span>
                                 </>
                               ) : (
-                                <>{formatCurrency(item.effectivePrice)} ea</>
+                                <span>{formatCurrency(item.effectivePrice)} ea</span>
+                              )}
+                              {item.itemDiscount > 0 && item.lineDiscountBy && (
+                                <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-400/90 bg-amber-500/10 border border-amber-500/20 rounded px-1 py-px">
+                                  <Tag className="h-2 w-2" />
+                                  -{formatCurrency(item.itemDiscount)} · {item.lineDiscountBy}
+                                  <button
+                                    onClick={() => removeLineOverride(item.cartKey, "discount")}
+                                    className="ml-0.5 hover:text-destructive"
+                                    title="Remove line discount"
+                                  >
+                                    <X className="h-2 w-2" />
+                                  </button>
+                                </span>
+                              )}
+                              {item.priceOverrideValue != null && (
+                                <button
+                                  onClick={() => removeLineOverride(item.cartKey, "price")}
+                                  className="text-[9px] text-muted-foreground/50 hover:text-destructive transition-colors"
+                                  title="Remove price override"
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
                               )}
                             </p>
                           </div>
-                          <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive shrink-0" onClick={() => removeFromCart(item.cartKey)}>
+                          <Button
+                            size="icon"
+                            variant="default"
+                            className="h-5 w-5 bg-red-700 hover:bg-red-600 text-white shrink-0"
+                            title="Remove item"
+                            onClick={() => removeFromCart(item.cartKey)}
+                          >
                             <Trash2 className="h-2.5 w-2.5" />
                           </Button>
                         </div>
                         <div className="flex items-center gap-1 mt-1.5">
-                          <Button size="icon" variant="outline" className="h-6 w-6 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:border-red-500" onClick={() => updateQuantity(item.cartKey, -1)}><Minus className="h-3 w-3" /></Button>
+                          <Button
+                            size="icon"
+                            variant="default"
+                            className="h-6 w-6 bg-red-600 hover:bg-red-500 text-white"
+                            onClick={() => updateQuantity(item.cartKey, -1)}
+                          >
+                            <Minus className="h-3 w-3" />
+                          </Button>
                           <Input
                             type="text"
                             inputMode="decimal"
@@ -2089,13 +2202,47 @@ export function POS() {
                             aria-label={`Quantity for ${item.productName}`}
                             className="h-6 w-12 px-1 text-sm font-bold text-center font-mono"
                           />
-                          <Button size="icon" variant="outline" className="h-6 w-6 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500" onClick={() => updateQuantity(item.cartKey, 1)}><Plus className="h-3 w-3" /></Button>
+                          <Button
+                            size="icon"
+                            variant="default"
+                            className="h-6 w-6 bg-emerald-600 hover:bg-emerald-500 text-white"
+                            onClick={() => updateQuantity(item.cartKey, 1)}
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
                           <button
                             onClick={() => setEditingNoteKey((k) => k === item.cartKey ? null : item.cartKey)}
                             title="Add item note"
-                            className={`ml-1 p-0.5 rounded transition-colors ${item.itemNote || editingNoteKey === item.cartKey ? "text-amber-400" : "text-muted-foreground/50 hover:text-muted-foreground"}`}
+                            className={`ml-0.5 p-0.5 rounded transition-colors ${item.itemNote || editingNoteKey === item.cartKey ? "text-amber-400" : "text-muted-foreground/50 hover:text-muted-foreground"}`}
                           >
                             <StickyNote className="h-3.5 w-3.5" />
+                          </button>
+                          {/* Line discount — manager override required */}
+                          <button
+                            onClick={() => {
+                              setLineOverridePending({ cartKey: item.cartKey, mode: "discount", productName: item.productName, currentPrice: itemEff });
+                              setLineOverrideInput("");
+                              setLineOverrideDiscountType("percent");
+                              setLineOverrideAuthorizedBy(null);
+                              setLineOverrideOpen(true);
+                            }}
+                            title="Line discount (manager override)"
+                            className={`p-0.5 rounded transition-colors ${item.itemDiscount > 0 && item.lineDiscountBy ? "text-amber-400" : "text-muted-foreground/50 hover:text-amber-400"}`}
+                          >
+                            <Tag className="h-3.5 w-3.5" />
+                          </button>
+                          {/* Price edit — manager override required */}
+                          <button
+                            onClick={() => {
+                              setLineOverridePending({ cartKey: item.cartKey, mode: "price", productName: item.productName, currentPrice: itemEff });
+                              setLineOverrideInput(String(item.priceOverrideValue ?? fmtNum(itemEff)));
+                              setLineOverrideAuthorizedBy(null);
+                              setLineOverrideOpen(true);
+                            }}
+                            title="Override price (manager override)"
+                            className={`p-0.5 rounded transition-colors ${item.priceOverrideValue != null ? "text-violet-400" : "text-muted-foreground/50 hover:text-violet-400"}`}
+                          >
+                            <PenLine className="h-3.5 w-3.5" />
                           </button>
                           <span className="ml-auto text-sm font-mono font-bold">{formatCurrency(lineTotal)}</span>
                         </div>
@@ -2976,6 +3123,180 @@ export function POS() {
               Apply Discount
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Line Override PIN: manager must authenticate before entering value ── */}
+      <Dialog open={lineOverrideOpen} onOpenChange={(o) => !o && setLineOverrideOpen(false)}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-violet-400">
+              {lineOverridePending?.mode === "price" ? (
+                <><PenLine className="h-4 w-4" />Manager Price Override</>
+              ) : (
+                <><Tag className="h-4 w-4" />Manager Line Discount</>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground text-center -mt-2 mb-2">
+            {lineOverridePending?.productName && (
+              <span className="font-medium text-foreground">{lineOverridePending.productName}</span>
+            )}
+            {lineOverridePending?.mode === "price"
+              ? " — enter manager PIN to override the unit price."
+              : " — enter manager PIN to apply a line discount."}
+          </p>
+          <PinPad
+            title=""
+            requiredRoles={["manager", "admin", "supervisor"]}
+            onSuccess={(staff) => {
+              setLineOverrideAuthorizedBy(staff.name);
+              setLineOverrideOpen(false);
+              setLineEntryOpen(true);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Line Override Entry: enter the actual value after PIN passes ── */}
+      <Dialog open={lineEntryOpen} onOpenChange={(o) => !o && setLineEntryOpen(false)}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-violet-400">
+              {lineOverridePending?.mode === "price" ? (
+                <><PenLine className="h-4 w-4" />Set Unit Price</>
+              ) : (
+                <><Tag className="h-4 w-4" />Line Discount</>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {lineOverrideAuthorizedBy && (
+            <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2.5 py-1.5 -mt-1 mb-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              <p className="text-xs text-emerald-400">Authorized by <span className="font-semibold">{lineOverrideAuthorizedBy}</span></p>
+            </div>
+          )}
+          {lineOverridePending?.mode === "price" ? (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  New unit price (current: {formatCurrency(lineOverridePending.currentPrice, baseCurrency)})
+                </Label>
+                <Input
+                  autoFocus
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="font-mono text-base h-10"
+                  placeholder="0.00"
+                  value={lineOverrideInput}
+                  onChange={(e) => setLineOverrideInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const val = parseFloat(lineOverrideInput);
+                      if (!isNaN(val) && val >= 0 && lineOverridePending && lineOverrideAuthorizedBy) {
+                        applyLinePrice(lineOverridePending.cartKey, val, lineOverrideAuthorizedBy);
+                        setLineEntryOpen(false);
+                        setLineOverridePending(null);
+                        setLineOverrideAuthorizedBy(null);
+                      }
+                    }
+                  }}
+                />
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => { setLineEntryOpen(false); setLineOverrideAuthorizedBy(null); }}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 bg-violet-600 hover:bg-violet-500"
+                  disabled={isNaN(parseFloat(lineOverrideInput)) || parseFloat(lineOverrideInput) < 0}
+                  onClick={() => {
+                    const val = parseFloat(lineOverrideInput);
+                    if (!isNaN(val) && val >= 0 && lineOverridePending && lineOverrideAuthorizedBy) {
+                      applyLinePrice(lineOverridePending.cartKey, val, lineOverrideAuthorizedBy);
+                      setLineEntryOpen(false);
+                      setLineOverridePending(null);
+                      setLineOverrideAuthorizedBy(null);
+                    }
+                  }}
+                >
+                  Set Price
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant={lineOverrideDiscountType === "percent" ? "default" : "outline"}
+                  className="h-10 text-sm"
+                  onClick={() => setLineOverrideDiscountType("percent")}
+                >
+                  <Percent className="h-4 w-4 mr-1.5" />Percent
+                </Button>
+                <Button
+                  variant={lineOverrideDiscountType === "fixed" ? "default" : "outline"}
+                  className="h-10 text-sm"
+                  onClick={() => setLineOverrideDiscountType("fixed")}
+                >
+                  <DollarSign className="h-4 w-4 mr-1.5" />Fixed $
+                </Button>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  {lineOverrideDiscountType === "percent" ? "Discount %" : "Discount Amount ($)"}
+                </Label>
+                <Input
+                  autoFocus
+                  type="number"
+                  min={0}
+                  max={lineOverrideDiscountType === "percent" ? 100 : undefined}
+                  step={lineOverrideDiscountType === "percent" ? 1 : 0.01}
+                  className="font-mono text-base h-10"
+                  placeholder={lineOverrideDiscountType === "percent" ? "e.g. 10" : "e.g. 5.00"}
+                  value={lineOverrideInput}
+                  onChange={(e) => setLineOverrideInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const val = parseFloat(lineOverrideInput);
+                      if (!isNaN(val) && val > 0 && lineOverridePending && lineOverrideAuthorizedBy) {
+                        applyLineDiscount(lineOverridePending.cartKey, lineOverrideDiscountType, val, lineOverrideAuthorizedBy);
+                        setLineEntryOpen(false);
+                        setLineOverridePending(null);
+                        setLineOverrideAuthorizedBy(null);
+                      }
+                    }
+                  }}
+                />
+                {lineOverrideDiscountType === "percent" && parseFloat(lineOverrideInput) > 0 && lineOverridePending && (
+                  <p className="text-xs text-muted-foreground">
+                    ≈ {formatCurrency(lineOverridePending.currentPrice * parseFloat(lineOverrideInput) / 100, baseCurrency)} per unit
+                  </p>
+                )}
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => { setLineEntryOpen(false); setLineOverrideAuthorizedBy(null); }}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 bg-amber-600 hover:bg-amber-500"
+                  disabled={isNaN(parseFloat(lineOverrideInput)) || parseFloat(lineOverrideInput) <= 0}
+                  onClick={() => {
+                    const val = parseFloat(lineOverrideInput);
+                    if (!isNaN(val) && val > 0 && lineOverridePending && lineOverrideAuthorizedBy) {
+                      applyLineDiscount(lineOverridePending.cartKey, lineOverrideDiscountType, val, lineOverrideAuthorizedBy);
+                      setLineEntryOpen(false);
+                      setLineOverridePending(null);
+                      setLineOverrideAuthorizedBy(null);
+                    }
+                  }}
+                >
+                  Apply Discount
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

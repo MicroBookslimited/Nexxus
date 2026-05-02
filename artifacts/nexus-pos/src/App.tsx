@@ -98,6 +98,9 @@ function SectionDispatch() {
   if (path.startsWith("/signup"))     return <Onboarding />;
   if (path.startsWith("/reset-password")) return <ResetPassword />;
   if (path.startsWith("/verify-email"))   return <VerifyEmail />;
+  if (path.startsWith("/technician/register")) return <TechnicianRegister />;
+  if (path.startsWith("/technician/login"))    return <TechnicianLogin />;
+  if (path.startsWith("/technician"))          return <TechnicianPortal />;
 
   if (path.startsWith("/app")) {
     return <POSApp />;
