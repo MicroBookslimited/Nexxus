@@ -254,6 +254,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   let rawSubtotal = 0;
+  let taxableRawSubtotal = 0;
   type ChoiceItem = { groupId: number; groupName: string; optionId: number; optionName: string; priceAdjustment: number };
   const resolvedItems: Array<{
     productId: number;
@@ -298,6 +299,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     const effectiveUnitPrice = tierUnitPrice + variantAdj + modifierAdj;
     const lineTotal = Math.max(0, effectiveUnitPrice * item.quantity - itemDiscount);
     rawSubtotal += lineTotal;
+    if (product.isTaxable !== false) taxableRawSubtotal += lineTotal;
     resolvedItems.push({
       productId: product.id,
       productName: product.name,
@@ -332,9 +334,22 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   const taxRateValue = await getSetting("tax_rate", tenantId);
   const taxRate = parseFloat(taxRateValue || "15") / 100;
+  const taxModeValue = (await getSetting("tax_mode", tenantId)) ?? "exclusive";
   const allowOverselling = (await getSetting("allow_overselling", tenantId)) === "true";
-  const tax = Math.round(discountedSubtotal * taxRate * 100) / 100;
-  const total = Math.round((discountedSubtotal + tax) * 100) / 100;
+
+  // Apply order-level discount/loyalty proportionally to the taxable bucket
+  // so that non-taxable items never inflate the tax base.
+  const taxableFraction = rawSubtotal > 0 ? taxableRawSubtotal / rawSubtotal : 1;
+  const taxableDiscountedSubtotal = Math.max(
+    0,
+    taxableRawSubtotal - discountValue * taxableFraction - loyaltyDiscount * taxableFraction,
+  );
+  const tax = taxModeValue === "inclusive"
+    ? Math.round(taxableDiscountedSubtotal * taxRate / (1 + taxRate) * 100) / 100
+    : Math.round(taxableDiscountedSubtotal * taxRate * 100) / 100;
+  const total = taxModeValue === "inclusive"
+    ? Math.round(discountedSubtotal * 100) / 100
+    : Math.round((discountedSubtotal + tax) * 100) / 100;
 
   const isOpenOrder = parsed.data.orderType === "dine-in" && !parsed.data.paymentMethod;
   const isPaid = !!parsed.data.paymentMethod;

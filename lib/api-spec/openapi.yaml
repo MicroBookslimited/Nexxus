@@ -1550,6 +1550,9 @@ components:
           type: string
           enum: [simple, composite]
           description: Product structure. Composite parents derive cost from child components.
+        isTaxable:
+          type: boolean
+          description: When false, sales tax is not applied to this product at checkout.
         hasVariants:
           type: boolean
         hasModifiers:
@@ -1569,6 +1572,7 @@ components:
         - stockCount
         - soldByWeight
         - structureType
+        - isTaxable
         - hasVariants
         - hasModifiers
         - isComposite
@@ -1607,6 +1611,9 @@ components:
         structureType:
           type: string
           enum: [simple, composite]
+        isTaxable:
+          type: boolean
+          description: When false, sales tax is not applied to this product at checkout.
       required:
         - name
         - price

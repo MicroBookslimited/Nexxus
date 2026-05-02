@@ -24,6 +24,8 @@ export interface Product {
   costPrice?: number | null;
   /** Product structure. Composite parents derive cost from child components. */
   structureType: ProductStructureType;
+  /** When false, sales tax is not applied to this product at checkout. */
+  isTaxable: boolean;
   hasVariants: boolean;
   hasModifiers: boolean;
   /** True when this product has at least one composite component row. */

@@ -21,4 +21,6 @@ export interface CreateProductBody {
   unitOfMeasure?: CreateProductBodyUnitOfMeasure;
   costPrice?: number | null;
   structureType?: CreateProductBodyStructureType;
+  /** When false, sales tax is not applied to this product at checkout. */
+  isTaxable?: boolean;
 }

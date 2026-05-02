@@ -94,6 +94,8 @@ type CartItem = {
   priceOverrideBy?: string | null;
   /** Name of the manager/admin who authorized the per-line discount. */
   lineDiscountBy?: string | null;
+  /** When false, this item does not attract sales tax. Mirrors product.isTaxable. */
+  isTaxable?: boolean;
 };
 
 function makeCartKey(productId: number, variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[]) {
@@ -580,6 +582,7 @@ export function POS() {
     name: string;
     price: number;
     unit: string;
+    isTaxable?: boolean;
   } | null>(null);
   const [weightModalValue, setWeightModalValue] = useState<string>("");
 
@@ -588,7 +591,7 @@ export function POS() {
   // one this transaction is in. The picker also handles
   // variants/modifiers for the chosen product after selection.
   const [unitPickerState, setUnitPickerState] = useState<{
-    product: { id: number; name: string; price: number; hasVariants: boolean; hasModifiers: boolean };
+    product: { id: number; name: string; price: number; hasVariants: boolean; hasModifiers: boolean; isTaxable?: boolean };
     units: PurchaseUnit[]; // sale-eligible units only (factor != 1)
   } | null>(null);
 
@@ -745,13 +748,14 @@ export function POS() {
     setBarcodeAmbiguity(null);
     // Sell-by-weight items must go through the WeightModal so the cashier
     // can enter the actual weight. We never auto-add quantity 1.
-    const p = product as typeof product & { soldByWeight?: boolean; unitOfMeasure?: string | null };
+    const p = product as typeof product & { soldByWeight?: boolean; unitOfMeasure?: string | null; isTaxable?: boolean };
     if (p.soldByWeight) {
       setWeightModalProduct({
         id: product.id,
         name: product.name,
         price: product.price,
         unit: p.unitOfMeasure ?? "kg",
+        isTaxable: p.isTaxable !== false,
       });
       setWeightModalValue("");
       return;
@@ -774,6 +778,7 @@ export function POS() {
             price: product.price,
             hasVariants: !!product.hasVariants,
             hasModifiers: !!product.hasModifiers,
+            isTaxable: (product as unknown as { isTaxable?: boolean }).isTaxable !== false,
           },
           units: saleUnits,
         });
@@ -791,7 +796,7 @@ export function POS() {
     if (product.hasVariants || product.hasModifiers) {
       setCustomizingProductId(product.id);
     } else {
-      addToCartDirect(product.id, product.name, product.price, [], []);
+      addToCartDirect(product.id, product.name, product.price, [], [], undefined, (product as unknown as { isTaxable?: boolean }).isTaxable !== false);
     }
   };
 
@@ -818,7 +823,7 @@ export function POS() {
       setPendingCustomizationUnit(unitFactor ? { unitId, unitLabel: unitLabel!, unitFactor } : null);
       setCustomizingProductId(product.id);
     } else {
-      addToCartDirect(product.id, product.name, product.price, [], [], unitFactor ? { unitId, unitLabel: unitLabel!, unitFactor } : undefined);
+      addToCartDirect(product.id, product.name, product.price, [], [], unitFactor ? { unitId, unitLabel: unitLabel!, unitFactor } : undefined, product.isTaxable !== false);
     }
   };
 
@@ -847,6 +852,7 @@ export function POS() {
         variantChoices: [],
         modifierChoices: [],
         weightUnit: weightModalProduct.unit,
+        isTaxable: weightModalProduct.isTaxable !== false,
       },
     ]);
     toast({
@@ -864,6 +870,7 @@ export function POS() {
     variantChoices: ChoiceItem[],
     modifierChoices: ChoiceItem[],
     unit?: { unitId?: number; unitLabel: string; unitFactor: number },
+    isTaxable?: boolean,
   ) => {
     const adj = [...variantChoices, ...modifierChoices].reduce((s, c) => s + c.priceAdjustment, 0);
     const effectivePrice = basePrice + adj;
@@ -896,6 +903,7 @@ export function POS() {
           modifierChoices,
           unitLabel: unit?.unitLabel,
           unitFactor: unit?.unitFactor,
+          isTaxable: isTaxable !== false,
         },
       ];
     });
@@ -904,7 +912,7 @@ export function POS() {
   const handleCustomizeConfirm = (variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[]) => {
     const product = products?.find((p) => p.id === customizingProductId);
     if (!product) return;
-    addToCartDirect(product.id, product.name, product.price, variantChoices, modifierChoices, pendingCustomizationUnit ?? undefined);
+    addToCartDirect(product.id, product.name, product.price, variantChoices, modifierChoices, pendingCustomizationUnit ?? undefined, (product as unknown as { isTaxable?: boolean }).isTaxable !== false);
     setPendingCustomizationUnit(null);
     setCustomizingProductId(null);
   };
@@ -918,6 +926,7 @@ export function POS() {
       const { label } = await lookupWeightLabel(barcode);
       const cartKey = `wlbl:${label.id ?? barcode}:${Date.now()}`;
       const display = `${label.productName} (${label.weightValue.toFixed(3)} ${label.unitOfMeasure})`;
+      const weightLabelProduct = productById.get(label.productId) as (typeof productById extends Map<number, infer V> ? V : never) & { isTaxable?: boolean } | undefined;
       setCart((prev) => [
         ...prev,
         {
@@ -930,6 +939,7 @@ export function POS() {
           itemDiscount: 0,
           variantChoices: [],
           modifierChoices: [],
+          isTaxable: weightLabelProduct?.isTaxable !== false,
         },
       ]);
       if (label.id) scaleLabelIdsRef.current.push(label.id);
@@ -1189,6 +1199,10 @@ export function POS() {
   const subtotal = cart.reduce((sum, item) => {
     return sum + getItemEff(item) * item.quantity - item.itemDiscount;
   }, 0);
+  // Only items where isTaxable !== false contribute to the tax base.
+  const taxableSubtotal = cart.reduce((sum, item) => {
+    return item.isTaxable !== false ? sum + getItemEff(item) * item.quantity - item.itemDiscount : sum;
+  }, 0);
 
   let cartDiscountValue = 0;
   if (discountType === "percent") cartDiscountValue = subtotal * ((discountAmount || 0) / 100);
@@ -1203,9 +1217,15 @@ export function POS() {
   const loyaltyDiscountValue = clampedPoints > 0 ? clampedPoints / 100 : 0;
 
   const discountedSubtotal = Math.max(0, subtotal - cartDiscountValue - loyaltyDiscountValue);
+  // Apply order discount proportionally to the taxable bucket only.
+  const taxableFraction = subtotal > 0 ? taxableSubtotal / subtotal : 1;
+  const taxableDiscountedSubtotal = Math.max(
+    0,
+    taxableSubtotal - cartDiscountValue * taxableFraction - loyaltyDiscountValue * taxableFraction,
+  );
   const tax = taxMode === "inclusive"
-    ? discountedSubtotal * taxRate / (1 + taxRate)
-    : discountedSubtotal * taxRate;
+    ? taxableDiscountedSubtotal * taxRate / (1 + taxRate)
+    : taxableDiscountedSubtotal * taxRate;
   const total = taxMode === "inclusive" ? discountedSubtotal : discountedSubtotal + tax;
 
   const handleSplitClick = () => {

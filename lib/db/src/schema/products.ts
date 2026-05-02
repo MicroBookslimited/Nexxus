@@ -39,6 +39,9 @@ export const productsTable = pgTable("products", {
   //                  stock and cost are derived from child components
   //                  listed in composite_product_components.
   structureType: text("structure_type").notNull().default("simple"),
+  // When false, sales tax is not applied to this product at checkout.
+  // Defaults to true so existing products are unaffected.
+  isTaxable: boolean("is_taxable").notNull().default(true),
 });
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({ id: true, createdAt: true });

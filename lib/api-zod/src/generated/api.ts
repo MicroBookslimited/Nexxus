@@ -43,6 +43,11 @@ export const ListProductsResponseItem = zod.object({
     .describe(
       "Product structure. Composite parents derive cost from child components.",
     ),
+  isTaxable: zod
+    .boolean()
+    .describe(
+      "When false, sales tax is not applied to this product at checkout.",
+    ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
   isComposite: zod
@@ -70,6 +75,12 @@ export const CreateProductBody = zod.object({
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).optional(),
   costPrice: zod.number().nullish(),
   structureType: zod.enum(["simple", "composite"]).optional(),
+  isTaxable: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When false, sales tax is not applied to this product at checkout.",
+    ),
 });
 
 /**
@@ -99,6 +110,11 @@ export const GetProductResponse = zod.object({
     .enum(["simple", "composite"])
     .describe(
       "Product structure. Composite parents derive cost from child components.",
+    ),
+  isTaxable: zod
+    .boolean()
+    .describe(
+      "When false, sales tax is not applied to this product at checkout.",
     ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
@@ -130,6 +146,12 @@ export const UpdateProductBody = zod.object({
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).optional(),
   costPrice: zod.number().nullish(),
   structureType: zod.enum(["simple", "composite"]).optional(),
+  isTaxable: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When false, sales tax is not applied to this product at checkout.",
+    ),
 });
 
 export const UpdateProductResponse = zod.object({
@@ -152,6 +174,11 @@ export const UpdateProductResponse = zod.object({
     .enum(["simple", "composite"])
     .describe(
       "Product structure. Composite parents derive cost from child components.",
+    ),
+  isTaxable: zod
+    .boolean()
+    .describe(
+      "When false, sales tax is not applied to this product at checkout.",
     ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
@@ -1283,6 +1310,11 @@ export const GetLowStockProductsResponseItem = zod.object({
     .enum(["simple", "composite"])
     .describe(
       "Product structure. Composite parents derive cost from child components.",
+    ),
+  isTaxable: zod
+    .boolean()
+    .describe(
+      "When false, sales tax is not applied to this product at checkout.",
     ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),

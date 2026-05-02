@@ -221,6 +221,8 @@ type ProductForm = {
   // Simple = standard SKU. Composite = bundle whose stock and cost are
   // derived from its child components (see CompositeEditor).
   structureType: StructureType;
+  // When false, sales tax is not applied to this product at checkout.
+  isTaxable: boolean;
 };
 
 const emptyForm = (): ProductForm => ({
@@ -235,6 +237,7 @@ const emptyForm = (): ProductForm => ({
   unitOfMeasure: "kg",
   costPrice: "",
   structureType: "simple",
+  isTaxable: true,
 });
 
 /* ─── Variant/modifier editor types ─── */
@@ -2315,6 +2318,7 @@ export function Products() {
       unitOfMeasure?: WeightUnit | string | null;
       costPrice?: number | null;
       structureType?: StructureType | string;
+      isTaxable?: boolean;
     };
     const unit: WeightUnit =
       pp.unitOfMeasure === "lb" || pp.unitOfMeasure === "oz" || pp.unitOfMeasure === "g"
@@ -2333,6 +2337,7 @@ export function Products() {
       unitOfMeasure: unit,
       costPrice: pp.costPrice != null ? String(pp.costPrice) : "",
       structureType: struct,
+      isTaxable: pp.isTaxable !== false,
     });
     setDialogTab("details");
     setDialogOpen(true);
@@ -2359,6 +2364,7 @@ export function Products() {
       unitOfMeasure: form.soldByWeight ? form.unitOfMeasure : undefined,
       costPrice: form.costPrice.trim() === "" ? null : parseFloat(form.costPrice),
       structureType: form.structureType,
+      isTaxable: form.isTaxable,
     };
 
     if (editingProduct) {
@@ -3281,6 +3287,10 @@ export function Products() {
                     Stock for composites is derived from child components. The Composite tab shows how many bundles can be assembled.
                   </div>
                 )}
+                <div className="flex items-center gap-2">
+                  <Switch id="isTaxable" checked={form.isTaxable} onCheckedChange={(v) => setForm((f) => ({ ...f, isTaxable: v }))} />
+                  <Label htmlFor="isTaxable">Attracts sales tax</Label>
+                </div>
                 {/* Cost price drives margin reports for simple products
                     and is the per-unit basis for composites. Hidden on
                     composites because the cost is derived. */}

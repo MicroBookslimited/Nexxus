@@ -229,6 +229,7 @@ router.post("/products", async (req, res): Promise<void> => {
         : null,
       costPrice: parsed.data.costPrice ?? null,
       structureType: parsed.data.structureType ?? "simple",
+      isTaxable: parsed.data.isTaxable ?? true,
     })
     .returning();
 
@@ -306,6 +307,9 @@ router.put("/products/:id", async (req, res): Promise<void> => {
   // costed"), so we only write when explicitly provided in the body.
   if (parsed.data.costPrice !== undefined) {
     updates["costPrice"] = parsed.data.costPrice;
+  }
+  if (parsed.data.isTaxable !== undefined) {
+    updates["isTaxable"] = parsed.data.isTaxable;
   }
   if (parsed.data.structureType !== undefined) {
     updates["structureType"] = parsed.data.structureType;
