@@ -425,7 +425,7 @@ function VariantEditor({ productId }: { productId: number }) {
             <div className="space-y-2 pl-2 border-l-2 border-border/40">
               <div className="flex items-center gap-2 pb-0.5">
                 <span className="flex-1 text-[10px] text-muted-foreground/60">Option</span>
-                <span className="w-20 text-[10px] text-muted-foreground/60 text-center">Price adj.</span>
+                <span className="w-20 text-[10px] text-muted-foreground/60 text-center">Price (total)</span>
                 {!isMultiGroup && <span className="w-16 text-[10px] text-muted-foreground/60 text-center">Qty</span>}
                 <span className="w-7" />
               </div>
@@ -441,10 +441,12 @@ function VariantEditor({ productId }: { productId: number }) {
                     <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
                     <Input
                       type="number"
-                      placeholder="0"
+                      min="0"
+                      placeholder="—"
                       value={opt.priceAdjustment}
                       onChange={(e) => updateOption(group.tempId, opt.tempId, { priceAdjustment: e.target.value })}
                       className="w-20 h-7 text-xs pl-5"
+                      title="Total price for this variant. Leave blank to use the product base price."
                     />
                   </div>
                   {!isMultiGroup && (

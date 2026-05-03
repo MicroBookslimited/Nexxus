@@ -64,6 +64,8 @@ type CartItem = {
   productName: string;
   basePrice: number;
   effectivePrice: number;
+  /** When a variant with a total-price override is selected, this holds that price (before modifier add-ons). Used by tier pricing to keep modifier add-ons intact when applying a volume discount. */
+  variantBasePrice?: number;
   quantity: number;
   itemDiscount: number;
   itemNote?: string;
@@ -208,14 +210,20 @@ function CustomizeDialog({
     return m;
   }, [customization]);
 
-  const priceAdj = useMemo(() => {
-    let adj = 0;
-    for (const c of Object.values(selectedVariants)) adj += c.priceAdjustment;
+  const { variantPrice, modifierAdj } = useMemo(() => {
+    // Variants: the selected option's priceAdjustment IS the total product price.
+    // Use the first non-zero variant price; fall back to null (meaning: use basePrice).
+    let variantPrice: number | null = null;
+    for (const c of Object.values(selectedVariants)) {
+      if (c.priceAdjustment > 0) { variantPrice = c.priceAdjustment; break; }
+    }
+    // Modifiers: still additive on top of the (variant or base) price.
+    let modifierAdj = 0;
     for (const id of selectedModifiers) {
       const m = modifierMap.get(id);
-      if (m) adj += m.priceAdjustment;
+      if (m) modifierAdj += m.priceAdjustment;
     }
-    return adj;
+    return { variantPrice, modifierAdj };
   }, [selectedVariants, selectedModifiers, modifierMap]);
 
   const isValid = useMemo(() => {
@@ -298,9 +306,9 @@ function CustomizeDialog({
                             }
                           >
                             {opt.name}
-                            {opt.priceAdjustment !== 0 && (
+                            {opt.priceAdjustment > 0 && (
                               <span className="ml-1 opacity-80 text-xs">
-                                ({opt.priceAdjustment > 0 ? "+" : ""}{formatCurrency(opt.priceAdjustment)})
+                                {formatCurrency(opt.priceAdjustment)}
                               </span>
                             )}
                           </label>
@@ -348,21 +356,28 @@ function CustomizeDialog({
         ) : null}
 
         <div className="border-t border-border pt-3">
-          <div className="flex items-center justify-between text-sm mb-3">
-            <span className="text-muted-foreground">Base price</span>
-            <span className="font-mono">{formatCurrency(customization?.basePrice ?? 0)}</span>
-          </div>
-          {priceAdj !== 0 && (
+          {variantPrice !== null ? (
             <div className="flex items-center justify-between text-sm mb-3">
-              <span className="text-muted-foreground">Adjustments</span>
-              <span className={`font-mono ${priceAdj > 0 ? "text-primary" : "text-green-400"}`}>
-                {priceAdj > 0 ? "+" : ""}{formatCurrency(priceAdj)}
+              <span className="text-muted-foreground">Variant price</span>
+              <span className="font-mono">{formatCurrency(variantPrice)}</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between text-sm mb-3">
+              <span className="text-muted-foreground">Base price</span>
+              <span className="font-mono">{formatCurrency(customization?.basePrice ?? 0)}</span>
+            </div>
+          )}
+          {modifierAdj !== 0 && (
+            <div className="flex items-center justify-between text-sm mb-3">
+              <span className="text-muted-foreground">Add-ons</span>
+              <span className={`font-mono ${modifierAdj > 0 ? "text-primary" : "text-green-400"}`}>
+                {modifierAdj > 0 ? "+" : ""}{formatCurrency(modifierAdj)}
               </span>
             </div>
           )}
           <div className="flex items-center justify-between font-bold">
             <span>Item price</span>
-            <span className="font-mono text-primary">{formatCurrency((customization?.basePrice ?? 0) + priceAdj)}</span>
+            <span className="font-mono text-primary">{formatCurrency((variantPrice ?? customization?.basePrice ?? 0) + modifierAdj)}</span>
           </div>
         </div>
 
@@ -882,8 +897,10 @@ export function POS() {
     unit?: { unitId?: number; unitLabel: string; unitFactor: number },
     isTaxable?: boolean,
   ) => {
-    const adj = [...variantChoices, ...modifierChoices].reduce((s, c) => s + c.priceAdjustment, 0);
-    const effectivePrice = basePrice + adj;
+    // Variants set the total product price; modifiers add on top.
+    const variantBasePrice = variantChoices.find((c) => c.priceAdjustment > 0)?.priceAdjustment ?? null;
+    const modifierAdj = modifierChoices.reduce((s, c) => s + c.priceAdjustment, 0);
+    const effectivePrice = (variantBasePrice ?? basePrice) + modifierAdj;
     // Different unit choices for the same product are separate cart lines
     // so they can be tracked, edited, and stepped independently. Prefer
     // the stable DB unit id; fall back to factor-based suffix so renames
@@ -907,6 +924,7 @@ export function POS() {
           productName,
           basePrice,
           effectivePrice,
+          variantBasePrice: variantBasePrice ?? undefined,
           quantity: stepQty,
           itemDiscount: 0,
           variantChoices,
@@ -2526,7 +2544,7 @@ export function POS() {
                   // so adjustments stay intact.
                   const { tier, savingsPerUnit } = previewTierPrice(item.basePrice, item.quantity, tiers);
                   const tieredEffective = tier
-                    ? tier.unitPrice + (item.effectivePrice - item.basePrice)
+                    ? tier.unitPrice + (item.effectivePrice - (item.variantBasePrice ?? item.basePrice))
                     : item.effectivePrice;
                   const lineTotal = tieredEffective * item.quantity - item.itemDiscount;
                   const totalSavings = savingsPerUnit * item.quantity;
