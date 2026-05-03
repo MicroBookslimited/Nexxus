@@ -45,6 +45,7 @@ export const variantCombinationsTable = pgTable("variant_combinations", {
   productId: integer("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
   optionIds: jsonb("option_ids").$type<number[]>().notNull(),
   label: text("label").notNull(),
+  price: real("price"),
   stockCount: real("stock_count"),
   sku: text("sku"),
   position: integer("position").notNull().default(0),

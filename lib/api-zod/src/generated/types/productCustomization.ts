@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ModifierGroup } from "./modifierGroup";
+import type { VariantCombination } from "./variantCombination";
 import type { VariantGroup } from "./variantGroup";
 
 export interface ProductCustomization {
@@ -14,4 +15,6 @@ export interface ProductCustomization {
   basePrice: number;
   variantGroups: VariantGroup[];
   modifierGroups: ModifierGroup[];
+  /** Combination prices for multi-group products (2+ variant groups). */
+  combinations: VariantCombination[];
 }

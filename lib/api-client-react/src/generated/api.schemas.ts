@@ -404,6 +404,8 @@ export interface VariantCombination {
   optionIds: number[];
   /** Combined label e.g. "Med/Red" */
   label: string;
+  /** Total product price when this combination is selected. Null = use product base price. */
+  price?: number | null;
   stockCount?: number | null;
   sku?: string | null;
   position: number;
@@ -456,6 +458,8 @@ export interface ProductCustomization {
   basePrice: number;
   variantGroups: VariantGroup[];
   modifierGroups: ModifierGroup[];
+  /** Combination prices for multi-group products (2+ variant groups). */
+  combinations: VariantCombination[];
 }
 
 export type SaveVariantsBodyGroupsItemOptionsItem = {
@@ -479,6 +483,8 @@ export type SaveVariantsBodyCombinationsItem = {
   /** Present for existing combinations */
   combinationId?: number;
   optionNames: string[];
+  /** Total product price for this combination. Null = use product base price. */
+  price?: number | null;
   stockCount?: number | null;
   sku?: string | null;
 };

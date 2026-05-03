@@ -246,6 +246,27 @@ export const GetProductCustomizationResponse = zod.object({
       ),
     }),
   ),
+  combinations: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        productId: zod.number(),
+        optionIds: zod.array(zod.number()),
+        label: zod.string().describe('Combined label e.g. \"Med\/Red\"'),
+        price: zod
+          .number()
+          .nullish()
+          .describe(
+            "Total product price when this combination is selected. Null = use product base price.",
+          ),
+        stockCount: zod.number().nullish(),
+        sku: zod.string().nullish(),
+        position: zod.number(),
+      }),
+    )
+    .describe(
+      "Combination prices for multi-group products (2+ variant groups).",
+    ),
 });
 
 /**
@@ -281,6 +302,12 @@ export const GetProductVariantsResponse = zod.object({
       productId: zod.number(),
       optionIds: zod.array(zod.number()),
       label: zod.string().describe('Combined label e.g. \"Med\/Red\"'),
+      price: zod
+        .number()
+        .nullish()
+        .describe(
+          "Total product price when this combination is selected. Null = use product base price.",
+        ),
       stockCount: zod.number().nullish(),
       sku: zod.string().nullish(),
       position: zod.number(),
@@ -328,6 +355,12 @@ export const SaveProductVariantsBody = zod.object({
           .optional()
           .describe("Present for existing combinations"),
         optionNames: zod.array(zod.string()),
+        price: zod
+          .number()
+          .nullish()
+          .describe(
+            "Total product price for this combination. Null = use product base price.",
+          ),
         stockCount: zod.number().nullish(),
         sku: zod.string().nullish(),
       }),
@@ -364,6 +397,12 @@ export const SaveProductVariantsResponse = zod.object({
       productId: zod.number(),
       optionIds: zod.array(zod.number()),
       label: zod.string().describe('Combined label e.g. \"Med\/Red\"'),
+      price: zod
+        .number()
+        .nullish()
+        .describe(
+          "Total product price when this combination is selected. Null = use product base price.",
+        ),
       stockCount: zod.number().nullish(),
       sku: zod.string().nullish(),
       position: zod.number(),

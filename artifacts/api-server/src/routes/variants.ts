@@ -108,6 +108,7 @@ router.get("/products/:id/customize", async (req, res): Promise<void> => {
 
   const variantGroups = await getVariantGroupsForProduct(product.id);
   const modifierGroups = await getModifierGroupsForProduct(product.id);
+  const combinations = await getVariantCombinationsForProduct(product.id);
 
   res.json(
     GetProductCustomizationResponse.parse({
@@ -116,6 +117,7 @@ router.get("/products/:id/customize", async (req, res): Promise<void> => {
       basePrice: product.price,
       variantGroups,
       modifierGroups,
+      combinations,
     }),
   );
 });
@@ -245,7 +247,7 @@ router.put("/products/:id/variants", async (req, res): Promise<void> => {
     );
 
     // Build map of "sorted optionIds key" → incoming combination data
-    const incomingByKey = new Map<string, { combinationId?: number; stockCount: number | null; sku: string | null }>();
+    const incomingByKey = new Map<string, { combinationId?: number; price: number | null; stockCount: number | null; sku: string | null }>();
     for (const combo of incomingCombinations) {
       // Resolve optionNames → optionIds using the group-index mapping
       const resolvedIds: number[] = [];
@@ -259,6 +261,7 @@ router.put("/products/:id/variants", async (req, res): Promise<void> => {
       const key = [...resolvedIds].sort((a, b) => a - b).join(",");
       incomingByKey.set(key, {
         combinationId: combo.combinationId,
+        price: (combo as { price?: number | null }).price ?? null,
         stockCount: combo.stockCount ?? null,
         sku: combo.sku ?? null,
       });
@@ -280,6 +283,7 @@ router.put("/products/:id/variants", async (req, res): Promise<void> => {
           .set({
             label,
             position: pos,
+            price: incoming ? (incoming.price ?? null) : existing.price,
             stockCount: incoming ? (incoming.stockCount ?? null) : existing.stockCount,
             sku: incoming ? (incoming.sku ?? null) : existing.sku,
           })
@@ -290,6 +294,7 @@ router.put("/products/:id/variants", async (req, res): Promise<void> => {
           optionIds,
           label,
           position: pos,
+          price: incoming?.price ?? null,
           stockCount: incoming?.stockCount ?? null,
           sku: incoming?.sku ?? null,
         });

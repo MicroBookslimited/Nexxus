@@ -10,6 +10,8 @@ export type SaveVariantsBodyCombinationsItem = {
   /** Present for existing combinations */
   combinationId?: number;
   optionNames: string[];
+  /** Total product price for this combination. Null = use product base price. */
+  price?: number | null;
   stockCount?: number | null;
   sku?: string | null;
 };

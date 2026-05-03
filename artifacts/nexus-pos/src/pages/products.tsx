@@ -243,7 +243,7 @@ const emptyForm = (): ProductForm => ({
 /* ─── Variant/modifier editor types ─── */
 type DraftOption = { tempId: string; name: string; priceAdjustment: string; stockCount: string; optionId: number | null; sku: string };
 type DraftVariantGroup = { tempId: string; name: string; required: boolean; options: DraftOption[]; groupId: number | null };
-type DraftCombination = { label: string; optionNames: string[]; combinationId: number | null; stockCount: string; sku: string };
+type DraftCombination = { label: string; optionNames: string[]; combinationId: number | null; price: string; stockCount: string; sku: string };
 type DraftModifierGroup = { tempId: string; name: string; required: boolean; minSelections: string; maxSelections: string; options: DraftOption[] };
 
 function makeId() { return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
@@ -271,7 +271,7 @@ function VariantEditor({ productId }: { productId: number }) {
 
   const [groups, setGroups] = useState<DraftVariantGroup[]>([]);
   // keyed by label (e.g. "Med/Red") → override values entered by the user
-  const [comboOverrides, setComboOverrides] = useState<Map<string, { combinationId: number | null; stockCount: string; sku: string }>>(new Map());
+  const [comboOverrides, setComboOverrides] = useState<Map<string, { combinationId: number | null; price: string; stockCount: string; sku: string }>>(new Map());
   const [dirty, setDirty] = useState(false);
 
   // Hydrate from server
@@ -299,10 +299,11 @@ function VariantEditor({ productId }: { productId: number }) {
       })),
     );
 
-    const newOverrides = new Map<string, { combinationId: number | null; stockCount: string; sku: string }>();
+    const newOverrides = new Map<string, { combinationId: number | null; price: string; stockCount: string; sku: string }>();
     for (const c of serverCombinations) {
       newOverrides.set(c.label, {
         combinationId: c.id,
+        price: (c as { price?: number | null }).price != null ? String((c as { price: number }).price) : "",
         stockCount: c.stockCount != null ? String(c.stockCount) : "",
         sku: c.sku ?? "",
       });
@@ -322,7 +323,7 @@ function VariantEditor({ productId }: { productId: number }) {
     return cartesian(optArrays).map((names) => {
       const label = names.join("/");
       const ov = comboOverrides.get(label);
-      return { label, optionNames: names, combinationId: ov?.combinationId ?? null, stockCount: ov?.stockCount ?? "", sku: ov?.sku ?? "" };
+      return { label, optionNames: names, combinationId: ov?.combinationId ?? null, price: ov?.price ?? "", stockCount: ov?.stockCount ?? "", sku: ov?.sku ?? "" };
     });
   }, [activeGroups, isMultiGroup, comboOverrides]);
 
@@ -347,10 +348,10 @@ function VariantEditor({ productId }: { productId: number }) {
     } : x));
     setDirty(true);
   };
-  const updateCombo = (label: string, patch: { stockCount?: string; sku?: string }) => {
+  const updateCombo = (label: string, patch: { price?: string; stockCount?: string; sku?: string }) => {
     setComboOverrides((prev) => {
       const next = new Map(prev);
-      const cur = next.get(label) ?? { combinationId: null, stockCount: "", sku: "" };
+      const cur = next.get(label) ?? { combinationId: null, price: "", stockCount: "", sku: "" };
       next.set(label, { ...cur, ...patch });
       return next;
     });
@@ -379,6 +380,7 @@ function VariantEditor({ productId }: { productId: number }) {
             ? combinations.map((c) => ({
                 combinationId: c.combinationId ?? undefined,
                 optionNames: c.optionNames,
+                price: c.price.trim() !== "" ? parseFloat(c.price) : null,
                 stockCount: c.stockCount.trim() !== "" ? parseFloat(c.stockCount) : null,
                 sku: c.sku.trim() || undefined,
               }))
@@ -425,7 +427,7 @@ function VariantEditor({ productId }: { productId: number }) {
             <div className="space-y-2 pl-2 border-l-2 border-border/40">
               <div className="flex items-center gap-2 pb-0.5">
                 <span className="flex-1 text-[10px] text-muted-foreground/60">Option</span>
-                <span className="w-20 text-[10px] text-muted-foreground/60 text-center">Price (total)</span>
+                {!isMultiGroup && <span className="w-20 text-[10px] text-muted-foreground/60 text-center">Price (total)</span>}
                 {!isMultiGroup && <span className="w-16 text-[10px] text-muted-foreground/60 text-center">Qty</span>}
                 <span className="w-7" />
               </div>
@@ -437,6 +439,7 @@ function VariantEditor({ productId }: { productId: number }) {
                     onChange={(e) => updateOption(group.tempId, opt.tempId, { name: e.target.value })}
                     className="flex-1 h-7 text-xs"
                   />
+                  {!isMultiGroup && (
                   <div className="relative">
                     <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
                     <Input
@@ -449,6 +452,7 @@ function VariantEditor({ productId }: { productId: number }) {
                       title="Total price for this variant. Leave blank to use the product base price."
                     />
                   </div>
+                  )}
                   {!isMultiGroup && (
                     <Input
                       type="number"
@@ -481,9 +485,10 @@ function VariantEditor({ productId }: { productId: number }) {
       {isMultiGroup && combinations.length > 0 && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="pt-3 pb-3 space-y-2">
-            <p className="text-xs font-medium text-foreground/80 mb-1">Combination stock — enter qty per combination</p>
+            <p className="text-xs font-medium text-foreground/80 mb-1">Combination matrix — set price, qty and SKU per combination</p>
             <div className="flex items-center gap-2 pb-0.5">
               <span className="flex-1 text-[10px] text-muted-foreground/60">Combination</span>
+              <span className="w-20 text-[10px] text-muted-foreground/60 text-center">Price ($)</span>
               <span className="w-16 text-[10px] text-muted-foreground/60 text-center">Qty</span>
               <span className="w-24 text-[10px] text-muted-foreground/60">SKU</span>
             </div>
@@ -491,6 +496,18 @@ function VariantEditor({ productId }: { productId: number }) {
               {combinations.map((combo) => (
                 <div key={combo.label} className="flex items-center gap-2">
                   <span className="flex-1 text-xs text-foreground/80 font-mono truncate">{combo.label}</span>
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">$</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="—"
+                      value={combo.price}
+                      onChange={(e) => updateCombo(combo.label, { price: e.target.value })}
+                      className="w-20 h-7 text-xs pl-4 text-center"
+                      title="Total product price for this combination. Leave blank to use base price."
+                    />
+                  </div>
                   <Input
                     type="number"
                     min="0"

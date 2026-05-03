@@ -12,6 +12,8 @@ export interface VariantCombination {
   optionIds: number[];
   /** Combined label e.g. "Med/Red" */
   label: string;
+  /** Total product price when this combination is selected. Null = use product base price. */
+  price?: number | null;
   stockCount?: number | null;
   sku?: string | null;
   position: number;

@@ -2248,6 +2248,11 @@ components:
         label:
           type: string
           description: Combined label e.g. "Med/Red"
+        price:
+          type: number
+          format: float
+          nullable: true
+          description: Total product price when this combination is selected. Null = use product base price.
         stockCount:
           type: number
           format: float
@@ -2396,12 +2401,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ModifierGroup"
+        combinations:
+          type: array
+          description: Combination prices for multi-group products (2+ variant groups).
+          items:
+            $ref: "#/components/schemas/VariantCombination"
       required:
         - productId
         - productName
         - basePrice
         - variantGroups
         - modifierGroups
+        - combinations
 
     SaveVariantsBody:
       type: object
@@ -2458,6 +2469,11 @@ components:
                 type: array
                 items:
                   type: string
+              price:
+                type: number
+                format: float
+                nullable: true
+                description: Total product price for this combination. Null = use product base price.
               stockCount:
                 type: number
                 format: float

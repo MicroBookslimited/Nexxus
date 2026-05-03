@@ -175,7 +175,7 @@ function CustomizeDialog({
   productId: number;
   open: boolean;
   onClose: () => void;
-  onConfirm: (variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[]) => void;
+  onConfirm: (variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[], combinationPrice: number | null) => void;
 }) {
   const { data: customization, isLoading } = useGetProductCustomization(
     productId,
@@ -211,12 +211,26 @@ function CustomizeDialog({
   }, [customization]);
 
   const { variantPrice, modifierAdj } = useMemo(() => {
-    // Variants: the selected option's priceAdjustment IS the total product price.
-    // Use the first non-zero variant price; fall back to null (meaning: use basePrice).
+    const isMultiGroup = (customization?.variantGroups.length ?? 0) >= 2;
     let variantPrice: number | null = null;
-    for (const c of Object.values(selectedVariants)) {
-      if (c.priceAdjustment > 0) { variantPrice = c.priceAdjustment; break; }
+
+    if (isMultiGroup) {
+      // Multi-group: price comes from the combination row (matched by label = "Opt1/Opt2/…")
+      const allGroupsSelected = customization?.variantGroups.every((g) => selectedVariants[g.id]);
+      if (allGroupsSelected && customization) {
+        const label = customization.variantGroups
+          .map((g) => selectedVariants[g.id]?.optionName ?? "")
+          .join("/");
+        const combo = customization.combinations?.find((c) => c.label === label);
+        if (combo?.price != null && combo.price > 0) variantPrice = combo.price;
+      }
+    } else {
+      // Single-group: selected option's priceAdjustment IS the total product price.
+      for (const c of Object.values(selectedVariants)) {
+        if (c.priceAdjustment > 0) { variantPrice = c.priceAdjustment; break; }
+      }
     }
+
     // Modifiers: still additive on top of the (variant or base) price.
     let modifierAdj = 0;
     for (const id of selectedModifiers) {
@@ -224,7 +238,7 @@ function CustomizeDialog({
       if (m) modifierAdj += m.priceAdjustment;
     }
     return { variantPrice, modifierAdj };
-  }, [selectedVariants, selectedModifiers, modifierMap]);
+  }, [customization, selectedVariants, selectedModifiers, modifierMap]);
 
   const isValid = useMemo(() => {
     if (!customization) return false;
@@ -241,7 +255,7 @@ function CustomizeDialog({
   const handleConfirm = () => {
     const variantChoices = Object.values(selectedVariants);
     const modifierChoices = [...selectedModifiers].map((id) => modifierMap.get(id)!).filter(Boolean);
-    onConfirm(variantChoices, modifierChoices);
+    onConfirm(variantChoices, modifierChoices, variantPrice);
   };
 
   const toggleModifier = (groupId: number, groupName: string, opt: { id: number; name: string; priceAdjustment: number }, maxSelections: number) => {
@@ -896,9 +910,11 @@ export function POS() {
     modifierChoices: ChoiceItem[],
     unit?: { unitId?: number; unitLabel: string; unitFactor: number },
     isTaxable?: boolean,
+    combinationPrice?: number | null,
   ) => {
-    // Variants set the total product price; modifiers add on top.
-    const variantBasePrice = variantChoices.find((c) => c.priceAdjustment > 0)?.priceAdjustment ?? null;
+    // Multi-group: use combinationPrice from the selected combination row.
+    // Single-group: use the selected option's priceAdjustment as the total product price.
+    const variantBasePrice = combinationPrice ?? variantChoices.find((c) => c.priceAdjustment > 0)?.priceAdjustment ?? null;
     const modifierAdj = modifierChoices.reduce((s, c) => s + c.priceAdjustment, 0);
     const effectivePrice = (variantBasePrice ?? basePrice) + modifierAdj;
     // Different unit choices for the same product are separate cart lines
@@ -937,10 +953,10 @@ export function POS() {
     });
   };
 
-  const handleCustomizeConfirm = (variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[]) => {
+  const handleCustomizeConfirm = (variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[], combinationPrice: number | null) => {
     const product = products?.find((p) => p.id === customizingProductId);
     if (!product) return;
-    addToCartDirect(product.id, product.name, product.price, variantChoices, modifierChoices, pendingCustomizationUnit ?? undefined, (product as unknown as { isTaxable?: boolean }).isTaxable !== false);
+    addToCartDirect(product.id, product.name, product.price, variantChoices, modifierChoices, pendingCustomizationUnit ?? undefined, (product as unknown as { isTaxable?: boolean }).isTaxable !== false, combinationPrice);
     setPendingCustomizationUnit(null);
     setCustomizingProductId(null);
   };
