@@ -288,7 +288,7 @@ function sectionTitle(doc: PDFKit.PDFDocument, text: string, color = C.blue) {
 }
 
 function pill(doc: PDFKit.PDFDocument, x: number, y: number, text: string, bg: string, fg = C.white) {
-  const tw = doc.widthOfString(text, { fontSize: 7 });
+  const tw = doc.fontSize(7).widthOfString(text);
   const pw = tw + 10;
   const ph = 13;
   doc.roundedRect(x, y, pw, ph, 3).fill(bg);
