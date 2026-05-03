@@ -24,7 +24,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, CreditCard, Banknote, Star,
   BarChart2, ChefHat, UserCheck, Calendar, Layers, ArrowUpRight, Tag,
   UtensilsCrossed, TrendingDown, Table2, Percent, Receipt, Activity,
-  ClipboardList, Eye, Printer, MapPin, ScanLine,
+  ClipboardList, Eye, Printer, MapPin, ScanLine, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { useStaff } from "@/contexts/StaffContext";
@@ -369,11 +369,22 @@ function PaymentMethodTab({ range }: { range: { from: string; to: string } }) {
 function ProductSalesTab({ range }: { range: { from: string; to: string } }) {
   const { data, isLoading } = useReport<any>(["prod-mix", range.from, range.to], `/api/reports/product-mix?from=${range.from}&to=${range.to}`);
   const items: any[] = data?.items ?? [];
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggleExpand = (id: number) =>
+    setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const handleExport = () => {
+    const rows: (string | number | null | undefined)[][] = [];
+    items.forEach((i, idx) => {
+      rows.push([idx + 1, i.productName, i.quantity, i.revenue, i.percentage, "", ""]);
+      (i.variantBreakdown ?? []).forEach((v: any) => {
+        rows.push(["", `  ↳ ${v.groupName}: ${v.optionName}`, v.quantity, "", "", "", ""]);
+      });
+    });
     downloadCsv(`product-sales-${range.from}-to-${range.to}.csv`,
-      ["Rank", "Product", "Units Sold", "Revenue (JMD)", "% of Revenue"],
-      items.map((i, idx) => [idx + 1, i.productName, i.quantity, i.revenue, i.percentage])
+      ["Rank", "Product / Variant", "Units Sold", "Revenue (JMD)", "% of Revenue", "", ""],
+      rows
     );
   };
 
@@ -434,17 +445,58 @@ function ProductSalesTab({ range }: { range: { from: string; to: string } }) {
             <CardHeader><CardTitle className="text-base">All Products Ranked</CardTitle></CardHeader>
             <CardContent>
               <Table>
-                <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Product</TableHead><TableHead className="text-right">Units</TableHead><TableHead className="text-right">Revenue</TableHead><TableHead className="text-right">Revenue %</TableHead></TableRow></TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-8">#</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead className="text-right">Units</TableHead>
+                    <TableHead className="text-right">Revenue</TableHead>
+                    <TableHead className="text-right">Revenue %</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
-                  {items.map((item, i) => (
-                    <TableRow key={item.productId}>
-                      <TableCell className="text-xs text-muted-foreground font-mono w-8">{i + 1}</TableCell>
-                      <TableCell className="font-medium">{item.productName}</TableCell>
-                      <TableCell className="text-right">{item.quantity}</TableCell>
-                      <TableCell className="text-right font-mono">{fc(item.revenue)}</TableCell>
-                      <TableCell className="text-right"><Badge variant={i < 3 ? "default" : "secondary"}>{item.percentage}%</Badge></TableCell>
-                    </TableRow>
-                  ))}
+                  {items.map((item, i) => {
+                    const hasVariants = (item.variantBreakdown ?? []).length > 0;
+                    const isOpen = expanded.has(item.productId);
+                    return (
+                      <React.Fragment key={item.productId}>
+                        <TableRow
+                          className={hasVariants ? "cursor-pointer hover:bg-muted/30" : ""}
+                          onClick={hasVariants ? () => toggleExpand(item.productId) : undefined}
+                        >
+                          <TableCell className="text-xs text-muted-foreground font-mono">{i + 1}</TableCell>
+                          <TableCell>
+                            <span className="flex items-center gap-1.5 font-medium">
+                              {hasVariants && (
+                                isOpen
+                                  ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              )}
+                              {item.productName}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">{item.quantity}</TableCell>
+                          <TableCell className="text-right font-mono">{fc(item.revenue)}</TableCell>
+                          <TableCell className="text-right"><Badge variant={i < 3 ? "default" : "secondary"}>{item.percentage}%</Badge></TableCell>
+                        </TableRow>
+                        {hasVariants && isOpen && (item.variantBreakdown as any[]).map((v: any) => (
+                          <TableRow key={`${item.productId}-${v.optionId}`} className="bg-muted/10">
+                            <TableCell />
+                            <TableCell className="pl-8 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1.5">
+                                <span className="text-xs text-muted-foreground/50 font-mono">↳</span>
+                                <span className="text-xs text-blue-400/80 mr-1">{v.groupName}:</span>
+                                {v.optionName}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right text-sm text-muted-foreground">{v.quantity}</TableCell>
+                            <TableCell />
+                            <TableCell />
+                          </TableRow>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                   {items.length === 0 && <TableRow><TableCell colSpan={5}><Empty /></TableCell></TableRow>}
                 </TableBody>
               </Table>
@@ -463,21 +515,32 @@ function ProductSalesTab({ range }: { range: { from: string; to: string } }) {
 function InventoryTab({ range }: { range: { from: string; to: string } }) {
   const { data, isLoading } = useReport<any>(["inventory", range.from, range.to], `/api/reports/inventory?from=${range.from}&to=${range.to}`);
   const [filter, setFilter] = useState<"all" | "ok" | "low" | "out">("all");
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggleExpand = (id: number) =>
+    setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const products: any[] = data?.products ?? [];
   const summary = data?.summary ?? {};
   const filtered = filter === "all" ? products : products.filter(p => p.status === filter);
 
   const handleExport = () => {
+    const rows: (string | number | null | undefined)[][] = [];
+    products.forEach(p => {
+      rows.push([p.name, p.category, p.price, p.openingStock ?? 0, p.purchasedThisPeriod ?? 0, p.soldThisPeriod, p.adjustedThisPeriod ?? 0, p.closingStock ?? 0, p.stockCount, p.status, p.revenueThisPeriod, p.avgCost, p.cogs, "", ""]);
+      (p.variants ?? []).forEach((v: any) => {
+        rows.push([`  ↳ ${v.groupName}: ${v.optionName}`, "", "", "", "", "", "", "", v.stockCount ?? 0, v.status, "", "", "", v.sku ?? "", ""]);
+      });
+    });
     downloadCsv(`inventory-${range.from}-to-${range.to}.csv`,
-      ["Product", "Category", "Price", "Opening Stock", "Purchased", "Sold (Period)", "Adjustments", "Closing Stock", "Current Stock", "Status", "Revenue (Period)", "Avg Cost", "COGS"],
-      products.map(p => [p.name, p.category, p.price, p.openingStock ?? 0, p.purchasedThisPeriod ?? 0, p.soldThisPeriod, p.adjustedThisPeriod ?? 0, p.closingStock ?? 0, p.stockCount, p.status, p.revenueThisPeriod, p.avgCost, p.cogs])
+      ["Product", "Category", "Price", "Opening Stock", "Purchased", "Sold (Period)", "Adjustments", "Closing Stock", "Current Stock", "Status", "Revenue (Period)", "Avg Cost", "COGS", "SKU", ""],
+      rows
     );
   };
 
   const statusColor = (s: string) => s === "out" ? "text-red-400" : s === "low" ? "text-amber-400" : "text-emerald-400";
   const statusVariant = (s: string): any => s === "out" ? "destructive" : s === "low" ? "outline" : "secondary";
-  const statusLabel   = (s: string) => s === "out" ? "Out of Stock" : s === "low" ? "Low Stock" : "In Stock";
+  const statusLabel   = (s: string) => s === "out" ? "Out" : s === "low" ? "Low" : "OK";
 
   return (
     <div className="space-y-5">
@@ -517,7 +580,8 @@ function InventoryTab({ range }: { range: { from: string; to: string } }) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Product</TableHead><TableHead>Category</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Category</TableHead>
                     <TableHead className="text-right">Price</TableHead>
                     <TableHead className="text-right">Opening</TableHead>
                     <TableHead className="text-right">Purchased</TableHead>
@@ -526,26 +590,81 @@ function InventoryTab({ range }: { range: { from: string; to: string } }) {
                     <TableHead className="text-right">Closing</TableHead>
                     <TableHead className="text-right">Current</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
-                    <TableHead className="text-right">Avg Cost</TableHead><TableHead>Status</TableHead>
+                    <TableHead className="text-right">Avg Cost</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map(p => (
-                    <TableRow key={p.id}>
-                      <TableCell className="font-medium">{p.name}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{p.category}</TableCell>
-                      <TableCell className="text-right font-mono">{fc(p.price)}</TableCell>
-                      <TableCell className="text-right font-mono">{p.openingStock ?? 0}</TableCell>
-                      <TableCell className="text-right font-mono text-emerald-400">{p.purchasedThisPeriod ? `+${p.purchasedThisPeriod}` : "—"}</TableCell>
-                      <TableCell className="text-right font-mono text-red-400">{p.soldThisPeriod ? `−${p.soldThisPeriod}` : "—"}</TableCell>
-                      <TableCell className={`text-right font-mono ${(p.adjustedThisPeriod ?? 0) > 0 ? "text-emerald-400" : (p.adjustedThisPeriod ?? 0) < 0 ? "text-red-400" : "text-muted-foreground"}`}>{p.adjustedThisPeriod ? (p.adjustedThisPeriod > 0 ? `+${p.adjustedThisPeriod}` : p.adjustedThisPeriod) : "—"}</TableCell>
-                      <TableCell className="text-right font-mono font-semibold">{p.closingStock ?? 0}</TableCell>
-                      <TableCell className={`text-right font-mono font-bold ${statusColor(p.status)}`}>{p.stockCount}</TableCell>
-                      <TableCell className="text-right font-mono">{p.revenueThisPeriod > 0 ? fc(p.revenueThisPeriod) : "—"}</TableCell>
-                      <TableCell className="text-right font-mono text-sm text-muted-foreground">{p.avgCost > 0 ? fc(p.avgCost) : "—"}</TableCell>
-                      <TableCell><Badge variant={statusVariant(p.status)} className="text-xs">{statusLabel(p.status)}</Badge></TableCell>
-                    </TableRow>
-                  ))}
+                  {filtered.map(p => {
+                    const hasVariants = (p.variants ?? []).length > 0;
+                    const isOpen = expanded.has(p.id);
+                    return (
+                      <React.Fragment key={p.id}>
+                        {/* ── Parent product row ── */}
+                        <TableRow
+                          className={hasVariants ? "cursor-pointer hover:bg-muted/30" : ""}
+                          onClick={hasVariants ? () => toggleExpand(p.id) : undefined}
+                        >
+                          <TableCell className="font-medium">
+                            <span className="flex items-center gap-1.5">
+                              {hasVariants && (
+                                isOpen
+                                  ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              )}
+                              {p.name}
+                              {hasVariants && <span className="ml-1 text-xs text-blue-400/70 font-normal">({(p.variants as any[]).length} variants)</span>}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">{p.category}</TableCell>
+                          <TableCell className="text-right font-mono">{fc(p.price)}</TableCell>
+                          <TableCell className="text-right font-mono">{p.openingStock ?? 0}</TableCell>
+                          <TableCell className="text-right font-mono text-emerald-400">{p.purchasedThisPeriod ? `+${p.purchasedThisPeriod}` : "—"}</TableCell>
+                          <TableCell className="text-right font-mono text-red-400">{p.soldThisPeriod ? `−${p.soldThisPeriod}` : "—"}</TableCell>
+                          <TableCell className={`text-right font-mono ${(p.adjustedThisPeriod ?? 0) > 0 ? "text-emerald-400" : (p.adjustedThisPeriod ?? 0) < 0 ? "text-red-400" : "text-muted-foreground"}`}>{p.adjustedThisPeriod ? (p.adjustedThisPeriod > 0 ? `+${p.adjustedThisPeriod}` : p.adjustedThisPeriod) : "—"}</TableCell>
+                          <TableCell className="text-right font-mono font-semibold">{p.closingStock ?? 0}</TableCell>
+                          <TableCell className={`text-right font-mono font-bold ${statusColor(p.status)}`}>{p.stockCount}</TableCell>
+                          <TableCell className="text-right font-mono">{p.revenueThisPeriod > 0 ? fc(p.revenueThisPeriod) : "—"}</TableCell>
+                          <TableCell className="text-right font-mono text-sm text-muted-foreground">{p.avgCost > 0 ? fc(p.avgCost) : "—"}</TableCell>
+                          <TableCell><Badge variant={statusVariant(p.status)} className="text-xs">{statusLabel(p.status)}</Badge></TableCell>
+                        </TableRow>
+
+                        {/* ── Variant sub-rows (expanded) ── */}
+                        {hasVariants && isOpen && (p.variants as any[]).map((v: any) => (
+                          <TableRow key={`${p.id}-v${v.optionId}`} className="bg-muted/10 border-l-2 border-blue-500/20">
+                            <TableCell className="pl-8 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1.5">
+                                <span className="text-xs text-muted-foreground/40 font-mono">↳</span>
+                                <span className="text-xs text-blue-400/70 mr-0.5">{v.groupName}:</span>
+                                <span>{v.optionName}</span>
+                                {v.sku && <span className="ml-1 font-mono text-xs text-muted-foreground/50">#{v.sku}</span>}
+                                {v.priceAdjustment !== 0 && (
+                                  <span className={`ml-1 text-xs font-mono ${v.priceAdjustment > 0 ? "text-emerald-400/70" : "text-red-400/70"}`}>
+                                    {v.priceAdjustment > 0 ? "+" : ""}{fc(v.priceAdjustment)}
+                                  </span>
+                                )}
+                              </span>
+                            </TableCell>
+                            <TableCell />
+                            <TableCell />
+                            <TableCell />
+                            <TableCell />
+                            <TableCell />
+                            <TableCell />
+                            <TableCell />
+                            <TableCell className={`text-right font-mono font-semibold ${statusColor(v.status)}`}>
+                              {v.stockCount ?? 0}
+                            </TableCell>
+                            <TableCell />
+                            <TableCell />
+                            <TableCell>
+                              <Badge variant={statusVariant(v.status)} className="text-xs">{statusLabel(v.status)}</Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                   {filtered.length === 0 && <TableRow><TableCell colSpan={12}><Empty message="No products match this filter" /></TableCell></TableRow>}
                 </TableBody>
               </Table>

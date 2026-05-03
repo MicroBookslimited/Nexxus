@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, and, gte, lte, desc, isNotNull, isNull, asc } from "drizzle-orm";
+import { eq, sql, and, gte, lte, desc, isNotNull, isNull, asc, inArray } from "drizzle-orm";
 import {
   db, ordersTable, orderItemsTable, customersTable, staffTable,
   productsTable, cashSessionsTable, cashPayoutsTable, appSettingsTable,
 } from "@workspace/db";
 import { diningTablesTable, purchasesTable, stockAdjustmentsTable } from "@workspace/db";
+import { variantGroupsTable, variantOptionsTable } from "@workspace/db";
 import {
   GetReportSummaryResponse,
   GetReportSummaryQueryParams,
@@ -182,6 +183,37 @@ router.get("/reports/product-mix", async (req, res): Promise<void> => {
 
   const totalRevenue = items.reduce((s, i) => s + Number(i.revenue), 0);
 
+  // ── Per-variant sales breakdown (JSONB unnest) ──────────────────────────────
+  // For each order item that has variant_choices, unnest and group by (productId, optionId, optionName, groupName).
+  // Revenue is intentionally omitted here to avoid double-counting when products have multiple variant groups.
+  const variantSalesRaw = await db.execute(sql`
+    SELECT
+      oi.product_id                          AS "productId",
+      (elem->>'optionId')::int               AS "optionId",
+      elem->>'optionName'                    AS "optionName",
+      elem->>'groupName'                     AS "groupName",
+      SUM(oi.quantity)::int                  AS "quantity"
+    FROM order_items oi
+    JOIN orders o ON oi.order_id = o.id
+    CROSS JOIN LATERAL jsonb_array_elements(oi.variant_choices) AS elem
+    WHERE o.tenant_id = ${tenantId}
+      AND o.status    = 'completed'
+      AND o.created_at >= ${from}
+      AND o.created_at <= ${to}
+      AND oi.variant_choices IS NOT NULL
+      AND jsonb_array_length(oi.variant_choices) > 0
+    GROUP BY oi.product_id, (elem->>'optionId')::int, elem->>'optionName', elem->>'groupName'
+    ORDER BY oi.product_id, SUM(oi.quantity) DESC
+  `);
+
+  type VarRow = { productId: number; optionId: number; optionName: string; groupName: string; quantity: number };
+  const variantSalesMap = new Map<number, VarRow[]>();
+  for (const row of variantSalesRaw.rows as VarRow[]) {
+    const list = variantSalesMap.get(row.productId) ?? [];
+    list.push(row);
+    variantSalesMap.set(row.productId, list);
+  }
+
   const categoryRows = await db.select({
     category: productsTable.category,
     revenue:  sql<number>`SUM(${orderItemsTable.lineTotal})`,
@@ -198,11 +230,12 @@ router.get("/reports/product-mix", async (req, res): Promise<void> => {
 
   res.json({
     items: items.map(i => ({
-      productId:   i.productId,
-      productName: i.productName,
-      quantity:    Number(i.quantity),
-      revenue:     Math.round(Number(i.revenue)  * 100) / 100,
-      percentage:  totalRevenue > 0 ? Math.round((Number(i.revenue) / totalRevenue) * 1000) / 10 : 0,
+      productId:        i.productId,
+      productName:      i.productName,
+      quantity:         Number(i.quantity),
+      revenue:          Math.round(Number(i.revenue)  * 100) / 100,
+      percentage:       totalRevenue > 0 ? Math.round((Number(i.revenue) / totalRevenue) * 1000) / 10 : 0,
+      variantBreakdown: variantSalesMap.get(i.productId) ?? [],
     })),
     categories: categoryRows.map(c => ({
       category:   c.category ?? "Uncategorized",
@@ -301,6 +334,34 @@ router.get("/reports/inventory", async (req, res): Promise<void> => {
 
   // Closing stock at `to` = current stock + sales after `to` − purchases after `to` − adjustments after `to`
   // Opening stock at `from` = closing stock − purchases in period + sales in period − adjustments in period
+  // ── Variant options for per-variant stock tracking products ────────────────
+  const productIds = products.map(p => p.id);
+  const variantOptionRows = productIds.length > 0
+    ? await db.select({
+        optionId:        variantOptionsTable.id,
+        optionName:      variantOptionsTable.name,
+        priceAdjustment: variantOptionsTable.priceAdjustment,
+        stockCount:      variantOptionsTable.stockCount,
+        sku:             variantOptionsTable.sku,
+        groupName:       variantGroupsTable.name,
+        productId:       variantGroupsTable.productId,
+      })
+      .from(variantOptionsTable)
+      .innerJoin(variantGroupsTable, eq(variantOptionsTable.groupId, variantGroupsTable.id))
+      .where(and(
+        inArray(variantGroupsTable.productId, productIds),
+        isNotNull(variantOptionsTable.stockCount),
+      ))
+      .orderBy(variantGroupsTable.id, variantOptionsTable.position)
+    : [];
+
+  const variantsByProduct = new Map<number, typeof variantOptionRows>();
+  for (const row of variantOptionRows) {
+    const list = variantsByProduct.get(row.productId) ?? [];
+    list.push(row);
+    variantsByProduct.set(row.productId, list);
+  }
+
   const productsOut = products.map(p => {
     const s         = soldMap.get(p.id) ?? { sold: 0, revenue: 0 };
     const c         = costMap.get(p.id) ?? { avgCost: 0, totalPurchased: 0, totalCost: 0 };
@@ -311,6 +372,15 @@ router.get("/reports/inventory", async (req, res): Promise<void> => {
     const adjAfterP       = adjAfterMap.get(p.id) ?? 0;
     const closingStock = p.stockCount + soldAfterP - purchasedAfterP - adjAfterP;
     const openingStock = closingStock - purchasedInP + s.sold - adjInP;
+    const variants = (variantsByProduct.get(p.id) ?? []).map(v => ({
+      optionId:        v.optionId,
+      optionName:      v.optionName,
+      groupName:       v.groupName,
+      priceAdjustment: v.priceAdjustment,
+      stockCount:      v.stockCount,
+      sku:             v.sku,
+      status:          (v.stockCount ?? 0) <= 0 ? "out" : (v.stockCount ?? 0) <= 5 ? "low" : "ok",
+    }));
     return {
       id:             p.id,
       name:           p.name,
@@ -328,6 +398,7 @@ router.get("/reports/inventory", async (req, res): Promise<void> => {
       avgCost:        Math.round(c.avgCost     * 100) / 100,
       cogs:           Math.round(c.avgCost * s.sold * 100) / 100,
       status:         !p.inStock ? "out" : p.stockCount <= 0 ? "out" : p.stockCount <= 5 ? "low" : "ok",
+      variants,
     };
   });
 
