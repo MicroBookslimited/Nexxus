@@ -2274,6 +2274,64 @@ function StockHistoryPanel({ productId }: { productId: number }) {
   );
 }
 
+/* ─── Variant stock panel (lazy-loaded for each expanded product in list) ─── */
+function VariantStockPanel({ productId }: { productId: number }) {
+  const { data: serverData, isLoading } = useGetProductVariants(productId);
+  if (isLoading) {
+    return (
+      <div className="px-6 py-2 bg-muted/5 border-b border-border/30 text-xs text-muted-foreground">
+        Loading variant stock…
+      </div>
+    );
+  }
+  const payload = serverData as unknown as {
+    groups: Array<{ id: number; name: string; options: Array<{ id: number; name: string; stockCount: number | null; sku: string | null; priceAdjustment: number }> }>;
+    combinations: Array<{ id: number; label: string; stockCount: number | null; sku: string | null }>;
+  };
+  const groups = payload?.groups ?? [];
+  const combinations = payload?.combinations ?? [];
+  const isMultiGroup = groups.length > 1;
+
+  const stockPill = (stock: number | null, label: string, sub?: string, sku?: string | null) => {
+    const s = stock ?? 0;
+    const colorClass = s <= 0 ? "text-red-400 bg-red-500/10 border-red-500/20" : s <= 5 ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+    return (
+      <div key={label} className={`flex items-center gap-1.5 text-xs border rounded-md px-2 py-1 ${colorClass}`}>
+        {sub && <span className="text-muted-foreground font-medium">{sub}</span>}
+        <span className="font-medium">{label}</span>
+        {sku && <span className="font-mono text-muted-foreground/60 text-[10px]">#{sku}</span>}
+        <span className="font-mono font-bold ml-0.5">{s}</span>
+      </div>
+    );
+  };
+
+  if (isMultiGroup) {
+    const tracked = combinations.filter(c => c.stockCount !== null);
+    if (!tracked.length) return null;
+    return (
+      <div className="px-6 pb-3 pt-2 bg-muted/5 border-b border-border/30">
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mb-1.5 font-semibold">Combination Stock</p>
+        <div className="flex flex-wrap gap-1.5">
+          {tracked.map(c => stockPill(c.stockCount, c.label, undefined, c.sku))}
+        </div>
+      </div>
+    );
+  }
+
+  const rows = groups.flatMap(g =>
+    g.options.filter(o => o.stockCount !== null).map(o => ({ ...o, groupName: g.name }))
+  );
+  if (!rows.length) return null;
+  return (
+    <div className="px-6 pb-3 pt-2 bg-muted/5 border-b border-border/30">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mb-1.5 font-semibold">Variant Stock</p>
+      <div className="flex flex-wrap gap-1.5">
+        {rows.map(o => stockPill(o.stockCount, o.name, `${o.groupName}:`, o.sku))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Products page ─── */
 export function Products() {
   const { can } = useStaff();
@@ -2318,6 +2376,9 @@ export function Products() {
   const [catManagerOpen, setCatManagerOpen] = useState(false);
   const [printProduct, setPrintProduct] = useState<LabelProduct | null>(null);
   const [billView, setBillView] = useState<"list" | "new">("list");
+  const [expandedVariants, setExpandedVariants] = useState<Set<number>>(new Set());
+  const toggleVariantExpand = (id: number) =>
+    setExpandedVariants(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [viewBillId, setViewBillId] = useState<number | null>(null);
   const [billSupplierManual, setBillSupplierManual] = useState(false);
   const [billForm, setBillForm] = useState<BillForm>(emptyBillForm());
@@ -2774,6 +2835,7 @@ export function Products() {
             {filteredProducts.map((product, i) => {
               const isLow = product.inStock && product.stockCount > 0 && product.stockCount <= LOW_STOCK_THRESHOLD;
               const isOut = !product.inStock || product.stockCount === 0;
+              const varExpanded = expandedVariants.has(product.id);
               return (
               <motion.div
                 key={product.id}
@@ -2781,72 +2843,96 @@ export function Products() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ delay: i * 0.02 }}
-                className={`grid grid-cols-[minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-3 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors group min-w-[680px]`}
+                className="border-b border-border/50 last:border-0 min-w-[680px]"
               >
-                {/* Name + description */}
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold truncate">{product.name}</p>
-                  {product.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{product.description}</p>}
-                </div>
+                {/* Main row */}
+                <div className={`grid grid-cols-[minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-3 items-center hover:bg-secondary/20 transition-colors group`}>
+                  {/* Name + description */}
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{product.name}</p>
+                    {product.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{product.description}</p>}
+                  </div>
 
-                {/* Category */}
-                <Badge variant="outline" className="text-[10px] w-fit">{product.category}</Badge>
+                  {/* Category */}
+                  <Badge variant="outline" className="text-[10px] w-fit">{product.category}</Badge>
 
-                {/* Price */}
-                <p className="text-sm font-bold font-mono text-primary text-right">{formatCurrency(product.price)}</p>
+                  {/* Price */}
+                  <p className="text-sm font-bold font-mono text-primary text-right">{formatCurrency(product.price)}</p>
 
-                {/* Stock */}
-                <div>
-                  {isOut ? (
-                    <Badge variant="destructive" className="text-[10px] gap-0.5">
-                      <AlertTriangle className="h-2.5 w-2.5" />Out of stock
-                    </Badge>
-                  ) : isLow ? (
-                    <Badge className="text-[10px] gap-0.5 bg-yellow-500/20 text-yellow-400 border-yellow-500/40 hover:bg-yellow-500/30">
-                      <AlertTriangle className="h-2.5 w-2.5" />{product.stockCount} left — low
-                    </Badge>
-                  ) : (
-                    <Badge variant="default" className="text-[10px]">
-                      {product.stockCount} in stock
-                    </Badge>
-                  )}
-                </div>
+                  {/* Stock */}
+                  <div>
+                    {isOut ? (
+                      <Badge variant="destructive" className="text-[10px] gap-0.5">
+                        <AlertTriangle className="h-2.5 w-2.5" />Out of stock
+                      </Badge>
+                    ) : isLow ? (
+                      <Badge className="text-[10px] gap-0.5 bg-yellow-500/20 text-yellow-400 border-yellow-500/40 hover:bg-yellow-500/30">
+                        <AlertTriangle className="h-2.5 w-2.5" />{product.stockCount} left — low
+                      </Badge>
+                    ) : (
+                      <Badge variant="default" className="text-[10px]">
+                        {product.stockCount} in stock
+                      </Badge>
+                    )}
+                  </div>
 
-                {/* Add-ons */}
-                <div className="flex gap-1">
-                  {product.hasVariants && (
-                    <Badge variant="secondary" className="text-[10px] h-5 gap-0.5 px-1.5">
-                      <Layers className="h-2.5 w-2.5" />Variants
-                    </Badge>
-                  )}
-                  {product.hasModifiers && (
-                    <Badge variant="secondary" className="text-[10px] h-5 gap-0.5 px-1.5">
-                      <Settings2 className="h-2.5 w-2.5" />Mods
-                    </Badge>
-                  )}
-                </div>
+                  {/* Add-ons */}
+                  <div className="flex gap-1">
+                    {product.hasVariants && (
+                      <button
+                        onClick={() => toggleVariantExpand(product.id)}
+                        className={`inline-flex items-center gap-0.5 text-[10px] h-5 px-1.5 rounded-md border font-medium transition-colors ${varExpanded ? "bg-blue-500/20 text-blue-300 border-blue-500/40" : "bg-secondary text-muted-foreground border-border hover:bg-secondary/80"}`}
+                      >
+                        <Layers className="h-2.5 w-2.5" />
+                        Variants
+                        <span className={`ml-0.5 transition-transform ${varExpanded ? "rotate-180" : ""}`} style={{ display: "inline-block" }}>▾</span>
+                      </button>
+                    )}
+                    {product.hasModifiers && (
+                      <Badge variant="secondary" className="text-[10px] h-5 gap-0.5 px-1.5">
+                        <Settings2 className="h-2.5 w-2.5" />Mods
+                      </Badge>
+                    )}
+                  </div>
 
-                {/* Actions */}
-                <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button size="icon" variant="outline" className="h-7 w-7" title="Print Label" onClick={() => setPrintProduct(product)}>
-                    <Printer className="h-3 w-3" />
-                  </Button>
-                  {canManage && (
-                    <Button size="icon" variant="outline" className="h-7 w-7 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" title="Restock" onClick={() => openRestock(product)}>
-                      <PackagePlus className="h-3 w-3" />
+                  {/* Actions */}
+                  <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button size="icon" variant="outline" className="h-7 w-7" title="Print Label" onClick={() => setPrintProduct(product)}>
+                      <Printer className="h-3 w-3" />
                     </Button>
-                  )}
-                  {canManage && (
-                    <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => openEdit(product)}>
-                      <Pencil className="h-3 w-3" />
-                    </Button>
-                  )}
-                  {canManage && (
-                    <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  )}
+                    {canManage && (
+                      <Button size="icon" variant="outline" className="h-7 w-7 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" title="Restock" onClick={() => openRestock(product)}>
+                        <PackagePlus className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => openEdit(product)}>
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
+
+                {/* Variant stock panel (expanded) */}
+                <AnimatePresence initial={false}>
+                  {product.hasVariants && varExpanded && (
+                    <motion.div
+                      key="vsp"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.18 }}
+                      style={{ overflow: "hidden" }}
+                    >
+                      <VariantStockPanel productId={product.id} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             );
             })}

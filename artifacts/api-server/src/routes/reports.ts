@@ -5,7 +5,7 @@ import {
   productsTable, cashSessionsTable, cashPayoutsTable, appSettingsTable,
 } from "@workspace/db";
 import { diningTablesTable, purchasesTable, stockAdjustmentsTable } from "@workspace/db";
-import { variantGroupsTable, variantOptionsTable } from "@workspace/db";
+import { variantGroupsTable, variantOptionsTable, variantCombinationsTable } from "@workspace/db";
 import {
   GetReportSummaryResponse,
   GetReportSummaryQueryParams,
@@ -214,6 +214,19 @@ router.get("/reports/product-mix", async (req, res): Promise<void> => {
     variantSalesMap.set(row.productId, list);
   }
 
+  // ── Current stock per variant option (for stock column in sales report) ──
+  const saleProductIds = Array.from(variantSalesMap.keys());
+  const variantStockRows = saleProductIds.length > 0
+    ? await db.select({
+        optionId:   variantOptionsTable.id,
+        stockCount: variantOptionsTable.stockCount,
+      })
+      .from(variantOptionsTable)
+      .innerJoin(variantGroupsTable, eq(variantOptionsTable.groupId, variantGroupsTable.id))
+      .where(inArray(variantGroupsTable.productId, saleProductIds))
+    : [];
+  const variantStockMap = new Map(variantStockRows.map(r => [r.optionId, r.stockCount]));
+
   const categoryRows = await db.select({
     category: productsTable.category,
     revenue:  sql<number>`SUM(${orderItemsTable.lineTotal})`,
@@ -235,7 +248,10 @@ router.get("/reports/product-mix", async (req, res): Promise<void> => {
       quantity:         Number(i.quantity),
       revenue:          Math.round(Number(i.revenue)  * 100) / 100,
       percentage:       totalRevenue > 0 ? Math.round((Number(i.revenue) / totalRevenue) * 1000) / 10 : 0,
-      variantBreakdown: variantSalesMap.get(i.productId) ?? [],
+      variantBreakdown: (variantSalesMap.get(i.productId) ?? []).map(v => ({
+        ...v,
+        currentStock: variantStockMap.get(v.optionId) ?? null,
+      })),
     })),
     categories: categoryRows.map(c => ({
       category:   c.category ?? "Uncategorized",
@@ -362,6 +378,30 @@ router.get("/reports/inventory", async (req, res): Promise<void> => {
     variantsByProduct.set(row.productId, list);
   }
 
+  // ── Combination-level stock for multi-group products ────────────────────────
+  const combinationRows = productIds.length > 0
+    ? await db.select({
+        combinationId: variantCombinationsTable.id,
+        label:         variantCombinationsTable.label,
+        stockCount:    variantCombinationsTable.stockCount,
+        sku:           variantCombinationsTable.sku,
+        productId:     variantCombinationsTable.productId,
+      })
+      .from(variantCombinationsTable)
+      .where(and(
+        inArray(variantCombinationsTable.productId, productIds),
+        isNotNull(variantCombinationsTable.stockCount),
+      ))
+      .orderBy(variantCombinationsTable.position)
+    : [];
+
+  const combinationsByProduct = new Map<number, typeof combinationRows>();
+  for (const row of combinationRows) {
+    const list = combinationsByProduct.get(row.productId) ?? [];
+    list.push(row);
+    combinationsByProduct.set(row.productId, list);
+  }
+
   const productsOut = products.map(p => {
     const s         = soldMap.get(p.id) ?? { sold: 0, revenue: 0 };
     const c         = costMap.get(p.id) ?? { avgCost: 0, totalPurchased: 0, totalCost: 0 };
@@ -372,7 +412,9 @@ router.get("/reports/inventory", async (req, res): Promise<void> => {
     const adjAfterP       = adjAfterMap.get(p.id) ?? 0;
     const closingStock = p.stockCount + soldAfterP - purchasedAfterP - adjAfterP;
     const openingStock = closingStock - purchasedInP + s.sold - adjInP;
-    const variants = (variantsByProduct.get(p.id) ?? []).map(v => ({
+
+    const optionVariants = (variantsByProduct.get(p.id) ?? []).map(v => ({
+      type:            "option" as const,
       optionId:        v.optionId,
       optionName:      v.optionName,
       groupName:       v.groupName,
@@ -381,6 +423,15 @@ router.get("/reports/inventory", async (req, res): Promise<void> => {
       sku:             v.sku,
       status:          (v.stockCount ?? 0) <= 0 ? "out" : (v.stockCount ?? 0) <= 5 ? "low" : "ok",
     }));
+    const comboVariants = (combinationsByProduct.get(p.id) ?? []).map(c => ({
+      type:          "combination" as const,
+      combinationId: c.combinationId,
+      label:         c.label,
+      stockCount:    c.stockCount,
+      sku:           c.sku,
+      status:        (c.stockCount ?? 0) <= 0 ? "out" : (c.stockCount ?? 0) <= 5 ? "low" : "ok",
+    }));
+    const variants = [...optionVariants, ...comboVariants];
     return {
       id:             p.id,
       name:           p.name,

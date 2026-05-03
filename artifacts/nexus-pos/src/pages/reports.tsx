@@ -483,13 +483,18 @@ function ProductSalesTab({ range }: { range: { from: string; to: string } }) {
                           <TableRow key={`${item.productId}-${v.optionId}`} className="bg-muted/10">
                             <TableCell />
                             <TableCell className="pl-8 text-sm text-muted-foreground">
-                              <span className="flex items-center gap-1.5">
+                              <span className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-xs text-muted-foreground/50 font-mono">↳</span>
-                                <span className="text-xs text-blue-400/80 mr-1">{v.groupName}:</span>
-                                {v.optionName}
+                                <span className="text-xs text-blue-400/80 mr-0.5">{v.groupName}:</span>
+                                <span>{v.optionName}</span>
+                                {v.currentStock !== null && v.currentStock !== undefined && (
+                                  <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${v.currentStock <= 0 ? "bg-red-500/15 text-red-400" : v.currentStock <= 5 ? "bg-amber-500/15 text-amber-400" : "bg-emerald-500/15 text-emerald-400"}`}>
+                                    {v.currentStock} in stock
+                                  </span>
+                                )}
                               </span>
                             </TableCell>
-                            <TableCell className="text-right text-sm text-muted-foreground">{v.quantity}</TableCell>
+                            <TableCell className="text-right text-sm text-muted-foreground font-mono">{v.quantity} sold</TableCell>
                             <TableCell />
                             <TableCell />
                           </TableRow>
@@ -630,19 +635,31 @@ function InventoryTab({ range }: { range: { from: string; to: string } }) {
                         </TableRow>
 
                         {/* ── Variant sub-rows (expanded) ── */}
-                        {hasVariants && isOpen && (p.variants as any[]).map((v: any) => (
-                          <TableRow key={`${p.id}-v${v.optionId}`} className="bg-muted/10 border-l-2 border-blue-500/20">
+                        {hasVariants && isOpen && (p.variants as any[]).map((v: any) => {
+                          const isCombination = v.type === "combination";
+                          const rowKey = isCombination ? `${p.id}-c${v.combinationId}` : `${p.id}-v${v.optionId}`;
+                          return (
+                          <TableRow key={rowKey} className={`bg-muted/10 border-l-2 ${isCombination ? "border-purple-500/20" : "border-blue-500/20"}`}>
                             <TableCell className="pl-8 text-sm text-muted-foreground">
                               <span className="flex items-center gap-1.5">
                                 <span className="text-xs text-muted-foreground/40 font-mono">↳</span>
-                                <span className="text-xs text-blue-400/70 mr-0.5">{v.groupName}:</span>
-                                <span>{v.optionName}</span>
-                                {v.sku && <span className="ml-1 font-mono text-xs text-muted-foreground/50">#{v.sku}</span>}
-                                {v.priceAdjustment !== 0 && (
-                                  <span className={`ml-1 text-xs font-mono ${v.priceAdjustment > 0 ? "text-emerald-400/70" : "text-red-400/70"}`}>
-                                    {v.priceAdjustment > 0 ? "+" : ""}{fc(v.priceAdjustment)}
-                                  </span>
+                                {isCombination ? (
+                                  <>
+                                    <span className="text-xs text-purple-400/70 mr-0.5">Combo:</span>
+                                    <span>{v.label}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="text-xs text-blue-400/70 mr-0.5">{v.groupName}:</span>
+                                    <span>{v.optionName}</span>
+                                    {(v.priceAdjustment ?? 0) !== 0 && (
+                                      <span className={`ml-1 text-xs font-mono ${v.priceAdjustment > 0 ? "text-emerald-400/70" : "text-red-400/70"}`}>
+                                        {v.priceAdjustment > 0 ? "+" : ""}{fc(v.priceAdjustment)}
+                                      </span>
+                                    )}
+                                  </>
                                 )}
+                                {v.sku && <span className="ml-1 font-mono text-xs text-muted-foreground/50">#{v.sku}</span>}
                               </span>
                             </TableCell>
                             <TableCell />
@@ -661,7 +678,8 @@ function InventoryTab({ range }: { range: { from: string; to: string } }) {
                               <Badge variant={statusVariant(v.status)} className="text-xs">{statusLabel(v.status)}</Badge>
                             </TableCell>
                           </TableRow>
-                        ))}
+                          );
+                        })}
                       </React.Fragment>
                     );
                   })}
