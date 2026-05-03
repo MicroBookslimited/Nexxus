@@ -98,6 +98,12 @@ type CartItem = {
   isTaxable?: boolean;
 };
 
+const VARIANT_COLORS = [
+  "#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6",
+  "#1abc9c", "#e91e63", "#ff5722", "#00bcd4", "#8bc34a",
+  "#ffc107", "#607d8b", "#673ab7", "#ff9800", "#009688",
+];
+
 function makeCartKey(productId: number, variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[]) {
   const vSig = variantChoices.map((c) => `v${c.optionId}`).join(",");
   const mSig = modifierChoices.map((c) => `m${c.optionId}`).sort().join(",");
@@ -277,26 +283,30 @@ function CustomizeDialog({
                     }}
                     className="flex flex-wrap gap-2"
                   >
-                    {group.options.map((opt) => (
-                      <div key={opt.id} className="flex items-center gap-1.5">
-                        <RadioGroupItem value={opt.id.toString()} id={`v-${opt.id}`} className="sr-only" />
-                        <label
-                          htmlFor={`v-${opt.id}`}
-                          className={`cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors ${
-                            selectedVariants[group.id]?.optionId === opt.id
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border hover:border-primary/50"
-                          }`}
-                        >
-                          {opt.name}
-                          {opt.priceAdjustment !== 0 && (
-                            <span className="ml-1 text-muted-foreground text-xs">
-                              ({opt.priceAdjustment > 0 ? "+" : ""}{formatCurrency(opt.priceAdjustment)})
-                            </span>
-                          )}
-                        </label>
-                      </div>
-                    ))}
+                    {group.options.map((opt, optIdx) => {
+                      const color = VARIANT_COLORS[optIdx % VARIANT_COLORS.length];
+                      const isSelected = selectedVariants[group.id]?.optionId === opt.id;
+                      return (
+                        <div key={opt.id} className="flex items-center gap-1.5">
+                          <RadioGroupItem value={opt.id.toString()} id={`v-${opt.id}`} className="sr-only" />
+                          <label
+                            htmlFor={`v-${opt.id}`}
+                            className="cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-all select-none"
+                            style={isSelected
+                              ? { backgroundColor: color, color: "#fff", boxShadow: `0 0 0 2px ${color}` }
+                              : { backgroundColor: `${color}28`, color: color, border: `1.5px solid ${color}55` }
+                            }
+                          >
+                            {opt.name}
+                            {opt.priceAdjustment !== 0 && (
+                              <span className="ml-1 opacity-80 text-xs">
+                                ({opt.priceAdjustment > 0 ? "+" : ""}{formatCurrency(opt.priceAdjustment)})
+                              </span>
+                            )}
+                          </label>
+                        </div>
+                      );
+                    })}
                   </RadioGroup>
                 </div>
               ))}
