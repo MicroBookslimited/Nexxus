@@ -477,7 +477,7 @@ export function POS() {
   // ── Quick-add product (admin/manager only) ──────────────────────────────
   const createProduct = useCreateProduct();
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const [quickAddForm, setQuickAddForm] = useState({ name: "", price: "", category: "", inStock: true });
+  const [quickAddForm, setQuickAddForm] = useState({ name: "", price: "", category: "", barcode: "", stockCount: "", inStock: true });
   const canAddProduct = can("inventory.manage");
 
   function handleQuickAddSubmit() {
@@ -486,14 +486,22 @@ export function POS() {
       toast({ title: "Please enter a valid name and price", variant: "destructive" });
       return;
     }
+    const stockCount = quickAddForm.stockCount !== "" ? parseInt(quickAddForm.stockCount, 10) : undefined;
     createProduct.mutate(
-      { data: { name: quickAddForm.name.trim(), price, category: quickAddForm.category.trim() || "General", inStock: quickAddForm.inStock } },
+      { data: {
+          name: quickAddForm.name.trim(),
+          price,
+          category: quickAddForm.category.trim() || "General",
+          barcode: quickAddForm.barcode.trim() || undefined,
+          stockCount: stockCount ?? 0,
+          inStock: quickAddForm.inStock,
+      }},
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
           toast({ title: "Product added", description: quickAddForm.name.trim() });
           setQuickAddOpen(false);
-          setQuickAddForm({ name: "", price: "", category: "", inStock: true });
+          setQuickAddForm({ name: "", price: "", category: "", barcode: "", stockCount: "", inStock: true });
         },
         onError: () => toast({ title: "Failed to add product", variant: "destructive" }),
       }
@@ -2907,6 +2915,31 @@ export function POS() {
                 <datalist id="qa-category-list">
                   {categories.map(c => <option key={c} value={c} />)}
                 </datalist>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="qa-barcode">Barcode</Label>
+                <Input
+                  id="qa-barcode"
+                  placeholder="Scan or type…"
+                  value={quickAddForm.barcode}
+                  onChange={(e) => setQuickAddForm(f => ({ ...f, barcode: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && handleQuickAddSubmit()}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="qa-stock">Qty in stock</Label>
+                <Input
+                  id="qa-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="0"
+                  value={quickAddForm.stockCount}
+                  onChange={(e) => setQuickAddForm(f => ({ ...f, stockCount: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && handleQuickAddSubmit()}
+                />
               </div>
             </div>
             <div className="flex items-center gap-3">
