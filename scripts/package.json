@@ -5,10 +5,13 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "security-report": "tsx ./src/security-audit-report.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pdfkit": "^0.17.6",
+    "pdfkit": "^0.18.0",
     "tsx": "catalog:"
   }
 }

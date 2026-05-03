@@ -36,3 +36,9 @@ id = "HF9LB1ybr_msFwGOPNRvm"
 uri = "file://docs/manual/NEXXUS_POS_User_Manual.pdf"
 type = "pdf"
 title = "NEXXUS POS — User Manual (Edition 2026.04)"
+
+[[outputs]]
+id = "ekO3eSHcIOwLBrI32f9qU"
+uri = "file://security-audit-report.pdf"
+type = "pdf"
+title = "NEXXUS POS Security Audit Report"
