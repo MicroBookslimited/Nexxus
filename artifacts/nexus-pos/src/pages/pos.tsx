@@ -2886,7 +2886,7 @@ export function POS() {
                 placeholder="e.g. Bottled Water"
                 value={quickAddForm.name}
                 onChange={(e) => setQuickAddForm(f => ({ ...f, name: e.target.value }))}
-                onKeyDown={(e) => e.key === "Enter" && handleQuickAddSubmit()}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); document.getElementById("qa-price")?.focus(); } }}
               />
             </div>
             <div className="space-y-1.5">
@@ -2899,7 +2899,7 @@ export function POS() {
                 placeholder="0.00"
                 value={quickAddForm.price}
                 onChange={(e) => setQuickAddForm(f => ({ ...f, price: e.target.value }))}
-                onKeyDown={(e) => e.key === "Enter" && handleQuickAddSubmit()}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); document.getElementById("qa-category")?.focus(); } }}
               />
             </div>
             <div className="space-y-1.5">
