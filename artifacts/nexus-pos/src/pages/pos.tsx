@@ -13,12 +13,14 @@ import {
   useListCustomers,
   useCreateCustomer,
   getListCustomersQueryKey,
+  getListProductsQueryKey,
   useListTables,
   useGetCurrentCashSession,
   useSendReceiptEmail,
   useGetSettings,
   useListOrders,
   useChargeOrder,
+  useCreateProduct,
 } from "@workspace/api-client-react";
 import { PinPad } from "@/components/PinPad";
 import type { GetOrderResponse } from "@workspace/api-zod";
@@ -33,7 +35,7 @@ import {
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote, Layers,
-  Tag, PenLine,
+  Tag, PenLine, PackagePlus,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -471,6 +473,32 @@ export function POS() {
   const { toast } = useToast();
   const sendReceiptEmail = useSendReceiptEmail();
   const isOnline = useOnlineStatus();
+
+  // ── Quick-add product (admin/manager only) ──────────────────────────────
+  const createProduct = useCreateProduct();
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddForm, setQuickAddForm] = useState({ name: "", price: "", category: "", inStock: true });
+  const canAddProduct = can("inventory.manage");
+
+  function handleQuickAddSubmit() {
+    const price = parseFloat(quickAddForm.price);
+    if (!quickAddForm.name.trim() || isNaN(price) || price < 0) {
+      toast({ title: "Please enter a valid name and price", variant: "destructive" });
+      return;
+    }
+    createProduct.mutate(
+      { data: { name: quickAddForm.name.trim(), price, category: quickAddForm.category.trim() || "General", inStock: quickAddForm.inStock } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
+          toast({ title: "Product added", description: quickAddForm.name.trim() });
+          setQuickAddOpen(false);
+          setQuickAddForm({ name: "", price: "", category: "", inStock: true });
+        },
+        onError: () => toast({ title: "Failed to add product", variant: "destructive" }),
+      }
+    );
+  }
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_tenant_token");
@@ -1910,19 +1938,31 @@ export function POS() {
         <div className="flex-1 flex flex-col min-w-0 border-r border-border">
           {/* Search & filters */}
           <div className="p-4 border-b border-border space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-600 pointer-events-none" />
-              <Input
-                ref={searchInputRef}
-                autoFocus
-                className="pl-9 pr-10 h-11 text-sm w-full border-2 border-blue-500/60 focus-visible:border-blue-500 focus-visible:ring-0 rounded-lg bg-white text-slate-900 placeholder:text-slate-500"
-                placeholder="Search products or scan barcode (Enter)"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                autoComplete="off"
-              />
-              <ScanBarcode className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-600 pointer-events-none" />
+                <Input
+                  ref={searchInputRef}
+                  autoFocus
+                  className="pl-9 pr-10 h-11 text-sm w-full border-2 border-blue-500/60 focus-visible:border-blue-500 focus-visible:ring-0 rounded-lg bg-white text-slate-900 placeholder:text-slate-500"
+                  placeholder="Search or scan barcode…"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  autoComplete="off"
+                />
+                <ScanBarcode className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
+              </div>
+              {canAddProduct && (
+                <Button
+                  onClick={() => setQuickAddOpen(true)}
+                  className="h-11 px-3 shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white border-0 gap-1.5"
+                  title="Add product"
+                >
+                  <PackagePlus className="h-4 w-4" />
+                  <span className="hidden sm:inline text-sm font-medium">Add</span>
+                </Button>
+              )}
             </div>
             <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
               <button
@@ -2818,6 +2858,84 @@ export function POS() {
           onConfirm={handleCustomizeConfirm}
         />
       )}
+
+      {/* Quick-add product dialog (admin/manager only) */}
+      <Dialog open={quickAddOpen} onOpenChange={(o) => { if (!o) { setQuickAddOpen(false); setQuickAddForm({ name: "", price: "", category: "", inStock: true }); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PackagePlus className="h-5 w-5 text-emerald-500" />
+              Add Product
+            </DialogTitle>
+            <DialogDescription>Add a new product to your catalogue. You can set variants, modifiers and more details from the Products page later.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="qa-name">Product name <span className="text-destructive">*</span></Label>
+              <Input
+                id="qa-name"
+                autoFocus
+                placeholder="e.g. Bottled Water"
+                value={quickAddForm.name}
+                onChange={(e) => setQuickAddForm(f => ({ ...f, name: e.target.value }))}
+                onKeyDown={(e) => e.key === "Enter" && handleQuickAddSubmit()}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="qa-price">Price (JMD) <span className="text-destructive">*</span></Label>
+              <Input
+                id="qa-price"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={quickAddForm.price}
+                onChange={(e) => setQuickAddForm(f => ({ ...f, price: e.target.value }))}
+                onKeyDown={(e) => e.key === "Enter" && handleQuickAddSubmit()}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="qa-category">Category</Label>
+              <div className="relative">
+                <Input
+                  id="qa-category"
+                  placeholder="e.g. Beverages (or pick below)"
+                  value={quickAddForm.category}
+                  onChange={(e) => setQuickAddForm(f => ({ ...f, category: e.target.value }))}
+                  list="qa-category-list"
+                />
+                <datalist id="qa-category-list">
+                  {categories.map(c => <option key={c} value={c} />)}
+                </datalist>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={quickAddForm.inStock}
+                onClick={() => setQuickAddForm(f => ({ ...f, inStock: !f.inStock }))}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${quickAddForm.inStock ? "bg-emerald-600" : "bg-muted"}`}
+              >
+                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform ${quickAddForm.inStock ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
+              <Label className="cursor-pointer" onClick={() => setQuickAddForm(f => ({ ...f, inStock: !f.inStock }))}>
+                In stock
+              </Label>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setQuickAddOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleQuickAddSubmit}
+              disabled={createProduct.isPending || !quickAddForm.name.trim() || !quickAddForm.price}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {createProduct.isPending ? "Adding…" : "Add Product"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Unit-of-measure picker — opens for products with multiple sale units */}
       <Dialog
