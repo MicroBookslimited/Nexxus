@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, real, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, real, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { productsTable } from "./products";
 
 export const variantGroupsTable = pgTable("variant_groups", {
@@ -40,7 +40,18 @@ export const modifierOptionsTable = pgTable("modifier_options", {
   position: integer("position").notNull().default(0),
 });
 
+export const variantCombinationsTable = pgTable("variant_combinations", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  optionIds: jsonb("option_ids").$type<number[]>().notNull(),
+  label: text("label").notNull(),
+  stockCount: real("stock_count"),
+  sku: text("sku"),
+  position: integer("position").notNull().default(0),
+});
+
 export type VariantGroup = typeof variantGroupsTable.$inferSelect;
 export type VariantOption = typeof variantOptionsTable.$inferSelect;
+export type VariantCombination = typeof variantCombinationsTable.$inferSelect;
 export type ModifierGroup = typeof modifierGroupsTable.$inferSelect;
 export type ModifierOption = typeof modifierOptionsTable.$inferSelect;

@@ -5,8 +5,12 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { SaveVariantsBodyCombinationsItem } from "./saveVariantsBodyCombinationsItem";
 import type { SaveVariantsBodyGroupsItem } from "./saveVariantsBodyGroupsItem";
 
 export interface SaveVariantsBody {
   groups: SaveVariantsBodyGroupsItem[];
+  /** Per-combination stock when product has 2+ variant groups. optionNames[i] is the option name chosen from group i (in group order).
+   */
+  combinations?: SaveVariantsBodyCombinationsItem[];
 }

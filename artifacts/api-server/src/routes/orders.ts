@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { logAudit } from "./audit";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable, variantCombinationsTable } from "@workspace/db";
 import { applyVolumePricing } from "../lib/pricing";
 import { getSetting } from "./settings";
 import { logger } from "../lib/logger";
@@ -449,12 +449,45 @@ router.post("/orders", async (req, res): Promise<void> => {
         : [];
 
       const optionStockMap = new Map<number, VORow>(variantOptionRows.map((r) => [r.optionId, r]));
-      // Products where at least one chosen option has per-variant stock configured
+
+      // Pre-fetch combinations for products with 2+ variant choices per item.
+      // A product uses combination tracking when it has variant_combinations rows with non-null stock_count.
+      const itemProductIds = [...new Set(resolvedItems.map((i) => i.productId))];
+      type VCRow = { id: number; productId: number; optionIds: number[]; stockCount: number | null; label: string };
+      const variantCombinationRows: VCRow[] = itemProductIds.length > 0
+        ? (await tx
+          .select({
+            id:        variantCombinationsTable.id,
+            productId: variantCombinationsTable.productId,
+            optionIds: variantCombinationsTable.optionIds,
+            stockCount: variantCombinationsTable.stockCount,
+            label:     variantCombinationsTable.label,
+          })
+          .from(variantCombinationsTable)
+          .where(and(
+            inArray(variantCombinationsTable.productId, itemProductIds),
+            isNotNull(variantCombinationsTable.stockCount),
+          ))) as VCRow[]
+        : [];
+
+      // Products where combination tracking is active (any combination has non-null stockCount)
+      const combinationTrackedProducts = new Set<number>(variantCombinationRows.map((r) => r.productId));
+
+      // Index: productId → (sorted-optionIds-key → combination row)
+      const combinationIndex = new Map<number, Map<string, VCRow>>();
+      for (const row of variantCombinationRows) {
+        const key = [...row.optionIds].sort((a, b) => a - b).join(",");
+        if (!combinationIndex.has(row.productId)) combinationIndex.set(row.productId, new Map());
+        combinationIndex.get(row.productId)!.set(key, row);
+      }
+
+      // Products where at least one chosen option has per-variant stock configured (single-group path)
       const variantTrackedProducts = new Set<number>(
-        variantOptionRows.filter((r) => r.stockCount !== null).map((r) => r.productId),
+        variantOptionRows.filter((r) => r.stockCount !== null && !combinationTrackedProducts.has(r.productId)).map((r) => r.productId),
       );
       // Track which products need product.stockCount re-synced after the loop
       const variantSyncIds = new Set<number>();
+      const combinationSyncIds = new Set<number>();
 
       // 1. Atomically decrement stock per item BEFORE creating the order.
       //    This is the only place that enforces "no negative stock".
@@ -533,7 +566,50 @@ router.post("/orders", async (req, res): Promise<void> => {
           continue;
         }
 
-        // ── Per-variant stock deduction ─────────────────────────────────────
+        // ── Combination stock deduction (multi-group variants) ───────────────
+        // When the product uses combination tracking (2+ variant groups), look
+        // up the matching combination by the sorted set of chosen optionIds and
+        // deduct from that combination's stockCount.
+        if (combinationTrackedProducts.has(item.productId) && (item.variantChoices ?? []).length > 0) {
+          const chosenIds = (item.variantChoices ?? [])
+            .map((c) => c.optionId)
+            .filter((id): id is number => typeof id === "number" && id > 0);
+          const key = [...chosenIds].sort((a, b) => a - b).join(",");
+          const combo = combinationIndex.get(item.productId)?.get(key);
+
+          if (combo) {
+            if (allowOverselling) {
+              await tx.update(variantCombinationsTable)
+                .set({ stockCount: sql`${variantCombinationsTable.stockCount} - ${item.quantity}` })
+                .where(eq(variantCombinationsTable.id, combo.id));
+            } else {
+              const updated = await tx.update(variantCombinationsTable)
+                .set({ stockCount: sql`${variantCombinationsTable.stockCount} - ${item.quantity}` })
+                .where(and(
+                  eq(variantCombinationsTable.id, combo.id),
+                  sql`${variantCombinationsTable.stockCount} >= ${item.quantity}`,
+                ))
+                .returning({ stockCount: variantCombinationsTable.stockCount });
+
+              if (updated.length === 0) {
+                const [cur] = await tx
+                  .select({ stockCount: variantCombinationsTable.stockCount })
+                  .from(variantCombinationsTable)
+                  .where(eq(variantCombinationsTable.id, combo.id));
+                throw new InsufficientStockError(
+                  item.productId,
+                  `${item.productName} – ${combo.label}`,
+                  cur?.stockCount ?? 0,
+                  item.quantity,
+                );
+              }
+            }
+          }
+          combinationSyncIds.add(item.productId);
+          continue;
+        }
+
+        // ── Per-variant stock deduction (single-group variants) ──────────────
         // If any chosen option for this product has per-variant stock, deduct
         // from that option rather than the product row directly.
         // product.stockCount is reconciled as SUM(option.stockCount) below.
@@ -623,9 +699,8 @@ router.post("/orders", async (req, res): Promise<void> => {
         }
       }
 
-      // Reconcile product.stockCount for per-variant-tracked products:
-      // set it to SUM of all non-null option stockCounts so the product row
-      // always reflects total available inventory across its variants.
+      // Reconcile product.stockCount for per-variant-tracked products (single group):
+      // set it to SUM of all non-null option stockCounts.
       for (const pid of variantSyncIds) {
         await tx.execute(sql`
           UPDATE products
@@ -642,6 +717,29 @@ router.post("/orders", async (req, res): Promise<void> => {
                 FROM variant_options vo
                 JOIN variant_groups vg ON vg.id = vo.group_id
                 WHERE vg.product_id = ${pid} AND vo.stock_count IS NOT NULL
+              ), 0) > 0 THEN true
+              ELSE false
+            END
+          WHERE id = ${pid} AND tenant_id = ${tenantId}
+        `);
+      }
+
+      // Reconcile product.stockCount for combination-tracked products (multi-group):
+      // set it to SUM of all non-null combination stockCounts.
+      for (const pid of combinationSyncIds) {
+        await tx.execute(sql`
+          UPDATE products
+          SET
+            stock_count = COALESCE((
+              SELECT SUM(vc.stock_count)
+              FROM variant_combinations vc
+              WHERE vc.product_id = ${pid} AND vc.stock_count IS NOT NULL
+            ), 0),
+            in_stock = CASE
+              WHEN COALESCE((
+                SELECT SUM(vc.stock_count)
+                FROM variant_combinations vc
+                WHERE vc.product_id = ${pid} AND vc.stock_count IS NOT NULL
               ), 0) > 0 THEN true
               ELSE false
             END
@@ -1077,11 +1175,46 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           continue;
         }
 
-        // Restore per-variant option stock on refund/void
+        // Restore per-combination or per-option stock on refund/void
         {
           const choices = (item.variantChoices as Array<{ optionId: number; optionName: string }> | null) ?? [];
           if (choices.length > 0) {
             const choiceOptIds = choices.map((c) => c.optionId).filter((id): id is number => typeof id === "number");
+
+            // ── Try combination-tracked restore first (multi-group) ──────────
+            if (choiceOptIds.length >= 2) {
+              const key = [...choiceOptIds].sort((a, b) => a - b).join(",");
+              // Find the combination by matching optionIds (JSONB containment)
+              const allCombos = await tx
+                .select({ id: variantCombinationsTable.id, optionIds: variantCombinationsTable.optionIds, stockCount: variantCombinationsTable.stockCount })
+                .from(variantCombinationsTable)
+                .where(and(
+                  eq(variantCombinationsTable.productId, item.productId),
+                  isNotNull(variantCombinationsTable.stockCount),
+                ));
+              const combo = allCombos.find((c) => {
+                const ck = [...(c.optionIds as number[])].sort((a, b) => a - b).join(",");
+                return ck === key;
+              });
+              if (combo) {
+                await tx.update(variantCombinationsTable)
+                  .set({ stockCount: sql`${variantCombinationsTable.stockCount} + ${item.quantity}` })
+                  .where(eq(variantCombinationsTable.id, combo.id));
+                await tx.execute(sql`
+                  UPDATE products
+                  SET
+                    stock_count = COALESCE((
+                      SELECT SUM(vc.stock_count) FROM variant_combinations vc
+                      WHERE vc.product_id = ${item.productId} AND vc.stock_count IS NOT NULL
+                    ), 0),
+                    in_stock = true
+                  WHERE id = ${item.productId} AND tenant_id = ${tenantId}
+                `);
+                continue;
+              }
+            }
+
+            // ── Fall back to option-tracked restore (single-group) ──────────
             if (choiceOptIds.length > 0) {
               const trackedOpts = await tx
                 .select({ id: variantOptionsTable.id })

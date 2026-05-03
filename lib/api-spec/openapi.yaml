@@ -175,7 +175,7 @@ paths:
     get:
       operationId: getProductVariants
       tags: [variants]
-      summary: Get all variant groups with options for a product
+      summary: Get all variant groups with options and combinations for a product
       parameters:
         - name: id
           in: path
@@ -184,13 +184,11 @@ paths:
             type: integer
       responses:
         "200":
-          description: Variant groups
+          description: Variant groups and combinations
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/VariantGroup"
+                $ref: "#/components/schemas/GetProductVariantsResponse"
     put:
       operationId: saveProductVariants
       tags: [variants]
@@ -209,13 +207,11 @@ paths:
               $ref: "#/components/schemas/SaveVariantsBody"
       responses:
         "200":
-          description: Saved variant groups
+          description: Saved variant groups and combinations
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/VariantGroup"
+                $ref: "#/components/schemas/GetProductVariantsResponse"
 
   /products/{id}/modifiers:
     get:
@@ -2238,6 +2234,51 @@ components:
         - optionName
         - priceAdjustment
 
+    VariantCombination:
+      type: object
+      properties:
+        id:
+          type: integer
+        productId:
+          type: integer
+        optionIds:
+          type: array
+          items:
+            type: integer
+        label:
+          type: string
+          description: Combined label e.g. "Med/Red"
+        stockCount:
+          type: number
+          format: float
+          nullable: true
+        sku:
+          type: string
+          nullable: true
+        position:
+          type: integer
+      required:
+        - id
+        - productId
+        - optionIds
+        - label
+        - position
+
+    GetProductVariantsResponse:
+      type: object
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/VariantGroup"
+        combinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/VariantCombination"
+      required:
+        - groups
+        - combinations
+
     VariantOption:
       type: object
       properties:
@@ -2402,6 +2443,30 @@ components:
             required:
               - name
               - options
+        combinations:
+          type: array
+          description: >
+            Per-combination stock when product has 2+ variant groups.
+            optionNames[i] is the option name chosen from group i (in group order).
+          items:
+            type: object
+            properties:
+              combinationId:
+                type: integer
+                description: Present for existing combinations
+              optionNames:
+                type: array
+                items:
+                  type: string
+              stockCount:
+                type: number
+                format: float
+                nullable: true
+              sku:
+                type: string
+                nullable: true
+            required:
+              - optionNames
       required:
         - groups
 

@@ -398,6 +398,17 @@ export interface GetHourlySalesQueryParams {
   date?: string;
 }
 
+export interface VariantCombination {
+  id: number;
+  productId: number;
+  optionIds: number[];
+  /** Combined label e.g. "Med/Red" */
+  label: string;
+  stockCount?: number | null;
+  sku?: string | null;
+  position: number;
+}
+
 export interface VariantOption {
   id: number;
   groupId: number;
@@ -414,6 +425,11 @@ export interface VariantGroup {
   name: string;
   required: boolean;
   options: VariantOption[];
+}
+
+export interface GetProductVariantsResponse {
+  groups: VariantGroup[];
+  combinations: VariantCombination[];
 }
 
 export interface ModifierOption {
@@ -459,8 +475,19 @@ export type SaveVariantsBodyGroupsItem = {
   options: SaveVariantsBodyGroupsItemOptionsItem[];
 };
 
+export type SaveVariantsBodyCombinationsItem = {
+  /** Present for existing combinations */
+  combinationId?: number;
+  optionNames: string[];
+  stockCount?: number | null;
+  sku?: string | null;
+};
+
 export interface SaveVariantsBody {
   groups: SaveVariantsBodyGroupsItem[];
+  /** Per-combination stock when product has 2+ variant groups. optionNames[i] is the option name chosen from group i (in group order).
+   */
+  combinations?: SaveVariantsBodyCombinationsItem[];
 }
 
 export type SaveModifiersBodyGroupsItemOptionsItem = {

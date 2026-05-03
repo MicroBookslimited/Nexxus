@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useStaff } from "@/contexts/StaffContext";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -243,6 +243,7 @@ const emptyForm = (): ProductForm => ({
 /* ─── Variant/modifier editor types ─── */
 type DraftOption = { tempId: string; name: string; priceAdjustment: string; stockCount: string; optionId: number | null; sku: string };
 type DraftVariantGroup = { tempId: string; name: string; required: boolean; options: DraftOption[]; groupId: number | null };
+type DraftCombination = { label: string; optionNames: string[]; combinationId: number | null; stockCount: string; sku: string };
 type DraftModifierGroup = { tempId: string; name: string; required: boolean; minSelections: string; maxSelections: string; options: DraftOption[] };
 
 function makeId() { return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
@@ -255,17 +256,32 @@ function formatCurrency(v: number) {
 }
 
 /* ─── Variant editor ─── */
+function cartesian<T>(arrays: T[][]): T[][] {
+  return arrays.reduce<T[][]>(
+    (acc, arr) => acc.flatMap((combo) => arr.map((item) => [...combo, item])),
+    [[]],
+  );
+}
+
 function VariantEditor({ productId }: { productId: number }) {
-  const { data: serverGroups } = useGetProductVariants(productId);
+  const { data: serverData } = useGetProductVariants(productId);
   const saveVariants = useSaveProductVariants();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [groups, setGroups] = useState<DraftVariantGroup[]>([]);
+  // keyed by label (e.g. "Med/Red") → override values entered by the user
+  const [comboOverrides, setComboOverrides] = useState<Map<string, { combinationId: number | null; stockCount: string; sku: string }>>(new Map());
   const [dirty, setDirty] = useState(false);
 
+  // Hydrate from server
   useEffect(() => {
-    if (!serverGroups) return;
+    if (!serverData) return;
+    // The API now returns {groups, combinations}
+    const payload = serverData as unknown as { groups: Array<{ id: number; name: string; required: boolean; options: Array<{ id: number; name: string; priceAdjustment: number; stockCount: number | null; sku: string | null }> }>; combinations: Array<{ id: number; label: string; stockCount: number | null; sku: string | null }> };
+    const serverGroups = Array.isArray(payload?.groups) ? payload.groups : [];
+    const serverCombinations = Array.isArray(payload?.combinations) ? payload.combinations : [];
+
     setGroups(
       serverGroups.map((g) => ({
         tempId: makeId(),
@@ -282,8 +298,33 @@ function VariantEditor({ productId }: { productId: number }) {
         })),
       })),
     );
+
+    const newOverrides = new Map<string, { combinationId: number | null; stockCount: string; sku: string }>();
+    for (const c of serverCombinations) {
+      newOverrides.set(c.label, {
+        combinationId: c.id,
+        stockCount: c.stockCount != null ? String(c.stockCount) : "",
+        sku: c.sku ?? "",
+      });
+    }
+    setComboOverrides(newOverrides);
     setDirty(false);
-  }, [serverGroups]);
+  }, [serverData]);
+
+  const activeGroups = groups.filter((g) => g.name.trim());
+  const isMultiGroup = activeGroups.length >= 2;
+
+  // Compute live cross-product for the combination matrix
+  const combinations: DraftCombination[] = useMemo(() => {
+    if (!isMultiGroup) return [];
+    const optArrays = activeGroups.map((g) => g.options.filter((o) => o.name.trim()).map((o) => o.name.trim()));
+    if (optArrays.some((a) => a.length === 0)) return [];
+    return cartesian(optArrays).map((names) => {
+      const label = names.join("/");
+      const ov = comboOverrides.get(label);
+      return { label, optionNames: names, combinationId: ov?.combinationId ?? null, stockCount: ov?.stockCount ?? "", sku: ov?.sku ?? "" };
+    });
+  }, [activeGroups, isMultiGroup, comboOverrides]);
 
   const addGroup = () => { setGroups((g) => [...g, emptyVariantGroup()]); setDirty(true); };
   const removeGroup = (tempId: string) => { setGroups((g) => g.filter((x) => x.tempId !== tempId)); setDirty(true); };
@@ -306,6 +347,15 @@ function VariantEditor({ productId }: { productId: number }) {
     } : x));
     setDirty(true);
   };
+  const updateCombo = (label: string, patch: { stockCount?: string; sku?: string }) => {
+    setComboOverrides((prev) => {
+      const next = new Map(prev);
+      const cur = next.get(label) ?? { combinationId: null, stockCount: "", sku: "" };
+      next.set(label, { ...cur, ...patch });
+      return next;
+    });
+    setDirty(true);
+  };
 
   const handleSave = () => {
     saveVariants.mutate(
@@ -320,10 +370,19 @@ function VariantEditor({ productId }: { productId: number }) {
               optionId: o.optionId ?? undefined,
               name: o.name,
               priceAdjustment: parseFloat(o.priceAdjustment) || 0,
-              stockCount: o.stockCount.trim() !== "" ? parseFloat(o.stockCount) : null,
+              // Multi-group: stock is tracked at combination level, not option level
+              stockCount: isMultiGroup ? null : (o.stockCount.trim() !== "" ? parseFloat(o.stockCount) : null),
               sku: o.sku.trim() || undefined,
             })),
           })),
+          combinations: isMultiGroup
+            ? combinations.map((c) => ({
+                combinationId: c.combinationId ?? undefined,
+                optionNames: c.optionNames,
+                stockCount: c.stockCount.trim() !== "" ? parseFloat(c.stockCount) : null,
+                sku: c.sku.trim() || undefined,
+              }))
+            : undefined,
         },
       },
       {
@@ -340,7 +399,11 @@ function VariantEditor({ productId }: { productId: number }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">Variant groups let customers choose between options (e.g., Size: Small / Medium / Large). Each product can only have one option selected per group.</p>
+      <p className="text-xs text-muted-foreground">
+        Variant groups let customers choose between options (e.g., Size: Small / Medium / Large).
+        {isMultiGroup && " With 2+ groups, stock is tracked per combination (e.g. Med/Red)."}
+      </p>
+
       {groups.map((group) => (
         <Card key={group.tempId} className="border-border/50">
           <CardContent className="pt-3 pb-3 space-y-3">
@@ -363,7 +426,7 @@ function VariantEditor({ productId }: { productId: number }) {
               <div className="flex items-center gap-2 pb-0.5">
                 <span className="flex-1 text-[10px] text-muted-foreground/60">Option</span>
                 <span className="w-20 text-[10px] text-muted-foreground/60 text-center">Price adj.</span>
-                <span className="w-16 text-[10px] text-muted-foreground/60 text-center">Qty</span>
+                {!isMultiGroup && <span className="w-16 text-[10px] text-muted-foreground/60 text-center">Qty</span>}
                 <span className="w-7" />
               </div>
               {group.options.map((opt) => (
@@ -384,15 +447,17 @@ function VariantEditor({ productId }: { productId: number }) {
                       className="w-20 h-7 text-xs pl-5"
                     />
                   </div>
-                  <Input
-                    type="number"
-                    min="0"
-                    placeholder="—"
-                    value={opt.stockCount}
-                    onChange={(e) => updateOption(group.tempId, opt.tempId, { stockCount: e.target.value })}
-                    className="w-16 h-7 text-xs text-center"
-                    title="Stock quantity for this variant. Leave blank to use the product-level stock instead."
-                  />
+                  {!isMultiGroup && (
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="—"
+                      value={opt.stockCount}
+                      onChange={(e) => updateOption(group.tempId, opt.tempId, { stockCount: e.target.value })}
+                      className="w-16 h-7 text-xs text-center"
+                      title="Stock quantity for this variant. Leave blank to use product-level stock."
+                    />
+                  )}
                   <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeOption(group.tempId, opt.tempId)}>
                     <X className="h-3 w-3" />
                   </Button>
@@ -405,9 +470,46 @@ function VariantEditor({ productId }: { productId: number }) {
           </CardContent>
         </Card>
       ))}
+
       <Button size="sm" variant="outline" className="gap-1.5 w-full" onClick={addGroup}>
         <Plus className="h-3.5 w-3.5" />Add variant group
       </Button>
+
+      {/* ── Combination stock matrix (shown when 2+ groups) ── */}
+      {isMultiGroup && combinations.length > 0 && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="pt-3 pb-3 space-y-2">
+            <p className="text-xs font-medium text-foreground/80 mb-1">Combination stock — enter qty per combination</p>
+            <div className="flex items-center gap-2 pb-0.5">
+              <span className="flex-1 text-[10px] text-muted-foreground/60">Combination</span>
+              <span className="w-16 text-[10px] text-muted-foreground/60 text-center">Qty</span>
+              <span className="w-24 text-[10px] text-muted-foreground/60">SKU</span>
+            </div>
+            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+              {combinations.map((combo) => (
+                <div key={combo.label} className="flex items-center gap-2">
+                  <span className="flex-1 text-xs text-foreground/80 font-mono truncate">{combo.label}</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="—"
+                    value={combo.stockCount}
+                    onChange={(e) => updateCombo(combo.label, { stockCount: e.target.value })}
+                    className="w-16 h-7 text-xs text-center"
+                  />
+                  <Input
+                    placeholder="SKU"
+                    value={combo.sku}
+                    onChange={(e) => updateCombo(combo.label, { sku: e.target.value })}
+                    className="w-24 h-7 text-xs"
+                  />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {dirty && (
         <Button onClick={handleSave} disabled={saveVariants.isPending} className="w-full">
           {saveVariants.isPending ? "Saving…" : "Save Variants"}

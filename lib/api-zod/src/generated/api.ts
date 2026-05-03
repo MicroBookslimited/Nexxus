@@ -249,32 +249,44 @@ export const GetProductCustomizationResponse = zod.object({
 });
 
 /**
- * @summary Get all variant groups with options for a product
+ * @summary Get all variant groups with options and combinations for a product
  */
 export const GetProductVariantsParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const GetProductVariantsResponseItem = zod.object({
-  id: zod.number(),
-  productId: zod.number(),
-  name: zod.string(),
-  required: zod.boolean(),
-  options: zod.array(
+export const GetProductVariantsResponse = zod.object({
+  groups: zod.array(
     zod.object({
       id: zod.number(),
-      groupId: zod.number(),
+      productId: zod.number(),
       name: zod.string(),
-      priceAdjustment: zod.number(),
-      position: zod.number(),
+      required: zod.boolean(),
+      options: zod.array(
+        zod.object({
+          id: zod.number(),
+          groupId: zod.number(),
+          name: zod.string(),
+          priceAdjustment: zod.number(),
+          position: zod.number(),
+          stockCount: zod.number().nullish(),
+          sku: zod.string().nullish(),
+        }),
+      ),
+    }),
+  ),
+  combinations: zod.array(
+    zod.object({
+      id: zod.number(),
+      productId: zod.number(),
+      optionIds: zod.array(zod.number()),
+      label: zod.string().describe('Combined label e.g. \"Med\/Red\"'),
       stockCount: zod.number().nullish(),
       sku: zod.string().nullish(),
+      position: zod.number(),
     }),
   ),
 });
-export const GetProductVariantsResponse = zod.array(
-  GetProductVariantsResponseItem,
-);
 
 /**
  * @summary Replace all variant groups for a product (full overwrite)
@@ -308,28 +320,56 @@ export const SaveProductVariantsBody = zod.object({
       ),
     }),
   ),
+  combinations: zod
+    .array(
+      zod.object({
+        combinationId: zod
+          .number()
+          .optional()
+          .describe("Present for existing combinations"),
+        optionNames: zod.array(zod.string()),
+        stockCount: zod.number().nullish(),
+        sku: zod.string().nullish(),
+      }),
+    )
+    .optional()
+    .describe(
+      "Per-combination stock when product has 2+ variant groups. optionNames[i] is the option name chosen from group i (in group order).\n",
+    ),
 });
 
-export const SaveProductVariantsResponseItem = zod.object({
-  id: zod.number(),
-  productId: zod.number(),
-  name: zod.string(),
-  required: zod.boolean(),
-  options: zod.array(
+export const SaveProductVariantsResponse = zod.object({
+  groups: zod.array(
     zod.object({
       id: zod.number(),
-      groupId: zod.number(),
+      productId: zod.number(),
       name: zod.string(),
-      priceAdjustment: zod.number(),
-      position: zod.number(),
+      required: zod.boolean(),
+      options: zod.array(
+        zod.object({
+          id: zod.number(),
+          groupId: zod.number(),
+          name: zod.string(),
+          priceAdjustment: zod.number(),
+          position: zod.number(),
+          stockCount: zod.number().nullish(),
+          sku: zod.string().nullish(),
+        }),
+      ),
+    }),
+  ),
+  combinations: zod.array(
+    zod.object({
+      id: zod.number(),
+      productId: zod.number(),
+      optionIds: zod.array(zod.number()),
+      label: zod.string().describe('Combined label e.g. \"Med\/Red\"'),
       stockCount: zod.number().nullish(),
       sku: zod.string().nullish(),
+      position: zod.number(),
     }),
   ),
 });
-export const SaveProductVariantsResponse = zod.array(
-  SaveProductVariantsResponseItem,
-);
 
 /**
  * @summary Get all modifier groups with options for a product

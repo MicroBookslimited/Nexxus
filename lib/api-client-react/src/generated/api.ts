@@ -48,6 +48,7 @@ import type {
   GetDailySalesParams,
   GetHourlySalesParams,
   GetLowStockProductsParams,
+  GetProductVariantsResponse,
   GetRecentOrdersParams,
   GetReportSummaryParams,
   GetTopProductsParams,
@@ -83,7 +84,6 @@ import type {
   UpdateOrderStatusBody,
   UpdateStaffBody,
   UpdateTableBody,
-  VariantGroup,
   VerifyStaffPinBody,
 } from "./api.schemas";
 
@@ -699,7 +699,7 @@ export function useGetProductCustomization<
 }
 
 /**
- * @summary Get all variant groups with options for a product
+ * @summary Get all variant groups with options and combinations for a product
  */
 export const getGetProductVariantsUrl = (id: number) => {
   return `/api/products/${id}/variants`;
@@ -708,8 +708,8 @@ export const getGetProductVariantsUrl = (id: number) => {
 export const getProductVariants = async (
   id: number,
   options?: RequestInit,
-): Promise<VariantGroup[]> => {
-  return customFetch<VariantGroup[]>(getGetProductVariantsUrl(id), {
+): Promise<GetProductVariantsResponse> => {
+  return customFetch<GetProductVariantsResponse>(getGetProductVariantsUrl(id), {
     ...options,
     method: "GET",
   });
@@ -759,7 +759,7 @@ export type GetProductVariantsQueryResult = NonNullable<
 export type GetProductVariantsQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get all variant groups with options for a product
+ * @summary Get all variant groups with options and combinations for a product
  */
 
 export function useGetProductVariants<
@@ -796,13 +796,16 @@ export const saveProductVariants = async (
   id: number,
   saveVariantsBody: SaveVariantsBody,
   options?: RequestInit,
-): Promise<VariantGroup[]> => {
-  return customFetch<VariantGroup[]>(getSaveProductVariantsUrl(id), {
-    ...options,
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(saveVariantsBody),
-  });
+): Promise<GetProductVariantsResponse> => {
+  return customFetch<GetProductVariantsResponse>(
+    getSaveProductVariantsUrl(id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(saveVariantsBody),
+    },
+  );
 };
 
 export const getSaveProductVariantsMutationOptions = <
