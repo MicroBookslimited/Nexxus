@@ -785,7 +785,7 @@ router.get("/reports/eod-summary", async (req, res): Promise<void> => {
   const payouts = sessionIds.length > 0
     ? await db.select().from(cashPayoutsTable)
         .where(and(
-          sql`${cashPayoutsTable.sessionId} = ANY(${sql.raw(`ARRAY[${sessionIds.join(",")}]::int[]`)})`,
+          inArray(cashPayoutsTable.sessionId, sessionIds),
           gte(cashPayoutsTable.createdAt, from),
           lte(cashPayoutsTable.createdAt, to),
         ))

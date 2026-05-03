@@ -72,7 +72,8 @@
     "vaul": "^1.1.2",
     "vite": "catalog:",
     "wouter": "^3.3.5",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@types/papaparse": "^5.3.16"
   },
   "dependencies": {
     "@paypal/paypal-js": "^9.5.0",
@@ -83,6 +84,7 @@
     "qrcode.react": "^4.2.0",
     "vite-plugin-pwa": "^1.2.0",
     "workbox-window": "^7.4.0",
-    "xlsx": "^0.18.5"
+    "papaparse": "^5.5.3",
+    "read-excel-file": "9.0.7"
   }
 }

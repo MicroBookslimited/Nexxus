@@ -1074,6 +1074,26 @@ function downloadTemplate() {
 
 type ImportResult = { row: number; name: string; status: "ok" | "error"; error?: string };
 
+async function parseSpreadsheet(file: File): Promise<(string | number | boolean | null)[][]> {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "csv") {
+    const Papa = (await import("papaparse")).default;
+    const text = await file.text();
+    const result = Papa.parse<(string | number | boolean | null)[]>(text, {
+      header: false,
+      skipEmptyLines: true,
+      dynamicTyping: false,
+    });
+    return result.data;
+  } else {
+    const readXlsxFile = (await import("read-excel-file/browser")).default;
+    const rows = await readXlsxFile(file);
+    return rows.map((row) =>
+      row.map((cell) => (cell instanceof Date ? cell.toLocaleDateString() : cell))
+    );
+  }
+}
+
 function ImportProductsDialog({ open, onClose, onImported }: {
   open: boolean;
   onClose: () => void;
@@ -1096,11 +1116,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
 
   const parseFile = async (file: File) => {
     try {
-      const XLSX = await import("xlsx");
-      const buf  = await file.arrayBuffer();
-      const wb   = XLSX.read(buf, { type: "array" });
-      const ws   = wb.Sheets[wb.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: "" }) as string[][];
+      const data = await parseSpreadsheet(file) as string[][];
       if (!data.length) { toast({ title: "Empty file", variant: "destructive" }); return; }
       const [hdr, ...body] = data;
       const clean = hdr.map(h => String(h).trim());
@@ -1549,11 +1565,7 @@ function MBPOSImportDialog({ open, onClose, onImported }: {
 
   const parseFile = async (file: File) => {
     try {
-      const XLSX = await import("xlsx");
-      const buf  = await file.arrayBuffer();
-      const wb   = XLSX.read(buf, { type: "array" });
-      const ws   = wb.Sheets[wb.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(ws, { header: 1, defval: "" }) as (string | number | boolean | null)[][];
+      const data = await parseSpreadsheet(file);
       if (!data.length) { toast({ title: "Empty file", variant: "destructive" }); return; }
 
       // Find the true header row (the one that contains "Product Name" / "product name" in col 0,
