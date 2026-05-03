@@ -2925,7 +2925,7 @@ export function POS() {
                   placeholder="Scan or type…"
                   value={quickAddForm.barcode}
                   onChange={(e) => setQuickAddForm(f => ({ ...f, barcode: e.target.value }))}
-                  onKeyDown={(e) => e.key === "Enter" && handleQuickAddSubmit()}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); document.getElementById("qa-stock")?.focus(); } }}
                 />
               </div>
               <div className="space-y-1.5">
