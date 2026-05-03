@@ -142,7 +142,6 @@ export default defineConfig({
           "react-vendor": ["react", "react-dom", "react/jsx-runtime"],
           "router": ["wouter"],
           "query": ["@tanstack/react-query"],
-          "xlsx": ["xlsx"],
           "barcode": ["jsbarcode"],
           "charts": ["recharts"],
           "icons": ["lucide-react"],
