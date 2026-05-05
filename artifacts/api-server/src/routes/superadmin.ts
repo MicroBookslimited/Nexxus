@@ -4,8 +4,10 @@ import {
   bankAccountSettingsTable, bankTransferProofsTable, appSettingsTable,
   impersonationLogsTable, tenantAdminUsersTable,
   techniciansTable, technicianAssignmentsTable,
+  subscriptionManualPaymentsTable,
 } from "@workspace/db";
 import { eq, desc, count, sql, ilike, or, and, isNull } from "drizzle-orm";
+import { computeNextStartDate, addBillingCycle } from "../utils/manual-payments";
 import { getSetting } from "./settings";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
@@ -1000,6 +1002,115 @@ router.get("/superadmin/tenants-lite", async (req, res): Promise<void> => {
     : await baseQuery.orderBy(tenantsTable.businessName).limit(50);
 
   res.json(rows);
+});
+
+/* ─── Manual / Offline Subscription Payments ─── */
+
+const CreateManualPaymentBody = z.object({
+  planId: z.number().int().positive(),
+  billingCycle: z.enum(["monthly", "annual"]).default("monthly"),
+  amount: z.number().positive(),
+  paymentMethod: z.enum(["cash", "bank_transfer", "cheque", "card", "other"]).default("cash"),
+  referenceNumber: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+router.post("/superadmin/tenants/:id/manual-payments", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const tenantId = Number(req.params["id"]);
+  if (isNaN(tenantId)) { res.status(400).json({ error: "Invalid tenant id" }); return; }
+
+  const [tenant] = await db.select({ id: tenantsTable.id }).from(tenantsTable).where(eq(tenantsTable.id, tenantId));
+  if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
+
+  const parsed = CreateManualPaymentBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request", details: parsed.error.issues }); return; }
+
+  const { planId, billingCycle, amount, paymentMethod, referenceNumber, notes } = parsed.data;
+
+  const [plan] = await db.select({ id: subscriptionPlansTable.id }).from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId));
+  if (!plan) { res.status(404).json({ error: "Plan not found" }); return; }
+
+  const scheduledStartDate = await computeNextStartDate(tenantId);
+  const scheduledEndDate = addBillingCycle(scheduledStartDate, billingCycle);
+  const createdBy = getSuperadminEmailFromRequest(req);
+
+  const [created] = await db.insert(subscriptionManualPaymentsTable).values({
+    tenantId,
+    planId,
+    billingCycle,
+    amount,
+    paymentMethod,
+    referenceNumber: referenceNumber ?? null,
+    notes: notes ?? null,
+    scheduledStartDate,
+    scheduledEndDate,
+    status: "scheduled",
+    createdBy,
+  }).returning();
+
+  res.status(201).json(created);
+});
+
+router.get("/superadmin/tenants/:id/manual-payments", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const tenantId = Number(req.params["id"]);
+  if (isNaN(tenantId)) { res.status(400).json({ error: "Invalid tenant id" }); return; }
+
+  const payments = await db
+    .select({
+      id: subscriptionManualPaymentsTable.id,
+      tenantId: subscriptionManualPaymentsTable.tenantId,
+      planId: subscriptionManualPaymentsTable.planId,
+      planName: subscriptionPlansTable.name,
+      billingCycle: subscriptionManualPaymentsTable.billingCycle,
+      amount: subscriptionManualPaymentsTable.amount,
+      paymentMethod: subscriptionManualPaymentsTable.paymentMethod,
+      referenceNumber: subscriptionManualPaymentsTable.referenceNumber,
+      notes: subscriptionManualPaymentsTable.notes,
+      scheduledStartDate: subscriptionManualPaymentsTable.scheduledStartDate,
+      scheduledEndDate: subscriptionManualPaymentsTable.scheduledEndDate,
+      status: subscriptionManualPaymentsTable.status,
+      appliedAt: subscriptionManualPaymentsTable.appliedAt,
+      createdBy: subscriptionManualPaymentsTable.createdBy,
+      createdAt: subscriptionManualPaymentsTable.createdAt,
+    })
+    .from(subscriptionManualPaymentsTable)
+    .leftJoin(subscriptionPlansTable, eq(subscriptionManualPaymentsTable.planId, subscriptionPlansTable.id))
+    .where(eq(subscriptionManualPaymentsTable.tenantId, tenantId))
+    .orderBy(desc(subscriptionManualPaymentsTable.scheduledStartDate));
+
+  res.json(payments);
+});
+
+router.delete("/superadmin/tenants/:id/manual-payments/:paymentId", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const tenantId = Number(req.params["id"]);
+  const paymentId = Number(req.params["paymentId"]);
+  if (isNaN(tenantId) || isNaN(paymentId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [payment] = await db
+    .select()
+    .from(subscriptionManualPaymentsTable)
+    .where(and(
+      eq(subscriptionManualPaymentsTable.id, paymentId),
+      eq(subscriptionManualPaymentsTable.tenantId, tenantId),
+    ));
+
+  if (!payment) { res.status(404).json({ error: "Payment not found" }); return; }
+  if (payment.status !== "scheduled") {
+    res.status(409).json({ error: `Cannot cancel a payment that is already ${payment.status}` });
+    return;
+  }
+
+  await db.update(subscriptionManualPaymentsTable)
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(eq(subscriptionManualPaymentsTable.id, paymentId));
+
+  res.json({ success: true });
 });
 
 export default router;

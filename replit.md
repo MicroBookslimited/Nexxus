@@ -1,51 +1,84 @@
-# Overview
+# NEXXUS POS
 
-This project is a pnpm workspace monorepo written in TypeScript, designed to build a comprehensive Point of Sale (POS) system called NEXXUS POS. It aims to unify various business functionalities into a single application, including customer display, online ordering, reseller management, and advanced accounting. The system provides a robust solution for businesses to manage sales, inventory, staff, and customer relationships across multiple locations, with a focus on ease of use and scalability.
+NEXXUS POS is a comprehensive Point of Sale (POS) system that unifies various business functionalities into a single application for small to medium-sized businesses.
 
-NEXXUS POS, branded "Your Business, Connected." and powered by MicroBooks, targets small to medium-sized businesses looking for an integrated platform to streamline their operations. Key capabilities include a full-featured POS terminal, kitchen display system, multi-location inventory management, detailed accounting modules (Chart of Accounts, Journal Entries, P&L, Balance Sheet), staff management with role-based access, and a customer loyalty program. The platform also features a dedicated reseller portal to foster channel partnerships and drive growth.
+## Run & Operate
 
-# User Preferences
+*   **Install dependencies**: `pnpm install`
+*   **Run development servers**: `pnpm dev` (starts both frontend and backend)
+*   **Build all artifacts**: `pnpm build`
+*   **Run typecheck**: `pnpm typecheck`
+*   **Generate API client**: `pnpm -F api-server codegen`
+*   **Push DB schema**: `drizzle-kit push:pg` (from `artifacts/api-server`)
+
+**Required Environment Variables**:
+*   `DATABASE_URL`
+*   `JWT_SECRET`
+*   `PAYPAL_CLIENT_ID`
+*   `PAYPAL_CLIENT_SECRET`
+*   `POWERTRANZ_API_KEY`
+*   `POWERTRANZ_MERCHANT_ID`
+*   `QUICKBOOKS_CLIENT_ID`
+*   `QUICKBOOKS_CLIENT_SECRET`
+
+## Stack
+
+*   **Runtime**: Node.js 24
+*   **Language**: TypeScript 5.9
+*   **Frontend**: React, Vite
+*   **Backend**: Express 5
+*   **ORM**: Drizzle ORM
+*   **Database**: PostgreSQL
+*   **Validation**: Zod
+*   **Build Tool**: pnpm (monorepo workspace)
+
+## Where things live
+
+*   **Frontend Application**: `artifacts/nexus-pos` (React + Vite)
+    *   **Receipt Templates**: `artifacts/nexus-pos/src/lib/receipt.ts`
+*   **Backend API Server**: `artifacts/api-server` (Express)
+    *   **DB Schema**: `artifacts/api-server/src/db/schema.ts`
+    *   **API Contracts (OpenAPI spec)**: `artifacts/api-server/openapi.yaml`
+*   **Shared Utilities/Types**: `packages/` (e.g., `packages/types`)
+
+## Architecture decisions
+
+*   **Unified Frontend**: A single React application (`artifacts/nexus-pos`) serves all user roles (POS, customer display, reseller portal, admin) via URL-based routing and lazy-loaded components, improving maintainability.
+*   **Modular Backend API**: A RESTful Express API (`artifacts/api-server`) with distinct endpoints for various business domains ensures scalability and clear separation of concerns.
+*   **Multi-Unit Sales**: Products can have multiple sale units. The POS captures quantity in base units, and the cart UI shows a badge with the selected unit. Different unit choices for the same product appear as separate cart lines.
+*   **Variant Stock Tracking**: For single variant groups, stock is tracked per variant option. For two or more variant groups, stock is tracked at the combination level, with a dedicated `variant_combinations` table.
+*   **Per-Product Tax Exemption**: Products can be marked `is_taxable`. Non-taxable products are excluded from the tax base. Discounts are proportionally applied to taxable and non-taxable buckets.
+*   **Technician Role**: A restricted role for installers to set up customer POS systems, with impersonation capabilities and server-side route blocking for sales/financial operations.
+
+## Product
+
+*   **POS Terminal**: Full-featured point-of-sale operations.
+*   **Customer Display & Online Ordering**: Integrated customer-facing interfaces.
+*   **Inventory Management**: Multi-location tracking, real-time stock deduction, stock transfers, bulk stock count with variance reporting.
+*   **Accounting Modules**: Chart of Accounts, Journal Entries, P&L, Balance Sheet, QuickBooks integration.
+*   **Staff Management**: Role-based access, clock-in/out, shift tracking.
+*   **Customer Loyalty Program**: Points accrual and redemption.
+*   **Reseller Portal**: Dedicated portal for managing resellers, referrals, and commissions.
+*   **Email Automation**: Template management, event-triggered emails, unsubscribe system.
+*   **Subscription Management**: SaaS layer with payment processing (PayPal, PowerTranz) and manual payment recording for superadmins.
+
+## User preferences
 
 I want iterative development. I want to be asked before you make any major changes to the codebase. I prefer clear and concise explanations.
 
-# System Architecture
+## Gotchas
 
-The project is structured as a pnpm workspace monorepo, utilizing Node.js 24 and TypeScript 5.9. The frontend is a React + Vite web application (`artifacts/nexus-pos`) that consolidates all user-facing sections (landing, customer display, menu, reseller portal, and the main POS app) into a single, unified application. Navigation is managed by top-level `App.tsx` dispatching to lazy-loaded components based on URL prefixes, with each section managing its own router. The UI adopts a dark navy and electric blue theme.
+*   **Multi-unit product quantity edits**: Direct quantity edits for multi-unit products snap to the nearest whole multiple of the unit factor on commit.
+*   **Technician Impersonation**: Technician-impersonated sessions have **LIMITED access**. Sales and financial routes are blocked server-side, and the frontend hides related functionalities.
+*   **Database Migrations**: Always ensure `drizzle-kit push:pg` is run after schema changes in `artifacts/api-server`.
 
-The backend is an Express 5 REST API (`artifacts/api-server`) that handles all business logic, data persistence, and integrations. It exposes a rich set of API endpoints for product management, order processing, customer management, staff operations, multi-location inventory, accounting, and reporting. Data is stored in a PostgreSQL database and managed using Drizzle ORM. API requests and responses are validated using Zod, and API hooks are generated from an OpenAPI spec using Orval.
+## Pointers
 
-Key architectural features include:
-- **Unified Frontend**: A single React application serves all user roles and functionalities, improving maintainability and user experience.
-- **Modular Backend**: A RESTful API design with distinct endpoints for various business domains ensures scalability and clear separation of concerns.
-- **SaaS Layer**: Includes robust authentication using JWT for tenants and superadmins, and integrated payment processing via PayPal and PowerTranz. Subscription plans are managed within this layer.
-- **Accounting Module**: Implements double-entry bookkeeping principles, providing a comprehensive Chart of Accounts, Journal Entries, and standard financial reports (P&L, Balance Sheet, Trial Balance). It also supports QuickBooks integration for seamless financial data synchronization.
-- **Inventory Management**: Features real-time stock deduction, multi-location inventory tracking, stock transfers, and detailed stock adjustment/counting functionalities.
-- **Multi-Unit Sales (Unit-of-Measure Picker)**: Products can have multiple sale units configured in `product_purchase_units` (e.g. each, Six Pack, Case). When the cashier taps a multi-unit product in the POS, a "Choose unit" dialog opens listing every sale unit with its computed price (basePrice × conversionFactor). Selected lines store quantity in BASE units so stock decrements, volume tiers, and `originalUnitPrice` keep working unchanged. The cart line shows a cyan badge "<count> <unitLabel>" and the +/- buttons step by the unit factor. Direct quantity edits snap to the nearest whole multiple on commit (Enter / blur). Different unit choices for the same product appear as separate cart lines, keyed by the DB unit row id.
-- **Reseller System**: A dedicated portal and associated backend logic manage reseller sign-ups, referrals, commission tracking (30% recurring), and payout requests, with safeguards against self-referral and double-commissioning.
-- **Email Automation System**: Full template management with DB-backed `email_templates` and `email_logs` tables. Supports 5 event triggers (user_signup, payment_success, payment_failed, trial_expiring, password_reset) with `{{variable}}` interpolation, CRUD via `/superadmin/email/*` endpoints, test-send with variable overrides, and a full log viewer. Managed from the "Email" tab in the Super Admin panel.
-- **Bulk Stock Count & Variance Report**: The existing stock-count session UI now has Quick Fill (match system / set all to zero / clear inputs), Export CSV, and Import CSV actions, backed by `POST /api/accounting/stock-counts/:id/items/bulk`, `GET /accounting/stock-counts/:id/export.csv`, and `POST /accounting/stock-counts/:id/import` (parses by productId or barcode, tenant-scoped). All three refuse to mutate completed/voided sessions and never overwrite already-applied items. A new "Stock Variance" tab in the Reports page calls `GET /api/accounting/reports/stock-variance?from=&to=` and surfaces KPIs (sessions, items, shrinkage value, overage value, net), category breakdown, top 20 variance events ranked by absolute value impact, and a per-session list. Valuation uses each item's stored `unitCost`; net variance signs positive for overage and negative for shrinkage.
-- **Staff Clock-In / Shift Tracking**: The `staff_sessions` table records clock-in/out events per staff with optional location. A partial unique index (`staff_sessions_one_active_per_staff`) plus a status CHECK constraint enforce at most one open shift per staff at the database layer. API endpoints under `/api/staff/clock-in`, `/api/staff/clock-out`, `/api/staff/sessions/current`, `/api/staff/sessions`, and `/api/staff/sessions/active` use tenant-token auth + `x-staff-id` header. Non-manager roles can only list/see their own shifts; the active-shifts roster requires a manager role (admin/manager/supervisor/owner). The frontend exposes a header `ShiftClockButton` widget (live elapsed timer when on shift) and a dedicated `/clock` page with current-shift card, manager-only active staff table, and history with mine/all + today/week/all filters. All clock events are written to the audit log (`staff.clock_in` / `staff.clock_out`).
-- **Technician/Installer Role**: A self-service role for installers/integrators who set up and maintain customer POS systems on behalf of NEXXUS POS. Technicians register at `/technician/register` (status `pending`), are approved by superadmins via the new "Technicians" tab in the Super Admin panel, and are assigned to one or more customer tenants. After signing in at `/technician/login`, they see a portal at `/technician` listing their assigned customers and can "Open POS" for any of them. The `/api/technician/tenants/:tenantId/login-as` endpoint mints a tenant JWT carrying `impersonation: true`, `restrictedRole: "technician"`, `actorTechnicianId`, and `actorName`; this session has LIMITED access — sales/financial routes (orders POST/PATCH/charge, cash open/close/payouts, top-up sales, top-up wallet fund, held-orders POST, purchases POST) are blocked server-side via `requireFullTenant` (returns 403). The frontend hides POS, Orders, Cash, Tables, Kitchen, Top-Up, Subscription, AR/AP, Accounting, Staff, Customers, etc. when `restrictedRole === "technician"`, and the impersonation banner switches to a blue "Technician … accessing: <business>" indicator with a "Back to Portal" exit. Schema: `technicians` (id, name, email unique, passwordHash, status, timestamps), `technician_assignments` (technicianId, tenantId — unique pair), and the existing `impersonation_logs` table extended with `actorType` ('superadmin' default | 'technician'), `actorTechnicianId`, and `actorName` for full audit traceability.
-- **Per-Variant Stock Tracking (single group)**: Every variant option carries its own `stock_count` (nullable real) and `sku` (nullable text). When at least one option in a product's single variant group has a non-null `stock_count`, the product uses **per-variant tracking mode**: the POS deducts from the specific chosen option's stock atomically on every sale; `products.stock_count` is reconciled as `SUM(variant_options.stock_count)`; refunds and voids restore the option stock symmetrically. Saving variants uses an **upsert-by-id strategy** (groupId + optionId in the save payload) so stock counts survive name/price edits.
-- **Multi-Group Variant Combinations**: When a product has **2 or more variant groups** (e.g. Size + Colour), stock is tracked at the **combination level** rather than the individual option level. The `variant_combinations` table stores every valid cross-product pair (or N-tuple) with its own `stock_count`, `sku`, and a `label` (e.g. `"Med/Red"`). On sale the backend deducts from the matching combination row; `products.stock_count` is re-synced as `SUM(combination.stock_count)` across the pool after every order. Refunds restore combination stock first, then fall back to option-level for older orders. The variant editor in Products shows a **Combination stock matrix** below the group editors when 2+ groups are active — each row is a cross-product label with a Qty and SKU input. Option-level Qty column is hidden in multi-group mode. OpenAPI: `GetProductVariantsResponse = { groups: VariantGroup[], combinations: VariantCombination[] }`; `SaveVariantsBody.combinations` carries `optionNames`, `stockCount`, `sku`, `combinationId`. Schema: `variant_combinations` (id, productId, tenantId, optionIds jsonb, label, stockCount, sku, createdAt, updatedAt).
-- **Per-Product Tax Exemption (`isTaxable`)**: Every product has an `is_taxable` boolean column (DB default `TRUE`). When a product is marked non-taxable, it is excluded from the tax base at checkout — both in the POS cart (frontend) and at order creation (backend). Order-level discounts and loyalty redemptions are applied proportionally between the taxable and non-taxable buckets so discounts never inflate the tax base. The product form in the Inventory → Products page exposes an "Attracts sales tax" toggle (visible for both simple and composite products). Tax mode (inclusive/exclusive) is respected for the taxable-only subtotal. Fields: `CreateProductBody.isTaxable` (optional, default `true`), `Product.isTaxable` (required in API response), `CartItem.isTaxable` in frontend cart state.
-- **Receipt Templates**: Settings → Receipts offers seven visual templates the business can choose from:
-  - `classic`, `modern`, `minimal`, `bold` — standard NEXXUS layout with different typography/dividers and a big last-3-digits pickup number
-  - `supermarket` — US grocery / big-box style: centered store header, ST#/OP#/TE#/TR# identifier row, three-column item rows with per-line barcode, TEND line + CHANGE DUE, masked card block, "# ITEMS SOLD N", CSS-stripe barcode, "*** CUSTOMER COPY ***"
-  - `convenience` — 7-Eleven / corner store style: THANKS FOR SHOPPING header, tax indicators (T/B) on line items, discounts as negative lines, large bold VISA/CASH payment line with card detail block (ACCT#, ACCT TYPE, APPROVAL#, AUTH CODE, APPROVAL TIME, network, STORE#, TERM#, TERM SEQ#, REF#, ENTRY, APPROVED), customer agreement text, T# OP TRN timestamp footer
-  - `staple` — large-format retail / office supply style: giant bold store name, tagline from receipt_footer, SALE row with transaction ID + time + date, QTY/SKU/PRICE column header, items with product name + numeric SKU, $ totals with tax detail, CREDIT/CASH payment block with card no./auth/AID, large "# TOTAL ITEMS N" footer, CSS barcode, "*** CUSTOMER COPY ***"
-  All seven templates live in `artifacts/nexus-pos/src/lib/receipt.ts` and are selected via the `receipt_template` app setting (Settings → Receipts tab).
-- **Marketing Email Unsubscribe System**: Every bulk marketing email includes a signed one-click unsubscribe link. The public `/api/unsubscribe?token=...` endpoint verifies the JWT, records the opt-out in `marketing_unsubscribes`, and shows a confirmation page. Audience resolution in `superadmin-marketing.ts` excludes opted-out addresses. Campaign detail endpoint returns `unsubscribeCount`. Superadmins can view the global opt-out list at `GET /api/superadmin/marketing/unsubscribes`.
-- **Orders Page Default Filter**: The Orders list page defaults to "Today" on every load (both `fromDate` and `toDate` initialised with `todayStr()`). Users can still select Yesterday, Last 7 Days, Last 30 Days, All, or a custom date range at any time.
-- **Database Schema**: Designed to support all core functionalities, including `products`, `orders`, `customers`, `staff`, `locations`, `dining_tables`, `accounts`, `journal_entries`, `resellers`, `email_templates`, `email_logs`, and related entities, with appropriate foreign key relationships.
-- **Business Rules**: Enforced server-side, including a 10% tax rate, loyalty point accrual (1 point per $10 spent) and redemption (100 points = $1.00 discount), and configurable low-stock thresholds.
-
-# External Dependencies
-
-- **Database**: PostgreSQL (with Drizzle ORM)
-- **API Codegen**: Orval (generates from OpenAPI spec)
-- **Payment Gateways**:
-  - PayPal (using PayPal Orders API v2 and `@paypal/paypal-js` for Smart Buttons)
-  - PowerTranz (direct REST API integration)
-- **Financial Integration**: QuickBooks (via OAuth 2.0 for syncing orders as Sales Receipts)
-- **Charting Library**: Recharts (for dashboard visualizations)
+*   **Drizzle ORM Documentation**: [https://orm.drizzle.team/](https://orm.drizzle.team/)
+*   **Express.js Documentation**: [https://expressjs.com/](https://expressjs.com/)
+*   **React Documentation**: [https://react.dev/](https://react.dev/)
+*   **Vite Documentation**: [https://vitejs.dev/](https://vitejs.dev/)
+*   **Zod Documentation**: [https://zod.dev/](https://zod.dev/)
+*   **Orval Documentation**: [https://orval.dev/](https://orval.dev/)
+*   **PayPal Developer Documentation**: [https://developer.paypal.com/](https://developer.paypal.com/)
+*   **QuickBooks API Documentation**: [https://developer.intuit.com/app/developer/qbo/docs/api](https://developer.intuit.com/app/developer/qbo/docs/api)

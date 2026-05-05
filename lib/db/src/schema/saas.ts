@@ -197,6 +197,38 @@ export const marketingLinkClicksTable = pgTable("marketing_link_clicks", {
 
 export type MarketingLinkClick = typeof marketingLinkClicksTable.$inferSelect;
 
+/**
+ * Superadmin-recorded manual/offline subscription payments.
+ * Each row represents a payment received outside the normal online flow
+ * (cash, cheque, bank transfer, etc.). The payment is "scheduled" to take
+ * effect when the current subscription period ends; multiple payments can
+ * be chained — each one starts where the previous one ends.
+ *
+ * Auto-applied: on every /api/saas/me call the server checks for any
+ * scheduled payments whose scheduledStartDate ≤ now and activates them.
+ */
+export const subscriptionManualPaymentsTable = pgTable("subscription_manual_payments", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id, { onDelete: "cascade" }),
+  planId: integer("plan_id").notNull().references(() => subscriptionPlansTable.id),
+  billingCycle: text("billing_cycle").notNull().default("monthly"),
+  amount: real("amount").notNull(),
+  // cash | bank_transfer | cheque | card | other
+  paymentMethod: text("payment_method").notNull().default("cash"),
+  referenceNumber: text("reference_number"),
+  notes: text("notes"),
+  // When this payment period starts (= end of current subscription or last scheduled payment)
+  scheduledStartDate: timestamp("scheduled_start_date", { withTimezone: true }).notNull(),
+  // When this payment period ends (scheduledStartDate + billingCycle duration)
+  scheduledEndDate: timestamp("scheduled_end_date", { withTimezone: true }).notNull(),
+  // scheduled | applied | cancelled
+  status: text("status").notNull().default("scheduled"),
+  appliedAt: timestamp("applied_at", { withTimezone: true }),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const bankTransferProofsTable = pgTable("bank_transfer_proofs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id),

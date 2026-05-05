@@ -21,7 +21,8 @@ import {
   superadminForceLogoutTenant, superadminForceLogoutAdminUser,
   superadminGetPlans, superadminCreatePlan, superadminUpdatePlan, superadminDeletePlan,
   superadminGetGatewaySettings, superadminUpdateGatewaySettings, superadminGetImpersonationLogs, superadminCloseImpersonationSession,
-  type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow, type GatewaySettings, type ImpersonationLog,
+  superadminGetManualPayments, superadminCreateManualPayment, superadminCancelManualPayment,
+  type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow, type GatewaySettings, type ImpersonationLog, type ManualPayment,
 } from "@/lib/saas-api";
 
 type Stats = {
@@ -127,7 +128,19 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 /* ─── Tenant Detail Modal ─── */
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  cash: "Cash", bank_transfer: "Bank Transfer", cheque: "Cheque", card: "Card", other: "Other",
+};
+
+function ManualPaymentStatusBadge({ status }: { status: string }) {
+  if (status === "applied") return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">Applied</span>;
+  if (status === "scheduled") return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">Scheduled</span>;
+  return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#2a3a55] text-[#94a3b8] border border-[#2a3a55]">Cancelled</span>;
+}
+
 function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; plans: { id: number; name: string; slug: string }[]; onClose: () => void; onUpdate: () => void }) {
+  const [innerTab, setInnerTab] = useState<"settings" | "payments">("settings");
+
   const [tenantStatus, setTenantStatus] = useState(tenant.status);
   const [subStatus, setSubStatus] = useState(tenant.subscriptionStatus ?? "trial");
   const [planId, setPlanId] = useState(tenant.planId ?? 0);
@@ -136,9 +149,31 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
 
+  const [payments, setPayments] = useState<ManualPayment[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [showAddPayment, setShowAddPayment] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    planId: tenant.planId ?? (plans[0]?.id ?? 0),
+    billingCycle: "monthly" as "monthly" | "annual",
+    amount: 0,
+    paymentMethod: "cash" as "cash" | "bank_transfer" | "cheque" | "card" | "other",
+    referenceNumber: "",
+    notes: "",
+  });
+  const [addingPayment, setAddingPayment] = useState(false);
+  const [addPaymentError, setAddPaymentError] = useState("");
+
+  const loadPayments = useCallback(async () => {
+    setPaymentsLoading(true);
+    try { setPayments(await superadminGetManualPayments(tenant.id)); }
+    catch { /* ignore */ }
+    finally { setPaymentsLoading(false); }
+  }, [tenant.id]);
+
+  useEffect(() => { if (innerTab === "payments") loadPayments(); }, [innerTab, loadPayments]);
+
   async function handleSave() {
-    setSaving(true);
-    setSaveError("");
+    setSaving(true); setSaveError("");
     try {
       await superadminUpdateTenant(tenant.id, {
         status: tenantStatus, subscriptionStatus: subStatus,
@@ -152,75 +187,272 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
     } finally { setSaving(false); }
   }
 
+  async function handleAddPayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!paymentForm.planId) { setAddPaymentError("Please select a plan"); return; }
+    if (paymentForm.amount <= 0) { setAddPaymentError("Amount must be greater than 0"); return; }
+    setAddingPayment(true); setAddPaymentError("");
+    try {
+      await superadminCreateManualPayment(tenant.id, {
+        planId: paymentForm.planId,
+        billingCycle: paymentForm.billingCycle,
+        amount: paymentForm.amount,
+        paymentMethod: paymentForm.paymentMethod,
+        referenceNumber: paymentForm.referenceNumber || undefined,
+        notes: paymentForm.notes || undefined,
+      });
+      setShowAddPayment(false);
+      setPaymentForm(f => ({ ...f, referenceNumber: "", notes: "", amount: 0 }));
+      await loadPayments();
+    } catch (e) {
+      setAddPaymentError(e instanceof Error ? e.message : "Failed to record payment");
+    } finally { setAddingPayment(false); }
+  }
+
+  async function handleCancelPayment(paymentId: number) {
+    if (!confirm("Cancel this scheduled payment? This cannot be undone.")) return;
+    try {
+      await superadminCancelManualPayment(tenant.id, paymentId);
+      await loadPayments();
+    } catch (e) { alert(e instanceof Error ? e.message : "Failed to cancel payment"); }
+  }
+
+  const setP = (k: string, v: string | number) => setPaymentForm(f => ({ ...f, [k]: v }));
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-[#1a2332] border border-[#2a3a55] rounded-t-2xl sm:rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-[#2a3a55]">
+      <div className="bg-[#1a2332] border border-[#2a3a55] rounded-t-2xl sm:rounded-2xl w-full max-w-xl max-h-[95vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-0 shrink-0">
           <div>
             <h3 className="text-lg font-bold text-white">{tenant.businessName}</h3>
             <p className="text-[#94a3b8] text-sm">{tenant.email}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55]"><X size={16} /></button>
         </div>
-        <div className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><span className="text-[#475569]">Owner</span><p className="text-white">{tenant.ownerName}</p></div>
-            <div><span className="text-[#475569]">Phone</span><p className="text-white">{tenant.phone ?? "—"}</p></div>
-            <div><span className="text-[#475569]">Country</span><p className="text-white">{tenant.country ?? "—"}</p></div>
-            <div><span className="text-[#475569]">Joined</span><p className="text-white">{new Date(tenant.createdAt).toLocaleDateString()}</p></div>
-            <div><span className="text-[#475569]">Last Login</span><p className="text-white" title={tenant.lastLoginAt ? new Date(tenant.lastLoginAt).toLocaleString() : undefined}>{tenant.lastLoginAt ? formatRelativeTime(tenant.lastLoginAt) : "Never"}</p></div>
-            <div><span className="text-[#475569]">Plan</span><p className="text-white">{tenant.planName ?? "No plan"}</p></div>
-            <div><span className="text-[#475569]">Billing</span><p className="text-white capitalize">{tenant.billingCycle ?? "—"}</p></div>
-          </div>
-          <hr className="border-[#2a3a55]" />
-          <div>
-            <label className="block text-sm text-[#94a3b8] mb-1">Account Status</label>
-            <select value={tenantStatus} onChange={e => setTenantStatus(e.target.value)}
-              className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
-              <option value="active">Active</option>
-              <option value="suspended">Suspended</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-[#94a3b8] mb-1">Subscription Status</label>
-            <select value={subStatus} onChange={e => setSubStatus(e.target.value)}
-              className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
-              <option value="active">Active</option>
-              <option value="trial">Trial</option>
-              <option value="past_due">Past Due</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm text-[#94a3b8] mb-1">Plan Override</label>
-              <select value={planId} onChange={e => setPlanId(Number(e.target.value))}
-                className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
-                <option value={0}>— Keep current —</option>
-                {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-[#94a3b8] mb-1">Billing Cycle</label>
-              <select value={billingCycle} onChange={e => setBillingCycle(e.target.value as "monthly" | "annual")}
-                className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
-                <option value="monthly">Monthly</option>
-                <option value="annual">Annual</option>
-              </select>
-            </div>
-          </div>
+
+        {/* Inner tabs */}
+        <div className="flex gap-1 px-6 pt-4 pb-0 border-b border-[#2a3a55] shrink-0">
+          {([["settings", "Settings"], ["payments", "Offline Payments"]] as const).map(([id, label]) => (
+            <button key={id} onClick={() => setInnerTab(id)}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${innerTab === id ? "border-[#3b82f6] text-[#3b82f6]" : "border-transparent text-[#475569] hover:text-white"}`}>
+              {label}
+            </button>
+          ))}
         </div>
-        {saveError && (
-          <div className="mx-6 mb-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{saveError}</div>
+
+        <div className="overflow-y-auto flex-1">
+          {/* ── Settings tab ── */}
+          {innerTab === "settings" && (
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><span className="text-[#475569]">Owner</span><p className="text-white">{tenant.ownerName}</p></div>
+                <div><span className="text-[#475569]">Phone</span><p className="text-white">{tenant.phone ?? "—"}</p></div>
+                <div><span className="text-[#475569]">Country</span><p className="text-white">{tenant.country ?? "—"}</p></div>
+                <div><span className="text-[#475569]">Joined</span><p className="text-white">{new Date(tenant.createdAt).toLocaleDateString()}</p></div>
+                <div><span className="text-[#475569]">Last Login</span><p className="text-white" title={tenant.lastLoginAt ? new Date(tenant.lastLoginAt).toLocaleString() : undefined}>{tenant.lastLoginAt ? formatRelativeTime(tenant.lastLoginAt) : "Never"}</p></div>
+                <div><span className="text-[#475569]">Plan</span><p className="text-white">{tenant.planName ?? "No plan"}</p></div>
+                <div><span className="text-[#475569]">Billing</span><p className="text-white capitalize">{tenant.billingCycle ?? "—"}</p></div>
+              </div>
+              <hr className="border-[#2a3a55]" />
+              <div>
+                <label className="block text-sm text-[#94a3b8] mb-1">Account Status</label>
+                <select value={tenantStatus} onChange={e => setTenantStatus(e.target.value)}
+                  className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
+                  <option value="active">Active</option>
+                  <option value="suspended">Suspended</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-[#94a3b8] mb-1">Subscription Status</label>
+                <select value={subStatus} onChange={e => setSubStatus(e.target.value)}
+                  className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
+                  <option value="active">Active</option>
+                  <option value="trial">Trial</option>
+                  <option value="past_due">Past Due</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-[#94a3b8] mb-1">Plan Override</label>
+                  <select value={planId} onChange={e => setPlanId(Number(e.target.value))}
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
+                    <option value={0}>— Keep current —</option>
+                    {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-[#94a3b8] mb-1">Billing Cycle</label>
+                  <select value={billingCycle} onChange={e => setBillingCycle(e.target.value as "monthly" | "annual")}
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white focus:border-[#3b82f6] outline-none">
+                    <option value="monthly">Monthly</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                </div>
+              </div>
+              {saveError && (
+                <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{saveError}</div>
+              )}
+            </div>
+          )}
+
+          {/* ── Offline Payments tab ── */}
+          {innerTab === "payments" && (
+            <div className="p-6 space-y-4">
+              <div className="bg-[#0f1729] border border-[#2a3a55] rounded-lg p-3 text-xs text-[#94a3b8]">
+                Record cash, cheque, or bank transfer payments received outside the online billing flow.
+                Each payment is <span className="text-white font-medium">scheduled</span> to activate when the current subscription period ends —
+                multiple payments chain automatically.
+              </div>
+
+              {/* Record Payment form */}
+              {showAddPayment ? (
+                <form onSubmit={handleAddPayment} className="bg-[#0f1729] border border-[#3b82f6]/40 rounded-xl p-4 space-y-3">
+                  <div className="text-sm font-semibold text-white mb-1">Record Offline Payment</div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-[#94a3b8] mb-1">Plan *</label>
+                      <select value={paymentForm.planId} onChange={e => setP("planId", Number(e.target.value))}
+                        className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none">
+                        <option value={0}>— Select plan —</option>
+                        {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-[#94a3b8] mb-1">Billing Cycle *</label>
+                      <select value={paymentForm.billingCycle} onChange={e => setP("billingCycle", e.target.value)}
+                        className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none">
+                        <option value="monthly">Monthly (1 month)</option>
+                        <option value="annual">Annual (12 months)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-[#94a3b8] mb-1">Amount Received *</label>
+                      <input type="number" step="0.01" min="0.01" required value={paymentForm.amount || ""}
+                        onChange={e => setP("amount", parseFloat(e.target.value) || 0)}
+                        placeholder="0.00"
+                        className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-[#94a3b8] mb-1">Payment Method *</label>
+                      <select value={paymentForm.paymentMethod} onChange={e => setP("paymentMethod", e.target.value)}
+                        className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none">
+                        <option value="cash">Cash</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="card">Card (Manual)</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-[#94a3b8] mb-1">Reference / Receipt No.</label>
+                    <input type="text" value={paymentForm.referenceNumber} onChange={e => setP("referenceNumber", e.target.value)}
+                      placeholder="e.g. CHQ-0042 or TXN-ABC123"
+                      className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-[#94a3b8] mb-1">Notes</label>
+                    <textarea value={paymentForm.notes} onChange={e => setP("notes", e.target.value)} rows={2}
+                      placeholder="Optional internal notes…"
+                      className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none resize-none" />
+                  </div>
+
+                  {addPaymentError && (
+                    <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{addPaymentError}</div>
+                  )}
+
+                  <div className="flex gap-2 pt-1">
+                    <button type="button" onClick={() => { setShowAddPayment(false); setAddPaymentError(""); }}
+                      className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2 rounded-lg text-sm transition-colors">
+                      Cancel
+                    </button>
+                    <button type="submit" disabled={addingPayment}
+                      className="flex-1 bg-[#3b82f6] hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                      {addingPayment ? <><RefreshCw size={13} className="animate-spin" /> Saving…</> : <><Check size={13} /> Record Payment</>}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button onClick={() => setShowAddPayment(true)}
+                  className="w-full flex items-center justify-center gap-2 border border-dashed border-[#3b82f6]/40 hover:border-[#3b82f6] text-[#3b82f6] hover:bg-[#3b82f6]/5 py-2.5 rounded-xl text-sm font-medium transition-colors">
+                  <Plus size={15} /> Record Offline Payment
+                </button>
+              )}
+
+              {/* Payments list */}
+              {paymentsLoading ? (
+                <div className="py-6 text-center text-[#475569]"><RefreshCw size={18} className="animate-spin mx-auto mb-1" />Loading…</div>
+              ) : payments.length === 0 ? (
+                <div className="py-8 text-center text-[#475569] text-sm">
+                  <Banknote size={24} className="mx-auto mb-2 opacity-30" />
+                  No offline payments recorded
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {payments.map(p => (
+                    <div key={p.id} className={`border rounded-xl p-3.5 text-sm transition-colors ${p.status === "scheduled" ? "bg-[#0f1729] border-[#2a3a55]" : p.status === "applied" ? "bg-green-500/5 border-green-500/20" : "bg-[#0f1729] border-[#2a3a55] opacity-60"}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="font-semibold text-white">{p.planName ?? `Plan #${p.planId}`}</span>
+                            <span className="text-[#475569] capitalize text-xs">{p.billingCycle}</span>
+                            <ManualPaymentStatusBadge status={p.status} />
+                          </div>
+                          <div className="text-[#94a3b8] text-xs flex flex-wrap gap-x-3 gap-y-0.5">
+                            <span className="font-semibold text-white">${p.amount.toFixed(2)}</span>
+                            <span>{PAYMENT_METHOD_LABELS[p.paymentMethod] ?? p.paymentMethod}</span>
+                            {p.referenceNumber && <span className="font-mono">#{p.referenceNumber}</span>}
+                          </div>
+                          <div className="text-[#475569] text-xs mt-1.5 flex flex-wrap gap-x-3">
+                            <span>
+                              {p.status === "applied" ? "Period: " : "Activates: "}
+                              <span className="text-[#94a3b8]">{new Date(p.scheduledStartDate).toLocaleDateString()}</span>
+                              {" → "}
+                              <span className="text-[#94a3b8]">{new Date(p.scheduledEndDate).toLocaleDateString()}</span>
+                            </span>
+                            {p.appliedAt && <span>Applied {new Date(p.appliedAt).toLocaleDateString()}</span>}
+                          </div>
+                          {p.notes && <div className="text-[#475569] text-xs mt-1 italic">{p.notes}</div>}
+                        </div>
+                        {p.status === "scheduled" && (
+                          <button onClick={() => handleCancelPayment(p.id)} title="Cancel this scheduled payment"
+                            className="p-1.5 rounded-lg text-[#475569] hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0">
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {innerTab === "settings" && (
+          <div className="flex gap-3 p-6 border-t border-[#2a3a55] shrink-0">
+            <button onClick={onClose} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Cancel</button>
+            <button onClick={handleSave} disabled={saving}
+              className="flex-1 bg-[#3b82f6] hover:bg-blue-500 text-white py-2.5 rounded-lg transition-colors text-sm font-medium disabled:opacity-60">
+              {saving ? "Saving…" : saved ? "Saved ✓" : "Save Changes"}
+            </button>
+          </div>
         )}
-        <div className="flex gap-3 p-6 border-t border-[#2a3a55]">
-          <button onClick={onClose} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Cancel</button>
-          <button onClick={handleSave} disabled={saving}
-            className="flex-1 bg-[#3b82f6] hover:bg-blue-500 text-white py-2.5 rounded-lg transition-colors text-sm font-medium disabled:opacity-60">
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Changes"}
-          </button>
-        </div>
+        {innerTab === "payments" && (
+          <div className="px-6 py-4 border-t border-[#2a3a55] shrink-0">
+            <button onClick={onClose} className="w-full border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Close</button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, tenantsTable, subscriptionsTable, subscriptionPlansTable, resellersTable, tenantAdminUsersTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
+import { applyDueManualPayments } from "../utils/manual-payments";
 import { z } from "zod";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -327,6 +328,8 @@ router.get("/saas/me", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Tenant not found" });
     return;
   }
+
+  await applyDueManualPayments(tenant.id);
 
   const [subscription] = await db
     .select()

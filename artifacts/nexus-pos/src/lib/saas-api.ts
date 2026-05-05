@@ -865,3 +865,45 @@ export const superadminUnassignTechnician = (technicianId: number, tenantId: num
 
 export const superadminSearchTenantsLite = (q?: string) =>
   api<TenantLite[]>(`/superadmin/tenants-lite${q ? `?q=${encodeURIComponent(q)}` : ""}`, { headers: superadminAuthHeaders() });
+
+/* ─── Manual / Offline Subscription Payments ─── */
+
+export interface ManualPayment {
+  id: number;
+  tenantId: number;
+  planId: number;
+  planName: string | null;
+  billingCycle: string;
+  amount: number;
+  paymentMethod: string;
+  referenceNumber: string | null;
+  notes: string | null;
+  scheduledStartDate: string;
+  scheduledEndDate: string;
+  status: "scheduled" | "applied" | "cancelled";
+  appliedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface CreateManualPaymentInput {
+  planId: number;
+  billingCycle: "monthly" | "annual";
+  amount: number;
+  paymentMethod: "cash" | "bank_transfer" | "cheque" | "card" | "other";
+  referenceNumber?: string;
+  notes?: string;
+}
+
+export const superadminGetManualPayments = (tenantId: number) =>
+  api<ManualPayment[]>(`/superadmin/tenants/${tenantId}/manual-payments`, { headers: superadminAuthHeaders() });
+
+export const superadminCreateManualPayment = (tenantId: number, data: CreateManualPaymentInput) =>
+  api<ManualPayment>(`/superadmin/tenants/${tenantId}/manual-payments`, {
+    method: "POST", body: JSON.stringify(data), headers: superadminAuthHeaders(),
+  });
+
+export const superadminCancelManualPayment = (tenantId: number, paymentId: number) =>
+  api<{ success: boolean }>(`/superadmin/tenants/${tenantId}/manual-payments/${paymentId}`, {
+    method: "DELETE", headers: superadminAuthHeaders(),
+  });
