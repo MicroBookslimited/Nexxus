@@ -54,3 +54,9 @@ id = "KSkrpMBHMt3r5Sf6_WMkz"
 uri = "file://NEXXUS_POS_Manual.pdf"
 type = "pdf"
 title = "NEXXUS POS User Manual — May 2026 (PDF)"
+
+[[outputs]]
+id = "6WJu53kUu4ecjDTGjvzI_"
+uri = "file://NEXXUS_POS_Boutique_Manual.pdf"
+type = "pdf"
+title = "NEXXUS POS — Clothing Boutique Manual (PDF)"
