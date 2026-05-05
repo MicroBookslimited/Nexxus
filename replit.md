@@ -9,7 +9,7 @@ NEXXUS POS is a comprehensive Point of Sale (POS) system that unifies various bu
 *   **Build all artifacts**: `pnpm build`
 *   **Run typecheck**: `pnpm typecheck`
 *   **Generate API client**: `pnpm -F api-server codegen`
-*   **Push DB schema**: `drizzle-kit push:pg` (from `artifacts/api-server`)
+*   **Push DB schema**: `pnpm --filter @workspace/db run push` (run from workspace root)
 
 **Required Environment Variables**:
 *   `DATABASE_URL`
@@ -37,7 +37,7 @@ NEXXUS POS is a comprehensive Point of Sale (POS) system that unifies various bu
 *   **Frontend Application**: `artifacts/nexus-pos` (React + Vite)
     *   **Receipt Templates**: `artifacts/nexus-pos/src/lib/receipt.ts`
 *   **Backend API Server**: `artifacts/api-server` (Express)
-    *   **DB Schema**: `artifacts/api-server/src/db/schema.ts`
+    *   **DB Schema**: `lib/db/src/schema/` (one file per domain; exported from `lib/db/src/schema/index.ts`)
     *   **API Contracts (OpenAPI spec)**: `artifacts/api-server/openapi.yaml`
 *   **Shared Utilities/Types**: `packages/` (e.g., `packages/types`)
 
@@ -60,7 +60,8 @@ NEXXUS POS is a comprehensive Point of Sale (POS) system that unifies various bu
 *   **Customer Loyalty Program**: Points accrual and redemption.
 *   **Reseller Portal**: Dedicated portal for managing resellers, referrals, and commissions.
 *   **Email Automation**: Template management, event-triggered emails, unsubscribe system.
-*   **Subscription Management**: SaaS layer with payment processing (PayPal, PowerTranz) and manual payment recording for superadmins.
+*   **Subscription Management**: SaaS layer with payment processing (PayPal, PowerTranz) and manual payment recording for superadmins. Tenants with a scheduled manual payment see a reassuring "Renewal paid" banner/notice instead of the urgency countdown.
+*   **Technician Portal**: Self-registration at `/technician/register`, login at `/technician/login`, customer list at `/technician`. Superadmin approves/rejects at the Technicians tab.
 
 ## User preferences
 
@@ -69,8 +70,8 @@ I want iterative development. I want to be asked before you make any major chang
 ## Gotchas
 
 *   **Multi-unit product quantity edits**: Direct quantity edits for multi-unit products snap to the nearest whole multiple of the unit factor on commit.
-*   **Technician Impersonation**: Technician-impersonated sessions have **LIMITED access**. Sales and financial routes are blocked server-side, and the frontend hides related functionalities.
-*   **Database Migrations**: Always ensure `drizzle-kit push:pg` is run after schema changes in `artifacts/api-server`.
+*   **Technician Impersonation**: Technician-impersonated sessions carry `restrictedRole: "technician"` in the JWT. Server-side: `requireFullTenant()` in orders, cash, topup, purchases, held-orders rejects writes. Frontend: nav filtered via `isTechnicianRestricted()` in `lib/tenant-token.ts`; `TECHNICIAN_ALLOWED_PATHS` lists permitted routes.
+*   **Database Migrations**: Always run `pnpm --filter @workspace/db run push` from the workspace root after schema changes.
 
 ## Pointers
 

@@ -43,8 +43,18 @@ export const saasRegister = (data: { businessName: string; ownerName: string; em
 export const saasLogin = (email: string, password: string) =>
   api<{ token: string; tenant: Tenant; subscription: Subscription }>("/saas/login", { method: "POST", body: JSON.stringify({ email, password }) });
 
+export interface NextScheduledPayment {
+  id: number;
+  planId: number;
+  planName: string | null;
+  billingCycle: string;
+  amount: number;
+  scheduledStartDate: string;
+  scheduledEndDate: string;
+}
+
 export const saasMe = () =>
-  api<{ tenant: Tenant; subscription: Subscription; plan: Plan | null }>("/saas/me", { headers: tenantAuthHeaders() });
+  api<{ tenant: Tenant; subscription: Subscription; plan: Plan | null; nextScheduledPayment: NextScheduledPayment | null }>("/saas/me", { headers: tenantAuthHeaders() });
 
 export const saasUpdateOnboarding = (step: number, fields: Record<string, unknown>) =>
   api<{ tenant: Tenant }>("/saas/onboarding", { method: "PATCH", body: JSON.stringify({ step, ...fields }), headers: tenantAuthHeaders() });

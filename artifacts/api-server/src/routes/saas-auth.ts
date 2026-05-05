@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, tenantsTable, subscriptionsTable, subscriptionPlansTable, resellersTable, tenantAdminUsersTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { db, tenantsTable, subscriptionsTable, subscriptionPlansTable, resellersTable, tenantAdminUsersTable, subscriptionManualPaymentsTable } from "@workspace/db";
+import { eq, and, sql, asc } from "drizzle-orm";
 import { applyDueManualPayments } from "../utils/manual-payments";
 import { z } from "zod";
 import bcryptjs from "bcryptjs";
@@ -342,7 +342,33 @@ router.get("/saas/me", async (req, res): Promise<void> => {
     plan = p;
   }
 
-  res.json({ tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, ownerName: tenant.ownerName, phone: tenant.phone, country: tenant.country, slug: tenant.slug, onboardingStep: tenant.onboardingStep, onboardingComplete: tenant.onboardingComplete, status: tenant.status, emailVerified: tenant.emailVerified }, subscription, plan });
+  // Fetch the next scheduled manual payment (earliest start date) so the frontend
+  // can show a different renewal message to tenants who have already pre-paid.
+  const [nextScheduledPayment] = await db
+    .select({
+      id: subscriptionManualPaymentsTable.id,
+      planId: subscriptionManualPaymentsTable.planId,
+      planName: subscriptionPlansTable.name,
+      billingCycle: subscriptionManualPaymentsTable.billingCycle,
+      amount: subscriptionManualPaymentsTable.amount,
+      scheduledStartDate: subscriptionManualPaymentsTable.scheduledStartDate,
+      scheduledEndDate: subscriptionManualPaymentsTable.scheduledEndDate,
+    })
+    .from(subscriptionManualPaymentsTable)
+    .leftJoin(subscriptionPlansTable, eq(subscriptionManualPaymentsTable.planId, subscriptionPlansTable.id))
+    .where(and(
+      eq(subscriptionManualPaymentsTable.tenantId, tenant.id),
+      eq(subscriptionManualPaymentsTable.status, "scheduled"),
+    ))
+    .orderBy(asc(subscriptionManualPaymentsTable.scheduledStartDate))
+    .limit(1);
+
+  res.json({
+    tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, ownerName: tenant.ownerName, phone: tenant.phone, country: tenant.country, slug: tenant.slug, onboardingStep: tenant.onboardingStep, onboardingComplete: tenant.onboardingComplete, status: tenant.status, emailVerified: tenant.emailVerified },
+    subscription,
+    plan,
+    nextScheduledPayment: nextScheduledPayment ?? null,
+  });
 });
 
 /* ─── Email Verification ─── */

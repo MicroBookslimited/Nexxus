@@ -7,7 +7,7 @@ import {
 import {
   TENANT_TOKEN_KEY, saasMe, getPlans, createPayPalOrder, capturePayPalOrder,
   initiatePowerTranz, getPowerTranz3dsStatus, getBankAccounts, submitBankTransferProof, getMyBankTransferProofs,
-  type Plan, type Tenant, type Subscription, type BankAccount, type BankTransferProofRow,
+  type Plan, type Tenant, type Subscription, type BankAccount, type BankTransferProofRow, type NextScheduledPayment,
 } from "@/lib/saas-api";
 import { loadScript } from "@paypal/paypal-js";
 
@@ -18,6 +18,7 @@ export function SubscriptionPage() {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [currentPlan, setCurrentPlan] = useState<Plan | null>(null);
+  const [nextScheduledPayment, setNextScheduledPayment] = useState<NextScheduledPayment | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
@@ -46,6 +47,7 @@ export function SubscriptionPage() {
     setTenant(me.tenant);
     setSubscription(me.subscription ?? null);
     setCurrentPlan(me.plan ?? null);
+    setNextScheduledPayment(me.nextScheduledPayment ?? null);
   }
 
   useEffect(() => {
@@ -57,6 +59,7 @@ export function SubscriptionPage() {
         setTenant(me.tenant);
         setSubscription(me.subscription ?? null);
         setCurrentPlan(me.plan ?? null);
+        setNextScheduledPayment(me.nextScheduledPayment ?? null);
         setPlans(p);
         setBankAccounts(ba);
         setMyProofs(proofs);
@@ -335,10 +338,30 @@ export function SubscriptionPage() {
         )}
 
         {subscription?.status === "active" && periodEnd && (
-          <div className="mt-4 flex items-center gap-2 text-[#94a3b8] text-sm">
-            <Calendar size={14} />
-            Next billing date: {periodEnd.toLocaleDateString()}
-          </div>
+          nextScheduledPayment ? (
+            <div className="mt-4 bg-green-500/10 border border-green-500/20 rounded-lg p-3 flex items-start gap-2 text-green-400 text-sm">
+              <Check size={16} className="shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold">Renewal paid</span>
+                {" — "}your next period runs{" "}
+                <span className="text-white font-medium">
+                  {new Date(nextScheduledPayment.scheduledStartDate).toLocaleDateString()}
+                </span>
+                {" to "}
+                <span className="text-white font-medium">
+                  {new Date(nextScheduledPayment.scheduledEndDate).toLocaleDateString()}
+                </span>
+                {nextScheduledPayment.planName && nextScheduledPayment.planName !== currentPlan?.name && (
+                  <span className="text-green-400/70"> ({nextScheduledPayment.planName})</span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 flex items-center gap-2 text-[#94a3b8] text-sm">
+              <Calendar size={14} />
+              Next billing date: {periodEnd.toLocaleDateString()}
+            </div>
+          )
         )}
 
         {currentPlan && (

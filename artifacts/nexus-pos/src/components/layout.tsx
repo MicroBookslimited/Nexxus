@@ -6,14 +6,14 @@ import {
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
   FlaskConical, Factory, Store, Cpu, Landmark, Banknote, ClipboardList, Smartphone,
-  Scale,
+  Scale, CheckCircle,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import logoUrl from "@assets/EB8B578F-2602-4DD8-AB97-D02AF59C49D3_1775943434994.png";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { TENANT_TOKEN_KEY, saasMe } from "@/lib/saas-api";
+import { TENANT_TOKEN_KEY, saasMe, type NextScheduledPayment } from "@/lib/saas-api";
 import { clearQueryCache } from "@/lib/query-persister";
 import { EmailVerificationBanner } from "@/components/EmailVerificationBanner";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
@@ -214,6 +214,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
   const [expiryDate, setExpiryDate] = useState<Date | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [nextScheduledPayment, setNextScheduledPayment] = useState<NextScheduledPayment | null>(null);
   const timeLeft = useCountdown(expiryDate);
   const [tenantEmail, setTenantEmail] = useState<string | null>(null);
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
@@ -225,6 +226,7 @@ export function Layout({ children }: { children: ReactNode }) {
       const sub = me.subscription;
       setTenantEmail(me.tenant.email);
       setEmailVerified(me.tenant.emailVerified ?? true);
+      setNextScheduledPayment(me.nextScheduledPayment ?? null);
       if (!sub) return;
       let expiry: Date | null = null;
       if (sub.status === "trial" && sub.trialEndsAt) expiry = new Date(sub.trialEndsAt);
@@ -641,42 +643,74 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* ── SUBSCRIPTION EXPIRY BANNER ───────────────────────── */}
       {showBanner && timeLeft && (
-        <div className={cn(
-          "shrink-0 flex items-center justify-between px-4 py-2 text-sm border-b",
-          isUrgent
-            ? "bg-red-500/15 border-red-500/30 text-red-300"
-            : isWarning
-            ? "bg-orange-500/15 border-orange-500/30 text-orange-300"
-            : "bg-amber-500/10 border-amber-500/20 text-amber-300"
-        )}>
-          <div className="flex items-center gap-2 flex-wrap">
-            {isUrgent ? <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" /> : <Clock className="h-4 w-4 shrink-0" />}
-            <span className="font-medium text-xs hidden sm:inline">
-              {isUrgent ? "⚠ Plan expiring very soon!" : "Your plan expires in:"}
-            </span>
-            <div className="flex items-center gap-1 font-mono font-bold tracking-wider text-white">
-              <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>{pad(timeLeft.days)}d</span>
-              <span className="text-muted-foreground text-xs">:</span>
-              <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>{pad(timeLeft.hours)}h</span>
-              <span className="text-muted-foreground text-xs">:</span>
-              <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>{pad(timeLeft.minutes)}m</span>
-              <span className="text-muted-foreground text-xs">:</span>
-              <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>{pad(timeLeft.seconds)}s</span>
+        nextScheduledPayment ? (
+          /* Tenant has already paid in advance — reassuring green banner */
+          <div className="shrink-0 flex items-center justify-between px-4 py-2 text-sm border-b bg-green-500/10 border-green-500/25 text-green-300">
+            <div className="flex items-center gap-2 flex-wrap">
+              <CheckCircle className="h-4 w-4 shrink-0 text-green-400" />
+              <span className="font-medium text-xs">
+                Renewal paid
+              </span>
+              <span className="text-xs text-green-400/80 hidden sm:inline">
+                — current period ends in{" "}
+                <span className="font-mono font-bold text-white">
+                  {pad(timeLeft.days)}d :{pad(timeLeft.hours)}h :{pad(timeLeft.minutes)}m
+                </span>
+                {", "}next period activates{" "}
+                <span className="text-white font-medium">
+                  {new Date(nextScheduledPayment.scheduledStartDate).toLocaleDateString()}
+                </span>
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-3">
+              <Link
+                href="/subscription"
+                className="px-2.5 py-1 rounded-md text-xs font-semibold transition-colors bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/30"
+              >
+                View
+              </Link>
+              <button onClick={() => setBannerDismissed(true)} className="text-muted-foreground hover:text-foreground text-xs px-1" title="Dismiss">✕</button>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0 ml-3">
-            <Link
-              href="/subscription"
-              className={cn(
-                "px-2.5 py-1 rounded-md text-xs font-semibold transition-colors",
-                isUrgent ? "bg-red-500 hover:bg-red-400 text-white" : "bg-amber-500 hover:bg-amber-400 text-black"
-              )}
-            >
-              Renew
-            </Link>
-            <button onClick={() => setBannerDismissed(true)} className="text-muted-foreground hover:text-foreground text-xs px-1" title="Dismiss">✕</button>
+        ) : (
+          /* No advance payment — show the standard urgency countdown */
+          <div className={cn(
+            "shrink-0 flex items-center justify-between px-4 py-2 text-sm border-b",
+            isUrgent
+              ? "bg-red-500/15 border-red-500/30 text-red-300"
+              : isWarning
+              ? "bg-orange-500/15 border-orange-500/30 text-orange-300"
+              : "bg-amber-500/10 border-amber-500/20 text-amber-300"
+          )}>
+            <div className="flex items-center gap-2 flex-wrap">
+              {isUrgent ? <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" /> : <Clock className="h-4 w-4 shrink-0" />}
+              <span className="font-medium text-xs hidden sm:inline">
+                {isUrgent ? "⚠ Plan expiring very soon!" : "Your plan expires in:"}
+              </span>
+              <div className="flex items-center gap-1 font-mono font-bold tracking-wider text-white">
+                <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>{pad(timeLeft.days)}d</span>
+                <span className="text-muted-foreground text-xs">:</span>
+                <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>{pad(timeLeft.hours)}h</span>
+                <span className="text-muted-foreground text-xs">:</span>
+                <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>{pad(timeLeft.minutes)}m</span>
+                <span className="text-muted-foreground text-xs">:</span>
+                <span className={cn("px-1.5 py-0.5 rounded text-xs", isUrgent ? "bg-red-500/20" : "bg-black/20")}>{pad(timeLeft.seconds)}s</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-3">
+              <Link
+                href="/subscription"
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-xs font-semibold transition-colors",
+                  isUrgent ? "bg-red-500 hover:bg-red-400 text-white" : "bg-amber-500 hover:bg-amber-400 text-black"
+                )}
+              >
+                Renew
+              </Link>
+              <button onClick={() => setBannerDismissed(true)} className="text-muted-foreground hover:text-foreground text-xs px-1" title="Dismiss">✕</button>
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {/* ── EMAIL VERIFICATION POPUP ─────────────────────────── */}
