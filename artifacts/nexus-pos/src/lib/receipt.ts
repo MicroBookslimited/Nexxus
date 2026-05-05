@@ -257,10 +257,11 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       <div class="row sub-row"><span>&nbsp;&nbsp;Cash</span><span class="nowrap">${fmtNum(order.splitCashAmount ?? 0)}</span></div>`;
   } else {
     paymentHtml = `<div class="row sub-row"><span>Payment</span><span class="nowrap">${escHtml((order.paymentMethod ?? "—").toUpperCase())}</span></div>`;
-    if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
+    if (order.paymentMethod === "cash") {
+      const tendered = (order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total;
       paymentHtml += `
-        <div class="row sub-row"><span>Tendered</span><span class="nowrap">${fmtNum(order.cashTendered)}</span></div>
-        <div class="row sub-row"><span>Change</span><span class="nowrap">${fmtNum(Math.max(0, order.cashTendered - order.total))}</span></div>`;
+        <div class="row sub-row"><span>Tendered</span><span class="nowrap">${fmtNum(tendered)}</span></div>
+        <div class="row sub-row"><span>Change</span><span class="nowrap">${fmtNum(Math.max(0, tendered - order.total))}</span></div>`;
     }
   }
 
@@ -1009,8 +1010,8 @@ function buildConvenienceReceiptHtml(
     if (order.paymentMethod === "loyalty") return "LOYALTY";
     return (order.paymentMethod ?? "TENDER").toUpperCase();
   })();
-  const tenderedAmt = isCash && order.cashTendered ? order.cashTendered : order.total;
-  const changeDue   = isCash && order.cashTendered ? Math.max(0, order.cashTendered - order.total) : 0;
+  const tenderedAmt = isCash ? ((order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total) : order.total;
+  const changeDue   = isCash ? Math.max(0, tenderedAmt - order.total) : 0;
 
   const paymentHeaderHtml = `
     <div class="cv-payment-row">
@@ -1018,7 +1019,7 @@ function buildConvenienceReceiptHtml(
       <span class="cv-payment-amount">${fmtNum(order.total)}</span>
     </div>`;
 
-  const cashChangeHtml = (isCash && order.cashTendered) ? `
+  const cashChangeHtml = isCash ? `
     <div class="cv-card-row"><span>CASH TENDERED</span><span>${fmtNum(tenderedAmt)}</span></div>
     <div class="cv-card-row"><span>CHANGE DUE</span><span>${fmtNum(changeDue)}</span></div>` : "";
 
@@ -1303,8 +1304,8 @@ function buildStapleReceiptHtml(
     if (order.paymentMethod === "loyalty") return "LOYALTY";
     return (order.paymentMethod ?? "PAYMENT").toUpperCase();
   })();
-  const tenderedAmt = isCash && order.cashTendered ? order.cashTendered : order.total;
-  const changeDue   = isCash && order.cashTendered ? Math.max(0, order.cashTendered - order.total) : 0;
+  const tenderedAmt = isCash ? ((order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total) : order.total;
+  const changeDue   = isCash ? Math.max(0, tenderedAmt - order.total) : 0;
   const authNo  = hashStr(orderNum + "auth", 6).toUpperCase();
   const aidCode = `${hashStr(orderNum+"aid1",4).toUpperCase()}${hashStr(orderNum+"aid2",2).toUpperCase()}${hashStr(orderNum+"aid3",4).toUpperCase()}${hashStr(orderNum+"aid4",4)}`;
 
@@ -1589,9 +1590,10 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
     lines.push(`  Cash:    ${fmtNum(order.splitCashAmount ?? 0)}`);
   } else {
     lines.push(`Payment:   ${(order.paymentMethod ?? "—").toUpperCase()}`);
-    if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
-      lines.push(`Tendered:  ${fmtNum(order.cashTendered)}`);
-      lines.push(`Change:    ${fmtNum(Math.max(0, order.cashTendered - order.total))}`);
+    if (order.paymentMethod === "cash") {
+      const tendered = (order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total;
+      lines.push(`Tendered:  ${fmtNum(tendered)}`);
+      lines.push(`Change:    ${fmtNum(Math.max(0, tendered - order.total))}`);
     }
   }
 
