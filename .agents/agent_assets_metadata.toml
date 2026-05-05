@@ -48,3 +48,9 @@ id = "Oc3i_wAZGxIBVcxaQWmUt"
 uri = "file://NEXXUS_POS_Manual.md"
 type = "text"
 title = "NEXXUS POS User Manual — May 2026"
+
+[[outputs]]
+id = "KSkrpMBHMt3r5Sf6_WMkz"
+uri = "file://NEXXUS_POS_Manual.pdf"
+type = "pdf"
+title = "NEXXUS POS User Manual — May 2026 (PDF)"
