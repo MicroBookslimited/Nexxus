@@ -66,8 +66,8 @@ export function Orders() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [staffFilter, setStaffFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
+  const [fromDate, setFromDate] = useState<string>(() => todayStr());
+  const [toDate, setToDate] = useState<string>(() => todayStr());
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
   const [expandedOfflineId, setExpandedOfflineId] = useState<string | null>(null);
   const [offlineOrders, setOfflineOrders] = useState<QueuedRequest[]>(getOfflineOrders);

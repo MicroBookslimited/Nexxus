@@ -29,7 +29,7 @@ function signTenantToken(tenantId: number, email: string, impersonation = false,
   }, getJwtSecret(), { expiresIn: "90d" });
 }
 
-function getSuperadminEmailFromRequest(req: { headers: Record<string, string | undefined> }): string {
+function getSuperadminEmailFromRequest(req: { headers: Record<string, string | string[] | undefined> }): string {
   try {
     const auth = req.headers["authorization"];
     if (!auth?.startsWith("Bearer ")) return "superadmin";
