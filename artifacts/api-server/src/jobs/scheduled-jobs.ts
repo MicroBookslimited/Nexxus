@@ -6,6 +6,7 @@ import {
   ordersTable,
   orderItemsTable,
   productsTable,
+  tenantAdminUsersTable,
 } from "@workspace/db";
 import { eq, and, gte, lte, desc, asc, sql, or } from "drizzle-orm";
 import { getAllSettings } from "../routes/settings";
@@ -13,6 +14,19 @@ import { sendMail, getFromDetails } from "../lib/mail";
 import { logger } from "../lib/logger";
 
 /* ─── Helpers ─── */
+
+/** Returns the primary admin user's email for a tenant, falling back to the tenant's own email. */
+async function getPrimaryAdminEmail(tenantId: number, fallback: string): Promise<string> {
+  const [admin] = await db
+    .select({ email: tenantAdminUsersTable.email })
+    .from(tenantAdminUsersTable)
+    .where(and(
+      eq(tenantAdminUsersTable.tenantId, tenantId),
+      eq(tenantAdminUsersTable.isPrimary, true),
+    ))
+    .limit(1);
+  return admin?.email ?? fallback;
+}
 
 function fmtCurr(n: number, currency = "JMD"): string {
   try { return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n); }
@@ -316,7 +330,7 @@ export async function runDigestForAllTenants(
         if (currentHour !== configuredHour) { skipped++; continue; }
       }
 
-      const recipientEmail = settings["daily_digest_email"] || tenant.email;
+      const recipientEmail = await getPrimaryAdminEmail(tenant.id, tenant.email);
       if (!recipientEmail) { skipped++; continue; }
 
       const currency  = settings["base_currency"]     ?? "JMD";
@@ -430,7 +444,7 @@ export async function runLowStockAlertsForAllTenants(
       }
 
       const threshold = parseInt(settings["low_stock_threshold"] ?? "5", 10);
-      const recipientEmail = settings["low_stock_alerts_email"] || tenant.email;
+      const recipientEmail = await getPrimaryAdminEmail(tenant.id, tenant.email);
       if (!recipientEmail) { skipped++; continue; }
 
       const products = await db.select().from(productsTable)
