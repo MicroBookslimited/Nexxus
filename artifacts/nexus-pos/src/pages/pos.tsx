@@ -568,6 +568,8 @@ export function POS() {
       saasMe().then((me) => {
         const sub = me.subscription;
         if (!sub) return;
+        // Don't show the expiry popup when the next renewal is already paid.
+        if (me.nextScheduledPayment) return;
         let expiry: Date | null = null;
         if (sub.status === "trial" && sub.trialEndsAt) expiry = new Date(sub.trialEndsAt);
         else if (sub.status === "active" && sub.currentPeriodEnd) expiry = new Date(sub.currentPeriodEnd);
