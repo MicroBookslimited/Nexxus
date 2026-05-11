@@ -1013,6 +1013,8 @@ const CreateManualPaymentBody = z.object({
   paymentMethod: z.enum(["cash", "bank_transfer", "cheque", "card", "other"]).default("cash"),
   referenceNumber: z.string().optional(),
   notes: z.string().optional(),
+  scheduledStartDate: z.string().datetime({ offset: true }).optional(),
+  scheduledEndDate: z.string().datetime({ offset: true }).optional(),
 });
 
 router.post("/superadmin/tenants/:id/manual-payments", async (req, res): Promise<void> => {
@@ -1027,13 +1029,14 @@ router.post("/superadmin/tenants/:id/manual-payments", async (req, res): Promise
   const parsed = CreateManualPaymentBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid request", details: parsed.error.issues }); return; }
 
-  const { planId, billingCycle, amount, paymentMethod, referenceNumber, notes } = parsed.data;
+  const { planId, billingCycle, amount, paymentMethod, referenceNumber, notes,
+          scheduledStartDate: overrideStart, scheduledEndDate: overrideEnd } = parsed.data;
 
   const [plan] = await db.select({ id: subscriptionPlansTable.id }).from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId));
   if (!plan) { res.status(404).json({ error: "Plan not found" }); return; }
 
-  const scheduledStartDate = await computeNextStartDate(tenantId);
-  const scheduledEndDate = addBillingCycle(scheduledStartDate, billingCycle);
+  const scheduledStartDate = overrideStart ? new Date(overrideStart) : await computeNextStartDate(tenantId);
+  const scheduledEndDate = overrideEnd ? new Date(overrideEnd) : addBillingCycle(scheduledStartDate, billingCycle);
   const createdBy = getSuperadminEmailFromRequest(req);
 
   const [created] = await db.insert(subscriptionManualPaymentsTable).values({

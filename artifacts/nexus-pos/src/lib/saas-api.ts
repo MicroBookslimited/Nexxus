@@ -903,6 +903,8 @@ export interface CreateManualPaymentInput {
   paymentMethod: "cash" | "bank_transfer" | "cheque" | "card" | "other";
   referenceNumber?: string;
   notes?: string;
+  scheduledStartDate?: string;
+  scheduledEndDate?: string;
 }
 
 export const superadminGetManualPayments = (tenantId: number) =>

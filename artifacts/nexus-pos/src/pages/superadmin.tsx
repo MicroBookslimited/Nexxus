@@ -138,7 +138,7 @@ function ManualPaymentStatusBadge({ status }: { status: string }) {
   return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#2a3a55] text-[#94a3b8] border border-[#2a3a55]">Cancelled</span>;
 }
 
-function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; plans: { id: number; name: string; slug: string }[]; onClose: () => void; onUpdate: () => void }) {
+function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; plans: { id: number; name: string; slug: string; priceMonthly: number; priceAnnual: number }[]; onClose: () => void; onUpdate: () => void }) {
   const [innerTab, setInnerTab] = useState<"settings" | "payments">("settings");
 
   const [tenantStatus, setTenantStatus] = useState(tenant.status);
@@ -159,9 +159,21 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
     paymentMethod: "cash" as "cash" | "bank_transfer" | "cheque" | "card" | "other",
     referenceNumber: "",
     notes: "",
+    useCustomDates: false,
+    startDate: "",
+    endDate: "",
   });
   const [addingPayment, setAddingPayment] = useState(false);
   const [addPaymentError, setAddPaymentError] = useState("");
+
+  // Auto-fill amount when plan or billing cycle changes
+  useEffect(() => {
+    if (!paymentForm.planId) return;
+    const plan = plans.find(p => p.id === paymentForm.planId);
+    if (!plan) return;
+    const suggested = paymentForm.billingCycle === "annual" ? plan.priceAnnual : plan.priceMonthly;
+    setPaymentForm(f => ({ ...f, amount: suggested }));
+  }, [paymentForm.planId, paymentForm.billingCycle, plans]);
 
   const loadPayments = useCallback(async () => {
     setPaymentsLoading(true);
@@ -200,9 +212,11 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
         paymentMethod: paymentForm.paymentMethod,
         referenceNumber: paymentForm.referenceNumber || undefined,
         notes: paymentForm.notes || undefined,
+        scheduledStartDate: paymentForm.useCustomDates && paymentForm.startDate ? new Date(paymentForm.startDate).toISOString() : undefined,
+        scheduledEndDate: paymentForm.useCustomDates && paymentForm.endDate ? new Date(paymentForm.endDate).toISOString() : undefined,
       });
       setShowAddPayment(false);
-      setPaymentForm(f => ({ ...f, referenceNumber: "", notes: "", amount: 0 }));
+      setPaymentForm(f => ({ ...f, referenceNumber: "", notes: "", amount: 0, useCustomDates: false, startDate: "", endDate: "" }));
       await loadPayments();
     } catch (e) {
       setAddPaymentError(e instanceof Error ? e.message : "Failed to record payment");
@@ -364,6 +378,32 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
                     <textarea value={paymentForm.notes} onChange={e => setP("notes", e.target.value)} rows={2}
                       placeholder="Optional internal notes…"
                       className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none resize-none" />
+                  </div>
+
+                  {/* Custom date override */}
+                  <div>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input type="checkbox" checked={paymentForm.useCustomDates}
+                        onChange={e => setPaymentForm(f => ({ ...f, useCustomDates: e.target.checked }))}
+                        className="accent-[#3b82f6]" />
+                      <span className="text-xs text-[#94a3b8]">Override start / end dates (proration)</span>
+                    </label>
+                    {paymentForm.useCustomDates && (
+                      <div className="grid grid-cols-2 gap-3 mt-2">
+                        <div>
+                          <label className="block text-xs text-[#94a3b8] mb-1">Start Date *</label>
+                          <input type="date" required value={paymentForm.startDate}
+                            onChange={e => setPaymentForm(f => ({ ...f, startDate: e.target.value }))}
+                            className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#94a3b8] mb-1">End Date *</label>
+                          <input type="date" required value={paymentForm.endDate}
+                            onChange={e => setPaymentForm(f => ({ ...f, endDate: e.target.value }))}
+                            className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none" />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {addPaymentError && (
@@ -1042,7 +1082,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [selectedTenant, setSelectedTenant] = useState<TenantRow | null>(null);
   const [showCreateTenant, setShowCreateTenant] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [planMap, setPlanMap] = useState<{ id: number; name: string; slug: string }[]>([]);
+  const [planMap, setPlanMap] = useState<{ id: number; name: string; slug: string; priceMonthly: number; priceAnnual: number }[]>([]);
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [editingAccount, setEditingAccount] = useState<BankAccount | null | "new">(null);
@@ -1089,7 +1129,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
       setTenants(t);
       setFilteredTenants(t);
       setPlans(p);
-      const uniq = Array.from(new Map(p.filter(x => x.isActive).map(x => [x.id, { id: x.id, name: x.name, slug: x.slug }])).values());
+      const uniq = Array.from(new Map(p.filter(x => x.isActive).map(x => [x.id, { id: x.id, name: x.name, slug: x.slug, priceMonthly: x.priceMonthly, priceAnnual: x.priceAnnual }])).values());
       setPlanMap(uniq);
     } catch (e) {
       if (isAuthError(e)) { onLogout(); return; }
@@ -1127,7 +1167,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     try {
       const p = await superadminGetPlans();
       setPlans(p);
-      const uniq = Array.from(new Map(p.filter(x => x.isActive).map(x => [x.id, { id: x.id, name: x.name, slug: x.slug }])).values());
+      const uniq = Array.from(new Map(p.filter(x => x.isActive).map(x => [x.id, { id: x.id, name: x.name, slug: x.slug, priceMonthly: x.priceMonthly, priceAnnual: x.priceAnnual }])).values());
       setPlanMap(uniq);
     } catch (e) { if (isAuthError(e)) onLogout(); }
     finally { setPlansLoading(false); }
