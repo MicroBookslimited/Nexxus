@@ -463,6 +463,7 @@ export function POS() {
   const taxRate = parseFloat(settings?.tax_rate || "15") / 100;
   const taxMode = (settings?.tax_mode as "exclusive" | "inclusive") ?? "exclusive";
   const allowOverselling = settings?.allow_overselling === "true";
+  const supermarketMode = settings?.supermarket_mode === "true";
   const taxPct = Math.round(taxRate * 100);
 
   const { data: heldOrders } = useListHeldOrders();
@@ -557,6 +558,23 @@ export function POS() {
   }, [sessionStaff?.id]);
 
   const MANAGEMENT_ROLES = ["admin", "manager", "supervisor"];
+
+  // ── Supermarket Mode: require manager/admin/supervisor PIN for cart-restricted
+  // actions (decrease qty, remove item, clear cart) when current cashier is not
+  // already in MANAGEMENT_ROLES. Discount/price override modals are always gated
+  // by manager PIN regardless of this setting.
+  const isCashierUser = sessionStaff
+    ? !MANAGEMENT_ROLES.some(r => sessionStaff.role.toLowerCase().includes(r))
+    : true;
+  const needsSupermarketAuth = supermarketMode && isCashierUser;
+
+  type SupermarketAction =
+    | { type: "decrease"; cartKey: string }
+    | { type: "remove"; cartKey: string }
+    | { type: "clear"; mode: "inline" | "reset" };
+  const [supermarketAuthOpen, setSupermarketAuthOpen] = useState(false);
+  const [pendingSupermarketAction, setPendingSupermarketAction] = useState<SupermarketAction | null>(null);
+  const [supermarketAuthorizedBy, setSupermarketAuthorizedBy] = useState<string | null>(null);
 
   const handlePinSuccess = (staff: { id: number; name: string; role: string; permissions?: string[] }) => {
     setStaff({ id: staff.id, name: staff.name, role: staff.role, permissions: staff.permissions ?? [] });
@@ -1192,6 +1210,34 @@ export function POS() {
     );
   };
 
+  // Execute a cart-restricted action (no auth check — used after PIN approval
+  // or directly when supermarket mode is off / user is management).
+  const executeSupermarketAction = (action: SupermarketAction) => {
+    if (action.type === "decrease") {
+      updateQuantity(action.cartKey, -1);
+    } else if (action.type === "remove") {
+      removeFromCart(action.cartKey);
+    } else if (action.type === "clear") {
+      if (action.mode === "reset") {
+        resetCart();
+      } else {
+        setCart([]);
+        setEditingNoteKey(null);
+      }
+    }
+  };
+
+  // Gate-wrapped entry point: opens PIN modal in supermarket mode + cashier user,
+  // otherwise runs the action directly. Manager/admin sessions bypass the gate.
+  const requestSupermarketAction = (action: SupermarketAction) => {
+    if (!needsSupermarketAuth) {
+      executeSupermarketAction(action);
+      return;
+    }
+    setPendingSupermarketAction(action);
+    setSupermarketAuthOpen(true);
+  };
+
   const removeFromCart = (cartKey: string) => {
     // If the removed line corresponds to a server-reserved weight label,
     // release the reservation so the label is available for another sale.
@@ -1352,6 +1398,7 @@ export function POS() {
     setDeliveryAddress("");
     setDeliveryPhone("");
     setDeliveryDirections("");
+    setSupermarketAuthorizedBy(null);
     setNumpadValue("");
   };
 
@@ -2095,7 +2142,7 @@ export function POS() {
                 className="h-7 w-7 text-destructive hover:bg-destructive/10"
                 title="Clear all items"
                 disabled={cart.length === 0}
-                onClick={() => { setCart([]); setEditingNoteKey(null); }}
+                onClick={() => requestSupermarketAction({ type: "clear", mode: "inline" })}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -2200,7 +2247,7 @@ export function POS() {
                 </SheetContent>
               </Sheet>
 
-              <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" title="Clear cart" onClick={resetCart} disabled={cart.length === 0}>
+              <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" title="Clear cart" onClick={() => requestSupermarketAction({ type: "clear", mode: "reset" })} disabled={cart.length === 0}>
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -2289,7 +2336,7 @@ export function POS() {
                             variant="default"
                             className="h-5 w-5 bg-red-700 hover:bg-red-600 text-white shrink-0"
                             title="Remove item"
-                            onClick={() => removeFromCart(item.cartKey)}
+                            onClick={() => requestSupermarketAction({ type: "remove", cartKey: item.cartKey })}
                           >
                             <Trash2 className="h-2.5 w-2.5" />
                           </Button>
@@ -2299,7 +2346,7 @@ export function POS() {
                             size="icon"
                             variant="default"
                             className="h-6 w-6 bg-red-600 hover:bg-red-500 text-white"
-                            onClick={() => updateQuantity(item.cartKey, -1)}
+                            onClick={() => requestSupermarketAction({ type: "decrease", cartKey: item.cartKey })}
                           >
                             <Minus className="h-3 w-3" />
                           </Button>
@@ -3232,6 +3279,35 @@ export function POS() {
             onSuccess={() => {
               setCloseShiftOverrideOpen(false);
               navigate("/cash?close=1");
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Supermarket Mode — manager PIN gate for decrease / remove / clear cart */}
+      <Dialog open={supermarketAuthOpen} onOpenChange={(o) => { if (!o) { setSupermarketAuthOpen(false); setPendingSupermarketAction(null); } }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-400">
+              <Trash2 className="h-4 w-4" />
+              Supermarket Mode — Override Required
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground text-center -mt-2 mb-2">
+            {pendingSupermarketAction?.type === "decrease" && "A manager or supervisor PIN is required to decrease quantity."}
+            {pendingSupermarketAction?.type === "remove" && "A manager or supervisor PIN is required to remove an item."}
+            {pendingSupermarketAction?.type === "clear" && "A manager or supervisor PIN is required to clear the cart."}
+          </p>
+          <PinPad
+            title=""
+            requiredRoles={["manager", "admin", "supervisor"]}
+            onSuccess={(staff) => {
+              const action = pendingSupermarketAction;
+              setSupermarketAuthOpen(false);
+              setPendingSupermarketAction(null);
+              setSupermarketAuthorizedBy(staff.name);
+              if (action) executeSupermarketAction(action);
+              toast({ title: "Override approved", description: `Authorized by ${staff.name}` });
             }}
           />
         </DialogContent>

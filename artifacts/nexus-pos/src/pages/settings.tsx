@@ -1169,6 +1169,55 @@ export function AdminSettings() {
         </CardContent>
       </Card>
 
+      {/* POS Security */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Boxes className="h-4 w-4 text-primary" />
+            POS Security
+          </CardTitle>
+          <CardDescription>
+            Require a manager or supervisor PIN for sensitive cart actions
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Supermarket Mode</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                When enabled, cashiers must enter a manager, supervisor or admin PIN to decrease quantity, remove an item, or clear the cart. Discount and price overrides already require a manager PIN.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={supermarketMode}
+              onClick={() => { setSupermarketMode(!supermarketMode); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                supermarketMode ? "bg-primary" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                supermarketMode ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+          {supermarketMode && (
+            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs text-emerald-700 dark:text-emerald-400 space-y-1">
+              <p className="font-medium">Supermarket Mode is active</p>
+              <ul className="space-y-0.5 ml-2">
+                <li>• Cashiers are blocked from decreasing quantity without manager PIN</li>
+                <li>• Cashiers are blocked from removing items without manager PIN</li>
+                <li>• Cashiers are blocked from clearing the cart without manager PIN</li>
+                <li>• Managers, supervisors, and admins bypass these prompts</li>
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Payment Methods */}
       <div id="section-payments">
         <PaymentMethodsSection />

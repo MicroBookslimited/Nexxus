@@ -49,6 +49,7 @@ NEXXUS POS is a comprehensive Point of Sale (POS) system that unifies various bu
 *   **Variant Stock Tracking**: For single variant groups, stock is tracked per variant option. For two or more variant groups, stock is tracked at the combination level, with a dedicated `variant_combinations` table.
 *   **Per-Product Tax Exemption**: Products can be marked `is_taxable`. Non-taxable products are excluded from the tax base. Discounts are proportionally applied to taxable and non-taxable buckets.
 *   **Technician Role**: A restricted role for installers to set up customer POS systems, with impersonation capabilities and server-side route blocking for sales/financial operations.
+*   **Supermarket Mode**: A global tenant setting (Settings → POS Security) that requires a manager/admin/supervisor PIN for cart-restricted actions (decrease qty, remove item, clear cart) when a cashier is logged in. Discount and price overrides are always gated by manager PIN. Managers/admins/supervisors bypass the gate.
 
 ## Product
 
@@ -72,6 +73,7 @@ I want iterative development. I want to be asked before you make any major chang
 *   **Multi-unit product quantity edits**: Direct quantity edits for multi-unit products snap to the nearest whole multiple of the unit factor on commit.
 *   **Technician Impersonation**: Technician-impersonated sessions carry `restrictedRole: "technician"` in the JWT. Server-side: `requireFullTenant()` in orders, cash, topup, purchases, held-orders rejects writes. Frontend: nav filtered via `isTechnicianRestricted()` in `lib/tenant-token.ts`; `TECHNICIAN_ALLOWED_PATHS` lists permitted routes.
 *   **Database Migrations**: Always run `pnpm --filter @workspace/db run push` from the workspace root after schema changes.
+*   **Supermarket Mode gate location**: PIN gate logic lives in `pos.tsx` (`needsSupermarketAuth`, `requestSupermarketAction`, `executeSupermarketAction`). To extend coverage to a new cart action, route its onClick through `requestSupermarketAction({ type: "...", ... })` and handle the new variant in `executeSupermarketAction`.
 
 ## Pointers
 
