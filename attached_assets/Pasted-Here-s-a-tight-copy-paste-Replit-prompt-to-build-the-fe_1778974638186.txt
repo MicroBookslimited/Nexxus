@@ -1,0 +1,207 @@
+Here’s a **tight, copy-paste Replit prompt** to build the feature inside NEXXUS 👇
+
+---
+
+## 🔧 **Replit Prompt: Supermarket POS Mode with Manager PIN Override**
+
+Build a **Supermarket Mode** for NEXXUS POS that enforces **manager/supervisor PIN authorization** when cashiers attempt restricted actions at checkout.
+
+---
+
+### 🎯 **Goal**
+
+Prevent cashiers from:
+
+* Decreasing item quantity
+* Removing items from cart
+* (Optional) Applying discounts / price overrides
+
+…unless a **Supervisor, Manager, Admin, or Owner enters a valid PIN**.
+
+---
+
+## 🧱 **Requirements**
+
+### 1. 🏪 Enable Supermarket Mode
+
+Add system setting:
+
+```js
+settings = {
+  supermarket_mode: true
+}
+```
+
+---
+
+### 2. 🔒 Intercept Restricted Actions (Frontend)
+
+Hook into POS actions:
+
+```js
+function handleDecreaseItem(item) {
+  if (settings.supermarket_mode && currentUser.role === 'cashier') {
+    openOverrideModal('decrease', item);
+    return;
+  }
+  decreaseItem(item);
+}
+
+function handleRemoveItem(item) {
+  if (settings.supermarket_mode && currentUser.role === 'cashier') {
+    openOverrideModal('remove', item);
+    return;
+  }
+  removeItem(item);
+}
+```
+
+---
+
+### 3. 🔐 Override Modal UI
+
+Create modal component:
+
+* Title: **“Manager Authorization Required”**
+* Input: PIN (numeric)
+* Buttons: Approve / Cancel
+
+```js
+function openOverrideModal(action, item) {
+  setModalState({
+    visible: true,
+    action,
+    item
+  });
+}
+```
+
+---
+
+### 4. 🔑 Validate PIN (Backend API)
+
+Endpoint:
+
+```
+POST /api/pos/override/validate
+```
+
+Request:
+
+```json
+{
+  "pin": "1234"
+}
+```
+
+Logic:
+
+```js
+const allowedRoles = ['supervisor','manager','admin','owner'];
+
+const user = await Users.findOne({
+  where: { pin: hash(pin) }
+});
+
+if (!user || !allowedRoles.includes(user.role)) {
+  return { success: false };
+}
+
+return { success: true, user };
+```
+
+---
+
+### 5. ✅ Execute Approved Action
+
+Frontend after approval:
+
+```js
+if (response.success) {
+  if (modal.action === 'decrease') decreaseItem(modal.item);
+  if (modal.action === 'remove') removeItem(modal.item);
+
+  logOverride(modal.action, modal.item, response.user);
+}
+```
+
+---
+
+### 6. 📊 Audit Trail (Critical)
+
+Create table: `pos_override_logs`
+
+Fields:
+
+* id
+* action (decrease/remove)
+* product_name
+* cashier_id
+* approved_by
+* timestamp
+
+```js
+function logOverride(action, item, approver) {
+  fetch('/api/pos/override/log', {
+    method: 'POST',
+    body: JSON.stringify({
+      action,
+      product: item.name,
+      cashier_id: currentUser.id,
+      approved_by: approver.id
+    })
+  });
+}
+```
+
+---
+
+### 7. 👥 User Requirements
+
+Each user must have:
+
+```json
+{
+  "id": 1,
+  "name": "John",
+  "role": "manager",
+  "pin": "hashed_pin"
+}
+```
+
+---
+
+### 8. ⚡ UX Rules
+
+* Modal must open instantly (no lag)
+* Allow keyboard-only PIN entry
+* Auto-focus input field
+* Close on success or cancel
+
+---
+
+### 9. 🧪 Edge Cases
+
+* If logged-in user is manager/admin → skip PIN
+* Prevent repeated modal spam
+* Handle invalid PIN attempts (max 3 tries optional)
+
+---
+
+### 🔥 Expected Outcome
+
+* Cashiers cannot manipulate transactions freely
+* Every change is approved and logged
+* System becomes supermarket-grade POS
+
+---
+
+If you want next level:
+I can generate:
+
+* Full React component for modal
+* Laravel controller + migration
+* Role-based permission engine
+* Discount + refund override system
+
+Just tell me 👍
