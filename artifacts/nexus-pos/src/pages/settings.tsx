@@ -56,6 +56,7 @@ export function AdminSettings() {
   const [lowStockAlertsEmail, setLowStockAlertsEmail] = useState("");
   const [lowStockAlertsHour, setLowStockAlertsHour] = useState("8");
   const [allowOverselling, setAllowOverselling] = useState(false);
+  const [supermarketMode, setSupermarketMode] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
   const [sendingLowStockTest, setSendingLowStockTest] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -102,6 +103,7 @@ export function AdminSettings() {
     setLowStockAlertsEmail(settings.low_stock_alerts_email ?? "");
     setLowStockAlertsHour(settings.low_stock_alerts_hour ?? "8");
     setAllowOverselling(settings.allow_overselling === "true");
+    setSupermarketMode(settings.supermarket_mode === "true");
     setDirty(false);
   }, [settings]);
 
@@ -142,6 +144,7 @@ export function AdminSettings() {
           low_stock_alerts_email: lowStockAlertsEmail.trim(),
           low_stock_alerts_hour: lowStockAlertsHour,
           allow_overselling: allowOverselling ? "true" : "false",
+          supermarket_mode: supermarketMode ? "true" : "false",
         },
       },
       {
