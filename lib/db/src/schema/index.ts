@@ -25,3 +25,4 @@ export * from "./payment-methods";
 export * from "./composite-products";
 export * from "./technicians";
 export * from "./price-logs";
+export * from "./promotions";

@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useStaff } from "@/contexts/StaffContext";
-import { Layout } from "@/components/layout";
 import {
   pricePreview,
   priceApply,
@@ -154,21 +153,19 @@ export default function PriceManagerPage() {
 
   if (!allowed) {
     return (
-      <Layout>
-        <div className="p-6 flex items-center justify-center min-h-[60vh]">
-          <Card className="max-w-md">
-            <CardContent className="pt-6 text-center space-y-3">
-              <ShieldAlert className="h-12 w-12 text-destructive mx-auto" />
-              <h2 className="text-xl font-bold">Access Restricted</h2>
-              <p className="text-sm text-muted-foreground">
-                The Price Manager is limited to Owner, Admin and Manager roles, or anyone with the
-                <span className="font-mono mx-1">pricing.manage</span>
-                permission.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </Layout>
+      <div className="p-6 flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardContent className="pt-6 text-center space-y-3">
+            <ShieldAlert className="h-12 w-12 text-destructive mx-auto" />
+            <h2 className="text-xl font-bold">Access Restricted</h2>
+            <p className="text-sm text-muted-foreground">
+              The Price Manager is limited to Owner, Admin and Manager roles, or anyone with the
+              <span className="font-mono mx-1">pricing.manage</span>
+              permission.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -183,7 +180,7 @@ export default function PriceManagerPage() {
   const selectedCount = preview ? Object.values(previewSelection).filter(Boolean).length : 0;
 
   return (
-    <Layout>
+    <>
       <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
         <div className="flex items-center justify-between">
           <div>
@@ -545,6 +542,6 @@ export default function PriceManagerPage() {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

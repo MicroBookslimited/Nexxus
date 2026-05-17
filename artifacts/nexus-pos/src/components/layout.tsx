@@ -6,7 +6,7 @@ import {
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
   FlaskConical, Factory, Store, Cpu, Landmark, Banknote, ClipboardList, Smartphone,
-  Scale, CheckCircle,
+  Scale, CheckCircle, Tag,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -66,6 +66,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/production",   label: "Production",      icon: FlaskConical,    color: "text-lime-400",    permission: "inventory.manage" },
   { href: "/accounting",   label: "Accounting",      icon: Calculator,      color: "text-cyan-400",    permission: "reports.view" },
   { href: "/price-manager",label: "Price Manager",   icon: Calculator,      color: "text-yellow-400",  permission: "pricing.manage" },
+  { href: "/promotions",   label: "Promotions",      icon: Tag,             color: "text-pink-300",    permission: "pricing.manage" },
   { href: "/ar",           label: "Receivables",     icon: BookOpen,        color: "text-violet-400",  permission: "reports.view" },
   { href: "/ap",           label: "Payables",        icon: Landmark,        color: "text-orange-400",  permission: "reports.view" },
   { href: "/topup",        label: "Top-Up",          icon: Smartphone,      color: "text-green-300",   permission: "pos.sale" },

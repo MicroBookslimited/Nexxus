@@ -37,13 +37,13 @@ import {
   ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote, Layers,
   Tag, PenLine, PackagePlus,
 } from "lucide-react";
-import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
+import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
 import { useStaff } from "@/contexts/StaffContext";
 import { useLocation, Link } from "wouter";
-import { useQueryClient, useQueries } from "@tanstack/react-query";
+import { useQueryClient, useQueries, useQuery } from "@tanstack/react-query";
 import { getPricingTiers, previewTierPrice, type PricingTier } from "@/lib/saas-api";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -826,6 +826,19 @@ export function POS() {
     return Array.from(new Set(products.map((p) => p.category)));
   }, [products]);
 
+  // Time-based promotions: refresh every 60s so promos go live/end without manual refresh.
+  const { data: activePromosData } = useQuery({
+    queryKey: ["/api/promotions/active"],
+    queryFn: listActivePromotions,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const activePromos = activePromosData?.activePromos ?? {};
+  const priceFor = (p: { id: number; price: number }) => {
+    const promo = activePromos[p.id];
+    return promo ? promo.promoPrice : p.price;
+  };
+
   const filteredProducts = products?.filter((p) => {
     const q = searchTerm.toLowerCase().trim();
     const matchesSearch =
@@ -848,7 +861,7 @@ export function POS() {
       setWeightModalProduct({
         id: product.id,
         name: product.name,
-        price: product.price,
+        price: priceFor(product),
         unit: p.unitOfMeasure ?? "kg",
         isTaxable: p.isTaxable !== false,
       });
@@ -870,7 +883,7 @@ export function POS() {
           product: {
             id: product.id,
             name: product.name,
-            price: product.price,
+            price: priceFor(product),
             hasVariants: !!product.hasVariants,
             hasModifiers: !!product.hasModifiers,
             isTaxable: (product as unknown as { isTaxable?: boolean }).isTaxable !== false,
@@ -891,7 +904,7 @@ export function POS() {
     if (product.hasVariants || product.hasModifiers) {
       setCustomizingProductId(product.id);
     } else {
-      addToCartDirect(product.id, product.name, product.price, [], [], undefined, (product as unknown as { isTaxable?: boolean }).isTaxable !== false);
+      addToCartDirect(product.id, product.name, priceFor(product), [], [], undefined, (product as unknown as { isTaxable?: boolean }).isTaxable !== false);
     }
   };
 
@@ -918,7 +931,7 @@ export function POS() {
       setPendingCustomizationUnit(unitFactor ? { unitId, unitLabel: unitLabel!, unitFactor } : null);
       setCustomizingProductId(product.id);
     } else {
-      addToCartDirect(product.id, product.name, product.price, [], [], unitFactor ? { unitId, unitLabel: unitLabel!, unitFactor } : undefined, product.isTaxable !== false);
+      addToCartDirect(product.id, product.name, priceFor(product), [], [], unitFactor ? { unitId, unitLabel: unitLabel!, unitFactor } : undefined, product.isTaxable !== false);
     }
   };
 
@@ -1012,7 +1025,7 @@ export function POS() {
   const handleCustomizeConfirm = (variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[], combinationPrice: number | null) => {
     const product = products?.find((p) => p.id === customizingProductId);
     if (!product) return;
-    addToCartDirect(product.id, product.name, product.price, variantChoices, modifierChoices, pendingCustomizationUnit ?? undefined, (product as unknown as { isTaxable?: boolean }).isTaxable !== false, combinationPrice);
+    addToCartDirect(product.id, product.name, priceFor(product), variantChoices, modifierChoices, pendingCustomizationUnit ?? undefined, (product as unknown as { isTaxable?: boolean }).isTaxable !== false, combinationPrice);
     setPendingCustomizationUnit(null);
     setCustomizingProductId(null);
   };
@@ -2074,8 +2087,20 @@ export function POS() {
                             <p className="text-xs font-bold leading-snug line-clamp-2 text-white break-words">{product.name}</p>
                             <p className="text-[9px] text-white/50 mt-0.5 truncate">{product.category}</p>
                           </div>
+                          {activePromos[product.id] && (
+                            <div className="absolute top-1 left-1 px-1 py-0.5 rounded text-[8px] font-bold bg-pink-500/90 text-white shadow leading-none">
+                              PROMO
+                            </div>
+                          )}
                           <div className="flex flex-col items-stretch gap-1 min-w-0">
-                            <p className="text-sm font-bold font-mono text-white leading-none truncate">{formatCurrency(product.price)}</p>
+                            {activePromos[product.id] ? (
+                              <div className="leading-none">
+                                <p className="text-[9px] line-through text-white/40 font-mono truncate">{formatCurrency(product.price)}</p>
+                                <p className="text-sm font-bold font-mono text-pink-300 leading-none truncate">{formatCurrency(activePromos[product.id]!.promoPrice)}</p>
+                              </div>
+                            ) : (
+                              <p className="text-sm font-bold font-mono text-white leading-none truncate">{formatCurrency(product.price)}</p>
+                            )}
                             <div className="flex items-center justify-between gap-1 min-w-0">
                               {(product.hasVariants || product.hasModifiers) ? (
                                 <Settings2 className="h-3 w-3 text-white/60 shrink-0" />

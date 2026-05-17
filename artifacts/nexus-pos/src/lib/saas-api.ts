@@ -976,3 +976,40 @@ export const priceApply = (body: PricePreviewRequest & {
 
 export const priceListLogs = (staffId: number, limit = 50) =>
   api<{ logs: PriceChangeLogRow[] }>(`/price-manager/logs?staffId=${staffId}&limit=${limit}`, { headers: tenantAuthHeaders() });
+
+/* ─── Time-Based Promotions ─── */
+
+export interface Promotion {
+  id: number;
+  productId: number;
+  productName: string | null;
+  regularPrice: number | null;
+  promoPrice: number;
+  startAt: string;
+  endAt: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface ActivePromoMap {
+  [productId: number]: { promoPrice: number; endAt: string };
+}
+
+export const listPromotions = () =>
+  api<{ promotions: Promotion[] }>(`/promotions`, { headers: tenantAuthHeaders() });
+
+export const listActivePromotions = () =>
+  api<{ activePromos: ActivePromoMap }>(`/promotions/active`, { headers: tenantAuthHeaders() });
+
+export const createPromotion = (body: {
+  productId: number; promoPrice: number; startAt: string; endAt: string; active?: boolean; staffId: number;
+}) =>
+  api<Promotion>(`/promotions`, { method: "POST", body: JSON.stringify(body), headers: tenantAuthHeaders() });
+
+export const updatePromotion = (id: number, body: Partial<{
+  promoPrice: number; startAt: string; endAt: string; active: boolean;
+}> & { staffId: number }) =>
+  api<Promotion>(`/promotions/${id}`, { method: "PATCH", body: JSON.stringify(body), headers: tenantAuthHeaders() });
+
+export const deletePromotion = (id: number, staffId: number) =>
+  api<{ success: boolean }>(`/promotions/${id}?staffId=${staffId}`, { method: "DELETE", headers: tenantAuthHeaders() });

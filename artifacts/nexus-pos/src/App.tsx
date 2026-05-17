@@ -40,6 +40,7 @@ import StorePage from "@/pages/store";
 import { Register } from "@/pages/register";
 import { TopUp } from "@/pages/topup";
 const PriceManager = lazy(() => import("@/pages/price-manager"));
+const Promotions = lazy(() => import("@/pages/promotions"));
 import { ClockPage } from "@/pages/clock";
 import { ScalePage } from "@/pages/scale";
 import { TechnicianRegister } from "@/pages/technician-register";
@@ -176,6 +177,7 @@ function POSRouter() {
       <Route path="/register"><ProtectedRoute component={Register} permission="reports.view" /></Route>
       <Route path="/topup"><ProtectedRoute component={TopUp} permission="pos.sale" /></Route>
       <Route path="/price-manager"><ProtectedRoute component={PriceManager} permission="pricing.manage" /></Route>
+      <Route path="/promotions"><ProtectedRoute component={Promotions} permission="pricing.manage" /></Route>
       <Route path="/scale"><ProtectedRoute component={ScalePage} permission="scale.use" /></Route>
       <Route path="/store"><ProtectedRoute component={StorePage} /></Route>
       <Route path="/settings"><ProtectedRoute component={AdminSettings} permission="settings.view" /></Route>

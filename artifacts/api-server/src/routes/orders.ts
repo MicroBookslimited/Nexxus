@@ -65,6 +65,7 @@ import {
   ChargeOrderResponse,
 } from "@workspace/api-zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
+import { findActivePromoPrices } from "./promotions";
 
 const router: IRouter = Router();
 
@@ -255,6 +256,18 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   let rawSubtotal = 0;
   let taxableRawSubtotal = 0;
+  // Promo lines are excluded from order-level discount allocation so they
+  // remain truly "locked" (no stacked discounts on top of the promo price).
+  // We also track the *taxable* portion of the non-promo subtotal so the
+  // discount's tax allocation only reduces tax on the non-promo bucket.
+  let nonPromoRawSubtotal = 0;
+  let nonPromoTaxableRawSubtotal = 0;
+
+  // Bulk-fetch active promos ONCE with a single timestamp so every line in
+  // the order resolves against the same instant (prevents boundary races at
+  // promo start/end times and avoids per-item N+1 queries).
+  const orderProductIds = parsed.data.items.map((i) => i.productId);
+  const activePromos = await findActivePromoPrices(tenantId, orderProductIds);
   type ChoiceItem = { groupId: number; groupName: string; optionId: number; optionName: string; priceAdjustment: number };
   const resolvedItems: Array<{
     productId: number;
@@ -282,24 +295,42 @@ router.post("/orders", async (req, res): Promise<void> => {
       return;
     }
 
-    const itemDiscount = item.discountAmount ?? 0;
     const variantAdj = (item.variantChoices ?? []).reduce((s, c) => s + c.priceAdjustment, 0);
     const modifierAdj = (item.modifierChoices ?? []).reduce((s, c) => s + c.priceAdjustment, 0);
 
-    // Apply volume pricing tiers (server-authoritative — never trust client tier)
-    const tiers = await db
-      .select()
-      .from(productPricingTiersTable)
-      .where(and(
-        eq(productPricingTiersTable.tenantId, tenantId),
-        eq(productPricingTiersTable.productId, product.id),
-      ));
-    const { unitPrice: tierUnitPrice } = applyVolumePricing(product.price, item.quantity, tiers);
+    // Time-based promotions take precedence over volume tiers and lock the line
+    // price: any client-side itemDiscount on a promo line is ignored so the
+    // promo price is the final unit price. The active-promos map was resolved
+    // once above against a single timestamp, so order lines are consistent.
+    const promoPrice = activePromos.get(product.id);
+    const isPromoLine = promoPrice !== undefined;
+
+    let tierUnitPrice: number;
+    let itemDiscount: number;
+    if (isPromoLine) {
+      tierUnitPrice = promoPrice!;
+      itemDiscount = 0;
+    } else {
+      const tiers = await db
+        .select()
+        .from(productPricingTiersTable)
+        .where(and(
+          eq(productPricingTiersTable.tenantId, tenantId),
+          eq(productPricingTiersTable.productId, product.id),
+        ));
+      const tierResult = applyVolumePricing(product.price, item.quantity, tiers);
+      tierUnitPrice = tierResult.unitPrice;
+      itemDiscount = item.discountAmount ?? 0;
+    }
 
     const effectiveUnitPrice = tierUnitPrice + variantAdj + modifierAdj;
     const lineTotal = Math.max(0, effectiveUnitPrice * item.quantity - itemDiscount);
     rawSubtotal += lineTotal;
-    if (product.isTaxable !== false) taxableRawSubtotal += lineTotal;
+    if (!isPromoLine) nonPromoRawSubtotal += lineTotal;
+    if (product.isTaxable !== false) {
+      taxableRawSubtotal += lineTotal;
+      if (!isPromoLine) nonPromoTaxableRawSubtotal += lineTotal;
+    }
     resolvedItems.push({
       productId: product.id,
       productName: product.name,
@@ -316,13 +347,17 @@ router.post("/orders", async (req, res): Promise<void> => {
     });
   }
 
+  // Order-level discount allocation: promo lines are locked, so the discount
+  // is computed against (and capped by) the non-promo subtotal only. Percent
+  // discounts are applied to the non-promo portion to honor "promo replaces
+  // and locks price — no stacked discounts".
   let discountValue = 0;
   if (parsed.data.discountAmount && parsed.data.discountType) {
     discountValue =
       parsed.data.discountType === "percent"
-        ? rawSubtotal * (parsed.data.discountAmount / 100)
+        ? nonPromoRawSubtotal * (parsed.data.discountAmount / 100)
         : parsed.data.discountAmount;
-    discountValue = Math.min(discountValue, rawSubtotal);
+    discountValue = Math.min(discountValue, nonPromoRawSubtotal);
   }
 
   const LOYALTY_REDEEM_RATE = 100;
@@ -338,8 +373,13 @@ router.post("/orders", async (req, res): Promise<void> => {
   const allowOverselling = (await getSetting("allow_overselling", tenantId)) === "true";
 
   // Apply order-level discount/loyalty proportionally to the taxable bucket
-  // so that non-taxable items never inflate the tax base.
-  const taxableFraction = rawSubtotal > 0 ? taxableRawSubtotal / rawSubtotal : 1;
+  // so that non-taxable items never inflate the tax base. Promo lines are
+  // locked, so the discount's taxable share is computed from the non-promo
+  // taxable portion only — preventing the discount from indirectly reducing
+  // the promo line's contribution to the tax base.
+  const taxableFraction = nonPromoRawSubtotal > 0
+    ? nonPromoTaxableRawSubtotal / nonPromoRawSubtotal
+    : (rawSubtotal > 0 ? taxableRawSubtotal / rawSubtotal : 1);
   const taxableDiscountedSubtotal = Math.max(
     0,
     taxableRawSubtotal - discountValue * taxableFraction - loyaltyDiscount * taxableFraction,

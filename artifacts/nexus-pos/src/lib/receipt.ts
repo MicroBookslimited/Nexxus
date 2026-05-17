@@ -276,7 +276,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     ? `<div class="row sub-row"><span>Discount</span><span class="nowrap discount">-${fmtNum(order.discountValue ?? 0)}</span></div>` : "";
   const tierSavings   = totalTierSavings(order.items);
   const savingsHtml   = tierSavings > 0
-    ? `<div class="row sub-row savings"><span>You saved (volume pricing):</span><span class="nowrap">-${fmtNum(tierSavings)}</span></div>` : "";
+    ? `<div class="row sub-row savings"><span>You Save:</span><span class="nowrap">-${fmtNum(tierSavings)}</span></div>` : "";
   const secondaryHtml = secondaryCurrency && exchangeRate > 0
     ? `<div class="row sub-row"><span>&asymp;&nbsp;${secondaryCurrency}</span><span class="nowrap">${fmt(order.total * exchangeRate, secondaryCurrency)}</span></div>` : "";
   const notesHtml     = order.notes
