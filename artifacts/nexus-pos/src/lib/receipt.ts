@@ -249,6 +249,13 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   }).join("");
 
   // ── Payment ───────────────────────────────────────────────────────────────
+  // Tendered / Change are always rendered. For cash sales with a captured
+  // tender amount we show the real numbers; for any other method we show
+  // Tendered = Total and Change = 0 so every receipt reads the same way.
+  const tenderedAmt = order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0
+    ? order.cashTendered
+    : order.total;
+  const changeAmt = Math.max(0, tenderedAmt - order.total);
   let paymentHtml = "";
   if (order.paymentMethod === "split") {
     paymentHtml = `
@@ -257,13 +264,10 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       <div class="row sub-row"><span>&nbsp;&nbsp;Cash</span><span class="nowrap">${fmtNum(order.splitCashAmount ?? 0)}</span></div>`;
   } else {
     paymentHtml = `<div class="row sub-row"><span>Payment</span><span class="nowrap">${escHtml((order.paymentMethod ?? "—").toUpperCase())}</span></div>`;
-    if (order.paymentMethod === "cash") {
-      const tendered = (order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total;
-      paymentHtml += `
-        <div class="row sub-row"><span>Tendered</span><span class="nowrap">${fmtNum(tendered)}</span></div>
-        <div class="row sub-row"><span>Change</span><span class="nowrap">${fmtNum(Math.max(0, tendered - order.total))}</span></div>`;
-    }
   }
+  paymentHtml += `
+    <div class="row sub-row"><span>Tendered</span><span class="nowrap">${fmtNum(tenderedAmt)}</span></div>
+    <div class="row sub-row"><span>Change</span><span class="nowrap">${fmtNum(changeAmt)}</span></div>`;
 
   // ── Optional blocks ───────────────────────────────────────────────────────
   const refundedHtml  = order.status === "refunded"
@@ -1019,9 +1023,13 @@ function buildConvenienceReceiptHtml(
       <span class="cv-payment-amount">${fmtNum(order.total)}</span>
     </div>`;
 
-  const cashChangeHtml = isCash ? `
-    <div class="cv-card-row"><span>CASH TENDERED</span><span>${fmtNum(tenderedAmt)}</span></div>
-    <div class="cv-card-row"><span>CHANGE DUE</span><span>${fmtNum(changeDue)}</span></div>` : "";
+  // Always show Tendered / Change. For non-cash payments Tendered = Total
+  // and Change = 0, so every receipt carries the same breakdown.
+  const tenderedDisplay = isCash ? tenderedAmt : order.total;
+  const changeDisplay   = isCash ? changeDue   : 0;
+  const cashChangeHtml = `
+    <div class="cv-card-row"><span>${isCash ? "CASH TENDERED" : "TENDERED"}</span><span>${fmtNum(tenderedDisplay)}</span></div>
+    <div class="cv-card-row"><span>CHANGE DUE</span><span>${fmtNum(changeDisplay)}</span></div>`;
 
   const splitHtml = isSplit ? `
     <div class="cv-card-row"><span>CARD</span><span>${fmtNum(order.splitCardAmount ?? 0)}</span></div>
@@ -1317,9 +1325,12 @@ function buildStapleReceiptHtml(
     <div class="st-pay-single">Chip Read</div>
     <div class="st-pay-row"><span>Auth No. :</span><span>${escHtml(authNo)}</span></div>
     <div class="st-pay-row"><span>AID. :</span><span>${escHtml(aidCode)}</span></div>` : ""}
-    ${isCash ? `
-    <div class="st-pay-row"><span>CASH TENDERED</span><span>$${fmtNum(tenderedAmt)}</span></div>
-    <div class="st-pay-row"><span>CHANGE DUE</span><span>$${fmtNum(changeDue)}</span></div>` : ""}
+    ${!isCardish && !isSplit ? `
+    <div class="st-pay-row"><span>${isCash ? "CASH TENDERED" : "TENDERED"}</span><span>$${fmtNum(isCash ? tenderedAmt : order.total)}</span></div>
+    <div class="st-pay-row"><span>CHANGE DUE</span><span>$${fmtNum(isCash ? changeDue : 0)}</span></div>` : ""}
+    ${isCard ? `
+    <div class="st-pay-row"><span>TENDERED</span><span>$${fmtNum(order.total)}</span></div>
+    <div class="st-pay-row"><span>CHANGE DUE</span><span>$${fmtNum(0)}</span></div>` : ""}
     ${isSplit ? `
     <div class="st-pay-row"><span>CARD</span><span>$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
     <div class="st-pay-row"><span>CASH</span><span>$${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}`;
