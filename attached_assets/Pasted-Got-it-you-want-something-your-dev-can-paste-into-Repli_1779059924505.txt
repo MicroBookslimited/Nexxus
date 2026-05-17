@@ -1,0 +1,206 @@
+Got it—you want something your dev can **paste into Replit and just build** without overthinking. Here’s a **clean, consolidated prompt** 👇
+
+---
+
+## 🚀 **Replit Prompt: NEXXUS Advanced Pricing, Promotions & Inventory Upgrade**
+
+Build the following features into NEXXUS POS as one integrated update:
+
+---
+
+### 🧩 **1. PRICE MANAGER (Bulk Price Update Tool)**
+
+Create a **Price Manager menu** accessible only by:
+
+* Admin
+* Manager
+* Owner
+
+Allow bulk updating of product prices using:
+
+#### Methods:
+
+1. **Percentage based on current price**
+
+   * Increase or decrease %
+
+2. **Cost-based markup**
+
+   * Selling price = Cost + markup %
+
+3. **Fixed increase/decrease**
+
+   * Add or subtract a fixed value
+
+---
+
+#### Rounding Options:
+
+After calculation, allow rounding to:
+
+* Nearest $5
+* Nearest $10
+* Nearest $50
+* Nearest $100
+* Nearest $1000
+
+---
+
+#### Filters:
+
+Allow bulk selection by:
+
+* Category
+* Brand
+* Supplier
+* Individual products
+
+---
+
+#### UX Flow:
+
+* Select products
+* Choose pricing method
+* Apply rounding
+* Show preview (old price vs new price)
+* Confirm before applying
+
+---
+
+#### Logging:
+
+Log all price changes with:
+
+* User
+* Method used
+* Value applied
+* Timestamp
+
+---
+
+---
+
+### 🎯 **2. TIME-BASED PROMOTIONS**
+
+Create a Promotions module:
+
+Each promotion should include:
+
+* Product
+* Promo price
+* Start date & time
+* End date & time
+
+---
+
+#### POS Behavior:
+
+* Automatically apply promo price if current time is within range
+* If no promo → use regular price
+
+---
+
+#### Receipt Requirement:
+
+Show savings clearly:
+Example:
+
+```
+Item: $1,000
+Promo: $800
+You Save: $200
+```
+
+---
+
+---
+
+### 📦 **3. PURCHASING (Batch / Lot / Expiry Tracking)**
+
+Enhance purchasing module to include:
+
+Per purchase line item:
+
+* Batch/Lot Number
+* Expiry Date
+
+---
+
+#### Store:
+
+Track inventory at batch level:
+
+* Quantity per batch
+* Expiry date per batch
+
+---
+
+---
+
+### ⚙️ **4. FIFO / LIFO INVENTORY METHOD**
+
+Add setting in Business Settings:
+
+* FIFO (First In First Out)
+* LIFO (Last In First Out)
+
+---
+
+#### POS Stock Deduction:
+
+When selling:
+
+* FIFO → deduct from oldest batch first
+* LIFO → deduct from newest batch first
+
+---
+
+---
+
+### ⚡ **5. GENERAL RULES**
+
+* All features must integrate with existing POS flow
+* Promotions override regular price only during active time
+* Batch tracking must update stock in real time
+* Ensure fast POS performance (no lag at checkout)
+
+---
+
+---
+
+### 🔐 **PERMISSIONS**
+
+* Price Manager → Admin / Manager / Owner
+* Promotions → Admin / Manager
+* Purchasing (Batch/Expiry) → Admin / Manager / Purchasing role
+* FIFO/LIFO Setting → Admin only
+
+---
+
+---
+
+### 🎯 **EXPECTED RESULT**
+
+After implementation:
+
+* Bulk pricing updates take seconds
+* Promotions run automatically
+* Expiry dates are tracked properly
+* Inventory valuation is accurate (FIFO/LIFO)
+* System becomes supermarket + pharmacy ready
+
+---
+
+## 💬 Final Instruction to Dev
+
+Build this as modular features but ensure they work seamlessly together within the NEXXUS ecosystem.
+
+---
+
+If you want next step, I can turn this into:
+
+* UI screens design
+* Database schema
+* Exact Laravel or Node implementation
+
+Just say 👍
