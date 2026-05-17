@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useDeferredValue } from "react";
 import { useStaff } from "@/contexts/StaffContext";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -2400,14 +2400,33 @@ export function Products() {
     { query: { enabled: !!viewBillId } },
   );
 
-  const filteredProducts = products?.filter((p) =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  // useDeferredValue lets React keep the input responsive while filtering
+  // 1200+ products: the typed value updates immediately, the filter runs
+  // against the deferred value during idle time.
+  const deferredSearch = useDeferredValue(searchQuery);
 
-  const lowStockProducts = products?.filter(
-    (p) => p.inStock && p.stockCount > 0 && p.stockCount <= LOW_STOCK_THRESHOLD,
-  ) ?? [];
-  const outOfStockProducts = products?.filter((p) => !p.inStock || p.stockCount === 0) ?? [];
+  const filteredProducts = useMemo(() => {
+    if (!products) return undefined;
+    const q = deferredSearch.trim().toLowerCase();
+    if (!q) return products;
+    // Pre-lowercase once per product per filter pass; also search barcode.
+    return products.filter((p) => {
+      if (p.name.toLowerCase().includes(q)) return true;
+      const bc = p.barcode;
+      return !!bc && bc.toLowerCase().includes(q);
+    });
+  }, [products, deferredSearch]);
+
+  const lowStockProducts = useMemo(
+    () => products?.filter(
+      (p) => p.inStock && p.stockCount > 0 && p.stockCount <= LOW_STOCK_THRESHOLD,
+    ) ?? [],
+    [products],
+  );
+  const outOfStockProducts = useMemo(
+    () => products?.filter((p) => !p.inStock || p.stockCount === 0) ?? [],
+    [products],
+  );
 
   const openRestock = (p: GetProductResponse) => {
     setRestockProduct(p);
@@ -2767,7 +2786,7 @@ export function Products() {
               const isLow = product.inStock && product.stockCount > 0 && product.stockCount <= LOW_STOCK_THRESHOLD;
               const isOut = !product.inStock || product.stockCount === 0;
               return (
-              <motion.div key={product.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
+              <motion.div key={product.id} initial={false} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
                 <Card className={`group hover:border-primary/50 transition-colors ${isOut ? "border-destructive/30" : isLow ? "border-yellow-500/30" : ""}`}>
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">
@@ -2852,10 +2871,9 @@ export function Products() {
               return (
               <motion.div
                 key={product.id}
-                initial={{ opacity: 0, y: -4 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, height: 0 }}
-                transition={{ delay: i * 0.02 }}
                 className="border-b border-border/50 last:border-0 min-w-[680px]"
               >
                 {/* Main row */}
