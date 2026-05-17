@@ -1087,7 +1087,20 @@ async function parseSpreadsheet(file: File): Promise<(string | number | boolean 
     return result.data;
   } else {
     const readXlsxFile = (await import("read-excel-file/browser")).default;
-    const rows = await readXlsxFile(file);
+    const result = await readXlsxFile(file);
+    // read-excel-file normally returns Row[][] for a single sheet, but some
+    // files (notably Google Sheets exports and multi-sheet workbooks) cause
+    // it to return the wrapped form [{ sheet, data }]. Detect and unwrap so
+    // downstream callers always receive a flat Row[][].
+    const rows: (string | number | boolean | Date | null)[][] =
+      Array.isArray(result) &&
+      result.length > 0 &&
+      !Array.isArray(result[0]) &&
+      result[0] !== null &&
+      typeof result[0] === "object" &&
+      Array.isArray((result[0] as { data?: unknown }).data)
+        ? ((result[0] as { data: (string | number | boolean | Date | null)[][] }).data)
+        : (result as (string | number | boolean | Date | null)[][]);
     return rows.map((row) =>
       row.map((cell) => (cell instanceof Date ? cell.toLocaleDateString() : cell))
     );
