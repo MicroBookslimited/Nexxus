@@ -1325,15 +1325,11 @@ function buildStapleReceiptHtml(
     <div class="st-pay-single">Chip Read</div>
     <div class="st-pay-row"><span>Auth No. :</span><span>${escHtml(authNo)}</span></div>
     <div class="st-pay-row"><span>AID. :</span><span>${escHtml(aidCode)}</span></div>` : ""}
-    ${!isCardish && !isSplit ? `
-    <div class="st-pay-row"><span>${isCash ? "CASH TENDERED" : "TENDERED"}</span><span>$${fmtNum(isCash ? tenderedAmt : order.total)}</span></div>
-    <div class="st-pay-row"><span>CHANGE DUE</span><span>$${fmtNum(isCash ? changeDue : 0)}</span></div>` : ""}
-    ${isCard ? `
-    <div class="st-pay-row"><span>TENDERED</span><span>$${fmtNum(order.total)}</span></div>
-    <div class="st-pay-row"><span>CHANGE DUE</span><span>$${fmtNum(0)}</span></div>` : ""}
     ${isSplit ? `
     <div class="st-pay-row"><span>CARD</span><span>$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
-    <div class="st-pay-row"><span>CASH</span><span>$${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}`;
+    <div class="st-pay-row"><span>CASH</span><span>$${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}
+    <div class="st-pay-row"><span>${isCash ? "CASH TENDERED" : "TENDERED"}</span><span>$${fmtNum(isCash ? tenderedAmt : order.total)}</span></div>
+    <div class="st-pay-row"><span>CHANGE DUE</span><span>$${fmtNum(isCash ? changeDue : 0)}</span></div>`;
 
   // Total items count
   const totalQty  = order.items.reduce((s, i) => s + (i.quantity || 0), 0);
