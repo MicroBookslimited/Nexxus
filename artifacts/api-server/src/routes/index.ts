@@ -46,6 +46,7 @@ import productPricingRouter from "./product-pricing";
 import paymentMethodsRouter from "./payment-methods";
 import compositeProductsRouter from "./composite-products";
 import techniciansRouter from "./technicians";
+import priceManagerRouter from "./price-manager";
 
 const router: IRouter = Router();
 
@@ -96,5 +97,6 @@ router.use(productPricingRouter);
 router.use(paymentMethodsRouter);
 router.use(compositeProductsRouter);
 router.use(techniciansRouter);
+router.use(priceManagerRouter);
 
 export default router;

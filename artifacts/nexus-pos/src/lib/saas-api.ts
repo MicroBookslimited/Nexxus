@@ -919,3 +919,60 @@ export const superadminCancelManualPayment = (tenantId: number, paymentId: numbe
   api<{ success: boolean }>(`/superadmin/tenants/${tenantId}/manual-payments/${paymentId}`, {
     method: "DELETE", headers: superadminAuthHeaders(),
   });
+
+/* ─── Bulk Price Manager ─── */
+
+export type PriceMethod = "percent" | "cost_markup" | "fixed";
+export type PriceRounding = "none" | "5" | "10" | "50" | "100" | "1000";
+export type PriceScope = "all" | "category" | "products";
+
+export interface PricePreviewRequest {
+  method: PriceMethod;
+  value: number;
+  direction: "up" | "down";
+  rounding: PriceRounding;
+  scope: PriceScope;
+  categories?: string[];
+  productIds?: number[];
+}
+
+export interface PricePreviewRow {
+  productId: number;
+  productName: string;
+  category: string;
+  oldPrice: number;
+  costPrice: number | null;
+  newPrice: number | null;
+  skipped: string | null;
+}
+
+export interface PriceChangeLogRow {
+  id: number;
+  staffId: number | null;
+  staffName: string | null;
+  method: string;
+  value: number;
+  rounding: string;
+  scope: string;
+  affectedCount: number;
+  details: Array<{ productId: number; productName: string; oldPrice: number; newPrice: number }>;
+  createdAt: string;
+}
+
+export const pricePreview = (body: PricePreviewRequest & { staffId: number; staffName?: string }) =>
+  api<{ rows: PricePreviewRow[]; total: number }>(`/price-manager/preview`, {
+    method: "POST", body: JSON.stringify(body), headers: tenantAuthHeaders(),
+  });
+
+export const priceApply = (body: PricePreviewRequest & {
+  staffId: number;
+  staffName?: string;
+  changes: { productId: number; newPrice: number }[];
+}) =>
+  api<{ appliedCount: number; changes: { productId: number; productName: string; oldPrice: number; newPrice: number }[] }>(
+    `/price-manager/apply`,
+    { method: "POST", body: JSON.stringify(body), headers: tenantAuthHeaders() },
+  );
+
+export const priceListLogs = (staffId: number, limit = 50) =>
+  api<{ logs: PriceChangeLogRow[] }>(`/price-manager/logs?staffId=${staffId}&limit=${limit}`, { headers: tenantAuthHeaders() });

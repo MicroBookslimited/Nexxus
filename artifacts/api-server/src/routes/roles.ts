@@ -31,6 +31,7 @@ export const ALL_PERMISSIONS = [
   { key: "settings.view",      label: "View Settings",           category: "Settings" },
   { key: "settings.manage",    label: "Manage Settings",         category: "Settings" },
   { key: "scale.use",          label: "Use Weighing Scale & Print Labels", category: "Weighing Scale" },
+  { key: "pricing.manage",     label: "Bulk Price Manager",      category: "Pricing" },
 ];
 
 const ALL_KEYS = ALL_PERMISSIONS.map(p => p.key);
