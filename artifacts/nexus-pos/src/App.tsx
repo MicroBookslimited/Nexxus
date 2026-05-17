@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { queryClient, persister } from "@/lib/query-persister";
@@ -46,6 +46,8 @@ import { TechnicianLogin } from "@/pages/technician-login";
 import { TechnicianPortal } from "@/pages/technician-portal";
 import { Layout, PermissionGate } from "@/components/layout";
 import { isPathAllowedForTechnician, isTechnicianRestricted } from "@/lib/tenant-token";
+import { PinPad } from "@/components/PinPad";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // ─── Lazy section imports ───────────────────────────────────────────────────
 const Landing = lazy(() => import("@/sections/landing/Landing"));
@@ -259,6 +261,97 @@ function FullscreenFab() {
   );
 }
 
+// ── Kiosk Lockdown ─────────────────────────────────────────────────────────
+// When the operator enters fullscreen, kiosk mode "arms". Any subsequent exit
+// from fullscreen (ESC, F11, browser menu, even a page reload) shows a
+// blocking PIN overlay that only a manager / admin / supervisor can dismiss.
+// The armed flag is persisted in sessionStorage so a reload can't bypass it.
+const KIOSK_ARMED_KEY = "nexxus_kiosk_armed";
+
+function KioskLock() {
+  const [locked, setLocked] = useState(false);
+  const armedRef = useRef(false);
+
+  useEffect(() => {
+    if (!fsSupported) return;
+
+    // If the kiosk was armed before a reload but we are no longer in
+    // fullscreen, treat that as an unauthorized exit and lock immediately.
+    const wasArmed = sessionStorage.getItem(KIOSK_ARMED_KEY) === "1";
+    if (wasArmed && !document.fullscreenElement) {
+      armedRef.current = true;
+      setLocked(true);
+    } else if (document.fullscreenElement) {
+      armedRef.current = true;
+      sessionStorage.setItem(KIOSK_ARMED_KEY, "1");
+    }
+
+    const onFsChange = () => {
+      const isFs = !!document.fullscreenElement;
+      if (isFs) {
+        // Entering fullscreen arms the kiosk.
+        armedRef.current = true;
+        sessionStorage.setItem(KIOSK_ARMED_KEY, "1");
+      } else if (armedRef.current) {
+        // Exiting fullscreen while armed → lock the terminal.
+        setLocked(true);
+      }
+    };
+
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  const handleUnlock = () => {
+    // PIN verified — disarm kiosk so the operator can use the terminal
+    // outside fullscreen until they choose to re-enter kiosk mode.
+    armedRef.current = false;
+    sessionStorage.removeItem(KIOSK_ARMED_KEY);
+    setLocked(false);
+  };
+
+  const handleReenterFullscreen = () => {
+    document.documentElement.requestFullscreen().catch(() => {});
+    // The fullscreenchange listener will keep armedRef = true.
+    setLocked(false);
+  };
+
+  if (!locked) return null;
+
+  return (
+    <Dialog open={locked} onOpenChange={() => { /* not dismissable */ }}>
+      <DialogContent
+        className="sm:max-w-sm"
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-amber-400">
+            🔒 Terminal Locked — Manager PIN Required
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground text-center -mt-1 mb-1">
+          Fullscreen kiosk mode was exited. A manager, supervisor or admin PIN
+          is required to unlock this terminal.
+        </p>
+        <PinPad
+          title=""
+          requiredRoles={["manager", "admin", "supervisor"]}
+          onSuccess={handleUnlock}
+        />
+        <button
+          type="button"
+          onClick={handleReenterFullscreen}
+          className="mt-2 w-full rounded-md bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium py-2 transition-colors"
+        >
+          ⛶ Re-enter Fullscreen (no PIN required)
+        </button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function POSApp() {
   useAutoFullscreen();
 
@@ -277,6 +370,7 @@ function POSApp() {
             <OfflineBanner />
             <PWAUpdatePrompt />
             <FullscreenFab />
+            <KioskLock />
           </TooltipProvider>
         </PersistQueryClientProvider>
       </StaffProvider>
