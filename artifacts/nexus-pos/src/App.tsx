@@ -299,7 +299,26 @@ function KioskLock() {
     };
 
     document.addEventListener("fullscreenchange", onFsChange);
-    return () => document.removeEventListener("fullscreenchange", onFsChange);
+
+    // Browsers do not allow JS to outright block window/tab close, but a
+    // beforeunload handler that calls preventDefault() forces the browser
+    // to show its native "Leave site?" confirmation. While the kiosk is
+    // armed, any attempt to close the tab, reload, or navigate away gets
+    // this confirmation — turning an instant close into a deliberate
+    // action the cashier has to consciously confirm.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (sessionStorage.getItem(KIOSK_ARMED_KEY) === "1") {
+        e.preventDefault();
+        e.returnValue = "";
+        return "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsChange);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
   }, []);
 
   const handleUnlock = () => {
