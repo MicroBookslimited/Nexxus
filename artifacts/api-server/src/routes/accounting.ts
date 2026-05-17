@@ -19,6 +19,7 @@ const DEFAULT_ACCOUNTS = [
   { code: "1000", name: "Cash and Bank", type: "asset", subtype: "current_asset", isSystem: true },
   { code: "1100", name: "Accounts Receivable", type: "asset", subtype: "current_asset", isSystem: true },
   { code: "1200", name: "Inventory", type: "asset", subtype: "current_asset", isSystem: true },
+  { code: "1250", name: "Input Tax Receivable", type: "asset", subtype: "current_asset", isSystem: true },
   { code: "1300", name: "Prepaid Expenses", type: "asset", subtype: "current_asset", isSystem: false },
   { code: "1500", name: "Equipment & Fixtures", type: "asset", subtype: "fixed_asset", isSystem: false },
   { code: "2000", name: "Accounts Payable", type: "liability", subtype: "current_liability", isSystem: true },
@@ -41,13 +42,30 @@ const DEFAULT_ACCOUNTS = [
 ];
 
 async function ensureDefaultAccounts(tenantId: number) {
+  // Additive seed: insert any default account whose code is missing for this
+  // tenant. This lets new system accounts (e.g. 1250 Input Tax Receivable)
+  // appear for tenants that already have a chart of accounts seeded.
   const existing = await db.select({ code: accountingAccountsTable.code })
     .from(accountingAccountsTable)
-    .where(eq(accountingAccountsTable.tenantId, tenantId))
-    .limit(1);
-  if (existing.length === 0) {
-    await db.insert(accountingAccountsTable).values(DEFAULT_ACCOUNTS.map(a => ({ ...a, tenantId })));
+    .where(eq(accountingAccountsTable.tenantId, tenantId));
+  const have = new Set(existing.map((r) => r.code));
+  const missing = DEFAULT_ACCOUNTS.filter((a) => !have.has(a.code));
+  if (missing.length) {
+    await db.insert(accountingAccountsTable).values(missing.map((a) => ({ ...a, tenantId })));
   }
+}
+
+/**
+ * Look up an account id by its system code for a tenant, ensuring the
+ * default chart of accounts is seeded first. Returns null if not found.
+ */
+export async function getAccountIdByCode(tenantId: number, code: string): Promise<number | null> {
+  await ensureDefaultAccounts(tenantId);
+  const [acct] = await db.select({ id: accountingAccountsTable.id })
+    .from(accountingAccountsTable)
+    .where(and(eq(accountingAccountsTable.tenantId, tenantId), eq(accountingAccountsTable.code, code)))
+    .limit(1);
+  return acct?.id ?? null;
 }
 
 /* ─── Chart of Accounts ─── */

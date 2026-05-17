@@ -2850,6 +2850,14 @@ components:
         unitCost:
           type: number
           format: float
+        taxRate:
+          type: number
+          format: float
+          nullable: true
+          description: Line tax rate (%). Null means the line inherits the bill's defaultTaxRate.
+        taxAmount:
+          type: number
+          format: float
         totalCost:
           type: number
           format: float
@@ -2860,6 +2868,7 @@ components:
         - productName
         - quantity
         - unitCost
+        - taxAmount
         - totalCost
 
     PurchaseBill:
@@ -2878,6 +2887,15 @@ components:
         notes:
           type: string
           nullable: true
+        defaultTaxRate:
+          type: number
+          format: float
+        subtotal:
+          type: number
+          format: float
+        taxTotal:
+          type: number
+          format: float
         totalCost:
           type: number
           format: float
@@ -2890,9 +2908,41 @@ components:
         - id
         - billNumber
         - status
+        - defaultTaxRate
+        - subtotal
+        - taxTotal
         - totalCost
         - itemCount
         - createdAt
+
+    PurchaseBillCostChange:
+      type: object
+      description: A product whose cost increased as a result of confirming this bill.
+      properties:
+        productId:
+          type: integer
+        productName:
+          type: string
+        oldCost:
+          type: number
+          format: float
+          nullable: true
+        newCost:
+          type: number
+          format: float
+        currentPrice:
+          type: number
+          format: float
+        suggestedPrice:
+          type: number
+          format: float
+          description: New selling price that preserves the previous margin %.
+      required:
+        - productId
+        - productName
+        - newCost
+        - currentPrice
+        - suggestedPrice
 
     PurchaseBillWithItems:
       type: object
@@ -2910,6 +2960,15 @@ components:
         notes:
           type: string
           nullable: true
+        defaultTaxRate:
+          type: number
+          format: float
+        subtotal:
+          type: number
+          format: float
+        taxTotal:
+          type: number
+          format: float
         totalCost:
           type: number
           format: float
@@ -2922,10 +2981,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PurchaseBillItem"
+        costChanges:
+          type: array
+          description: Populated on create/confirm responses when product costs increased.
+          items:
+            $ref: "#/components/schemas/PurchaseBillCostChange"
       required:
         - id
         - billNumber
         - status
+        - defaultTaxRate
+        - subtotal
+        - taxTotal
         - totalCost
         - itemCount
         - createdAt
@@ -2941,6 +3008,11 @@ components:
         unitCost:
           type: number
           format: float
+        taxRate:
+          type: number
+          format: float
+          nullable: true
+          description: Line tax rate (%). Omit or send null to inherit the bill default.
       required:
         - productId
         - quantity
@@ -2957,6 +3029,10 @@ components:
         status:
           type: string
           enum: [draft, confirmed]
+        defaultTaxRate:
+          type: number
+          format: float
+          description: Default input-tax rate (%) applied to lines that don't override.
         items:
           type: array
           items:

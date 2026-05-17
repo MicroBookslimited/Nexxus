@@ -13,5 +13,7 @@ export interface CreatePurchaseBillBody {
   supplier?: string;
   notes?: string;
   status?: CreatePurchaseBillBodyStatus;
+  /** Default input-tax rate (%) applied to lines that don't override. */
+  defaultTaxRate?: number;
   items: CreatePurchaseBillItemBody[];
 }

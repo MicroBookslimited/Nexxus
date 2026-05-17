@@ -13,5 +13,8 @@ export interface PurchaseBillItem {
   productName: string;
   quantity: number;
   unitCost: number;
+  /** Line tax rate (%). Null means the line inherits the bill's defaultTaxRate. */
+  taxRate?: number | null;
+  taxAmount: number;
   totalCost: number;
 }

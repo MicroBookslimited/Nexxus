@@ -189,8 +189,22 @@ const LOW_STOCK_THRESHOLD = 10;
 type RestockForm = { quantity: string; unitCost: string; notes: string };
 const emptyRestockForm = (): RestockForm => ({ quantity: "", unitCost: "", notes: "" });
 
-type BillLineItem = { tempId: string; productId: string; quantity: string; unitCost: string };
-type BillForm = { billNumber: string; supplier: string; notes: string; items: BillLineItem[] };
+// taxRate is a string so an empty value means "inherit bill default".
+// Anything else parses as a percentage.
+type BillLineItem = { tempId: string; productId: string; quantity: string; unitCost: string; taxRate: string };
+type BillForm = { billNumber: string; supplier: string; notes: string; defaultTaxRate: string; items: BillLineItem[] };
+
+// One row in the post-confirm "review cost changes" dialog. The user can
+// edit `newPrice` before applying.
+type CostChangeRow = {
+  productId: number;
+  productName: string;
+  oldCost: number | null;
+  newCost: number;
+  currentPrice: number;
+  newPrice: string;
+  apply: boolean;
+};
 
 function generateBillNumber() {
   const d = new Date();
@@ -199,10 +213,10 @@ function generateBillNumber() {
   return `PO-${dateStr}-${rand}`;
 }
 function emptyLineItem(): BillLineItem {
-  return { tempId: makeId(), productId: "", quantity: "", unitCost: "" };
+  return { tempId: makeId(), productId: "", quantity: "", unitCost: "", taxRate: "" };
 }
 function emptyBillForm(): BillForm {
-  return { billNumber: generateBillNumber(), supplier: "", notes: "", items: [emptyLineItem()] };
+  return { billNumber: generateBillNumber(), supplier: "", notes: "", defaultTaxRate: "", items: [emptyLineItem()] };
 }
 
 /* ─── Product form types ─── */
@@ -2549,10 +2563,41 @@ export function Products() {
     );
   };
 
-  const billLineTotal = (item: BillLineItem) =>
-    (parseFloat(item.quantity) || 0) * (parseFloat(item.unitCost) || 0);
+  // Per-line breakdown: subtotal (qty*unitCost ex-tax), effective tax rate
+  // (line override falls back to bill default), tax amount, and grand total.
+  const billLineBreakdown = (item: BillLineItem) => {
+    const qty = parseFloat(item.quantity) || 0;
+    const cost = parseFloat(item.unitCost) || 0;
+    const subtotal = qty * cost;
+    const lineRate = item.taxRate.trim() === "" ? null : parseFloat(item.taxRate);
+    const defaultRate = parseFloat(billForm.defaultTaxRate) || 0;
+    const rate = lineRate === null || Number.isNaN(lineRate) ? defaultRate : lineRate;
+    const tax = subtotal * rate / 100;
+    return { qty, cost, subtotal, rate, tax, total: subtotal + tax };
+  };
+  const billLineTotal = (item: BillLineItem) => billLineBreakdown(item).total;
 
-  const billGrandTotal = billForm.items.reduce((s, item) => s + billLineTotal(item), 0);
+  // Margin info derived from the selected product's current selling price
+  // vs the entered ex-tax unit cost (input tax is recoverable, so we ignore
+  // it for margin math).
+  const billLineMargin = (item: BillLineItem) => {
+    const product = products?.find((p) => String(p.id) === item.productId);
+    if (!product) return null;
+    const cost = parseFloat(item.unitCost) || 0;
+    const price = product.price;
+    if (!price || cost <= 0) return null;
+    const amount = price - cost;
+    const pct = (amount / price) * 100;
+    return { price, cost, amount, pct };
+  };
+
+  const billTotals = billForm.items.reduce(
+    (acc, item) => {
+      const b = billLineBreakdown(item);
+      return { subtotal: acc.subtotal + b.subtotal, tax: acc.tax + b.tax, total: acc.total + b.total };
+    },
+    { subtotal: 0, tax: 0, total: 0 },
+  );
 
   const addLineItem = () =>
     setBillForm((f) => ({ ...f, items: [...f.items, emptyLineItem()] }));
@@ -2576,6 +2621,7 @@ export function Products() {
       toast({ title: "Add at least one item with a product and quantity", variant: "destructive" });
       return;
     }
+    const defaultTaxRate = parseFloat(billForm.defaultTaxRate) || 0;
     createBill.mutate(
       {
         data: {
@@ -2583,15 +2629,18 @@ export function Products() {
           supplier: billForm.supplier || undefined,
           notes: billForm.notes || undefined,
           status,
+          defaultTaxRate,
           items: validItems.map((i) => ({
             productId: parseInt(i.productId),
             quantity: parseInt(i.quantity),
             unitCost: parseFloat(i.unitCost) || 0,
+            // null = inherit bill default on the server
+            taxRate: i.taxRate.trim() === "" ? null : (parseFloat(i.taxRate) || 0),
           })),
         },
-      },
+      } as never,
       {
-        onSuccess: () => {
+        onSuccess: (response: unknown) => {
           toast({
             title: status === "confirmed"
               ? "Purchase bill confirmed — inventory updated!"
@@ -2603,6 +2652,9 @@ export function Products() {
           setBillForm(emptyBillForm());
           setBillSupplierManual(false);
           refetchBills();
+          // If the server reports cost increases, open the price-adjustment
+          // dialog so the user can update selling prices to keep margins.
+          maybeOpenCostChangeDialog(response);
         },
         onError: () => toast({ title: "Failed to save bill", variant: "destructive" }),
       },
@@ -2613,16 +2665,78 @@ export function Products() {
     confirmBill.mutate(
       { id },
       {
-        onSuccess: () => {
+        onSuccess: (response: unknown) => {
           toast({ title: "Bill confirmed — inventory updated!" });
           queryClient.invalidateQueries({ queryKey: ["/api/products"] });
           queryClient.invalidateQueries({ queryKey: ["/api/purchase-bills"] });
           setViewBillId(null);
           refetchBills();
+          maybeOpenCostChangeDialog(response);
         },
         onError: () => toast({ title: "Confirm failed", variant: "destructive" }),
       },
     );
+  };
+
+  // Cost-change adjustment dialog state.
+  const [costChangeRows, setCostChangeRows] = useState<CostChangeRow[] | null>(null);
+  const [applyingPrices, setApplyingPrices] = useState(false);
+
+  const maybeOpenCostChangeDialog = (response: unknown) => {
+    const changes = (response as { costChanges?: unknown[] } | null)?.costChanges;
+    if (!Array.isArray(changes) || changes.length === 0) return;
+    const rows: CostChangeRow[] = changes.map((c) => {
+      const r = c as {
+        productId: number;
+        productName: string;
+        oldCost: number | null;
+        newCost: number;
+        currentPrice: number;
+        suggestedPrice: number;
+      };
+      return {
+        productId: r.productId,
+        productName: r.productName,
+        oldCost: r.oldCost,
+        newCost: r.newCost,
+        currentPrice: r.currentPrice,
+        newPrice: r.suggestedPrice.toFixed(2),
+        apply: true,
+      };
+    });
+    setCostChangeRows(rows);
+  };
+
+  const applyPriceAdjustments = async () => {
+    if (!costChangeRows) return;
+    const toApply = costChangeRows.filter((r) => r.apply && parseFloat(r.newPrice) > 0);
+    if (toApply.length === 0) {
+      setCostChangeRows(null);
+      return;
+    }
+    setApplyingPrices(true);
+    let okCount = 0;
+    let failCount = 0;
+    for (const row of toApply) {
+      try {
+        await updateProduct.mutateAsync({
+          id: row.productId,
+          data: { price: parseFloat(row.newPrice) },
+        } as never);
+        okCount += 1;
+      } catch {
+        failCount += 1;
+      }
+    }
+    setApplyingPrices(false);
+    queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    toast({
+      title: failCount === 0
+        ? `Updated ${okCount} selling price${okCount !== 1 ? "s" : ""}`
+        : `${okCount} updated, ${failCount} failed`,
+      variant: failCount === 0 ? "default" : "destructive",
+    });
+    setCostChangeRows(null);
   };
 
   const handleDeleteBill = (id: number) => {
@@ -3199,7 +3313,7 @@ export function Products() {
               {/* Bill Info */}
               <Card>
                 <CardContent className="pt-4 pb-4">
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-4 gap-4">
                     <div className="grid gap-1.5">
                       <Label className="text-xs text-muted-foreground uppercase tracking-wide">Bill Number *</Label>
                       <Input
@@ -3247,6 +3361,22 @@ export function Products() {
                       )}
                     </div>
                     <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">Default Tax %</Label>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          placeholder="0"
+                          value={billForm.defaultTaxRate}
+                          onChange={(e) => setBillForm((f) => ({ ...f, defaultTaxRate: e.target.value }))}
+                          className="pr-7 text-right font-mono"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                    <div className="grid gap-1.5">
                       <Label className="text-xs text-muted-foreground uppercase tracking-wide">Notes</Label>
                       <Input
                         value={billForm.notes}
@@ -3266,20 +3396,26 @@ export function Products() {
                 </div>
 
                 <div className="rounded-xl border border-border overflow-hidden">
-                  {/* Header row */}
-                  <div className="grid grid-cols-[2fr_100px_130px_120px_40px] gap-3 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  {/* Header row — added Tax % and Margin columns */}
+                  <div className="grid grid-cols-[1.6fr_70px_110px_90px_110px_110px_40px] gap-3 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     <span>Product</span>
                     <span className="text-right">Qty</span>
                     <span className="text-right">Unit Cost</span>
+                    <span className="text-right">Tax %</span>
+                    <span className="text-right">Margin</span>
                     <span className="text-right">Line Total</span>
                     <span />
                   </div>
 
                   {/* Item rows */}
-                  {billForm.items.map((item, idx) => (
+                  {billForm.items.map((item) => {
+                    const margin = billLineMargin(item);
+                    const breakdown = billLineBreakdown(item);
+                    const defaultRate = parseFloat(billForm.defaultTaxRate) || 0;
+                    return (
                     <div
                       key={item.tempId}
-                      className="grid grid-cols-[2fr_100px_130px_120px_40px] gap-3 px-4 py-2 items-center border-b border-border/40 last:border-0"
+                      className="grid grid-cols-[1.6fr_70px_110px_90px_110px_110px_40px] gap-3 px-4 py-2 items-center border-b border-border/40 last:border-0"
                     >
                       {/* Product picker — searchable combobox (fast for 1000+ products) */}
                       <ProductCombobox
@@ -3298,7 +3434,7 @@ export function Products() {
                         className="h-8 text-sm text-right"
                       />
 
-                      {/* Unit cost */}
+                      {/* Unit cost (ex-tax) */}
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
                         <Input
@@ -3312,10 +3448,49 @@ export function Products() {
                         />
                       </div>
 
-                      {/* Line total */}
-                      <p className="text-sm font-bold font-mono text-right text-primary">
-                        {billLineTotal(item) > 0 ? formatCurrency(billLineTotal(item)) : "—"}
-                      </p>
+                      {/* Tax % — empty = inherit bill default (shown as placeholder) */}
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          placeholder={defaultRate > 0 ? defaultRate.toString() : "0"}
+                          value={item.taxRate}
+                          onChange={(e) => updateLineItem(item.tempId, { taxRate: e.target.value })}
+                          className="h-8 text-sm pr-6 text-right"
+                          title="Leave blank to use the bill's default tax rate"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                      </div>
+
+                      {/* Margin — both % and amount */}
+                      <div className="text-right text-sm font-mono leading-tight">
+                        {margin ? (
+                          <>
+                            <div className={margin.pct < 0 ? "text-destructive font-semibold" : margin.pct < 15 ? "text-yellow-400 font-semibold" : "text-green-400 font-semibold"}>
+                              {margin.pct.toFixed(1)}%
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              {formatCurrency(margin.amount)}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </div>
+
+                      {/* Line total (includes tax) */}
+                      <div className="text-right leading-tight">
+                        <p className="text-sm font-bold font-mono text-primary">
+                          {breakdown.total > 0 ? formatCurrency(breakdown.total) : "—"}
+                        </p>
+                        {breakdown.tax > 0 && (
+                          <p className="text-[11px] text-muted-foreground font-mono">
+                            tax {formatCurrency(breakdown.tax)}
+                          </p>
+                        )}
+                      </div>
 
                       {/* Delete row */}
                       <Button
@@ -3328,7 +3503,8 @@ export function Products() {
                         <X className="h-3.5 w-3.5" />
                       </Button>
                     </div>
-                  ))}
+                    );
+                  })}
 
                   {/* Add item row */}
                   <div className="px-4 py-2.5 border-t border-border/40 bg-secondary/20">
@@ -3338,14 +3514,24 @@ export function Products() {
                   </div>
                 </div>
 
-                {/* Grand total row */}
-                <div className="flex items-center justify-end gap-4 px-4 py-2">
-                  <span className="text-sm text-muted-foreground">
+                {/* Totals row — subtotal, input tax, grand total */}
+                <div className="flex items-start justify-between gap-4 px-4 py-2">
+                  <span className="text-sm text-muted-foreground pt-1">
                     {billForm.items.filter((i) => i.productId && parseInt(i.quantity) > 0).length} valid items
                   </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">Grand Total:</span>
-                    <span className="text-xl font-bold font-mono text-primary">{formatCurrency(billGrandTotal)}</span>
+                  <div className="flex flex-col items-end gap-0.5 min-w-[220px]">
+                    <div className="flex items-center justify-between w-full text-sm">
+                      <span className="text-muted-foreground">Subtotal</span>
+                      <span className="font-mono">{formatCurrency(billTotals.subtotal)}</span>
+                    </div>
+                    <div className="flex items-center justify-between w-full text-sm">
+                      <span className="text-muted-foreground">Input Tax</span>
+                      <span className="font-mono">{formatCurrency(billTotals.tax)}</span>
+                    </div>
+                    <div className="flex items-center justify-between w-full pt-1 mt-1 border-t border-border/60">
+                      <span className="text-sm font-medium">Grand Total</span>
+                      <span className="text-xl font-bold font-mono text-primary">{formatCurrency(billTotals.total)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3373,6 +3559,96 @@ export function Products() {
           )}
         </div>
       )}
+
+      {/* Cost-change price-adjustment dialog. Opens after confirming a bill
+          when one or more product costs went up. Suggested prices preserve
+          the previous margin %; the user can edit them or untick rows. */}
+      <Dialog open={!!costChangeRows} onOpenChange={(o) => { if (!o && !applyingPrices) setCostChangeRows(null); }}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-yellow-400" />
+              Cost Increased — Review Selling Prices
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            The cost went up on {costChangeRows?.length ?? 0} product{(costChangeRows?.length ?? 0) !== 1 ? "s" : ""}. Suggested prices keep your previous margin. Edit any price or untick to skip.
+          </p>
+          <div className="flex-1 overflow-y-auto rounded-xl border border-border">
+            <div className="grid grid-cols-[28px_1.6fr_110px_110px_110px_130px] gap-2 px-3 py-2 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide sticky top-0">
+              <span />
+              <span>Product</span>
+              <span className="text-right">Old Cost</span>
+              <span className="text-right">New Cost</span>
+              <span className="text-right">Current Price</span>
+              <span className="text-right">New Price</span>
+            </div>
+            {costChangeRows?.map((row, idx) => {
+              const newPriceNum = parseFloat(row.newPrice) || 0;
+              const newMargin = newPriceNum > 0 ? ((newPriceNum - row.newCost) / newPriceNum) * 100 : 0;
+              return (
+                <div
+                  key={row.productId}
+                  className="grid grid-cols-[28px_1.6fr_110px_110px_110px_130px] gap-2 px-3 py-2 items-center border-b border-border/40 last:border-0"
+                >
+                  <input
+                    type="checkbox"
+                    checked={row.apply}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setCostChangeRows((prev) => prev?.map((r, i) => i === idx ? { ...r, apply: checked } : r) ?? null);
+                    }}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{row.productName}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      new margin {newMargin.toFixed(1)}%
+                    </div>
+                  </div>
+                  <span className="text-right text-sm font-mono text-muted-foreground">
+                    {row.oldCost != null ? formatCurrency(row.oldCost) : "—"}
+                  </span>
+                  <span className="text-right text-sm font-mono">{formatCurrency(row.newCost)}</span>
+                  <span className="text-right text-sm font-mono text-muted-foreground">{formatCurrency(row.currentPrice)}</span>
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={row.newPrice}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setCostChangeRows((prev) => prev?.map((r, i) => i === idx ? { ...r, newPrice: v } : r) ?? null);
+                      }}
+                      disabled={!row.apply}
+                      className="h-8 text-sm pl-5 text-right font-mono"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCostChangeRows(null)}
+              disabled={applyingPrices}
+            >
+              Skip All
+            </Button>
+            <Button
+              onClick={applyPriceAdjustments}
+              disabled={applyingPrices || !costChangeRows?.some((r) => r.apply)}
+              className="gap-2"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {applyingPrices ? "Applying…" : `Apply (${costChangeRows?.filter((r) => r.apply).length ?? 0})`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Bill Detail dialog */}
       <Dialog open={!!viewBillId} onOpenChange={(o) => !o && setViewBillId(null)}>

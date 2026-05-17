@@ -1714,6 +1714,9 @@ export const ListPurchaseBillsResponseItem = zod.object({
   supplier: zod.string().nullish(),
   status: zod.enum(["draft", "confirmed"]),
   notes: zod.string().nullish(),
+  defaultTaxRate: zod.number(),
+  subtotal: zod.number(),
+  taxTotal: zod.number(),
   totalCost: zod.number(),
   itemCount: zod.number(),
   createdAt: zod.coerce.date(),
@@ -1730,11 +1733,23 @@ export const CreatePurchaseBillBody = zod.object({
   supplier: zod.string().optional(),
   notes: zod.string().optional(),
   status: zod.enum(["draft", "confirmed"]).optional(),
+  defaultTaxRate: zod
+    .number()
+    .optional()
+    .describe(
+      "Default input-tax rate (%) applied to lines that don't override.",
+    ),
   items: zod.array(
     zod.object({
       productId: zod.number(),
       quantity: zod.number(),
       unitCost: zod.number().optional(),
+      taxRate: zod
+        .number()
+        .nullish()
+        .describe(
+          "Line tax rate (%). Omit or send null to inherit the bill default.",
+        ),
     }),
   ),
 });
@@ -1752,6 +1767,9 @@ export const GetPurchaseBillResponse = zod.object({
   supplier: zod.string().nullish(),
   status: zod.enum(["draft", "confirmed"]),
   notes: zod.string().nullish(),
+  defaultTaxRate: zod.number(),
+  subtotal: zod.number(),
+  taxTotal: zod.number(),
   totalCost: zod.number(),
   itemCount: zod.number(),
   createdAt: zod.coerce.date(),
@@ -1763,9 +1781,39 @@ export const GetPurchaseBillResponse = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitCost: zod.number(),
+      taxRate: zod
+        .number()
+        .nullish()
+        .describe(
+          "Line tax rate (%). Null means the line inherits the bill's defaultTaxRate.",
+        ),
+      taxAmount: zod.number(),
       totalCost: zod.number(),
     }),
   ),
+  costChanges: zod
+    .array(
+      zod
+        .object({
+          productId: zod.number(),
+          productName: zod.string(),
+          oldCost: zod.number().nullish(),
+          newCost: zod.number(),
+          currentPrice: zod.number(),
+          suggestedPrice: zod
+            .number()
+            .describe(
+              "New selling price that preserves the previous margin %.",
+            ),
+        })
+        .describe(
+          "A product whose cost increased as a result of confirming this bill.",
+        ),
+    )
+    .optional()
+    .describe(
+      "Populated on create\/confirm responses when product costs increased.",
+    ),
 });
 
 /**
@@ -1788,6 +1836,9 @@ export const ConfirmPurchaseBillResponse = zod.object({
   supplier: zod.string().nullish(),
   status: zod.enum(["draft", "confirmed"]),
   notes: zod.string().nullish(),
+  defaultTaxRate: zod.number(),
+  subtotal: zod.number(),
+  taxTotal: zod.number(),
   totalCost: zod.number(),
   itemCount: zod.number(),
   createdAt: zod.coerce.date(),
@@ -1799,9 +1850,39 @@ export const ConfirmPurchaseBillResponse = zod.object({
       productName: zod.string(),
       quantity: zod.number(),
       unitCost: zod.number(),
+      taxRate: zod
+        .number()
+        .nullish()
+        .describe(
+          "Line tax rate (%). Null means the line inherits the bill's defaultTaxRate.",
+        ),
+      taxAmount: zod.number(),
       totalCost: zod.number(),
     }),
   ),
+  costChanges: zod
+    .array(
+      zod
+        .object({
+          productId: zod.number(),
+          productName: zod.string(),
+          oldCost: zod.number().nullish(),
+          newCost: zod.number(),
+          currentPrice: zod.number(),
+          suggestedPrice: zod
+            .number()
+            .describe(
+              "New selling price that preserves the previous margin %.",
+            ),
+        })
+        .describe(
+          "A product whose cost increased as a result of confirming this bill.",
+        ),
+    )
+    .optional()
+    .describe(
+      "Populated on create\/confirm responses when product costs increased.",
+    ),
 });
 
 /**

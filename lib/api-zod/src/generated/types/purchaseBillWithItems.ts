@@ -5,6 +5,7 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PurchaseBillCostChange } from "./purchaseBillCostChange";
 import type { PurchaseBillItem } from "./purchaseBillItem";
 import type { PurchaseBillWithItemsStatus } from "./purchaseBillWithItemsStatus";
 
@@ -14,8 +15,13 @@ export interface PurchaseBillWithItems {
   supplier?: string | null;
   status: PurchaseBillWithItemsStatus;
   notes?: string | null;
+  defaultTaxRate: number;
+  subtotal: number;
+  taxTotal: number;
   totalCost: number;
   itemCount: number;
   createdAt: Date;
   items: PurchaseBillItem[];
+  /** Populated on create/confirm responses when product costs increased. */
+  costChanges?: PurchaseBillCostChange[];
 }

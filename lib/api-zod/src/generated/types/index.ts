@@ -90,6 +90,7 @@ export * from "./productStructureType";
 export * from "./productUnitOfMeasure";
 export * from "./purchase";
 export * from "./purchaseBill";
+export * from "./purchaseBillCostChange";
 export * from "./purchaseBillItem";
 export * from "./purchaseBillStatus";
 export * from "./purchaseBillWithItems";

@@ -10,4 +10,6 @@ export interface CreatePurchaseBillItemBody {
   productId: number;
   quantity: number;
   unitCost?: number;
+  /** Line tax rate (%). Omit or send null to inherit the bill default. */
+  taxRate?: number | null;
 }

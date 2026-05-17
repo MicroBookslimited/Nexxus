@@ -704,6 +704,9 @@ export interface PurchaseBillItem {
   productName: string;
   quantity: number;
   unitCost: number;
+  /** Line tax rate (%). Null means the line inherits the bill's defaultTaxRate. */
+  taxRate?: number | null;
+  taxAmount: number;
   totalCost: number;
 }
 
@@ -721,9 +724,25 @@ export interface PurchaseBill {
   supplier?: string | null;
   status: PurchaseBillStatus;
   notes?: string | null;
+  defaultTaxRate: number;
+  subtotal: number;
+  taxTotal: number;
   totalCost: number;
   itemCount: number;
   createdAt: string;
+}
+
+/**
+ * A product whose cost increased as a result of confirming this bill.
+ */
+export interface PurchaseBillCostChange {
+  productId: number;
+  productName: string;
+  oldCost?: number | null;
+  newCost: number;
+  currentPrice: number;
+  /** New selling price that preserves the previous margin %. */
+  suggestedPrice: number;
 }
 
 export type PurchaseBillWithItemsStatus =
@@ -740,16 +759,23 @@ export interface PurchaseBillWithItems {
   supplier?: string | null;
   status: PurchaseBillWithItemsStatus;
   notes?: string | null;
+  defaultTaxRate: number;
+  subtotal: number;
+  taxTotal: number;
   totalCost: number;
   itemCount: number;
   createdAt: string;
   items: PurchaseBillItem[];
+  /** Populated on create/confirm responses when product costs increased. */
+  costChanges?: PurchaseBillCostChange[];
 }
 
 export interface CreatePurchaseBillItemBody {
   productId: number;
   quantity: number;
   unitCost?: number;
+  /** Line tax rate (%). Omit or send null to inherit the bill default. */
+  taxRate?: number | null;
 }
 
 export type CreatePurchaseBillBodyStatus =
@@ -765,6 +791,8 @@ export interface CreatePurchaseBillBody {
   supplier?: string;
   notes?: string;
   status?: CreatePurchaseBillBodyStatus;
+  /** Default input-tax rate (%) applied to lines that don't override. */
+  defaultTaxRate?: number;
   items: CreatePurchaseBillItemBody[];
 }
 

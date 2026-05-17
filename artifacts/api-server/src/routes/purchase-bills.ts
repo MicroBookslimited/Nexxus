@@ -1,8 +1,17 @@
 import { Router, type IRouter } from "express";
 import { and, eq, desc, count } from "drizzle-orm";
-import { db, purchaseBillsTable, purchaseBillItemsTable, productsTable, stockMovementsTable } from "@workspace/db";
+import {
+  db,
+  purchaseBillsTable,
+  purchaseBillItemsTable,
+  productsTable,
+  stockMovementsTable,
+  journalEntriesTable,
+  journalEntryLinesTable,
+} from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
+import { getAccountIdByCode } from "./accounting";
 
 const router: IRouter = Router();
 
@@ -18,6 +27,8 @@ const CreateBillItemBody = z.object({
   productId: z.number().int().positive(),
   quantity: z.number().int().positive(),
   unitCost: z.number().min(0).default(0),
+  // Per-line input-tax rate (%). Omit/null = inherit bill default.
+  taxRate: z.number().min(0).max(100).nullable().optional(),
 });
 
 const CreatePurchaseBillBody = z.object({
@@ -25,8 +36,205 @@ const CreatePurchaseBillBody = z.object({
   supplier: z.string().optional(),
   notes: z.string().optional(),
   status: z.enum(["draft", "confirmed"]).default("draft"),
+  defaultTaxRate: z.number().min(0).max(100).default(0),
   items: z.array(CreateBillItemBody).min(1),
 });
+
+type BillCostChange = {
+  productId: number;
+  productName: string;
+  oldCost: number | null;
+  newCost: number;
+  currentPrice: number;
+  suggestedPrice: number;
+};
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Confirm a bill: bump stock, update product cost (only when higher),
+ * post the journal entry, and return the list of products whose cost
+ * went up so the UI can prompt for a selling-price adjustment.
+ *
+ * All work runs inside a single transaction (`tx`) so a mid-flight failure
+ * never leaves stock partially updated or a half-posted journal entry.
+ * Repairs legacy drafts whose `subtotal`/`taxTotal` were never persisted by
+ * recomputing them from the items before posting the journal entry.
+ * Cost-change rows are aggregated per `productId` — a bill with the same
+ * product on multiple lines emits at most one prompt row for that product.
+ */
+async function confirmBillSideEffects(
+  tx: Tx,
+  tenantId: number,
+  bill: typeof purchaseBillsTable.$inferSelect,
+  items: (typeof purchaseBillItemsTable.$inferSelect)[],
+): Promise<BillCostChange[]> {
+  const cents = (n: number) => Math.round(n * 100) / 100;
+
+  // Legacy drafts may have zero subtotal/taxTotal but a populated totalCost.
+  // Recompute from items so the JE balances; persist the repair to the bill.
+  let subtotal = bill.subtotal;
+  let taxTotal = bill.taxTotal;
+  if ((subtotal <= 0 || taxTotal <= 0) && items.length > 0) {
+    const computedSub = cents(items.reduce((s, i) => s + i.quantity * i.unitCost, 0));
+    const computedTax = cents(items.reduce((s, i) => s + (i.taxAmount ?? 0), 0));
+    if (computedSub + computedTax > 0) {
+      subtotal = computedSub;
+      taxTotal = computedTax;
+    }
+  }
+  const totalCost = cents(subtotal + taxTotal);
+
+  // Aggregate items by productId so a product appearing on multiple lines
+  // is treated as one cost-change candidate (single price prompt + update).
+  const grouped = new Map<number, { quantity: number; weightedCostSum: number; maxUnitCost: number }>();
+  for (const item of items) {
+    const g = grouped.get(item.productId) ?? { quantity: 0, weightedCostSum: 0, maxUnitCost: 0 };
+    g.quantity += item.quantity;
+    g.weightedCostSum += item.quantity * item.unitCost;
+    g.maxUnitCost = Math.max(g.maxUnitCost, item.unitCost);
+    grouped.set(item.productId, g);
+  }
+
+  const costChanges: BillCostChange[] = [];
+
+  for (const [productId, g] of grouped) {
+    const [product] = await tx
+      .select()
+      .from(productsTable)
+      .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+    if (!product) continue;
+
+    const newBalance = product.stockCount + g.quantity;
+    const oldCost = product.costPrice;
+    // Use the highest unit cost across the lines so the "cost going up"
+    // check reflects the worst case; the standing costPrice should never
+    // be lowered by a cheap one-off PO.
+    const effectiveCost = g.maxUnitCost;
+    const costGoingUp = effectiveCost > (oldCost ?? 0) && effectiveCost > 0;
+
+    await tx
+      .update(productsTable)
+      .set({
+        stockCount: newBalance,
+        inStock: true,
+        ...(costGoingUp ? { costPrice: effectiveCost } : {}),
+      })
+      .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+
+    await tx.insert(stockMovementsTable).values({
+      tenantId,
+      productId,
+      type: "purchase_bill",
+      quantity: g.quantity,
+      balanceAfter: newBalance,
+      referenceType: "purchase_bill",
+      referenceId: bill.id,
+      notes: `Purchase Bill – ${bill.billNumber}`,
+    });
+
+    if (costGoingUp) {
+      const currentPrice = product.price;
+      // Preserve the previous margin. If we have no prior cost or the price
+      // is below cost, default to a 30% markup so the user has a sane number
+      // to edit instead of zero.
+      let suggestedPrice = effectiveCost * 1.3;
+      if (oldCost && oldCost > 0 && currentPrice > oldCost) {
+        const marginPct = (currentPrice - oldCost) / currentPrice; // selling-price margin
+        if (marginPct < 0.999) {
+          suggestedPrice = effectiveCost / (1 - marginPct);
+        }
+      }
+      costChanges.push({
+        productId: product.id,
+        productName: product.name,
+        oldCost,
+        newCost: effectiveCost,
+        currentPrice,
+        suggestedPrice: cents(suggestedPrice),
+      });
+    }
+  }
+
+  // Repair the bill row if we recomputed totals above so subsequent reads
+  // (and any retried confirm) see the corrected figures.
+  if (subtotal !== bill.subtotal || taxTotal !== bill.taxTotal || totalCost !== bill.totalCost) {
+    await tx
+      .update(purchaseBillsTable)
+      .set({ subtotal, taxTotal, totalCost })
+      .where(eq(purchaseBillsTable.id, bill.id));
+  }
+
+  // Post the journal entry so input tax nets against output tax on reports.
+  // Skip silently if the chart of accounts is missing — bill still confirms.
+  const inventoryAcct = await getAccountIdByCode(tenantId, "1200");
+  const inputTaxAcct = await getAccountIdByCode(tenantId, "1250");
+  const apAcct = await getAccountIdByCode(tenantId, "2000");
+  if (inventoryAcct && apAcct && totalCost > 0) {
+    const lines: { accountId: number; description: string; debit: number; credit: number }[] = [];
+    if (subtotal > 0) {
+      lines.push({
+        accountId: inventoryAcct,
+        description: "Inventory received",
+        debit: subtotal,
+        credit: 0,
+      });
+    }
+    if (taxTotal > 0 && inputTaxAcct) {
+      lines.push({
+        accountId: inputTaxAcct,
+        description: "Input tax (recoverable)",
+        debit: taxTotal,
+        credit: 0,
+      });
+    } else if (taxTotal > 0 && !inputTaxAcct) {
+      // No input-tax account — fold tax into inventory so the entry balances.
+      lines.push({
+        accountId: inventoryAcct,
+        description: "Input tax (no recoverable account; capitalised to inventory)",
+        debit: taxTotal,
+        credit: 0,
+      });
+    } else if (subtotal <= 0) {
+      // No items breakdown at all — fall back to a single inventory debit
+      // for the full amount so the entry still balances.
+      lines.push({
+        accountId: inventoryAcct,
+        description: "Inventory received",
+        debit: totalCost,
+        credit: 0,
+      });
+    }
+    lines.push({
+      accountId: apAcct,
+      description: bill.supplier ?? "Supplier",
+      debit: 0,
+      credit: totalCost,
+    });
+
+    // Sanity: only post if the entry balances. Guards against any rounding
+    // drift introduced by the legacy-draft repair path.
+    const debitSum = cents(lines.reduce((s, l) => s + l.debit, 0));
+    const creditSum = cents(lines.reduce((s, l) => s + l.credit, 0));
+    if (debitSum === creditSum && debitSum > 0) {
+      const [entry] = await tx
+        .insert(journalEntriesTable)
+        .values({
+          tenantId,
+          date: new Date(),
+          description: `Purchase Bill ${bill.billNumber}${bill.supplier ? ` – ${bill.supplier}` : ""}`,
+          reference: bill.billNumber,
+          type: "purchase",
+        })
+        .returning();
+      await tx
+        .insert(journalEntryLinesTable)
+        .values(lines.map((l) => ({ ...l, entryId: entry.id })));
+    }
+  }
+
+  return costChanges;
+}
 
 async function enrichBill(bill: typeof purchaseBillsTable.$inferSelect, itemCountOverride?: number) {
   const [{ n }] = await db
@@ -94,7 +302,7 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
     return;
   }
 
-  const { billNumber, supplier, notes, status, items } = parsed.data;
+  const { billNumber, supplier, notes, status, defaultTaxRate, items } = parsed.data;
 
   for (const item of items) {
     const [product] = await db.select({ id: productsTable.id }).from(productsTable)
@@ -105,48 +313,67 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
     }
   }
 
-  const totalCost = items.reduce((sum, item) => sum + item.unitCost * item.quantity, 0);
+  // Compute per-line and bill totals. Round to cents so the journal entry
+  // balances cleanly to two decimal places.
+  const cents = (n: number) => Math.round(n * 100) / 100;
+  const computed = items.map((item) => {
+    const lineSubtotal = cents(item.quantity * item.unitCost);
+    const effectiveRate = item.taxRate ?? defaultTaxRate;
+    const lineTax = cents(lineSubtotal * effectiveRate / 100);
+    return {
+      ...item,
+      lineSubtotal,
+      lineTax,
+      lineTotal: cents(lineSubtotal + lineTax),
+    };
+  });
+  const subtotal = cents(computed.reduce((s, i) => s + i.lineSubtotal, 0));
+  const taxTotal = cents(computed.reduce((s, i) => s + i.lineTax, 0));
+  const totalCost = cents(subtotal + taxTotal);
 
-  const [bill] = await db
-    .insert(purchaseBillsTable)
-    .values({ tenantId, billNumber, supplier: supplier ?? null, notes: notes ?? null, status, totalCost })
-    .returning();
+  // Insert bill + items + (optional) side effects atomically. If anything
+  // throws mid-way nothing is persisted, so a retry cannot double-apply
+  // stock movements or journal entries.
+  const { bill, costChanges } = await db.transaction(async (tx) => {
+    const [createdBill] = await tx
+      .insert(purchaseBillsTable)
+      .values({
+        tenantId,
+        billNumber,
+        supplier: supplier ?? null,
+        notes: notes ?? null,
+        status,
+        defaultTaxRate,
+        subtotal,
+        taxTotal,
+        totalCost,
+      })
+      .returning();
 
-  await db.insert(purchaseBillItemsTable).values(
-    items.map((item) => ({
-      billId: bill.id,
-      productId: item.productId,
-      quantity: item.quantity,
-      unitCost: item.unitCost,
-      totalCost: item.unitCost * item.quantity,
-    })),
-  );
-
-  if (status === "confirmed") {
-    for (const item of items) {
-      const [product] = await db.select().from(productsTable)
-        .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
-      if (product) {
-        const newBalance = product.stockCount + item.quantity;
-        await db.update(productsTable)
-          .set({ stockCount: newBalance, inStock: true })
-          .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
-        await db.insert(stockMovementsTable).values({
-          tenantId,
+    const insertedItems = await tx
+      .insert(purchaseBillItemsTable)
+      .values(
+        computed.map((item) => ({
+          billId: createdBill.id,
           productId: item.productId,
-          type: "purchase_bill",
           quantity: item.quantity,
-          balanceAfter: newBalance,
-          referenceType: "purchase_bill",
-          referenceId: bill.id,
-          notes: `Purchase Bill – ${bill.billNumber}`,
-        });
-      }
+          unitCost: item.unitCost,
+          taxRate: item.taxRate ?? null,
+          taxAmount: item.lineTax,
+          totalCost: item.lineTotal,
+        })),
+      )
+      .returning();
+
+    let changes: BillCostChange[] = [];
+    if (status === "confirmed") {
+      changes = await confirmBillSideEffects(tx, tenantId, createdBill, insertedItems);
     }
-  }
+    return { bill: createdBill, costChanges: changes };
+  });
 
   const enriched = await enrichBill(bill, items.length);
-  res.status(201).json(enriched);
+  res.status(201).json({ ...enriched, costChanges });
 });
 
 router.get("/purchase-bills/:id", async (req, res): Promise<void> => {
@@ -180,35 +407,28 @@ router.post("/purchase-bills/:id/confirm", async (req, res): Promise<void> => {
   if (!bill) { res.status(404).json({ error: "Bill not found" }); return; }
   if (bill.status === "confirmed") { res.status(400).json({ error: "Bill already confirmed" }); return; }
 
-  const items = await db.select().from(purchaseBillItemsTable).where(eq(purchaseBillItemsTable.billId, id));
-
-  for (const item of items) {
-    const [product] = await db.select().from(productsTable)
-      .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
-    if (product) {
-      const newBalance = product.stockCount + item.quantity;
-      await db.update(productsTable)
-        .set({ stockCount: newBalance, inStock: true })
-        .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
-      await db.insert(stockMovementsTable).values({
-        tenantId,
-        productId: item.productId,
-        type: "purchase_bill",
-        quantity: item.quantity,
-        balanceAfter: newBalance,
-        referenceType: "purchase_bill",
-        referenceId: id,
-        notes: `Purchase Bill confirmed`,
-      });
+  // Side effects + status flip in one transaction. Re-read the bill inside
+  // tx with FOR UPDATE-style guard (status check) to prevent two concurrent
+  // confirms from both bumping stock for the same bill.
+  const { updated, costChanges } = await db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(purchaseBillsTable)
+      .where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)));
+    if (!locked || locked.status === "confirmed") {
+      // Signal to the outer handler that we lost the race / already confirmed.
+      return { updated: null as typeof bill | null, costChanges: [] as BillCostChange[] };
     }
-  }
+    const items = await tx.select().from(purchaseBillItemsTable).where(eq(purchaseBillItemsTable.billId, id));
+    const changes = await confirmBillSideEffects(tx, tenantId, locked, items);
+    const [u] = await tx.update(purchaseBillsTable).set({ status: "confirmed" })
+      .where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)))
+      .returning();
+    return { updated: u, costChanges: changes };
+  });
 
-  const [updated] = await db.update(purchaseBillsTable).set({ status: "confirmed" })
-    .where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)))
-    .returning();
+  if (!updated) { res.status(400).json({ error: "Bill already confirmed" }); return; }
 
   const enriched = await enrichBillWithItems(updated);
-  res.json(enriched);
+  res.json({ ...enriched, costChanges });
 });
 
 router.delete("/purchase-bills/:id", async (req, res): Promise<void> => {

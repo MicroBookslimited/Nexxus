@@ -13,6 +13,9 @@ export interface PurchaseBill {
   supplier?: string | null;
   status: PurchaseBillStatus;
   notes?: string | null;
+  defaultTaxRate: number;
+  subtotal: number;
+  taxTotal: number;
   totalCost: number;
   itemCount: number;
   createdAt: Date;
