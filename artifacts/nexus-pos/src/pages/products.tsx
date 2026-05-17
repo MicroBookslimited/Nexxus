@@ -69,8 +69,10 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check } from "lucide-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
 
 const DEFAULT_CATEGORIES = ["Beverages", "Food", "Bakery", "Merchandise", "Other"];
 
@@ -2347,6 +2349,77 @@ function VariantStockPanel({ productId }: { productId: number }) {
 }
 
 /* ─── Main Products page ─── */
+// ─── Searchable product picker used in the Add Purchase Bill form ──────────
+// Type-to-search across 1000+ products. cmdk handles fuzzy matching; we add
+// a barcode-aware key so scanning works too. Renders a button trigger that
+// opens a popover with a search input and a scrollable result list.
+function ProductCombobox({
+  products,
+  value,
+  onChange,
+}: {
+  products: GetProductResponse[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = useMemo(
+    () => products.find((p) => String(p.id) === value),
+    [products, value],
+  );
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-sm text-left hover:bg-accent/40 transition-colors"
+        >
+          <span className={selected ? "truncate" : "truncate text-muted-foreground"}>
+            {selected ? selected.name : "Select product…"}
+          </span>
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-2" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[280px]" align="start">
+        <Command
+          filter={(itemValue, search) => {
+            // itemValue is `${name} ${barcode} ${id}` — cmdk's default
+            // contains-based match is fine but we lowercase explicitly to be
+            // robust against locale quirks.
+            return itemValue.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
+          }}
+        >
+          <CommandInput placeholder="Search by name or barcode…" autoFocus />
+          <CommandList className="max-h-[280px]">
+            <CommandEmpty>No products found.</CommandEmpty>
+            {products.map((p) => {
+              const itemValue = `${p.name} ${p.barcode ?? ""} ${p.id}`;
+              const isSelected = String(p.id) === value;
+              return (
+                <CommandItem
+                  key={p.id}
+                  value={itemValue}
+                  onSelect={() => {
+                    onChange(String(p.id));
+                    setOpen(false);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Check className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "opacity-100" : "opacity-0"}`} />
+                  <span className="flex-1 truncate">{p.name}</span>
+                  <span className="text-muted-foreground text-xs shrink-0">{p.stockCount} in stock</span>
+                </CommandItem>
+              );
+            })}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function Products() {
   const { can } = useStaff();
   const canManage = can("inventory.manage");
@@ -3208,25 +3281,12 @@ export function Products() {
                       key={item.tempId}
                       className="grid grid-cols-[2fr_100px_130px_120px_40px] gap-3 px-4 py-2 items-center border-b border-border/40 last:border-0"
                     >
-                      {/* Product select */}
-                      <Select
+                      {/* Product picker — searchable combobox (fast for 1000+ products) */}
+                      <ProductCombobox
+                        products={products ?? []}
                         value={item.productId}
-                        onValueChange={(v) => updateLineItem(item.tempId, { productId: v })}
-                      >
-                        <SelectTrigger className="h-8 text-sm">
-                          <SelectValue placeholder="Select product…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {products?.map((p) => (
-                            <SelectItem key={p.id} value={String(p.id)}>
-                              <span className="flex items-center gap-2">
-                                {p.name}
-                                <span className="text-muted-foreground text-xs">({p.stockCount} in stock)</span>
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={(v) => updateLineItem(item.tempId, { productId: v })}
+                      />
 
                       {/* Qty */}
                       <Input
