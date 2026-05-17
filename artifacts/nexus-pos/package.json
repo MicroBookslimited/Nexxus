@@ -45,6 +45,7 @@
     "@tailwindcss/vite": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@types/node": "catalog:",
+    "@types/papaparse": "^5.3.16",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
@@ -72,19 +73,19 @@
     "vaul": "^1.1.2",
     "vite": "catalog:",
     "wouter": "^3.3.5",
-    "zod": "catalog:",
-    "@types/papaparse": "^5.3.16"
+    "zod": "catalog:"
   },
   "dependencies": {
     "@paypal/paypal-js": "^9.5.0",
     "@tanstack/query-sync-storage-persister": "^5.97.0",
     "@tanstack/react-query-persist-client": "^5.97.0",
+    "@tanstack/react-virtual": "^3.13.24",
     "@types/jsbarcode": "^3.11.4",
     "jsbarcode": "^3.12.3",
-    "qrcode.react": "^4.2.0",
-    "vite-plugin-pwa": "^1.2.0",
-    "workbox-window": "^7.4.0",
     "papaparse": "^5.5.3",
-    "read-excel-file": "9.0.7"
+    "qrcode.react": "^4.2.0",
+    "read-excel-file": "9.0.7",
+    "vite-plugin-pwa": "^1.2.0",
+    "workbox-window": "^7.4.0"
   }
 }

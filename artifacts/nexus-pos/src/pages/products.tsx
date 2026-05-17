@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useDeferredValue } from "react";
+import React, { useState, useEffect, useMemo, useDeferredValue, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useStaff } from "@/contexts/StaffContext";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -2428,6 +2429,20 @@ export function Products() {
     [products],
   );
 
+  // ── List virtualization ──────────────────────────────────────────────────
+  // For large catalogs (1000+ products) we only render the rows currently in
+  // view. Rows have variable height (variant expansion panel), so we measure
+  // each row dynamically. estimateSize is a guess used until measureElement
+  // reports the real height.
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const virtualizer = useVirtualizer({
+    count: filteredProducts?.length ?? 0,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => 60,
+    overscan: 8,
+    getItemKey: (i) => filteredProducts?.[i]?.id ?? i,
+  });
+
   const openRestock = (p: GetProductResponse) => {
     setRestockProduct(p);
     setRestockForm(emptyRestockForm());
@@ -2854,8 +2869,9 @@ export function Products() {
         /* ── LIST VIEW ── */
         <div className="rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
+          <div className="min-w-[680px]">
           {/* Header row */}
-          <div className="grid grid-cols-[minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide min-w-[680px]">
+          <div className="grid grid-cols-[minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             <span>Product</span>
             <span>Category</span>
             <span className="text-right">Price</span>
@@ -2863,18 +2879,25 @@ export function Products() {
             <span>Add-ons</span>
             <span className="text-right">Actions</span>
           </div>
-          <AnimatePresence initial={false}>
-            {filteredProducts.map((product, i) => {
+          {/* Virtualized scroll container — only renders rows currently in view */}
+          <div
+            ref={listScrollRef}
+            style={{ height: "min(70vh, 720px)", overflowY: "auto" }}
+          >
+            <div style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
+            {virtualizer.getVirtualItems().map((vItem) => {
+              const product = filteredProducts[vItem.index];
+              if (!product) return null;
               const isLow = product.inStock && product.stockCount > 0 && product.stockCount <= LOW_STOCK_THRESHOLD;
               const isOut = !product.inStock || product.stockCount === 0;
               const varExpanded = expandedVariants.has(product.id);
               return (
-              <motion.div
-                key={product.id}
-                initial={false}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, height: 0 }}
-                className="border-b border-border/50 last:border-0 min-w-[680px]"
+              <div
+                key={vItem.key}
+                data-index={vItem.index}
+                ref={virtualizer.measureElement}
+                style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}
+                className="border-b border-border/50"
               >
                 {/* Main row */}
                 <div className={`grid grid-cols-[minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-3 items-center hover:bg-secondary/20 transition-colors group`}>
@@ -2964,10 +2987,12 @@ export function Products() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </motion.div>
+              </div>
             );
             })}
-          </AnimatePresence>
+            </div>{/* end virtual sizer */}
+          </div>{/* end virtual scroll */}
+          </div>{/* end min-w */}
           </div>{/* end overflow-x-auto */}
         </div>
       ))}
