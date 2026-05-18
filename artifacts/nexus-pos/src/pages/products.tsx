@@ -3256,7 +3256,18 @@ export function Products() {
                   >
                     Supplier Returns
                   </Button>
-                  <Button className="gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillSupplierManual(false); setBillView("new"); refetchProducts(); }}>
+                  <Button className="gap-2" onClick={() => {
+                    // Pre-fill default tax rate from business tax settings so
+                    // every new bill mirrors the tenant's standing rate.
+                    const tenantRate = parseFloat(String(settings?.tax_rate ?? ""));
+                    setBillForm({
+                      ...emptyBillForm(),
+                      defaultTaxRate: Number.isFinite(tenantRate) ? String(tenantRate) : "",
+                    });
+                    setBillSupplierManual(false);
+                    setBillView("new");
+                    refetchProducts();
+                  }}>
                     <Plus className="h-4 w-4" />New Purchase Bill
                   </Button>
                 </div>
@@ -3268,7 +3279,16 @@ export function Products() {
                   <Truck className="h-12 w-12 opacity-30" />
                   <p className="text-lg">No purchase bills yet</p>
                   <p className="text-sm">Create a purchase bill to record deliveries and update inventory for multiple products at once.</p>
-                  <Button variant="outline" className="mt-2 gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillSupplierManual(false); setBillView("new"); refetchProducts(); }}>
+                  <Button variant="outline" className="mt-2 gap-2" onClick={() => {
+                    const tenantRate = parseFloat(String(settings?.tax_rate ?? ""));
+                    setBillForm({
+                      ...emptyBillForm(),
+                      defaultTaxRate: Number.isFinite(tenantRate) ? String(tenantRate) : "",
+                    });
+                    setBillSupplierManual(false);
+                    setBillView("new");
+                    refetchProducts();
+                  }}>
                     <Plus className="h-4 w-4" />New Purchase Bill
                   </Button>
                 </div>
@@ -3433,12 +3453,15 @@ export function Products() {
                 </div>
 
                 <div className="rounded-xl border border-border overflow-hidden">
-                  {/* Header row — added Tax % and Margin columns */}
-                  <div className="grid grid-cols-[1.6fr_70px_110px_90px_110px_110px_40px] gap-3 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  {/* Header row — Batch # and Expiry are inline columns now
+                      (only populated for batch-tracked products). */}
+                  <div className="grid grid-cols-[1.5fr_60px_100px_75px_130px_120px_95px_100px_36px] gap-2 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     <span>Product</span>
                     <span className="text-right">Qty</span>
                     <span className="text-right">Unit Cost</span>
                     <span className="text-right">Tax %</span>
+                    <span>Batch / Lot #</span>
+                    <span>Expiry</span>
                     <span className="text-right">Margin</span>
                     <span className="text-right">Line Total</span>
                     <span />
@@ -3456,7 +3479,7 @@ export function Products() {
                     return (
                     <React.Fragment key={item.tempId}>
                     <div
-                      className="grid grid-cols-[1.6fr_70px_110px_90px_110px_110px_40px] gap-3 px-4 py-2 items-center border-b border-border/40 last:border-0"
+                      className="grid grid-cols-[1.5fr_60px_100px_75px_130px_120px_95px_100px_36px] gap-2 px-4 py-2 items-center border-b border-border/40 last:border-0"
                     >
                       {/* Product picker — searchable combobox (fast for 1000+ products) */}
                       <ProductCombobox
@@ -3505,6 +3528,35 @@ export function Products() {
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
                       </div>
 
+                      {/* Batch / Lot # — input when product is batch-tracked,
+                          dash otherwise. Keeps the column always aligned. */}
+                      <div>
+                        {showBatchRow ? (
+                          <Input
+                            placeholder="LOT-…"
+                            value={item.batchNumber}
+                            onChange={(e) => updateLineItem(item.tempId, { batchNumber: e.target.value })}
+                            className="h-8 text-sm"
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </div>
+
+                      {/* Expiry date */}
+                      <div>
+                        {showBatchRow ? (
+                          <Input
+                            type="date"
+                            value={item.expiryDate}
+                            onChange={(e) => updateLineItem(item.tempId, { expiryDate: e.target.value })}
+                            className="h-8 text-sm"
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </div>
+
                       {/* Margin — both % and amount */}
                       <div className="text-right text-sm font-mono leading-tight">
                         {margin ? (
@@ -3544,32 +3596,6 @@ export function Products() {
                         <X className="h-3.5 w-3.5" />
                       </Button>
                     </div>
-                    {showBatchRow && (
-                      <div className="grid grid-cols-[1.6fr_1fr_1fr_40px] gap-3 px-4 py-2 items-center bg-secondary/30 border-b border-border/40">
-                        <div className="text-[11px] uppercase tracking-wide text-muted-foreground self-center">
-                          Batch tracking
-                        </div>
-                        <div className="grid gap-1">
-                          <Label className="text-[10px] text-muted-foreground uppercase">Batch / lot #</Label>
-                          <Input
-                            placeholder="e.g. LOT-2026-05"
-                            value={item.batchNumber}
-                            onChange={(e) => updateLineItem(item.tempId, { batchNumber: e.target.value })}
-                            className="h-8 text-sm"
-                          />
-                        </div>
-                        <div className="grid gap-1">
-                          <Label className="text-[10px] text-muted-foreground uppercase">Expiry date</Label>
-                          <Input
-                            type="date"
-                            value={item.expiryDate}
-                            onChange={(e) => updateLineItem(item.tempId, { expiryDate: e.target.value })}
-                            className="h-8 text-sm"
-                          />
-                        </div>
-                        <div />
-                      </div>
-                    )}
                     </React.Fragment>
                     );
                   })}
