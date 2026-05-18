@@ -77,6 +77,10 @@ export const purchaseBillItemsTable = pgTable("purchase_bill_items", {
   taxAmount: real("tax_amount").notNull().default(0),
   // Line grand total = qty*unitCost + taxAmount.
   totalCost: real("total_cost").notNull().default(0),
+  // Batch/lot tracking — only used when the product has `trackBatches`.
+  // On bill confirm a `product_batches` row is created from these fields.
+  batchNumber: text("batch_number"),
+  expiryDate: text("expiry_date"), // ISO date (YYYY-MM-DD) or null
 });
 
 export type PurchaseBillItem = typeof purchaseBillItemsTable.$inferSelect;

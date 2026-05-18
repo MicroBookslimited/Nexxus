@@ -42,6 +42,13 @@ export const productsTable = pgTable("products", {
   // When false, sales tax is not applied to this product at checkout.
   // Defaults to true so existing products are unaffected.
   isTaxable: boolean("is_taxable").notNull().default(true),
+  // When true, this product's stock is tracked per-batch in
+  // `product_batches`. Purchase bill lines for the product require
+  // `batchNumber`/`expiryDate`; checkout deducts batches FIFO/LIFO.
+  trackBatches: boolean("track_batches").notNull().default(false),
+  // Optional per-product override of the tenant-wide stock method.
+  // 'fifo' | 'lifo' | null (inherit from app_settings.stock_method).
+  stockMethodOverride: text("stock_method_override"),
 });
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({ id: true, createdAt: true });

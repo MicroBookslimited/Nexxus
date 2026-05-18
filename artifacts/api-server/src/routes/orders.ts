@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { logAudit } from "./audit";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable, variantCombinationsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable, variantCombinationsTable, productBatchesTable } from "@workspace/db";
 import { applyVolumePricing } from "../lib/pricing";
 import { getSetting } from "./settings";
 import { logger } from "../lib/logger";
@@ -427,6 +427,8 @@ router.post("/orders", async (req, res): Promise<void> => {
         .select({
           id: productsTable.id,
           structureType: productsTable.structureType,
+          trackBatches: productsTable.trackBatches,
+          stockMethodOverride: productsTable.stockMethodOverride,
         })
         .from(productsTable)
         .where(and(
@@ -735,6 +737,57 @@ router.post("/orders", async (req, res): Promise<void> => {
               cur?.stockCount ?? 0,
               item.quantity,
             );
+          }
+        }
+
+        // ── Batch (FIFO/LIFO) deduction ────────────────────────────────────
+        // For batch-tracked simple products, the product.stockCount above is
+        // the source of truth; the per-batch rows mirror the same total so
+        // expiry/lot reports stay accurate. Resolve method:
+        //   product override > tenant setting > 'fifo' default.
+        const meta = metaMap.get(item.productId);
+        if (meta?.trackBatches) {
+          const method = (meta.stockMethodOverride
+            ?? (await getSetting("stock_method", tenantId))
+            ?? "fifo").toLowerCase() === "lifo" ? "lifo" : "fifo";
+          const batches = await tx
+            .select({
+              id: productBatchesTable.id,
+              quantityRemaining: productBatchesTable.quantityRemaining,
+            })
+            .from(productBatchesTable)
+            .where(and(
+              eq(productBatchesTable.tenantId, tenantId),
+              eq(productBatchesTable.productId, item.productId),
+              sql`${productBatchesTable.quantityRemaining} > 0`,
+            ))
+            .orderBy(method === "fifo"
+              ? sql`${productBatchesTable.receivedAt} ASC, ${productBatchesTable.id} ASC`
+              : sql`${productBatchesTable.receivedAt} DESC, ${productBatchesTable.id} DESC`);
+          let need = item.quantity;
+          for (const b of batches) {
+            if (need <= 0) break;
+            const take = Math.min(b.quantityRemaining, need);
+            await tx.update(productBatchesTable)
+              .set({ quantityRemaining: sql`${productBatchesTable.quantityRemaining} - ${take}` })
+              .where(eq(productBatchesTable.id, b.id));
+            need -= take;
+          }
+          if (need > 0) {
+            // Drift recovery: stock_count says we had enough but batches
+            // don't sum to it. Create a legacy batch for the shortfall so
+            // SUM(batches) reconciles with stock_count again.
+            logger.warn(
+              { tenantId, productId: item.productId, shortfall: need },
+              "[batch] drift detected — creating legacy batch for shortfall",
+            );
+            await tx.insert(productBatchesTable).values({
+              tenantId,
+              productId: item.productId,
+              quantityRemaining: -need,
+              sourceType: "legacy",
+              notes: "Auto-created to reconcile drift between stock_count and batches",
+            });
           }
         }
       }

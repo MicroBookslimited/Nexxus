@@ -48,6 +48,7 @@ import compositeProductsRouter from "./composite-products";
 import techniciansRouter from "./technicians";
 import priceManagerRouter from "./price-manager";
 import promotionsRouter from "./promotions";
+import productBatchesRouter from "./product-batches";
 
 const router: IRouter = Router();
 
@@ -100,5 +101,6 @@ router.use(compositeProductsRouter);
 router.use(techniciansRouter);
 router.use(priceManagerRouter);
 router.use(promotionsRouter);
+router.use(productBatchesRouter);
 
 export default router;

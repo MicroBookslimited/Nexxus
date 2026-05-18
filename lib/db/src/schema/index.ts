@@ -26,3 +26,4 @@ export * from "./composite-products";
 export * from "./technicians";
 export * from "./price-logs";
 export * from "./promotions";
+export * from "./product-batches";

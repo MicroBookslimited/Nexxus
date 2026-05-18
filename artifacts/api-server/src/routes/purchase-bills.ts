@@ -5,6 +5,7 @@ import {
   purchaseBillsTable,
   purchaseBillItemsTable,
   productsTable,
+  productBatchesTable,
   stockMovementsTable,
   journalEntriesTable,
   journalEntryLinesTable,
@@ -29,6 +30,10 @@ const CreateBillItemBody = z.object({
   unitCost: z.number().min(0).default(0),
   // Per-line input-tax rate (%). Omit/null = inherit bill default.
   taxRate: z.number().min(0).max(100).nullable().optional(),
+  // Batch / lot tracking — only required when the product has
+  // `trackBatches = true`. Validated server-side after product lookup.
+  batchNumber: z.string().min(1).optional().nullable(),
+  expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
 });
 
 const CreatePurchaseBillBody = z.object({
@@ -104,6 +109,25 @@ async function confirmBillSideEffects(
       .from(productsTable)
       .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
     if (!product) continue;
+
+    // For batch-tracked products, create one product_batches row per
+    // purchase-bill line so different lots (e.g. different expiry dates)
+    // stay separate. Aggregation above only drives cost/stockCount updates.
+    if (product.trackBatches) {
+      const productLines = items.filter((i) => i.productId === productId);
+      const batchRows = productLines.map((line) => ({
+        tenantId,
+        productId,
+        batchNumber: line.batchNumber ?? null,
+        expiryDate: line.expiryDate ?? null,
+        quantityRemaining: line.quantity,
+        sourceType: "purchase",
+        purchaseBillId: bill.id,
+      }));
+      if (batchRows.length > 0) {
+        await tx.insert(productBatchesTable).values(batchRows);
+      }
+    }
 
     const newBalance = product.stockCount + g.quantity;
     const oldCost = product.costPrice;
@@ -305,10 +329,18 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
   const { billNumber, supplier, notes, status, defaultTaxRate, items } = parsed.data;
 
   for (const item of items) {
-    const [product] = await db.select({ id: productsTable.id }).from(productsTable)
+    const [product] = await db.select({
+      id: productsTable.id,
+      trackBatches: productsTable.trackBatches,
+      name: productsTable.name,
+    }).from(productsTable)
       .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
     if (!product) {
       res.status(400).json({ error: `Product ${item.productId} not found` });
+      return;
+    }
+    if (product.trackBatches && !item.batchNumber) {
+      res.status(400).json({ error: `Product "${product.name}" requires a batch/lot number` });
       return;
     }
   }
@@ -361,6 +393,8 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
           taxRate: item.taxRate ?? null,
           taxAmount: item.lineTax,
           totalCost: item.lineTotal,
+          batchNumber: item.batchNumber ?? null,
+          expiryDate: item.expiryDate ?? null,
         })),
       )
       .returning();

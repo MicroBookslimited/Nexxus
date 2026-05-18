@@ -230,6 +230,8 @@ router.post("/products", async (req, res): Promise<void> => {
       costPrice: parsed.data.costPrice ?? null,
       structureType: parsed.data.structureType ?? "simple",
       isTaxable: parsed.data.isTaxable ?? true,
+      trackBatches: parsed.data.trackBatches ?? false,
+      stockMethodOverride: parsed.data.stockMethodOverride ?? null,
     })
     .returning();
 
@@ -311,6 +313,12 @@ router.put("/products/:id", async (req, res): Promise<void> => {
   if (parsed.data.isTaxable !== undefined) {
     updates["isTaxable"] = parsed.data.isTaxable;
   }
+  if (parsed.data.trackBatches !== undefined) {
+    updates["trackBatches"] = parsed.data.trackBatches;
+  }
+  if (parsed.data.stockMethodOverride !== undefined) {
+    updates["stockMethodOverride"] = parsed.data.stockMethodOverride;
+  }
   if (parsed.data.structureType !== undefined) {
     updates["structureType"] = parsed.data.structureType;
     // Switching a product to composite means its parent stock is no
@@ -322,6 +330,13 @@ router.put("/products/:id", async (req, res): Promise<void> => {
     }
   }
 
+  // Fetch the prior row so we can detect "trackBatches just toggled on"
+  // and backfill a single legacy batch with the existing stockCount.
+  const [prior] = await db
+    .select({ trackBatches: productsTable.trackBatches, stockCount: productsTable.stockCount })
+    .from(productsTable)
+    .where(and(eq(productsTable.id, params.data.id), eq(productsTable.tenantId, tenantId)));
+
   const [product] = await db
     .update(productsTable)
     .set(updates)
@@ -331,6 +346,24 @@ router.put("/products/:id", async (req, res): Promise<void> => {
   if (!product) {
     res.status(404).json({ error: "Product not found" });
     return;
+  }
+
+  // Backfill: toggling trackBatches on means existing stock has no batch
+  // history. Create one "legacy" batch (no expiry, no batch number) for
+  // the current stockCount so SUM(batches) == product.stockCount.
+  if (
+    parsed.data.trackBatches === true
+    && prior?.trackBatches === false
+    && (prior.stockCount ?? 0) > 0
+  ) {
+    const { productBatchesTable } = await import("@workspace/db");
+    await db.insert(productBatchesTable).values({
+      tenantId,
+      productId: product.id,
+      quantityRemaining: prior.stockCount,
+      sourceType: "legacy",
+      notes: "Auto-created on enabling batch tracking",
+    });
   }
 
   await logAudit({ tenantId, action: "product.update", entityType: "product", entityId: product.id, details: { name: product.name, price: product.price } });

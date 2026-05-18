@@ -33,6 +33,7 @@ export * from "./createOrderBodyDiscountType";
 export * from "./createOrderBodyItemsItem";
 export * from "./createOrderBodyOrderType";
 export * from "./createProductBody";
+export * from "./createProductBodyStockMethodOverride";
 export * from "./createProductBodyStructureType";
 export * from "./createProductBodyUnitOfMeasure";
 export * from "./createPurchaseBillBody";

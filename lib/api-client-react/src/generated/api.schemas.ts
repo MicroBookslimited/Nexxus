@@ -74,6 +74,18 @@ export const CreateProductBodyStructureType = {
   composite: "composite",
 } as const;
 
+/**
+ * Per-product override of the tenant-wide FIFO/LIFO stock method. Null = inherit setting.
+ */
+export type CreateProductBodyStockMethodOverride =
+  | (typeof CreateProductBodyStockMethodOverride)[keyof typeof CreateProductBodyStockMethodOverride]
+  | null;
+
+export const CreateProductBodyStockMethodOverride = {
+  fifo: "fifo",
+  lifo: "lifo",
+} as const;
+
 export interface CreateProductBody {
   name: string;
   description?: string;
@@ -89,6 +101,10 @@ export interface CreateProductBody {
   structureType?: CreateProductBodyStructureType;
   /** When false, sales tax is not applied to this product at checkout. */
   isTaxable?: boolean;
+  /** When true, stock for this product is tracked per-batch with batch/lot numbers and optional expiry dates. */
+  trackBatches?: boolean;
+  /** Per-product override of the tenant-wide FIFO/LIFO stock method. Null = inherit setting. */
+  stockMethodOverride?: CreateProductBodyStockMethodOverride;
 }
 
 /**

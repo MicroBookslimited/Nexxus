@@ -5,6 +5,7 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateProductBodyStockMethodOverride } from "./createProductBodyStockMethodOverride";
 import type { CreateProductBodyStructureType } from "./createProductBodyStructureType";
 import type { CreateProductBodyUnitOfMeasure } from "./createProductBodyUnitOfMeasure";
 
@@ -23,4 +24,8 @@ export interface CreateProductBody {
   structureType?: CreateProductBodyStructureType;
   /** When false, sales tax is not applied to this product at checkout. */
   isTaxable?: boolean;
+  /** When true, stock for this product is tracked per-batch with batch/lot numbers and optional expiry dates. */
+  trackBatches?: boolean;
+  /** Per-product override of the tenant-wide FIFO/LIFO stock method. Null = inherit setting. */
+  stockMethodOverride?: CreateProductBodyStockMethodOverride;
 }
