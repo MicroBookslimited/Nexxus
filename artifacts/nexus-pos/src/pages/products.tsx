@@ -2447,7 +2447,7 @@ export function Products() {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
-  const { data: products, isLoading } = useListProducts(
+  const { data: products, isLoading, refetch: refetchProducts } = useListProducts(
     categoryFilter ? { category: categoryFilter } : {},
   );
 
@@ -2664,7 +2664,21 @@ export function Products() {
           // dialog so the user can update selling prices to keep margins.
           maybeOpenCostChangeDialog(response);
         },
-        onError: () => toast({ title: "Failed to save bill", variant: "destructive" }),
+        onError: (err: unknown) => {
+          // Surface the server's actual reason (e.g. "Product 'X' requires
+          // a batch/lot number") instead of a generic toast. The custom
+          // fetch mutator stores it on err.message and err.data.error.
+          const e = err as { message?: string; data?: { error?: string } } | null;
+          const detail =
+            e?.data?.error ??
+            e?.message ??
+            "Please check the form and try again.";
+          toast({
+            title: "Failed to save bill",
+            description: detail,
+            variant: "destructive",
+          });
+        },
       },
     );
   };
@@ -3242,7 +3256,7 @@ export function Products() {
                   >
                     Supplier Returns
                   </Button>
-                  <Button className="gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillSupplierManual(false); setBillView("new"); }}>
+                  <Button className="gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillSupplierManual(false); setBillView("new"); refetchProducts(); }}>
                     <Plus className="h-4 w-4" />New Purchase Bill
                   </Button>
                 </div>
@@ -3254,7 +3268,7 @@ export function Products() {
                   <Truck className="h-12 w-12 opacity-30" />
                   <p className="text-lg">No purchase bills yet</p>
                   <p className="text-sm">Create a purchase bill to record deliveries and update inventory for multiple products at once.</p>
-                  <Button variant="outline" className="mt-2 gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillSupplierManual(false); setBillView("new"); }}>
+                  <Button variant="outline" className="mt-2 gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillSupplierManual(false); setBillView("new"); refetchProducts(); }}>
                     <Plus className="h-4 w-4" />New Purchase Bill
                   </Button>
                 </div>
