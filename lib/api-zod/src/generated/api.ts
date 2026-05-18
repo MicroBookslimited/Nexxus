@@ -791,6 +791,7 @@ export const CreateOrderBody = zod.object({
   paymentMethod: zod.string().optional(),
   splitCardAmount: zod.number().optional(),
   splitCashAmount: zod.number().optional(),
+  cashTendered: zod.number().optional(),
   discountType: zod.enum(["percent", "fixed"]).optional(),
   discountAmount: zod.number().optional(),
   notes: zod.string().optional(),
@@ -978,6 +979,7 @@ export const ChargeOrderBody = zod.object({
   paymentMethod: zod.string(),
   splitCardAmount: zod.number().optional(),
   splitCashAmount: zod.number().optional(),
+  cashTendered: zod.number().optional(),
 });
 
 export const ChargeOrderResponse = zod.object({
