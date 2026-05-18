@@ -48,6 +48,16 @@ export const ListProductsResponseItem = zod.object({
     .describe(
       "When false, sales tax is not applied to this product at checkout.",
     ),
+  trackBatches: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, stock for this product is tracked per-batch with batch/lot numbers and optional expiry dates.",
+    ),
+  stockMethodOverride: zod
+    .enum(["fifo", "lifo"])
+    .nullish()
+    .describe("Per-product override of the tenant-wide FIFO/LIFO stock method."),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
   isComposite: zod
