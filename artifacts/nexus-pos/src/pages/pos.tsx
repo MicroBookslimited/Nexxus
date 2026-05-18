@@ -3732,6 +3732,10 @@ export function POS() {
                       <span>Cash Tendered</span>
                       <span className="font-mono">{fmtNum(receiptOrder.cashTendered)}</span>
                     </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Total</span>
+                      <span className="font-mono">-{fmtNum(receiptOrder.total)}</span>
+                    </div>
                     <div className="flex justify-between text-xs font-semibold text-emerald-400">
                       <span>Change Due</span>
                       <span className="font-mono">{fmtNum(Math.max(0, receiptOrder.cashTendered - receiptOrder.total))}</span>
