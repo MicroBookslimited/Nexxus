@@ -49,6 +49,7 @@ import techniciansRouter from "./technicians";
 import priceManagerRouter from "./price-manager";
 import promotionsRouter from "./promotions";
 import productBatchesRouter from "./product-batches";
+import supplierReturnsRouter from "./supplier-returns";
 
 const router: IRouter = Router();
 
@@ -102,5 +103,6 @@ router.use(techniciansRouter);
 router.use(priceManagerRouter);
 router.use(promotionsRouter);
 router.use(productBatchesRouter);
+router.use(supplierReturnsRouter);
 
 export default router;

@@ -3234,9 +3234,18 @@ export function Products() {
               {/* Header + action */}
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Purchase Bills</h3>
-                <Button className="gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillSupplierManual(false); setBillView("new"); }}>
-                  <Plus className="h-4 w-4" />New Purchase Bill
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => { window.location.href = "/supplier-returns"; }}
+                  >
+                    Supplier Returns
+                  </Button>
+                  <Button className="gap-2" onClick={() => { setBillForm(emptyBillForm()); setBillSupplierManual(false); setBillView("new"); }}>
+                    <Plus className="h-4 w-4" />New Purchase Bill
+                  </Button>
+                </div>
               </div>
 
               {/* Bills table */}

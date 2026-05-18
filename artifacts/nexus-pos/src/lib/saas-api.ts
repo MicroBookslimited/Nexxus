@@ -1034,3 +1034,97 @@ export const listProductBatches = (params: { productId?: number; includeEmpty?: 
   const q = qs.toString();
   return api<{ batches: ProductBatch[] }>(`/product-batches${q ? `?${q}` : ""}`, { headers: tenantAuthHeaders() });
 };
+
+// ── Supplier Returns / Debit Notes ────────────────────────────────────────
+export interface SupplierReturn {
+  id: number;
+  returnNumber: string;
+  supplier?: string;
+  purchaseBillId?: number;
+  status: "draft" | "confirmed" | "cancelled";
+  notes?: string;
+  subtotal: number;
+  taxTotal: number;
+  totalAmount: number;
+  returnDate: string;
+  itemCount: number;
+  createdAt: string;
+}
+
+export interface SupplierReturnItem {
+  id: number;
+  returnId: number;
+  productId: number;
+  productName: string;
+  purchaseBillItemId: number | null;
+  quantity: number;
+  unitCost: number;
+  taxRate: number | null;
+  taxAmount: number;
+  totalAmount: number;
+  batchId: number | null;
+  batchLabel: string | null;
+  notes: string | null;
+}
+
+export interface SupplierReturnWithItems extends SupplierReturn {
+  items: SupplierReturnItem[];
+}
+
+export interface EligibleReturnLine {
+  purchaseBillItemId: number;
+  productId: number;
+  productName: string;
+  trackBatches: boolean;
+  originalQuantity: number;
+  alreadyReturned: number;
+  returnableQuantity: number;
+  unitCost: number;
+  taxRate: number | null;
+}
+
+export interface EligibleBillReturn {
+  billId: number;
+  billNumber: string;
+  supplier: string | null;
+  defaultTaxRate: number;
+  lines: EligibleReturnLine[];
+}
+
+export interface CreateSupplierReturnItem {
+  productId: number;
+  purchaseBillItemId?: number | null;
+  quantity: number;
+  unitCost?: number;
+  taxRate?: number | null;
+  batchId?: number | null;
+  notes?: string | null;
+}
+
+export interface CreateSupplierReturnBody {
+  returnNumber: string;
+  supplier?: string | null;
+  purchaseBillId?: number | null;
+  notes?: string | null;
+  status?: "draft" | "confirmed";
+  defaultTaxRate?: number;
+  items: CreateSupplierReturnItem[];
+}
+
+export const listSupplierReturns = () =>
+  api<SupplierReturn[]>(`/supplier-returns`, { headers: tenantAuthHeaders() });
+
+export const getSupplierReturn = (id: number) =>
+  api<SupplierReturnWithItems>(`/supplier-returns/${id}`, { headers: tenantAuthHeaders() });
+
+export const getEligibleBillForReturn = (billId: number) =>
+  api<EligibleBillReturn>(`/supplier-returns/eligible/${billId}`, { headers: tenantAuthHeaders() });
+
+export const createSupplierReturn = (body: CreateSupplierReturnBody) =>
+  api<SupplierReturn>(`/supplier-returns`, { method: "POST", body: JSON.stringify(body), headers: tenantAuthHeaders() });
+
+export const confirmSupplierReturn = (id: number) =>
+  api<SupplierReturnWithItems>(`/supplier-returns/${id}/confirm`, { method: "POST", headers: tenantAuthHeaders() });
+
+export const deleteSupplierReturn = (id: number) =>
+  api<void>(`/supplier-returns/${id}`, { method: "DELETE", headers: tenantAuthHeaders() });
