@@ -1182,7 +1182,11 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     // place — composite parents return product to their *children*,
     // simple products restore their own stock_count.
     const productMeta = itemProductIds.length === 0 ? [] : await db
-      .select({ id: productsTable.id, structureType: productsTable.structureType })
+      .select({
+        id: productsTable.id,
+        structureType: productsTable.structureType,
+        trackBatches: productsTable.trackBatches,
+      })
       .from(productsTable)
       .where(and(
         inArray(productsTable.id, itemProductIds),
@@ -1343,6 +1347,23 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
             inStock: true,
           })
           .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+
+        // ── Batch restore for refund/void ──────────────────────────────
+        // We don't know which specific lot was sold, so we create a new
+        // "refund" batch row for the returned quantity. This keeps
+        // SUM(product_batches.quantityRemaining) reconciled with
+        // product.stockCount (the main invariant). Under FIFO this stock
+        // gets consumed last (it's typically the freshest on the shelf
+        // after a return); under LIFO it gets consumed first.
+        if (metaMap.get(item.productId)?.trackBatches) {
+          await tx.insert(productBatchesTable).values({
+            tenantId,
+            productId: item.productId,
+            quantityRemaining: item.quantity,
+            sourceType: parsed.data.status === "refunded" ? "refund" : "void",
+            notes: `${noteVerb} of ${item.productName} – Order #${order.id}`,
+          });
+        }
 
         const [afterReturn] = await tx
           .select({ stockCount: productsTable.stockCount })

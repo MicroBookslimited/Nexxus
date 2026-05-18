@@ -191,7 +191,7 @@ const emptyRestockForm = (): RestockForm => ({ quantity: "", unitCost: "", notes
 
 // taxRate is a string so an empty value means "inherit bill default".
 // Anything else parses as a percentage.
-type BillLineItem = { tempId: string; productId: string; quantity: string; unitCost: string; taxRate: string };
+type BillLineItem = { tempId: string; productId: string; quantity: string; unitCost: string; taxRate: string; batchNumber: string; expiryDate: string };
 type BillForm = { billNumber: string; supplier: string; notes: string; defaultTaxRate: string; items: BillLineItem[] };
 
 // One row in the post-confirm "review cost changes" dialog. The user can
@@ -213,7 +213,7 @@ function generateBillNumber() {
   return `PO-${dateStr}-${rand}`;
 }
 function emptyLineItem(): BillLineItem {
-  return { tempId: makeId(), productId: "", quantity: "", unitCost: "", taxRate: "" };
+  return { tempId: makeId(), productId: "", quantity: "", unitCost: "", taxRate: "", batchNumber: "", expiryDate: "" };
 }
 function emptyBillForm(): BillForm {
   return { billNumber: generateBillNumber(), supplier: "", notes: "", defaultTaxRate: "", items: [emptyLineItem()] };
@@ -240,6 +240,10 @@ type ProductForm = {
   structureType: StructureType;
   // When false, sales tax is not applied to this product at checkout.
   isTaxable: boolean;
+  // When true, stock is tracked per-batch with batch/lot + expiry on receipt.
+  trackBatches: boolean;
+  // Per-product FIFO/LIFO override; "" = inherit tenant setting.
+  stockMethodOverride: "" | "fifo" | "lifo";
 };
 
 const emptyForm = (): ProductForm => ({
@@ -255,6 +259,8 @@ const emptyForm = (): ProductForm => ({
   costPrice: "",
   structureType: "simple",
   isTaxable: true,
+  trackBatches: false,
+  stockMethodOverride: "",
 });
 
 /* ─── Variant/modifier editor types ─── */
@@ -2636,6 +2642,8 @@ export function Products() {
             unitCost: parseFloat(i.unitCost) || 0,
             // null = inherit bill default on the server
             taxRate: i.taxRate.trim() === "" ? null : (parseFloat(i.taxRate) || 0),
+            batchNumber: i.batchNumber.trim() === "" ? null : i.batchNumber.trim(),
+            expiryDate: i.expiryDate.trim() === "" ? null : i.expiryDate,
           })),
         },
       } as never,
@@ -2773,6 +2781,8 @@ export function Products() {
       costPrice?: number | null;
       structureType?: StructureType | string;
       isTaxable?: boolean;
+      trackBatches?: boolean;
+      stockMethodOverride?: "fifo" | "lifo" | null;
     };
     const unit: WeightUnit =
       pp.unitOfMeasure === "lb" || pp.unitOfMeasure === "oz" || pp.unitOfMeasure === "g"
@@ -2792,6 +2802,8 @@ export function Products() {
       costPrice: pp.costPrice != null ? String(pp.costPrice) : "",
       structureType: struct,
       isTaxable: pp.isTaxable !== false,
+      trackBatches: !!pp.trackBatches,
+      stockMethodOverride: pp.stockMethodOverride === "fifo" || pp.stockMethodOverride === "lifo" ? pp.stockMethodOverride : "",
     });
     setDialogTab("details");
     setDialogOpen(true);
@@ -2819,6 +2831,8 @@ export function Products() {
       costPrice: form.costPrice.trim() === "" ? null : parseFloat(form.costPrice),
       structureType: form.structureType,
       isTaxable: form.isTaxable,
+      trackBatches: form.trackBatches,
+      stockMethodOverride: form.stockMethodOverride === "" ? null : form.stockMethodOverride,
     };
 
     if (editingProduct) {
@@ -3412,9 +3426,13 @@ export function Products() {
                     const margin = billLineMargin(item);
                     const breakdown = billLineBreakdown(item);
                     const defaultRate = parseFloat(billForm.defaultTaxRate) || 0;
+                    const selectedProduct = item.productId
+                      ? (products ?? []).find((p) => p.id === parseInt(item.productId)) as (typeof products extends readonly (infer U)[] ? U : never) & { trackBatches?: boolean } | undefined
+                      : undefined;
+                    const showBatchRow = !!selectedProduct?.trackBatches;
                     return (
+                    <React.Fragment key={item.tempId}>
                     <div
-                      key={item.tempId}
                       className="grid grid-cols-[1.6fr_70px_110px_90px_110px_110px_40px] gap-3 px-4 py-2 items-center border-b border-border/40 last:border-0"
                     >
                       {/* Product picker — searchable combobox (fast for 1000+ products) */}
@@ -3503,6 +3521,33 @@ export function Products() {
                         <X className="h-3.5 w-3.5" />
                       </Button>
                     </div>
+                    {showBatchRow && (
+                      <div className="grid grid-cols-[1.6fr_1fr_1fr_40px] gap-3 px-4 py-2 items-center bg-secondary/30 border-b border-border/40">
+                        <div className="text-[11px] uppercase tracking-wide text-muted-foreground self-center">
+                          Batch tracking
+                        </div>
+                        <div className="grid gap-1">
+                          <Label className="text-[10px] text-muted-foreground uppercase">Batch / lot #</Label>
+                          <Input
+                            placeholder="e.g. LOT-2026-05"
+                            value={item.batchNumber}
+                            onChange={(e) => updateLineItem(item.tempId, { batchNumber: e.target.value })}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <div className="grid gap-1">
+                          <Label className="text-[10px] text-muted-foreground uppercase">Expiry date</Label>
+                          <Input
+                            type="date"
+                            value={item.expiryDate}
+                            onChange={(e) => updateLineItem(item.tempId, { expiryDate: e.target.value })}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <div />
+                      </div>
+                    )}
+                    </React.Fragment>
                     );
                   })}
 
@@ -3928,6 +3973,35 @@ export function Products() {
                   <Switch id="isTaxable" checked={form.isTaxable} onCheckedChange={(v) => setForm((f) => ({ ...f, isTaxable: v }))} />
                   <Label htmlFor="isTaxable">Attracts sales tax</Label>
                 </div>
+                {form.structureType === "simple" && (
+                  <div className="rounded-md border border-border bg-secondary/20 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="trackBatches"
+                        checked={form.trackBatches}
+                        onCheckedChange={(v) => setForm((f) => ({ ...f, trackBatches: v }))}
+                      />
+                      <Label htmlFor="trackBatches" className="font-medium">Track batches / lots / expiry</Label>
+                    </div>
+                    {form.trackBatches && (
+                      <div className="grid gap-1.5 pl-10">
+                        <Label className="text-xs text-muted-foreground">Stock method (overrides global setting)</Label>
+                        <select
+                          value={form.stockMethodOverride}
+                          onChange={(e) => setForm((f) => ({ ...f, stockMethodOverride: e.target.value as "" | "fifo" | "lifo" }))}
+                          className="h-8 rounded-md border border-border bg-background px-2 text-sm"
+                        >
+                          <option value="">Inherit global setting</option>
+                          <option value="fifo">FIFO — First In, First Out</option>
+                          <option value="lifo">LIFO — Last In, First Out</option>
+                        </select>
+                        <p className="text-[11px] text-muted-foreground">
+                          When enabled, each purchase bill line will ask for an optional batch number and expiry date, and sales auto-deduct from batches in the chosen order.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* Cost price drives margin reports for simple products
                     and is the per-unit basis for composites. Hidden on
                     composites because the cost is derived. */}

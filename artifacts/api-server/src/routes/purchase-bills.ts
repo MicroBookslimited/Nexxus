@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, desc, count } from "drizzle-orm";
+import { and, eq, desc, count, inArray } from "drizzle-orm";
 import {
   db,
   purchaseBillsTable,
@@ -441,25 +441,60 @@ router.post("/purchase-bills/:id/confirm", async (req, res): Promise<void> => {
   if (!bill) { res.status(404).json({ error: "Bill not found" }); return; }
   if (bill.status === "confirmed") { res.status(400).json({ error: "Bill already confirmed" }); return; }
 
-  // Side effects + status flip in one transaction. Re-read the bill inside
-  // tx with FOR UPDATE-style guard (status check) to prevent two concurrent
-  // confirms from both bumping stock for the same bill.
-  const { updated, costChanges } = await db.transaction(async (tx) => {
+  // Side effects + status flip in one transaction. The status='draft'
+  // guard on the UPDATE (below) makes the transition atomic — two
+  // concurrent confirms cannot both succeed.
+  type ConfirmResult = { updated: typeof bill | null; costChanges: BillCostChange[]; errorMessage?: string };
+  const result: ConfirmResult = await db.transaction(async (tx): Promise<ConfirmResult> => {
     const [locked] = await tx.select().from(purchaseBillsTable)
       .where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)));
     if (!locked || locked.status === "confirmed") {
-      // Signal to the outer handler that we lost the race / already confirmed.
-      return { updated: null as typeof bill | null, costChanges: [] as BillCostChange[] };
+      return { updated: null, costChanges: [] };
     }
     const items = await tx.select().from(purchaseBillItemsTable).where(eq(purchaseBillItemsTable.billId, id));
-    const changes = await confirmBillSideEffects(tx, tenantId, locked, items);
-    const [u] = await tx.update(purchaseBillsTable).set({ status: "confirmed" })
-      .where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)))
-      .returning();
-    return { updated: u, costChanges: changes };
-  });
 
-  if (!updated) { res.status(400).json({ error: "Bill already confirmed" }); return; }
+    // Revalidate against current product settings — a draft created
+    // before `trackBatches` was toggled on could otherwise confirm
+    // without a batch number. (Create-path validation lives at
+    // line ~342.)
+    const itemPids = Array.from(new Set(items.map(i => i.productId)));
+    if (itemPids.length > 0) {
+      const prods = await tx.select({ id: productsTable.id, trackBatches: productsTable.trackBatches, name: productsTable.name })
+        .from(productsTable)
+        .where(and(inArray(productsTable.id, itemPids), eq(productsTable.tenantId, tenantId)));
+      const trackMap = new Map(prods.map(p => [p.id, p]));
+      for (const it of items) {
+        const p = trackMap.get(it.productId);
+        if (p?.trackBatches && !it.batchNumber) {
+          throw new Error(`Batch number required for "${p.name}" — toggle was enabled after this draft was created. Edit the bill and add a batch number.`);
+        }
+      }
+    }
+
+    const changes = await confirmBillSideEffects(tx, tenantId, locked, items);
+    // Atomic transition: only flip the row if it's STILL in draft.
+    const [u] = await tx.update(purchaseBillsTable).set({ status: "confirmed" })
+      .where(and(
+        eq(purchaseBillsTable.id, id),
+        eq(purchaseBillsTable.tenantId, tenantId),
+        eq(purchaseBillsTable.status, "draft"),
+      ))
+      .returning();
+    if (!u) {
+      throw new Error("Bill already confirmed by another request");
+    }
+    return { updated: u, costChanges: changes };
+  }).catch((err: unknown): ConfirmResult => ({
+    updated: null,
+    costChanges: [],
+    errorMessage: err instanceof Error ? err.message : "Bill confirm failed",
+  }));
+
+  const { updated, costChanges, errorMessage } = result;
+  if (!updated) {
+    res.status(400).json({ error: errorMessage ?? "Bill already confirmed" });
+    return;
+  }
 
   const enriched = await enrichBillWithItems(updated);
   res.json({ ...enriched, costChanges });

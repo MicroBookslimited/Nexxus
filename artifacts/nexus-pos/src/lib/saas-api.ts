@@ -1013,3 +1013,24 @@ export const updatePromotion = (id: number, body: Partial<{
 
 export const deletePromotion = (id: number, staffId: number) =>
   api<{ success: boolean }>(`/promotions/${id}?staffId=${staffId}`, { method: "DELETE", headers: tenantAuthHeaders() });
+
+// ── Product Batches (FIFO/LIFO lot + expiry tracking) ─────────────────────
+export interface ProductBatch {
+  id: number;
+  productId: number;
+  productName: string | null;
+  batchNumber: string | null;
+  expiryDate: string | null;
+  quantityRemaining: number;
+  receivedAt: string;
+  sourceType: string | null;
+  purchaseBillId: number | null;
+}
+
+export const listProductBatches = (params: { productId?: number; includeEmpty?: boolean } = {}) => {
+  const qs = new URLSearchParams();
+  if (params.productId != null) qs.set("productId", String(params.productId));
+  if (params.includeEmpty) qs.set("includeEmpty", "true");
+  const q = qs.toString();
+  return api<{ batches: ProductBatch[] }>(`/product-batches${q ? `?${q}` : ""}`, { headers: tenantAuthHeaders() });
+};

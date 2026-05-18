@@ -1549,6 +1549,14 @@ components:
         isTaxable:
           type: boolean
           description: When false, sales tax is not applied to this product at checkout.
+        trackBatches:
+          type: boolean
+          description: When true, stock for this product is tracked per-batch with batch/lot numbers and optional expiry dates.
+        stockMethodOverride:
+          type: string
+          enum: [fifo, lifo]
+          nullable: true
+          description: Per-product override of the tenant-wide FIFO/LIFO stock method.
         hasVariants:
           type: boolean
         hasModifiers:

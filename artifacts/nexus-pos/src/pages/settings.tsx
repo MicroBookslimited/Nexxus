@@ -57,6 +57,7 @@ export function AdminSettings() {
   const [lowStockAlertsHour, setLowStockAlertsHour] = useState("8");
   const [allowOverselling, setAllowOverselling] = useState(false);
   const [supermarketMode, setSupermarketMode] = useState(false);
+  const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
   const [sendingTest, setSendingTest] = useState(false);
   const [sendingLowStockTest, setSendingLowStockTest] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -104,6 +105,7 @@ export function AdminSettings() {
     setLowStockAlertsHour(settings.low_stock_alerts_hour ?? "8");
     setAllowOverselling(settings.allow_overselling === "true");
     setSupermarketMode(settings.supermarket_mode === "true");
+    setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
     setDirty(false);
   }, [settings]);
 
@@ -145,6 +147,7 @@ export function AdminSettings() {
           low_stock_alerts_hour: lowStockAlertsHour,
           allow_overselling: allowOverselling ? "true" : "false",
           supermarket_mode: supermarketMode ? "true" : "false",
+          stock_method: stockMethod,
         },
       },
       {
@@ -1166,6 +1169,22 @@ export function AdminSettings() {
               </ul>
             </div>
           )}
+          <div className="rounded-lg border border-border p-4 space-y-2">
+            <div>
+              <p className="text-sm font-medium">Stock Method (FIFO / LIFO)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Default rule used to deduct batch-tracked products at checkout. Individual products can override this.
+              </p>
+            </div>
+            <select
+              value={stockMethod}
+              onChange={(e) => { setStockMethod(e.target.value === "lifo" ? "lifo" : "fifo"); markDirty(); }}
+              className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+            >
+              <option value="fifo">FIFO — First In, First Out (oldest stock sells first)</option>
+              <option value="lifo">LIFO — Last In, First Out (newest stock sells first)</option>
+            </select>
+          </div>
         </CardContent>
       </Card>
 

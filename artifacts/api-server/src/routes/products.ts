@@ -208,6 +208,14 @@ router.post("/products", async (req, res): Promise<void> => {
   // POS / reports never see a misleading number on the parent row.
   const isComposite = parsed.data.structureType === "composite";
 
+  // Batch tracking is only valid for simple products in MVP. Variant and
+  // composite products are explicitly out of scope (their stock lives in
+  // separate tables and the order-flow batch deduction wouldn't fire).
+  if (parsed.data.trackBatches && isComposite) {
+    res.status(400).json({ error: "Batch tracking is not supported for composite products." });
+    return;
+  }
+
   const [product] = await db
     .insert(productsTable)
     .values({
@@ -314,6 +322,26 @@ router.put("/products/:id", async (req, res): Promise<void> => {
     updates["isTaxable"] = parsed.data.isTaxable;
   }
   if (parsed.data.trackBatches !== undefined) {
+    if (parsed.data.trackBatches === true) {
+      // Reject batch tracking on composite or variant-tracked products
+      // (MVP scope). Look up current row + variant presence.
+      const [cur] = await db.select({ structureType: productsTable.structureType })
+        .from(productsTable)
+        .where(and(eq(productsTable.id, params.data.id), eq(productsTable.tenantId, tenantId)));
+      const targetStruct = parsed.data.structureType ?? cur?.structureType;
+      if (targetStruct === "composite") {
+        res.status(400).json({ error: "Batch tracking is not supported for composite products." });
+        return;
+      }
+      const [variantGroup] = await db.select({ id: variantGroupsTable.id })
+        .from(variantGroupsTable)
+        .where(eq(variantGroupsTable.productId, params.data.id))
+        .limit(1);
+      if (variantGroup) {
+        res.status(400).json({ error: "Batch tracking is not supported for products with variants." });
+        return;
+      }
+    }
     updates["trackBatches"] = parsed.data.trackBatches;
   }
   if (parsed.data.stockMethodOverride !== undefined) {
