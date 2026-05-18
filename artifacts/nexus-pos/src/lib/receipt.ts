@@ -1629,6 +1629,21 @@ export function openWhatsAppReceipt(phone: string, order: ReceiptOrder, settings
   window.open(url, "_blank");
 }
 
+// sessionStorage key shared with KioskLock in App.tsx.
+// Set to "1" while the browser print dialog is open so the kiosk's
+// fullscreenchange handler knows the exit was intentional (not an escape).
+const KIOSK_PRINTING_KEY = "nexxus_kiosk_printing";
+
+/** Mark printing as in-progress so KioskLock skips the PIN gate. */
+function setPrintingFlag(): void {
+  try { sessionStorage.setItem(KIOSK_PRINTING_KEY, "1"); } catch { /* ignore */ }
+}
+
+/** Clear the printing flag. Called after afterprint fires or on timeout. */
+function clearPrintingFlag(): void {
+  try { sessionStorage.removeItem(KIOSK_PRINTING_KEY); } catch { /* ignore */ }
+}
+
 export function openReceiptWindow(html: string): void {
   // Use a hidden iframe instead of window.open. Popups are blocked by
   // default on mobile Chrome (Android) and by many desktop pop-up blockers,
@@ -1638,6 +1653,23 @@ export function openReceiptWindow(html: string): void {
   const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(
     typeof navigator !== "undefined" ? navigator.userAgent : "",
   );
+
+  // Arm the kiosk-print flag BEFORE the iframe loads so that the
+  // fullscreenchange event (which fires when the print dialog steals focus /
+  // exits fullscreen) is ignored by KioskLock.
+  setPrintingFlag();
+
+  // Clear the flag once the print dialog closes. The afterprint event fires
+  // reliably on all modern browsers when the dialog is dismissed (print or
+  // cancel). Belt-and-suspenders: also clear after 30 s in case the event
+  // never fires (e.g. the iframe was torn down before afterprint).
+  const afterPrintFallbackTimer = setTimeout(clearPrintingFlag, 30_000);
+  const clearOnAfterPrint = () => {
+    clearTimeout(afterPrintFallbackTimer);
+    clearPrintingFlag();
+    window.removeEventListener("afterprint", clearOnAfterPrint);
+  };
+  window.addEventListener("afterprint", clearOnAfterPrint, { once: true });
 
   const printScript = `<script>(function(){` +
     `function go(){try{window.focus();window.print();}catch(e){}}` +

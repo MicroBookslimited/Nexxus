@@ -273,6 +273,11 @@ function FullscreenFab() {
 // blocking PIN overlay that only a manager / admin / supervisor can dismiss.
 // The armed flag is persisted in sessionStorage so a reload can't bypass it.
 const KIOSK_ARMED_KEY = "nexxus_kiosk_armed";
+// Set by openReceiptWindow() in receipt.ts just before window.print() is
+// called and cleared when afterprint fires. When this flag is present, a
+// fullscreen exit is caused by the print dialog — not an escape attempt —
+// so KioskLock should stay armed but NOT show the PIN overlay.
+const KIOSK_PRINTING_KEY = "nexxus_kiosk_printing";
 
 function KioskLock() {
   const [locked, setLocked] = useState(false);
@@ -299,8 +304,13 @@ function KioskLock() {
         armedRef.current = true;
         sessionStorage.setItem(KIOSK_ARMED_KEY, "1");
       } else if (armedRef.current) {
-        // Exiting fullscreen while armed → lock the terminal.
-        setLocked(true);
+        // Exiting fullscreen while armed — but if the print dialog caused the
+        // exit, skip the PIN gate. The kiosk stays armed (armedRef stays true)
+        // so the next real fullscreen exit is still caught.
+        const isPrinting = sessionStorage.getItem(KIOSK_PRINTING_KEY) === "1";
+        if (!isPrinting) {
+          setLocked(true);
+        }
       }
     };
 
