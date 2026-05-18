@@ -267,6 +267,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   }
   paymentHtml += `
     <div class="row sub-row"><span>Tendered</span><span class="nowrap">${fmtNum(tenderedAmt)}</span></div>
+    <div class="row sub-row"><span>Total</span><span class="nowrap">-${fmtNum(order.total)}</span></div>
     <div class="row sub-row"><span>Change</span><span class="nowrap">${fmtNum(changeAmt)}</span></div>`;
 
   // ── Optional blocks ───────────────────────────────────────────────────────
@@ -870,6 +871,7 @@ function buildSupermarketReceiptHtml(
     <div class="sm-tot-row total"><span class="sm-tot-label">TOTAL</span><span class="sm-tot-val">${fmtNum(order.total)}</span></div>
     ${secondaryLineHtml}
     <div class="sm-tot-row"><span class="sm-tot-label">${escHtml(tendLabel)}</span><span class="sm-tot-val">${fmtNum(tenderedAmount)}</span></div>
+    <div class="sm-tot-row"><span class="sm-tot-label">TOTAL</span><span class="sm-tot-val">-${fmtNum(order.total)}</span></div>
     <div class="sm-tot-row"><span class="sm-tot-label">CHANGE DUE</span><span class="sm-tot-val">${fmtNum(changeDue)}</span></div>
   </div>
 
@@ -1029,6 +1031,7 @@ function buildConvenienceReceiptHtml(
   const changeDisplay   = isCash ? changeDue   : 0;
   const cashChangeHtml = `
     <div class="cv-card-row"><span>${isCash ? "CASH TENDERED" : "TENDERED"}</span><span>${fmtNum(tenderedDisplay)}</span></div>
+    <div class="cv-card-row"><span>TOTAL</span><span>-${fmtNum(order.total)}</span></div>
     <div class="cv-card-row"><span>CHANGE DUE</span><span>${fmtNum(changeDisplay)}</span></div>`;
 
   const splitHtml = isSplit ? `
@@ -1329,6 +1332,7 @@ function buildStapleReceiptHtml(
     <div class="st-pay-row"><span>CARD</span><span>$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
     <div class="st-pay-row"><span>CASH</span><span>$${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}
     <div class="st-pay-row"><span>${isCash ? "CASH TENDERED" : "TENDERED"}</span><span>$${fmtNum(isCash ? tenderedAmt : order.total)}</span></div>
+    <div class="st-pay-row"><span>TOTAL</span><span>-$${fmtNum(order.total)}</span></div>
     <div class="st-pay-row"><span>CHANGE DUE</span><span>$${fmtNum(isCash ? changeDue : 0)}</span></div>`;
 
   // Total items count
@@ -1600,6 +1604,7 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
     if (order.paymentMethod === "cash") {
       const tendered = (order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total;
       lines.push(`Tendered:  ${fmtNum(tendered)}`);
+      lines.push(`Total:    -${fmtNum(order.total)}`);
       lines.push(`Change:    ${fmtNum(Math.max(0, tendered - order.total))}`);
     }
   }
