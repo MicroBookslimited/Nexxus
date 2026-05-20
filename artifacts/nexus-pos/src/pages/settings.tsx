@@ -244,6 +244,8 @@ export function AdminSettings() {
             { id: "section-email", label: "Email", icon: Mail },
             { id: "section-digest", label: "Notifications", icon: Bell },
             { id: "section-inventory", label: "Inventory", icon: Boxes },
+            { id: "section-pos-security", label: "POS Security", icon: ShieldCheck },
+            { id: "section-pos-interface", label: "POS Interface", icon: Settings },
             { id: "section-payments", label: "Payment Methods", icon: CreditCard },
             { id: "section-qr", label: "QR Code", icon: QrCode },
             { id: "section-admins", label: "Admin Users", icon: UserCog },
@@ -1192,7 +1194,7 @@ export function AdminSettings() {
       </Card>
 
       {/* POS Security */}
-      <Card>
+      <Card id="section-pos-security">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Boxes className="h-4 w-4 text-primary" />
@@ -1241,7 +1243,7 @@ export function AdminSettings() {
       </Card>
 
       {/* POS Interface */}
-      <Card>
+      <Card id="section-pos-interface">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Boxes className="h-4 w-4 text-primary" />
