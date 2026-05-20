@@ -1,0 +1,181 @@
+Objective
+
+Create a Home Depot–style interface optimized for hardware stores with:
+
+Products in LIST mode (left/center)
+Categories in CARD mode (top)
+Cart on the RIGHT
+Full NEXXUS branding (dark navy + teal gradient)
+⚙️ 1. Settings Toggle
+
+Add toggle:
+
+settings.hardware_ui_mode = true
+
+Location:
+
+Settings → POS Interface →
+“Enable Hardware Store Layout”
+🔄 2. Layout Structure (CRITICAL)
+
+When enabled, replace POS layout with:
+
+-----------------------------------------------------
+| LOGO | SEARCH BAR | ADD CUSTOMER | USER |
+-----------------------------------------------------
+| CATEGORY CARDS (HORIZONTAL SCROLL)               |
+-----------------------------------------------------
+| PRODUCT LIST (LEFT / CENTER) | CART (RIGHT)      |
+-----------------------------------------------------
+| QUICK ACTION BAR (BOTTOM)                        |
+-----------------------------------------------------
+🧱 3. CATEGORY SECTION (CARD MODE)
+Display:
+Large horizontal scroll cards
+Icon + Name + optional count
+Example Categories:
+Electrical ⚡
+Plumbing 🚰
+Lumber 🪵
+Tools 🔧
+Paint 🎨
+Hardware 🔩
+Building Materials 🧱
+Garden 🌱
+UI Behavior:
+Click = filter products (UI only, reuse existing logic)
+Active category = highlighted (teal glow)
+📋 4. PRODUCT SECTION (LIST MODE)
+Layout: Table/List View
+
+Columns:
+
+Image (small thumbnail)
+SKU (very visible)
+Product Name
+Category
+Price
+Stock (color indicator)
+[+ Add Button]
+Example Row:
+[IMG]  PVC-050-10   PVC Pipe 1/2" x 10ft   Plumbing   $450   In Stock   [+]
+Styling:
+Dark card rows
+Hover highlight
+Clean grid lines
+Fast scroll performance
+🔍 5. SEARCH BAR (TOP PRIORITY)
+Full width
+Always focused on load
+Placeholder:
+Search SKU / Barcode / Product Name...
+Barcode icon on right
+Clear button
+👤 6. ADD CUSTOMER OPTION (IMPORTANT)
+Placement:
+
+Top bar (right side)
+
+Button:
+
++ Add Customer
+Also include:
+
+In cart panel:
+
+No Customer Selected
+[+ Add Customer]
+🧾 7. CART PANEL (RIGHT SIDE)
+Fixed layout:
+Always visible
+Scrollable items
+
+Each item shows:
+
+Image
+Name
+SKU
+Qty controls (- / +)
+Price
+Bottom Section:
+Subtotal
+Tax
+TOTAL (highlighted in teal)
+Checkout button
+🎨 8. NEXXUS COLOR SYSTEM (MANDATORY)
+
+Use ONLY:
+
+Background: Dark navy (#0B1E2D)
+Primary: Teal / Cyan gradient
+Accent glow: Light blue
+Cards: Soft dark panels
+Buttons: Teal gradient
+Text: White / light gray
+
+🚫 Do NOT use orange (keep brand consistency)
+
+⚡ 9. QUICK ACTION BAR (BOTTOM)
+
+Buttons:
+
+Quick Add (SKU)
+Recent Items
+Discount
+Price Check
+Custom Qty
+🧠 10. UX RULES
+Click product = instantly add to cart
+Minimal clicks required
+Smooth animations (fast, not heavy)
+No delay in scanning workflow
+🚫 11. STRICT RULES
+
+DO NOT:
+
+Change pricing logic
+Change cart logic
+Change inventory logic
+Change API/backend
+
+ONLY:
+
+Modify layout
+Modify styling
+Improve UI flow
+🔄 12. TOGGLE HANDLING
+if (settings.hardware_ui_mode) {
+  loadHardwareUI();
+} else {
+  loadDefaultPOS();
+}
+🎯 EXPECTED RESULT
+
+When enabled:
+
+✅ Products shown in fast, scannable list
+✅ Categories easy to tap (card style)
+✅ Cart always visible
+✅ Customer selection quick access
+✅ Fully consistent with NEXXUS branding
+✅ Feels like a real hardware store POS
+
+💬 Final Dev Instruction
+
+This is a UI Layer / Theme Mode, not a new system.
+
+Focus on:
+
+Speed
+Clarity
+SKU visibility
+Large catalog usability
+
+🔥 If you want next phase, I can design:
+
+Lumber length entry UI
+Bulk quantity keypad UX
+Contractor quick checkout mode
+Warehouse picking mode
+
+That’s how you tur
