@@ -57,6 +57,7 @@ export function AdminSettings() {
   const [lowStockAlertsHour, setLowStockAlertsHour] = useState("8");
   const [allowOverselling, setAllowOverselling] = useState(false);
   const [supermarketMode, setSupermarketMode] = useState(false);
+  const [hardwareUiMode, setHardwareUiMode] = useState(false);
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
   const [sendingTest, setSendingTest] = useState(false);
   const [sendingLowStockTest, setSendingLowStockTest] = useState(false);
@@ -105,6 +106,7 @@ export function AdminSettings() {
     setLowStockAlertsHour(settings.low_stock_alerts_hour ?? "8");
     setAllowOverselling(settings.allow_overselling === "true");
     setSupermarketMode(settings.supermarket_mode === "true");
+    setHardwareUiMode(settings.hardware_ui_mode === "true");
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
     setDirty(false);
   }, [settings]);
@@ -147,6 +149,7 @@ export function AdminSettings() {
           low_stock_alerts_hour: lowStockAlertsHour,
           allow_overselling: allowOverselling ? "true" : "false",
           supermarket_mode: supermarketMode ? "true" : "false",
+          hardware_ui_mode: hardwareUiMode ? "true" : "false",
           stock_method: stockMethod,
         },
       },
@@ -1231,6 +1234,55 @@ export function AdminSettings() {
                 <li>• Cashiers are blocked from removing items without manager PIN</li>
                 <li>• Cashiers are blocked from clearing the cart without manager PIN</li>
                 <li>• Managers, supervisors, and admins bypass these prompts</li>
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* POS Interface */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Boxes className="h-4 w-4 text-primary" />
+            POS Interface
+          </CardTitle>
+          <CardDescription>
+            Switch between the default cashier layout and the Hardware Store layout
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Hardware Store Layout</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Optimized for hardware stores: large search bar, category cards on top, products in a scannable list with prominent SKUs, and the cart fixed to the right. Reuses the same pricing, cart, and checkout logic — only the layout changes.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={hardwareUiMode}
+              onClick={() => { setHardwareUiMode(!hardwareUiMode); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                hardwareUiMode ? "bg-teal-500" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                hardwareUiMode ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+          {hardwareUiMode && (
+            <div className="rounded-lg bg-teal-500/10 border border-teal-500/20 p-3 text-xs text-teal-700 dark:text-teal-400 space-y-1">
+              <p className="font-medium">Hardware Store Layout is active</p>
+              <ul className="space-y-0.5 ml-2">
+                <li>• /pos now opens the hardware-store layout</li>
+                <li>• Products are shown in a fast, scannable list with SKU column</li>
+                <li>• Cart stays fixed on the right; categories scroll horizontally on top</li>
+                <li>• Disable this toggle to return to the standard POS layout</li>
               </ul>
             </div>
           )}

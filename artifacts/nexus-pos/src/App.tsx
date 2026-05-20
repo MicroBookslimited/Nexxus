@@ -12,6 +12,8 @@ import NotFound from "@/pages/not-found";
 import { Login } from "@/pages/login";
 import { Dashboard } from "@/pages/dashboard";
 import { POS } from "@/pages/pos";
+import { PosHardware } from "@/pages/pos-hardware";
+import { useGetSettings } from "@workspace/api-client-react";
 import { Orders } from "@/pages/orders";
 import { Products } from "@/pages/products";
 import { Customers } from "@/pages/customers";
@@ -143,6 +145,22 @@ function ProtectedRoute({ component: Component, permission }: { component: React
   );
 }
 
+// Dispatches /pos to either the standard POS layout or the Hardware Store
+// layout based on the `hardware_ui_mode` tenant setting. Both layouts use the
+// same cart/pricing/checkout API hooks — only the UI differs.
+function PosModeDispatcher() {
+  const { data: settings, isLoading } = useGetSettings();
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
+  if (settings?.hardware_ui_mode === "true") return <PosHardware />;
+  return <POS />;
+}
+
 function POSRouter() {
   const [location, setLocation] = useLocation();
 
@@ -156,7 +174,7 @@ function POSRouter() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
-      <Route path="/pos"><ProtectedRoute component={POS} permission="pos.sale" /></Route>
+      <Route path="/pos"><ProtectedRoute component={PosModeDispatcher} permission="pos.sale" /></Route>
       <Route path="/orders"><ProtectedRoute component={Orders} permission="orders.view" /></Route>
       <Route path="/products"><ProtectedRoute component={Products} permission="inventory.view" /></Route>
       <Route path="/customers"><ProtectedRoute component={Customers} permission="customers.view" /></Route>
