@@ -8,7 +8,11 @@ import {
   useCreateCustomer,
   useGetSettings,
   useGetCurrentCashSession,
+  useListHeldOrders,
+  useCreateHeldOrder,
+  useDeleteHeldOrder,
   getListCustomersQueryKey,
+  getListHeldOrdersQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
@@ -53,7 +57,17 @@ import {
   PaintBucket,
   Bolt,
   Package,
+  PauseCircle,
+  PlayCircle,
 } from "lucide-react";
+
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { buildReceiptHtml, openReceiptWindow, receiptOrderFrom } from "@/lib/receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
 
@@ -131,8 +145,12 @@ export function PosHardware() {
 
   const { data: products } = useListProducts();
   const { data: customers } = useListCustomers();
+  const { data: heldOrders } = useListHeldOrders();
   const createOrder = useCreateOrder();
   const createCustomer = useCreateCustomer();
+  const createHeldOrder = useCreateHeldOrder();
+  const deleteHeldOrder = useDeleteHeldOrder();
+  const [heldSheetOpen, setHeldSheetOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -225,6 +243,75 @@ export function PosHardware() {
     setCashTenderedInput("");
     setDiscountAmount(0);
     setSelectedCustomerId(null);
+  };
+
+  const handleHoldBill = () => {
+    if (cart.length === 0) {
+      toast({ title: "Cart is empty", description: "Add items before holding a bill.", variant: "destructive" });
+      return;
+    }
+    createHeldOrder.mutate(
+      {
+        data: {
+          items: cart.map((c) => ({
+            productId: c.productId,
+            productName: c.productName,
+            price: c.price,
+            quantity: c.quantity,
+          })),
+          notes: notes || undefined,
+          discountType: discountAmount > 0 ? "fixed" : undefined,
+          discountAmount: discountAmount > 0 ? discountAmount : undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          resetCart();
+          toast({ title: "Bill held", description: "Cart cleared. Recall it any time with Unhold Bill." });
+          queryClient.invalidateQueries({ queryKey: getListHeldOrdersQueryKey() });
+        },
+        onError: () => {
+          toast({ title: "Could not hold bill", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const handleRecallBill = (id: number) => {
+    const held = heldOrders?.find((h) => h.id === id);
+    if (!held) return;
+    if (cart.length > 0) {
+      const ok = window.confirm("This will replace the current cart. Continue?");
+      if (!ok) return;
+    }
+    const productMap = new Map((products ?? []).map((p) => [p.id, p]));
+    setCart(
+      held.items.map((item, idx) => {
+        const p = productMap.get(item.productId);
+        return {
+          cartKey: `${item.productId}:recall:${Date.now()}:${idx}`,
+          productId: item.productId,
+          productName: item.productName,
+          barcode: p?.barcode ?? null,
+          imageUrl: p?.imageUrl ?? null,
+          price: item.price,
+          quantity: item.quantity,
+          isTaxable: p?.isTaxable ?? true,
+        };
+      }),
+    );
+    if (held.discountAmount && held.discountAmount > 0) setDiscountAmount(held.discountAmount);
+    if (held.notes) setNotes(held.notes);
+    deleteHeldOrder.mutate(
+      { id },
+      {
+        onSuccess: () => {
+          toast({ title: "Bill recalled" });
+          queryClient.invalidateQueries({ queryKey: getListHeldOrdersQueryKey() });
+          setHeldSheetOpen(false);
+        },
+      },
+    );
   };
 
   /* ── Customer selection ────────────────────────────────────────────────── */
@@ -678,7 +765,7 @@ export function PosHardware() {
         </div>
 
         {/* Cart panel */}
-        <div className="w-[380px] shrink-0 flex flex-col bg-[#0a1a2a]/60 min-h-0">
+        <div className="w-1/3 shrink-0 flex flex-col bg-[#0a1a2a]/60 min-h-0">
           <div className="shrink-0 px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-200 tracking-wide flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-teal-300" />
@@ -899,6 +986,77 @@ export function PosHardware() {
           }}
         />
         <div className="ml-auto flex items-center gap-2 shrink-0">
+          {/* Hold Bill — solid pill */}
+          <button
+            onClick={handleHoldBill}
+            disabled={cart.length === 0 || createHeldOrder.isPending}
+            className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-[#0B1E2D] font-bold px-4 h-10 text-xs shadow-lg shadow-amber-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Save current cart as a held bill"
+          >
+            <PauseCircle className="h-4 w-4" />
+            Hold Bill
+          </button>
+
+          {/* Unhold Bill — solid pill with Sheet trigger */}
+          <Sheet open={heldSheetOpen} onOpenChange={setHeldSheetOpen}>
+            <SheetTrigger asChild>
+              <button
+                disabled={!heldOrders || heldOrders.length === 0}
+                className="inline-flex items-center gap-1.5 rounded-full bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-[#0B1E2D] font-bold px-4 h-10 text-xs shadow-lg shadow-teal-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed relative"
+                title={
+                  heldOrders && heldOrders.length > 0
+                    ? `${heldOrders.length} held bill(s)`
+                    : "No held bills"
+                }
+              >
+                <PlayCircle className="h-4 w-4" />
+                Unhold Bill
+                {heldOrders && heldOrders.length > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-[#0B1E2D] text-teal-300 text-[10px] font-mono font-bold">
+                    {heldOrders.length}
+                  </span>
+                )}
+              </button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-96 bg-[#0a1a2a] border-l border-white/10 text-slate-100">
+              <SheetHeader>
+                <SheetTitle className="text-slate-100 flex items-center gap-2">
+                  <PlayCircle className="h-5 w-5 text-teal-300" />
+                  Held Bills
+                </SheetTitle>
+              </SheetHeader>
+              <div className="mt-4 space-y-2 overflow-y-auto max-h-[calc(100vh-100px)]">
+                {(!heldOrders || heldOrders.length === 0) ? (
+                  <p className="text-xs text-slate-500 px-2">No held bills yet. Use Hold Bill to save the current cart.</p>
+                ) : (
+                  heldOrders.map((h) => {
+                    const lineTotal = h.items.reduce((s, it) => s + it.price * it.quantity, 0);
+                    return (
+                      <button
+                        key={h.id}
+                        onClick={() => handleRecallBill(h.id)}
+                        className="w-full text-left rounded-xl bg-[#0d2238] border border-white/10 hover:border-teal-400/40 hover:bg-teal-500/5 transition px-3 py-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-sm text-slate-100">
+                            {h.label ?? `Bill #${h.id}`}
+                          </span>
+                          <span className="font-mono text-sm font-bold text-teal-300">
+                            {formatCurrency(lineTotal, baseCurrency)}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-slate-400">
+                          {h.items.length} {h.items.length === 1 ? "item" : "items"}
+                          {h.notes ? ` · ${h.notes}` : ""}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+
           <button
             onClick={() => navigate("/dashboard")}
             className="inline-flex items-center gap-1.5 rounded-xl bg-[#0a1a2a] border border-white/10 px-3 h-10 text-xs text-slate-300 hover:bg-white/5 transition"
