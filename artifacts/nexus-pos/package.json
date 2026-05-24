@@ -81,6 +81,7 @@
     "@tanstack/react-query-persist-client": "^5.97.0",
     "@tanstack/react-virtual": "^3.13.24",
     "@types/jsbarcode": "^3.11.4",
+    "exceljs": "^4.4.0",
     "jsbarcode": "^3.12.3",
     "papaparse": "^5.5.3",
     "qrcode.react": "^4.2.0",

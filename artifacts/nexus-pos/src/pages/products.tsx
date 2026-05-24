@@ -1138,24 +1138,37 @@ async function parseSpreadsheet(file: File): Promise<(string | number | boolean 
     });
     return result.data;
   } else {
-    const readXlsxFile = (await import("read-excel-file/browser")).default;
-    const result = await readXlsxFile(file);
-    // read-excel-file normally returns Row[][] for a single sheet, but some
-    // files (notably Google Sheets exports and multi-sheet workbooks) cause
-    // it to return the wrapped form [{ sheet, data }]. Detect and unwrap so
-    // downstream callers always receive a flat Row[][].
-    const rows: (string | number | boolean | Date | null)[][] =
-      Array.isArray(result) &&
-      result.length > 0 &&
-      !Array.isArray(result[0]) &&
-      result[0] !== null &&
-      typeof result[0] === "object" &&
-      Array.isArray((result[0] as { data?: unknown }).data)
-        ? ((result[0] as { data: (string | number | boolean | Date | null)[][] }).data)
-        : (result as (string | number | boolean | Date | null)[][]);
-    return rows.map((row) =>
-      row.map((cell) => (cell instanceof Date ? cell.toLocaleDateString() : cell))
-    );
+    // Use exceljs — handles real Loyverse exports (no <dimension> tag,
+    // customHeight rows) that read-excel-file silently truncates to 1 row.
+    const ExcelJS = await import("exceljs");
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await file.arrayBuffer());
+    const ws = wb.worksheets[0];
+    if (!ws) return [];
+    const out: (string | number | boolean | null)[][] = [];
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      // exceljs row.values is 1-indexed (index 0 is undefined). Slice off
+      // the leading hole and normalise cell types for downstream consumers.
+      const raw = (row.values as unknown[]).slice(1);
+      const cells = raw.map((c): string | number | boolean | null => {
+        if (c === null || c === undefined) return null;
+        if (c instanceof Date) return c.toLocaleDateString();
+        if (typeof c === "object") {
+          // Rich text { richText: [...] } or hyperlink { text, hyperlink }
+          const rt = (c as { richText?: { text: string }[]; text?: string; result?: unknown }).richText;
+          if (Array.isArray(rt)) return rt.map((s) => s.text).join("");
+          const txt = (c as { text?: string }).text;
+          if (typeof txt === "string") return txt;
+          const res = (c as { result?: unknown }).result;
+          if (typeof res === "string" || typeof res === "number" || typeof res === "boolean") return res;
+          return String(c);
+        }
+        if (typeof c === "string" || typeof c === "number" || typeof c === "boolean") return c;
+        return String(c);
+      });
+      out.push(cells);
+    });
+    return out;
   }
 }
 
@@ -1186,23 +1199,27 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       const [hdr, ...body] = data;
       const clean = hdr.map(h => String(h).trim());
       setHeaders(clean);
-      setRows(body.filter(r => r.some(c => String(c).trim())));
+      setRows(body.filter(r => r.some(c => c !== null && c !== undefined && String(c).trim() !== "")));
       // Auto-map by column name similarity.
-      // Loyverse-specific exact matches take priority over fuzzy regex so a
-      // raw Loyverse export ("Default price", "In stock" = qty, "Track stock"
-      // = boolean, both "Barcode" + "SKU") maps correctly without user edits.
+      // Loyverse multi-store exports use bracketed per-store columns like
+      // "Price [Store Name]", "In stock [Store Name]", "Available for sale
+      // [Store Name]". Strip the bracketed suffix before matching so any
+      // store name works without user edits. Single-store Loyverse exports
+      // ("Default price", "In stock", "Track stock") and the simple NEXUS
+      // template are both handled by the same rules.
       const auto: Record<string, string> = {};
       clean.forEach(h => {
-        const l = h.toLowerCase().trim();
-        // ── Loyverse exact-header matches ──
+        // Lowercase + strip "[…]" suffix (e.g. "Price [Miss Peart's Kitchen]")
+        const l = h.toLowerCase().replace(/\s*\[[^\]]*\]\s*$/, "").trim();
+        // ── Loyverse / NEXUS exact-header matches ──
         if      (l === "name")                                          auto[h] = "name";
-        else if (l === "default price")                                 auto[h] = "price";
+        else if (l === "default price" || l === "price")                auto[h] = "price";
         else if (l === "category")                                      auto[h] = "category";
         else if (l === "description")                                   auto[h] = "description";
         else if (l === "barcode")                                       auto[h] = "barcode";
         else if (l === "sku")                                           { if (!Object.values(auto).includes("barcode")) auto[h] = "barcode"; }
-        else if (l === "in stock")                                      auto[h] = "stockCount";   // Loyverse: qty on hand
-        else if (l === "track stock")                                   auto[h] = "inStock";      // Loyverse: Y/N
+        else if (l === "in stock" || l === "stock quantity")            auto[h] = "stockCount";   // Loyverse qty
+        else if (l === "track stock" || l === "available for sale")     auto[h] = "inStock";      // Loyverse Y/N
         // ── Generic fuzzy fallbacks (skip Loyverse "Cost" column) ──
         else if (/name|product/i.test(l))                               auto[h] = "name";
         else if (/price|amount/i.test(l) && !/cost/i.test(l))           auto[h] = "price";
