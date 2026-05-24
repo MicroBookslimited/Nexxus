@@ -1086,14 +1086,43 @@ const TEMPLATE_ROWS = [
   ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "RC001", "30",  "yes"],
 ];
 
-function downloadTemplate() {
-  const csv = TEMPLATE_ROWS.map(r => r.map(c => `"${c}"`).join(",")).join("\r\n");
+/**
+ * Loyverse product export format (matches columns produced by Loyverse's
+ * "Export items" feature). A user can re-export from Loyverse and import the
+ * file here without touching it — auto-mapping below recognises every column.
+ * Empty/blank cells are normal for a real Loyverse export.
+ */
+const LOYVERSE_TEMPLATE_ROWS = [
+  [
+    "Handle", "SKU", "Name", "Category", "Description", "Default price", "Cost",
+    "Barcode", "Sold by weight", "Track stock", "In stock", "Tax - VAT (15%)",
+    "Option 1 name", "Option 1 value", "Image URL",
+  ],
+  [
+    "jerk-chicken", "JC001", "Jerk Chicken", "Food", "Seasoned jerk chicken",
+    "850.00", "450.00", "0123456789012", "N", "Y", "50", "Y", "", "", "",
+  ],
+  [
+    "ting-soda", "TS001", "Ting Soda", "Beverages", "Grapefruit flavour soda",
+    "120.00", "60.00", "0987654321098", "N", "Y", "100", "Y", "", "", "",
+  ],
+  [
+    "rum-cake-slice", "RC001", "Rum Cake Slice", "Bakery", "Moist spiced rum cake",
+    "350.00", "180.00", "0567891234567", "N", "Y", "30", "Y", "", "", "",
+  ],
+];
+
+function csvDownload(rows: string[][], filename: string) {
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement("a"), { href: url, download: "NEXUS_Product_Import_Template.csv" });
+  const a    = Object.assign(document.createElement("a"), { href: url, download: filename });
   a.click();
   URL.revokeObjectURL(url);
 }
+
+function downloadTemplate()         { csvDownload(TEMPLATE_ROWS,          "NEXUS_Product_Import_Template.csv"); }
+function downloadLoyverseTemplate() { csvDownload(LOYVERSE_TEMPLATE_ROWS, "NEXUS_Loyverse_Import_Template.csv"); }
 
 type ImportResult = { row: number; name: string; status: "ok" | "error"; error?: string };
 
@@ -1158,17 +1187,31 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       const clean = hdr.map(h => String(h).trim());
       setHeaders(clean);
       setRows(body.filter(r => r.some(c => String(c).trim())));
-      // Auto-map by column name similarity
+      // Auto-map by column name similarity.
+      // Loyverse-specific exact matches take priority over fuzzy regex so a
+      // raw Loyverse export ("Default price", "In stock" = qty, "Track stock"
+      // = boolean, both "Barcode" + "SKU") maps correctly without user edits.
       const auto: Record<string, string> = {};
       clean.forEach(h => {
-        const l = h.toLowerCase();
-        if      (/name|product/i.test(l))                           auto[h] = "name";
-        else if (/price|cost|amount/i.test(l))                      auto[h] = "price";
-        else if (/categ/i.test(l))                                   auto[h] = "category";
-        else if (/desc/i.test(l))                                    auto[h] = "description";
-        else if (/barcode|sku|code/i.test(l))                       auto[h] = "barcode";
+        const l = h.toLowerCase().trim();
+        // ── Loyverse exact-header matches ──
+        if      (l === "name")                                          auto[h] = "name";
+        else if (l === "default price")                                 auto[h] = "price";
+        else if (l === "category")                                      auto[h] = "category";
+        else if (l === "description")                                   auto[h] = "description";
+        else if (l === "barcode")                                       auto[h] = "barcode";
+        else if (l === "sku")                                           { if (!Object.values(auto).includes("barcode")) auto[h] = "barcode"; }
+        else if (l === "in stock")                                      auto[h] = "stockCount";   // Loyverse: qty on hand
+        else if (l === "track stock")                                   auto[h] = "inStock";      // Loyverse: Y/N
+        // ── Generic fuzzy fallbacks (skip Loyverse "Cost" column) ──
+        else if (/name|product/i.test(l))                               auto[h] = "name";
+        else if (/price|amount/i.test(l) && !/cost/i.test(l))           auto[h] = "price";
+        else if (/categ/i.test(l))                                      auto[h] = "category";
+        else if (/desc/i.test(l))                                       auto[h] = "description";
+        else if (/barcode/i.test(l))                                    auto[h] = "barcode";
+        else if (/sku|code/i.test(l))                                   { if (!Object.values(auto).includes("barcode")) auto[h] = "barcode"; }
         else if (/stock.*qty|qty.*stock|quantity|stock.count/i.test(l)) auto[h] = "stockCount";
-        else if (/in.?stock|available/i.test(l))                    auto[h] = "inStock";
+        else if (/in.?stock|available/i.test(l))                        auto[h] = "inStock";
       });
       setMapping(auto);
       setStep("map");
@@ -1203,7 +1246,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       if (isNaN(price) || price < 0) { out.push({ row: i + 2, name: d.name, status: "error", error: "Invalid price" }); continue; }
       const stockCount = parseFloat(d.stockCount ?? "0") || 0;
       const inStockRaw = (d.inStock ?? "yes").toLowerCase().trim();
-      const inStock    = inStockRaw === "yes" || inStockRaw === "true" || inStockRaw === "1";
+      const inStock    = ["yes", "y", "true", "1"].includes(inStockRaw);
       const category   = d.category?.trim() || "General";
       try {
         await new Promise<void>((resolve, reject) => {
@@ -1272,6 +1315,19 @@ function ImportProductsDialog({ open, onClose, onImported }: {
                 </div>
                 <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); downloadTemplate(); }} className="shrink-0">
                   <FileDown className="h-3.5 w-3.5 mr-1.5" />Template
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-4 rounded-lg border border-teal-500/30 bg-teal-500/5 p-4">
+                <FileDown className="h-8 w-8 text-teal-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Migrating from Loyverse?</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Download the Loyverse-format template, or export items from your Loyverse back office and upload that file as-is — columns are auto-detected.
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); downloadLoyverseTemplate(); }} className="shrink-0 border-teal-500/40 hover:bg-teal-500/10">
+                  <FileDown className="h-3.5 w-3.5 mr-1.5" />Loyverse Template
                 </Button>
               </div>
 
