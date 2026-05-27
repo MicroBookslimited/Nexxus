@@ -1,0 +1,244 @@
+Fix the print functionality in the NEXXUS POS PWA so it works correctly 
+on both Android (ESC/POS thermal printers via Looped Labs ESC POS Print 
+Service) and Windows/desktop browsers (clean HTML receipt via window.print()).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- NEXXUS POS is a React PWA running on ELO ESY15i1B Android 8.1 terminals
+- Looped Labs ESC POS Print Service is installed on the Android device
+  (package: com.loopedlabs.escposprintservice)
+- Printer is connected via Bluetooth (address: 10:22:33:CD:F2:89)
+- Printer size: 80MM thermal receipt printer
+- Currently the Print button calls window.print() which captures the 
+  payment modal including buttons — this is WRONG
+- The correct output is a clean ESC/POS formatted receipt
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHAT TO BUILD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Create a print utility module: src/utils/printReceipt.js
+
+This module must:
+1. Detect whether the app is running on Android or desktop browser
+2. On Android — send to Looped Labs ESC POS Print Service
+3. On Windows/desktop — trigger window.print() with a clean receipt layout
+4. Never print buttons, modals, or UI chrome under any circumstance
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE 1 — src/utils/printReceipt.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Export a single async function: printReceipt(order)
+
+order object shape:
+{
+  businessName:    string,   // e.g. "Miss Peart's Kitchen"
+  address:         string,   // e.g. "Shop #15, Harbour Bay Plaza"
+  phone:           string,   // e.g. "8762262122"
+  orderRef:        string,   // e.g. "ORD-2605-26-000004"
+  timestamp:       string,   // e.g. "26/05/2026, 9:01 PM"
+  orderMode:       string,   // "Dine-In" | "Takeout" | "Delivery"
+  table:           string | null,
+  items: [
+    { name: string, qty: number, price: string }
+  ],
+  subtotal:        string,
+  taxRate:         string,   // e.g. "15"
+  taxAmount:       string,
+  discount:        string,   // "0.00" if none
+  total:           string,
+  paymentMethod:   string,   // "Cash" | "Card" | "Split"
+  amountTendered:  string | null,
+  change:          string | null,
+  currency:        string,   // "JMD"
+  cashier:         string,
+}
+
+Platform detection logic:
+const isAndroid = /Android/i.test(navigator.userAgent);
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ANDROID PATH — Looped Labs ESC POS Print Service
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Looped Labs accepts print jobs via an Android Intent URL.
+Build the receipt as plain text, then fire it via intent.
+
+Step 1 — Build ESC/POS plain text receipt string:
+
+Format exactly as follows (42 chars wide for 80mm):
+- Business name: centered, ALL CAPS
+- Divider: full width dashes
+- Order ref, timestamp, cashier, order mode, table (if dine-in)
+- Divider
+- Column header: item left-aligned, price right-aligned
+- Each item: "{qty}x {name}" left-aligned, "{currency} {price}" right-aligned
+- Pad lines to exactly 42 chars total using spaces
+- Divider
+- Subtotal right-aligned
+- Tax ({taxRate}%) right-aligned — show "0.00" if zero
+- Discount right-aligned — only show if discount > 0
+- Divider
+- "TOTAL: {currency} {total}" right-aligned, this line in CAPS
+- Blank line
+- Payment method right-aligned
+- Amount Tendered right-aligned (only if cash)
+- Change right-aligned (only if cash)
+- Divider
+- Address centered
+- Phone centered
+- Blank line
+- "Thank you for your business!" centered
+- "Powered by NEXXUS POS" centered
+- 3 blank lines (paper feed before cut)
+
+Step 2 — Fire to Looped Labs via intent URL:
+
+function printViaLoopedLabs(receiptText) {
+  // Encode the receipt text
+  const encoded = encodeURIComponent(receiptText);
+  
+  // Build intent URL for Looped Labs
+  // This opens the Looped Labs service and passes the text directly
+  const intentUrl = [
+    'intent:',
+    '#Intent',
+    'action=android.intent.action.SEND',
+    'type=text/plain',
+    `S.android.intent.extra.TEXT=${encoded}`,
+    'package=com.loopedlabs.escposprintservice',
+    'end'
+  ].join(';');
+  
+  window.location.href = intentUrl;
+}
+
+IMPORTANT — if the intent approach does not work on the device, 
+add a fallback using a URL scheme that Looped Labs also supports:
+  escpos://print?text={encoded}
+Try the intent first, fall back to the escpos:// scheme if needed.
+Wrap in a try/catch and console.error any failures.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WINDOWS/DESKTOP PATH — window.print()
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+On desktop, inject a temporary hidden <div id="nexxus-print-receipt"> 
+into the document body containing a clean HTML receipt, trigger 
+window.print(), then remove the div immediately after.
+
+The print-only receipt HTML must:
+- Use inline styles only (no CSS class dependencies)
+- Font: monospace, 12px
+- Width: 80mm
+- Include all receipt fields in the same order as ESC/POS above
+- Use a <style> block with @media print rules that:
+    * Hide everything on the page (body * { visibility: hidden })
+    * Show only #nexxus-print-receipt and its children
+    * Set page margin to 0
+    * Set page size to 80mm wide
+
+Function signature:
+function printViaWindowPrint(order) {
+  // 1. Build receipt HTML string
+  const receiptHTML = buildReceiptHTML(order); 
+  
+  // 2. Create hidden container
+  const container = document.createElement('div');
+  container.id = 'nexxus-print-receipt';
+  container.style.display = 'none';
+  container.innerHTML = receiptHTML;
+  document.body.appendChild(container);
+  
+  // 3. Inject print styles
+  const style = document.createElement('style');
+  style.innerHTML = `
+    @media print {
+      body * { visibility: hidden !important; }
+      #nexxus-print-receipt,
+      #nexxus-print-receipt * { visibility: visible !important; }
+      #nexxus-print-receipt {
+        display: block !important;
+        position: absolute;
+        left: 0; top: 0;
+        width: 80mm;
+        font-family: monospace;
+        font-size: 12px;
+        color: black;
+      }
+      @page { margin: 0; size: 80mm auto; }
+    }
+  `;
+  document.head.appendChild(style);
+  
+  // 4. Print
+  window.print();
+  
+  // 5. Cleanup after print dialog closes
+  setTimeout(() => {
+    document.body.removeChild(container);
+    document.head.removeChild(style);
+  }, 1000);
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE 2 — Update the Print button
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Find the existing Print button in the payment success modal 
+(currently calling window.print() or similar).
+
+Replace with:
+
+import { printReceipt } from '../utils/printReceipt';
+
+// In the component:
+const handlePrint = async () => {
+  try {
+    await printReceipt({
+      businessName:   currentTenant.businessName,
+      address:        currentTenant.address,
+      phone:          currentTenant.phone,
+      orderRef:       currentOrder.ref,
+      timestamp:      new Date().toLocaleString('en-JM'),
+      orderMode:      currentOrder.mode,
+      table:          currentOrder.table || null,
+      items:          currentOrder.items,
+      subtotal:       currentOrder.subtotal,
+      taxRate:        currentTenant.taxRate,
+      taxAmount:      currentOrder.taxAmount,
+      discount:       currentOrder.discount || '0.00',
+      total:          currentOrder.total,
+      paymentMethod:  currentOrder.paymentMethod,
+      amountTendered: currentOrder.amountTendered || null,
+      change:         currentOrder.change || null,
+      currency:       'JMD',
+      cashier:        activeStaff.name,
+    });
+  } catch (err) {
+    console.error('Print failed:', err);
+    // Show a toast/notification to staff: "Print failed — check printer"
+  }
+};
+
+// Button:
+<button onClick={handlePrint}>Print</button>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL NOTES FOR THE AI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. NEVER call window.print() on Android — it prints the browser modal
+2. NEVER use window.print() without the @media print CSS isolation — 
+   it will print buttons and UI elements
+3. The 42-char line width is critical for 80mm paper — 
+   lines longer than 42 chars will wrap and break receipt formatting
+4. Pad all lines with spaces to achieve right-alignment — 
+   do NOT use CSS for receipt formatting in the ESC/POS text path
+5. The intent URL format for Looped Labs must have semicolons 
+   between each component — not ampersands
+6. Test the print output by console.log(receiptText) first to verify 
+   formatting before firing the intent
+7. If the existing codebase already has a print function, 
+   REPLACE it entirely — do not add a second one alongside it
+8. The payment modal currently has Print, Email, and WhatsApp buttons — 
+   only fix the Print button, leave Email and WhatsApp unchanged
+9. Show a loading state on the Print button while the intent is firing
+10. Add a 500ms debounce on the print button to prevent double-prints
+    if staff tap it twice quickly
