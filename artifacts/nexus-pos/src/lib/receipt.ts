@@ -11,6 +11,11 @@ export interface ReceiptSettings {
   currency_rate?: string;
   receipt_size?: string;       // "58mm" | "80mm"
   receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple"
+  /** When "true", Android devices route prints through the Looped Labs
+   *  ESC POS Print Service (com.loopedlabs.escposprintservice) instead of
+   *  the standard HTML iframe. Default off — leave off unless Looped Labs
+   *  is actually installed on the terminal. */
+  escpos_print_enabled?: string;
 }
 
 export interface ReceiptOrderItem {

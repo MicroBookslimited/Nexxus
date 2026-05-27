@@ -265,7 +265,13 @@ export function printOrderReceipt(
   settings: ReceiptSettings = {},
   opts: PrintOrderReceiptOpts = {},
 ): void {
-  const mode = opts.forceMode ?? (isAndroid() ? "android" : "browser");
+  // Opt-in: the Looped Labs path is only used when the tenant explicitly
+  // enables it in Settings → POS Interface. Otherwise (and by default) we
+  // always use the existing HTML iframe pipeline, on every device. This
+  // prevents Chrome from redirecting to the Play Store on terminals that
+  // don't have the print service installed.
+  const escposEnabled = settings.escpos_print_enabled === "true";
+  const mode = opts.forceMode ?? (escposEnabled && isAndroid() ? "android" : "browser");
 
   if (mode === "android") {
     const text = buildEscPosReceiptText(order, settings);
