@@ -74,6 +74,30 @@ const SYSTEM_ROLES: { name: string; color: string; permissions: string[] }[] = [
     color: "#10b981",
     permissions: ["inventory.view","inventory.manage","reports.view","orders.view","scale.use"],
   },
+  {
+    name: "Accountant",
+    color: "#059669",
+    permissions: [
+      "orders.view","inventory.view","reports.view","reports.export",
+      "customers.view","staff.view","settings.view",
+    ],
+  },
+  {
+    name: "External Accountant",
+    color: "#64748b",
+    permissions: [
+      "orders.view","inventory.view","reports.view","reports.export",
+      "customers.view",
+    ],
+  },
+  {
+    name: "View Only",
+    color: "#9ca3af",
+    permissions: [
+      "orders.view","inventory.view","reports.view",
+      "customers.view","staff.view","kitchen.view","settings.view",
+    ],
+  },
 ];
 
 /* ─── Auth helper ─── */
@@ -86,11 +110,23 @@ function getTenantId(req: Parameters<typeof router.get>[1] extends (...a: infer 
 
 /* ─── Seed default roles for a new tenant ─── */
 export async function seedDefaultRoles(tenantId: number): Promise<void> {
-  const existing = await db.select({ id: rolesTable.id }).from(rolesTable).where(eq(rolesTable.tenantId, tenantId));
-  if (existing.length > 0) return;
-  await db.insert(rolesTable).values(
-    SYSTEM_ROLES.map(r => ({ tenantId, name: r.name, color: r.color, permissions: r.permissions, isSystem: true }))
-  );
+  const existing = await db.select({ name: rolesTable.name }).from(rolesTable).where(eq(rolesTable.tenantId, tenantId));
+  if (existing.length === 0) {
+    await db.insert(rolesTable).values(
+      SYSTEM_ROLES.map(r => ({ tenantId, name: r.name, color: r.color, permissions: r.permissions, isSystem: true }))
+    );
+    return;
+  }
+  // Idempotent catch-up for existing tenants: insert any SYSTEM_ROLES the
+  // tenant doesn't already have (matched by name). Won't touch roles the
+  // tenant has customized.
+  const existingNames = new Set(existing.map(r => r.name));
+  const missing = SYSTEM_ROLES.filter(r => !existingNames.has(r.name));
+  if (missing.length > 0) {
+    await db.insert(rolesTable).values(
+      missing.map(r => ({ tenantId, name: r.name, color: r.color, permissions: r.permissions, isSystem: true }))
+    );
+  }
 }
 
 /* ─── GET /api/roles ─── */
