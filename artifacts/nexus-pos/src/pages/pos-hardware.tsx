@@ -69,6 +69,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { buildReceiptHtml, openReceiptWindow, receiptOrderFrom } from "@/lib/receipt";
+import { printOrderReceipt } from "@/lib/print-receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -501,17 +502,15 @@ export function PosHardware() {
 
   const printReceipt = () => {
     if (!receiptOrder) return;
-    const html = buildReceiptHtml(
-      receiptOrderFrom(receiptOrder, {
-        name: receiptCustomerInfo?.name ?? null,
-        phone: receiptCustomerInfo?.phone ?? null,
-        email: receiptCustomerInfo?.email ?? null,
-        loyaltyPoints: receiptCustomerInfo?.loyaltyPoints ?? null,
-        outstandingBalance: receiptCustomerInfo?.outstandingBalance ?? null,
-      }),
-      settings,
-    );
-    openReceiptWindow(html);
+    const ro = receiptOrderFrom(receiptOrder, {
+      name: receiptCustomerInfo?.name ?? null,
+      phone: receiptCustomerInfo?.phone ?? null,
+      email: receiptCustomerInfo?.email ?? null,
+      loyaltyPoints: receiptCustomerInfo?.loyaltyPoints ?? null,
+      outstandingBalance: receiptCustomerInfo?.outstandingBalance ?? null,
+    });
+    const html = buildReceiptHtml(ro, settings);
+    printOrderReceipt(html, ro, settings);
   };
 
   /* ────────────────────────────────────────────────────────────────────── */

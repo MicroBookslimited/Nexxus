@@ -3,6 +3,7 @@ import nexxusLogoUrl from "@assets/EB8B578F-2602-4DD8-AB97-D02AF59C49D3_17759434
 import { CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayMessage } from "@/lib/customer-display-channel";
 import { motion, AnimatePresence } from "framer-motion";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom } from "@/lib/receipt";
+import { printOrderReceipt } from "@/lib/print-receipt";
 import {
   useListProducts,
   useCreateOrder,
@@ -416,32 +417,30 @@ function printReceiptWindow(
 ) {
   const LOYALTY_EARN_RATE = 10;
   const loyaltyPointsEarned = order.customerId ? Math.floor(order.total / LOYALTY_EARN_RATE) : undefined;
-  const html = buildReceiptHtml(
-    {
-      orderNumber: order.orderNumber,
-      createdAt: order.createdAt,
-      items: order.items,
-      subtotal: order.subtotal,
-      tax: order.tax,
-      total: order.total,
-      discountValue: order.discountValue,
-      paymentMethod: order.paymentMethod,
-      splitCardAmount: order.splitCardAmount,
-      splitCashAmount: order.splitCashAmount,
-      cashTendered: order.cashTendered,
-      notes: order.notes,
-      status: order.status,
-      loyaltyPointsEarned,
-      loyaltyPointsRedeemed: (order as any).loyaltyPointsRedeemed ?? undefined,
-      customerName: customer?.name ?? null,
-      customerPhone: customer?.phone ?? null,
-      customerEmail: customer?.email ?? null,
-      customerLoyaltyBalance: customer?.loyaltyPoints ?? null,
-      customerOutstandingBalance: customer?.outstandingBalance ?? null,
-    },
-    settings,
-  );
-  openReceiptWindow(html);
+  const receiptOrder = {
+    orderNumber: order.orderNumber,
+    createdAt: order.createdAt,
+    items: order.items,
+    subtotal: order.subtotal,
+    tax: order.tax,
+    total: order.total,
+    discountValue: order.discountValue,
+    paymentMethod: order.paymentMethod,
+    splitCardAmount: order.splitCardAmount,
+    splitCashAmount: order.splitCashAmount,
+    cashTendered: order.cashTendered,
+    notes: order.notes,
+    status: order.status,
+    loyaltyPointsEarned,
+    loyaltyPointsRedeemed: (order as any).loyaltyPointsRedeemed ?? undefined,
+    customerName: customer?.name ?? null,
+    customerPhone: customer?.phone ?? null,
+    customerEmail: customer?.email ?? null,
+    customerLoyaltyBalance: customer?.loyaltyPoints ?? null,
+    customerOutstandingBalance: customer?.outstandingBalance ?? null,
+  };
+  const html = buildReceiptHtml(receiptOrder, settings);
+  printOrderReceipt(html, receiptOrder, settings);
 }
 
 /* ─── Main POS component ─── */
@@ -4021,27 +4020,25 @@ export function POS() {
                         } catch { /* receipt still prints without customer */ }
                       }
                       // Show receipt
-                      const html = buildReceiptHtml(
-                        {
-                          orderNumber: order.orderNumber,
-                          createdAt: order.createdAt,
-                          items: order.items,
-                          subtotal: order.subtotal,
-                          tax: order.tax,
-                          total: order.total,
-                          discountValue: order.discountValue,
-                          paymentMethod: order.paymentMethod,
-                          cashTendered: order.cashTendered,
-                          notes: order.notes,
-                          customerName: cust?.name ?? null,
-                          customerPhone: cust?.phone ?? null,
-                          customerEmail: cust?.email ?? null,
-                          customerLoyaltyBalance: cust?.loyaltyPoints ?? null,
-                          customerOutstandingBalance: cust?.outstandingBalance ?? null,
-                        },
-                        settings ?? {},
-                      );
-                      openReceiptWindow(html);
+                      const receiptOrder = {
+                        orderNumber: order.orderNumber,
+                        createdAt: order.createdAt,
+                        items: order.items,
+                        subtotal: order.subtotal,
+                        tax: order.tax,
+                        total: order.total,
+                        discountValue: order.discountValue,
+                        paymentMethod: order.paymentMethod,
+                        cashTendered: order.cashTendered,
+                        notes: order.notes,
+                        customerName: cust?.name ?? null,
+                        customerPhone: cust?.phone ?? null,
+                        customerEmail: cust?.email ?? null,
+                        customerLoyaltyBalance: cust?.loyaltyPoints ?? null,
+                        customerOutstandingBalance: cust?.outstandingBalance ?? null,
+                      };
+                      const html = buildReceiptHtml(receiptOrder, settings ?? {});
+                      printOrderReceipt(html, receiptOrder, settings ?? {});
                     },
                     onError: () => {
                       toast({ title: "Charge failed", description: "Could not collect payment.", variant: "destructive" });

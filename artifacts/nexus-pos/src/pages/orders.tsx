@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings, useListStaff } from "@workspace/api-client-react";
 import { useStaff } from "@/contexts/StaffContext";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom } from "@/lib/receipt";
+import { printOrderReceipt } from "@/lib/print-receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -193,30 +194,28 @@ export function Orders() {
         cust = await fetchCustomerReceiptInfo(order.customerId);
       } catch { /* receipt still prints without customer */ }
     }
-    const html = buildReceiptHtml(
-      {
-        orderNumber: order.orderNumber,
-        createdAt: order.createdAt,
-        items: order.items,
-        subtotal: order.subtotal,
-        tax: order.tax,
-        total: order.total,
-        discountValue: order.discountValue,
-        paymentMethod: order.paymentMethod,
-        splitCardAmount: order.splitCardAmount,
-        splitCashAmount: order.splitCashAmount,
-        cashTendered: order.cashTendered,
-        notes: order.notes,
-        status: order.status,
-        customerName: cust?.name ?? order.customerName ?? null,
-        customerPhone: cust?.phone ?? null,
-        customerEmail: cust?.email ?? null,
-        customerLoyaltyBalance: cust?.loyaltyPoints ?? null,
-        customerOutstandingBalance: cust?.outstandingBalance ?? null,
-      },
-      settings ?? {},
-    );
-    openReceiptWindow(html);
+    const receiptOrder = {
+      orderNumber: order.orderNumber,
+      createdAt: order.createdAt,
+      items: order.items,
+      subtotal: order.subtotal,
+      tax: order.tax,
+      total: order.total,
+      discountValue: order.discountValue,
+      paymentMethod: order.paymentMethod,
+      splitCardAmount: order.splitCardAmount,
+      splitCashAmount: order.splitCashAmount,
+      cashTendered: order.cashTendered,
+      notes: order.notes,
+      status: order.status,
+      customerName: cust?.name ?? order.customerName ?? null,
+      customerPhone: cust?.phone ?? null,
+      customerEmail: cust?.email ?? null,
+      customerLoyaltyBalance: cust?.loyaltyPoints ?? null,
+      customerOutstandingBalance: cust?.outstandingBalance ?? null,
+    };
+    const html = buildReceiptHtml(receiptOrder, settings ?? {});
+    printOrderReceipt(html, receiptOrder, settings ?? {});
   };
 
   const openManagerPin = (type: "void" | "refund" | "reprint", orderId: number) => {
