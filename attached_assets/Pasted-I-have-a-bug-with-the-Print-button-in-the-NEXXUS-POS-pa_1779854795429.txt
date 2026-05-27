@@ -1,0 +1,120 @@
+I have a bug with the Print button in the NEXXUS POS payment 
+success modal. Here is exactly what is happening and what needs 
+to be fixed.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE BUG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When a cashier completes a sale and taps the Print button in the 
+payment success modal, the wrong thing prints.
+
+WHAT IS CURRENTLY PRINTING:
+The browser is printing a screenshot of the payment success modal 
+itself — including the "Payment Successful" heading, the item list 
+from the modal, and worst of all the Print, Email, WhatsApp, and 
+New Sale buttons. This is because the Print button is calling 
+window.print() which captures whatever is visible on screen.
+
+WHAT SHOULD BE PRINTING:
+A clean ESC/POS formatted thermal receipt on the Bluetooth printer. 
+The correct receipt format has already been confirmed working — it 
+shows the business name at the top, order number, items with 
+quantities and prices, subtotal, tax, total, payment method, 
+address, "Thank you for your business!", and "Powered by NEXXUS POS" 
+at the bottom with a large order number.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE ENVIRONMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- This PWA runs on an ELO ESY15i1B Android 8.1 tablet
+- The tablet has "ESC POS Print Service" by Looped Labs installed
+  (package name: com.loopedlabs.escposprintservice)
+- The Bluetooth printer is already paired and connected in Looped Labs
+  (address: 10:22:33:CD:F2:89)
+- Printer paper width: 80MM (3 inch) — 42 characters per line
+- The app also needs to work on Windows desktop browsers where 
+  window.print() is acceptable but must only print the receipt 
+  content — not buttons or UI elements
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHAT I NEED YOU TO DO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 1 — Find the Print button
+Find the Print button in the payment success modal component. 
+It is currently calling window.print() or a function that calls 
+window.print(). Show me the file and line number before changing 
+anything.
+
+Step 2 — Create src/utils/printReceipt.js
+Create a new print utility that handles two platforms:
+
+ON ANDROID:
+Build the receipt as a plain text string formatted for 80mm paper 
+(42 chars per line). Then send it to Looped Labs using this intent URL:
+
+  intent:;action=android.intent.action.SEND;type=text/plain;
+  S.android.intent.extra.TEXT={encodedReceiptText};
+  package=com.loopedlabs.escposprintservice;end
+
+Detect Android with: /Android/i.test(navigator.userAgent)
+
+Format the plain text receipt exactly like this:
+  - Business name centered in ALL CAPS
+  - Full line of dashes
+  - Order ref left, timestamp right (padded to 42 chars)
+  - Cashier name
+  - Order mode (and table number if Dine-In)
+  - Full line of dashes
+  - Each item: "{qty}x {name}" left, "{currency} {price}" right
+    (padded with spaces to exactly 42 chars total)
+  - Full line of dashes
+  - "Subtotal:" left, amount right (padded to 42)
+  - "Tax ({rate}%):" left, amount right (padded to 42)
+  - "TOTAL:" left, "{currency} {total}" right (padded to 42)
+  - Blank line
+  - "Payment:" left, method right
+  - "Tendered:" left, amount right (only if Cash)
+  - "Change:" left, amount right (only if Cash)
+  - Full line of dashes
+  - Address centered
+  - Phone centered
+  - Blank line
+  - "Thank you for your business!" centered
+  - "Powered by NEXXUS POS" centered
+  - 3 blank lines
+
+ON WINDOWS/DESKTOP:
+Inject a hidden <div> with clean receipt HTML into the page, 
+call window.print() with @media print CSS that hides everything 
+except that div, then remove the div after printing. 
+
+The @media print CSS must include:
+  body * { visibility: hidden !important; }
+  #nexxus-print-receipt, 
+  #nexxus-print-receipt * { visibility: visible !important; }
+  #nexxus-print-receipt { 
+    position: absolute; left: 0; top: 0; 
+    width: 80mm; font-family: monospace; font-size: 12px; 
+  }
+  @page { margin: 0; size: 80mm auto; }
+
+Step 3 — Replace the Print button handler
+Replace the current Print button onClick with a call to the new 
+printReceipt() function, passing all the current order data 
+from the payment modal.
+
+Add a 500ms debounce to prevent double prints if staff tap twice.
+Show a brief loading state on the button while printing.
+Show an error toast if printing fails.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RULES — DO NOT BREAK THESE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Do NOT touch the Email button or WhatsApp button — leave them alone
+- Do NOT call window.print() on Android under any circumstances
+- Do NOT change the payment modal layout or styling
+- Do NOT change any other feature — only fix the Print button
+- Lines in the plain text receipt must be exactly 42 characters — 
+  use space padding, not CSS, for alignment
+- Show me each file you are going to change BEFORE making changes
+  and wait for my confirmation
