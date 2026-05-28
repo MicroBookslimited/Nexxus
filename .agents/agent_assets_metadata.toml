@@ -60,3 +60,15 @@ id = "6WJu53kUu4ecjDTGjvzI_"
 uri = "file://NEXXUS_POS_Boutique_Manual.pdf"
 type = "pdf"
 title = "NEXXUS POS — Clothing Boutique Manual (PDF)"
+
+[[outputs]]
+id = "AhyWxkX2ZqtdaMooLa7GF"
+uri = "file://NEXXUS_POS_Restaurant_Manual.pdf"
+type = "pdf"
+title = "NEXXUS POS — Restaurant Manual"
+
+[[outputs]]
+id = "VvJ5Zt_MSFGmkrv7qztV7"
+uri = "file://NEXXUS_POS_Restaurant_Manual.md"
+type = "text"
+title = "Restaurant Manual (Markdown source)"
