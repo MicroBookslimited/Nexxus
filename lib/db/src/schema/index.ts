@@ -28,3 +28,4 @@ export * from "./price-logs";
 export * from "./promotions";
 export * from "./product-batches";
 export * from "./supplier-returns";
+export * from "./override-cards";

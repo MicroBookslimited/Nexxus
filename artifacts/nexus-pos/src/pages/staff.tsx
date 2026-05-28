@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useListStaff, useCreateStaff, useUpdateStaff, useDeleteStaff } from "@workspace/api-client-react";
 import type { StaffMember } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
@@ -10,13 +10,198 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Edit2, Trash2, UserCog, KeyRound, MapPin } from "lucide-react";
+import { Plus, Edit2, Trash2, UserCog, KeyRound, MapPin, CreditCard, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { getRoles, type RoleRow, TENANT_TOKEN_KEY } from "@/lib/saas-api";
 
 interface Location { id: number; name: string; address: string | null; isActive: boolean; }
 interface StaffLocationRow { id: number; locationId: number; isPrimary: boolean; locationName: string | null; }
+
+interface OverrideCardRow {
+  id: number;
+  staffId: number;
+  last4: string;
+  label: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+function OverrideCardsSection({ staffId }: { staffId: number }) {
+  const { toast } = useToast();
+  const [cards, setCards] = useState<OverrideCardRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [capturing, setCapturing] = useState(false);
+
+  const refresh = () => {
+    setLoading(true);
+    staffApi<OverrideCardRow[]>(`/staff/${staffId}/override-cards`)
+      .then(setCards)
+      .catch(() => setCards([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { refresh(); }, [staffId]);
+
+  const onCaptured = async (cardData: string, label: string | null) => {
+    try {
+      await staffApi(`/staff/${staffId}/override-cards`, {
+        method: "POST",
+        body: JSON.stringify({ cardData, label }),
+      });
+      toast({ title: "Card linked" });
+      setCapturing(false);
+      refresh();
+    } catch (e: any) {
+      toast({ title: "Could not link card", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const onDelete = async (cardId: number) => {
+    try {
+      await staffApi(`/staff/${staffId}/override-cards/${cardId}`, { method: "DELETE" });
+      toast({ title: "Card removed" });
+      refresh();
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-2 border-t border-border">
+      <div className="flex items-center justify-between">
+        <Label className="flex items-center gap-1.5">
+          <CreditCard className="h-3 w-3" />
+          Override Cards
+          <span className="text-xs text-muted-foreground font-normal">· swipe to authorize</span>
+        </Label>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCapturing(true)}>
+          <Plus className="h-3 w-3 mr-1" /> Add
+        </Button>
+      </div>
+      {loading ? (
+        <p className="text-xs text-muted-foreground">Loading…</p>
+      ) : cards.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No cards linked.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {cards.map(c => (
+            <div key={c.id} className="flex items-center justify-between gap-2 p-2 rounded-md border border-border bg-secondary/30">
+              <div className="min-w-0">
+                <p className="text-xs font-mono">•••• {c.last4}</p>
+                {c.label && <p className="text-[10px] text-muted-foreground truncate">{c.label}</p>}
+              </div>
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => onDelete(c.id)}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      {capturing && (
+        <CardCaptureDialog onClose={() => setCapturing(false)} onCaptured={onCaptured} />
+      )}
+    </div>
+  );
+}
+
+function CardCaptureDialog({
+  onClose,
+  onCaptured,
+}: {
+  onClose: () => void;
+  onCaptured: (cardData: string, label: string | null) => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [status, setStatus] = useState<"waiting" | "captured">("waiting");
+  const buffer = useRef("");
+  const startedAt = useRef(0);
+  const captured = useRef("");
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Skip when typing into the Label input so the user can still type `;`/`%`
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isEditable =
+        tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable;
+      // Allow swipes through inputs too (mag-stripe readers always start
+      // with %/; — collect them globally) BUT once buffered, don't echo.
+      const now = Date.now();
+      const inSwipe = buffer.current.length > 0 && (now - startedAt.current) < 3000;
+
+      if (e.key === "%" || e.key === ";") {
+        buffer.current = e.key;
+        startedAt.current = now;
+        if (isEditable) e.preventDefault();
+        return;
+      }
+      if (inSwipe) {
+        if (e.key === "Enter" || e.key === "?") {
+          const data = buffer.current + (e.key === "?" ? "?" : "");
+          buffer.current = "";
+          captured.current = data;
+          setStatus("captured");
+          e.preventDefault();
+          return;
+        }
+        if (e.key.length === 1) {
+          buffer.current += e.key;
+          e.preventDefault();
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CreditCard className="h-4 w-4 text-primary" />
+            Capture Override Card
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          {status === "waiting" ? (
+            <div className="text-center py-8 space-y-3">
+              <CreditCard className="h-12 w-12 text-primary/40 mx-auto animate-pulse" />
+              <p className="text-sm font-medium">Swipe the card now…</p>
+              <p className="text-xs text-muted-foreground">Any magstripe or HID card reader works.</p>
+            </div>
+          ) : (
+            <div className="text-center py-4 space-y-3">
+              <div className="h-12 w-12 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto">
+                <CreditCard className="h-6 w-6 text-emerald-500" />
+              </div>
+              <p className="text-sm font-medium text-emerald-500">Card captured</p>
+            </div>
+          )}
+          <div className="space-y-1">
+            <Label className="text-xs">Label (optional)</Label>
+            <Input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Black fob, Backup card"
+              maxLength={50}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            disabled={status !== "captured"}
+            onClick={() => onCaptured(captured.current, label.trim() || null)}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function staffAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem(TENANT_TOKEN_KEY);
@@ -240,10 +425,10 @@ function StaffDialog({
             </Label>
             <Input
               type="password"
-              maxLength={6}
+              maxLength={8}
               value={form.pin}
               onChange={(e) => setForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, "") }))}
-              placeholder={isEditing ? "••••" : "4–6 digit PIN"}
+              placeholder={isEditing ? "••••" : "4–8 digit PIN"}
             />
           </div>
           <div className="space-y-1">
@@ -280,6 +465,9 @@ function StaffDialog({
                 onCheckedChange={(checked) => setForm((f) => ({ ...f, isActive: checked }))}
               />
             </div>
+          )}
+          {isEditing && member && (
+            <OverrideCardsSection staffId={member.id} />
           )}
         </div>
         <DialogFooter>

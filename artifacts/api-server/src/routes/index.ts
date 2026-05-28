@@ -50,6 +50,7 @@ import priceManagerRouter from "./price-manager";
 import promotionsRouter from "./promotions";
 import productBatchesRouter from "./product-batches";
 import supplierReturnsRouter from "./supplier-returns";
+import overrideCardsRouter from "./override-cards";
 
 const router: IRouter = Router();
 
@@ -104,5 +105,6 @@ router.use(priceManagerRouter);
 router.use(promotionsRouter);
 router.use(productBatchesRouter);
 router.use(supplierReturnsRouter);
+router.use(overrideCardsRouter);
 
 export default router;
