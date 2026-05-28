@@ -265,13 +265,17 @@ export function printOrderReceipt(
   settings: ReceiptSettings = {},
   opts: PrintOrderReceiptOpts = {},
 ): void {
-  // Opt-in: the Looped Labs path is only used when the tenant explicitly
-  // enables it in Settings → POS Interface. Otherwise (and by default) we
-  // always use the existing HTML iframe pipeline, on every device. This
-  // prevents Chrome from redirecting to the Play Store on terminals that
-  // don't have the print service installed.
-  const escposEnabled = settings.escpos_print_enabled === "true";
-  const mode = opts.forceMode ?? (escposEnabled && isAndroid() ? "android" : "browser");
+  // On Android we *always* try the Looped Labs ESC/POS intent first.
+  // The Looped Labs app expects plain ESC/POS text (which we build
+  // below) and chokes when handed styled HTML via Android's print
+  // picker — that path produced the "ESC POS USB Print Service has
+  // stopped" crashes on the ELO tablets. The intent path has a built-in
+  // safety net: if Looped Labs is not installed, the page is still
+  // visible 1.5s later and we fall back to the HTML iframe so the
+  // cashier always gets a receipt. The tenant can still force the
+  // browser path by setting escpos_print_enabled="false" explicitly.
+  const escposDisabled = settings.escpos_print_enabled === "false";
+  const mode = opts.forceMode ?? (isAndroid() && !escposDisabled ? "android" : "browser");
 
   if (mode === "android") {
     const text = buildEscPosReceiptText(order, settings);
