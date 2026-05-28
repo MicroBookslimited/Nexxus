@@ -167,7 +167,7 @@ export function AdminInvitePage() {
         </Card>
 
         <p className="text-center text-xs text-slate-500">
-          Powered by MicroBooks · NEXXUS POS
+          Powered by NEXXUS POS · NEXXUS POS
         </p>
       </div>
     </div>

@@ -97,7 +97,7 @@ function IdleView({ businessName, isLandscape }: { businessName: string; isLands
       </div>
 
       <p className="absolute bottom-4 text-xs text-slate-600 tracking-widest uppercase">
-        Powered by MicroBooks
+        Powered by NEXXUS POS
       </p>
     </div>
   );
@@ -330,7 +330,7 @@ function ThankYouView({
       </p>
 
       <p className="absolute bottom-4 text-xs text-slate-600 tracking-widest uppercase">
-        Powered by MicroBooks
+        Powered by NEXXUS POS
       </p>
     </div>
   );

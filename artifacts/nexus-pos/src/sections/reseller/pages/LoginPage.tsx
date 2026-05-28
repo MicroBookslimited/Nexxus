@@ -88,7 +88,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
-          Powered by MicroBooks
+          Powered by NEXXUS POS
         </p>
       </div>
     </div>

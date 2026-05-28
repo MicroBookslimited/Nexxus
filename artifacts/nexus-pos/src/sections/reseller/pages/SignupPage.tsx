@@ -114,7 +114,7 @@ export default function SignupPage() {
             <Link href="/login" className="text-primary hover:underline font-medium">Sign in</Link>
           </p>
         </div>
-        <p className="text-center text-xs text-muted-foreground mt-6">Powered by MicroBooks</p>
+        <p className="text-center text-xs text-muted-foreground mt-6">Powered by NEXXUS POS</p>
       </div>
     </div>
   );

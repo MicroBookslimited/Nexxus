@@ -732,7 +732,7 @@ export function Onboarding() {
                 className="bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 px-8 rounded-lg flex items-center justify-center gap-2 mx-auto transition-colors">
                 Go to Dashboard <ArrowRight size={16} />
               </button>
-              <p className="text-xs text-[#475569] mt-6">Powered by MicroBooks</p>
+              <p className="text-xs text-[#475569] mt-6">Powered by NEXXUS POS</p>
             </div>
           )}
         </div>

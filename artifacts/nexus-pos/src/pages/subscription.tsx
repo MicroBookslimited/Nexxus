@@ -635,7 +635,7 @@ export function SubscriptionPage() {
         </div>
       )}
 
-      <p className="text-center text-xs text-[#2a3a55] mt-8">Powered by MicroBooks</p>
+      <p className="text-center text-xs text-[#2a3a55] mt-8">Powered by NEXXUS POS</p>
     </div>
   );
 }

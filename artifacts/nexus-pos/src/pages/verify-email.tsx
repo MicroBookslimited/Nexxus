@@ -81,7 +81,7 @@ export function VerifyEmail() {
         )}
       </div>
 
-      <p className="text-slate-600 text-xs mt-8">Powered by MicroBooks · NEXXUS POS</p>
+      <p className="text-slate-600 text-xs mt-8">Powered by NEXXUS POS · NEXXUS POS</p>
     </div>
   );
 }
