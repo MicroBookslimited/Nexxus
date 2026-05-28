@@ -637,7 +637,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 <LogOut className="h-4 w-4" />
                 Sign Out
               </button>
-              <p className="text-[10px] text-muted-foreground/50 text-center mt-2">Powered by NEXXUS POS</p>
+              <p className="text-[10px] text-muted-foreground/50 text-center mt-2">Powered by MicroBooks</p>
             </div>
           </div>
         </div>
@@ -756,7 +756,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* ── FOOTER (desktop only) ────────────────────────────── */}
       <footer className="shrink-0 border-t border-border py-1.5 text-center text-xs text-muted-foreground/60 bg-card hidden md:block">
-        Powered by NEXXUS POS
+        Powered by MicroBooks
       </footer>
 
       {/* ── SWITCH USER DIALOG ───────────────────────────────── */}

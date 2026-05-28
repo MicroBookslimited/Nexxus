@@ -311,7 +311,7 @@ export function Login() {
       </main>
 
       <footer className="shrink-0 py-4 text-center text-xs text-muted-foreground relative z-10">
-        Powered by NEXXUS POS
+        Powered by MicroBooks
       </footer>
     </div>
   );

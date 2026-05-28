@@ -847,7 +847,7 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
         <tbody>${orderRows}</tbody>
       </table>` : ""}
       <div style="border-top:1px dashed #000;margin:10px 0"></div>
-      <p style="text-align:center;font-size:10px;color:#888">Powered by NEXXUS POS</p>
+      <p style="text-align:center;font-size:10px;color:#888">Powered by MicroBooks</p>
     </div>
   `;
 }

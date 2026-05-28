@@ -621,7 +621,7 @@ export default function MenuPage() {
       />
 
       <footer className="border-t border-[#1e2d4a] py-2 px-4 text-center">
-        <p className="text-xs text-slate-600">Powered by NEXXUS POS</p>
+        <p className="text-xs text-slate-600">Powered by MicroBooks</p>
       </footer>
     </div>
   );

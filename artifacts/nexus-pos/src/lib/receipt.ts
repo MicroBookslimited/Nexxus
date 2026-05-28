@@ -1711,14 +1711,58 @@ export function openReceiptWindow(html: string): void {
   // exits fullscreen) is ignored by KioskLock.
   setPrintingFlag();
 
+  // Inject a @media print stylesheet into the PARENT document that hides
+  // every visible app chrome (modals, toasts, sidebar, payment-success
+  // dialog, etc.) and promotes the hidden print iframe to a full-page
+  // visible element during the print dialog only. Without this, Android
+  // Chrome's print pipeline rasterises the visible viewport — i.e. the
+  // "Payment Successful" dialog — instead of the offscreen 0×0 iframe,
+  // which is exactly what was happening on the ELO tablets.
+  const PRINT_STYLE_ID = "nexus-print-style";
+  const prevStyle = document.getElementById(PRINT_STYLE_ID);
+  if (prevStyle) prevStyle.parentNode?.removeChild(prevStyle);
+  const style = document.createElement("style");
+  style.id = PRINT_STYLE_ID;
+  style.media = "print";
+  style.textContent = `
+    html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
+    body > *:not(#nexus-print-frame) { display: none !important; }
+    /* Radix Dialog portals + toast portals render outside <body>'s direct
+       children sometimes; nuke any non-iframe top-level region too. */
+    [data-radix-portal], [data-sonner-toaster], [role="dialog"], [role="alertdialog"] {
+      display: none !important;
+    }
+    #nexus-print-frame {
+      display: block !important;
+      position: static !important;
+      width: 100% !important;
+      height: auto !important;
+      min-height: 100vh !important;
+      border: 0 !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      pointer-events: auto !important;
+      page-break-inside: avoid;
+    }
+  `;
+  document.head.appendChild(style);
+
   // Clear the flag once the print dialog closes. The afterprint event fires
   // reliably on all modern browsers when the dialog is dismissed (print or
   // cancel). Belt-and-suspenders: also clear after 30 s in case the event
   // never fires (e.g. the iframe was torn down before afterprint).
-  const afterPrintFallbackTimer = setTimeout(clearPrintingFlag, 30_000);
+  const removePrintStyle = () => {
+    const s = document.getElementById(PRINT_STYLE_ID);
+    if (s) s.parentNode?.removeChild(s);
+  };
+  const afterPrintFallbackTimer = setTimeout(() => {
+    clearPrintingFlag();
+    removePrintStyle();
+  }, 30_000);
   const clearOnAfterPrint = () => {
     clearTimeout(afterPrintFallbackTimer);
     clearPrintingFlag();
+    removePrintStyle();
     window.removeEventListener("afterprint", clearOnAfterPrint);
   };
   window.addEventListener("afterprint", clearOnAfterPrint, { once: true });

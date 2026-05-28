@@ -1874,7 +1874,7 @@ export function POS() {
               <>
                 <img src={businessLogoUrl} alt={businessDisplayName || "Business Logo"} className="max-h-24 max-w-48 object-contain" />
                 {businessDisplayName && <p className="text-sm text-muted-foreground text-center">{businessDisplayName}</p>}
-                <p className="text-xs text-muted-foreground/60 text-center">Powered by NEXXUS POS</p>
+                <p className="text-xs text-muted-foreground/60 text-center">Powered by MicroBooks</p>
               </>
             ) : (
               <>
@@ -1893,7 +1893,7 @@ export function POS() {
 
           {!businessLogoUrl && (
             <p className="text-xs text-muted-foreground text-center mt-2">
-              Powered by NEXXUS POS
+              Powered by MicroBooks
             </p>
           )}
         </div>
@@ -1944,7 +1944,7 @@ export function POS() {
             </button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground absolute bottom-4">Powered by NEXXUS POS</p>
+        <p className="text-xs text-muted-foreground absolute bottom-4">Powered by MicroBooks</p>
       </div>
     );
   }
@@ -3766,7 +3766,7 @@ export function POS() {
                 </div>
               )}
 
-              <p className="text-center text-xs text-muted-foreground pt-2 border-t border-border">Powered by NEXXUS POS</p>
+              <p className="text-center text-xs text-muted-foreground pt-2 border-t border-border">Powered by MicroBooks</p>
             </div>
           )}
 
