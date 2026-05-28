@@ -633,12 +633,19 @@ function buildSupermarketReceiptHtml(
   const itemRowsHtml = order.items.map(item => {
     const bc = lineBarcode(item);
     const qtyPrefix = item.quantity !== 1 ? `${item.quantity}× ` : "";
+    const unit = item.unitPrice;
+    const orig = item.originalUnitPrice;
+    const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     let html = `
       <div class="sm-item">
-        <span class="sm-item-name">${escHtml(qtyPrefix + item.productName.toUpperCase())}</span>
+        <span class="sm-item-name">${escHtml(qtyPrefix + item.productName.toUpperCase())}${unitStr}</span>
         <span class="sm-item-bc">${escHtml(bc)}</span>
         <span class="sm-item-price">${fmtNum(item.lineTotal)}${taxIndicator}</span>
       </div>`;
+    if (orig != null && unit != null && orig > unit) {
+      const lineSaving = (orig - unit) * item.quantity;
+      html += `<div class="sm-mod" style="color:#0a7a0a;font-weight:700;">&nbsp;&nbsp;↳ You save (was ${fmtNum(orig)}) -${fmtNum(lineSaving)}</div>`;
+    }
     for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
       html += `<div class="sm-mod">&nbsp;&nbsp;↳ ${escHtml(v.optionName)}</div>`;
     }
@@ -987,15 +994,22 @@ function buildConvenienceReceiptHtml(
     ? `<div class="cv-center"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:54px;max-width:140px;object-fit:contain;margin-bottom:3px;" /></div>`
     : "";
 
-  // Items — each line: QTY  Name  Price T/B
+  // Items — each line: QTY  Name @ unit  Price T/B
   const itemRowsHtml = order.items.map(item => {
     const qtyStr = String(item.quantity).padStart(1, " ");
+    const unit = item.unitPrice;
+    const orig = item.originalUnitPrice;
+    const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     let html = `
       <div class="cv-item">
         <span class="cv-item-qty">${escHtml(qtyStr)}</span>
-        <span class="cv-item-name">${escHtml(item.productName)}</span>
+        <span class="cv-item-name">${escHtml(item.productName)}${unitStr}</span>
         <span class="cv-item-price">${fmtNum(item.lineTotal)}${taxInd}</span>
       </div>`;
+    if (orig != null && unit != null && orig > unit) {
+      const lineSaving = (orig - unit) * item.quantity;
+      html += `<div class="cv-mod" style="color:#0a7a0a;font-weight:700;">&nbsp;&nbsp;↳ You save (was ${fmtNum(orig)}) -${fmtNum(lineSaving)}</div>`;
+    }
     for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
       html += `<div class="cv-mod">&nbsp;&nbsp;↳ ${escHtml(v.optionName)}</div>`;
     }
@@ -1288,19 +1302,29 @@ function buildStapleReceiptHtml(
   const addressLines = (businessAddress || "")
     .split(/\r?\n|,/).map(s => s.trim()).filter(Boolean);
 
-  // Item rows — QTY | name\nSKU | price N
+  // Item rows — QTY | name\nSKU\n@unit | price N
   const itemRowsHtml = order.items.map((item, i) => {
     const sku = itemSku(item, i);
+    const unit = item.unitPrice;
+    const orig = item.originalUnitPrice;
+    const subLines: string[] = [];
+    if (unit != null) subLines.push(`@ ${fmtNum(unit)}`);
+    if (orig != null && unit != null && orig > unit) {
+      const lineSaving = (orig - unit) * item.quantity;
+      subLines.push(`You save (was ${fmtNum(orig)}) -${fmtNum(lineSaving)}`);
+    }
     const mods = [
       ...((item.variantChoices as { optionName: string }[] | null) ?? []).map(v => `↳ ${v.optionName}`),
       ...((item.modifierChoices as { optionName: string }[] | null) ?? []).map(m => `+ ${m.optionName}`),
     ];
+    const savingsIdx = (orig != null && unit != null && orig > unit) ? subLines.length - 1 : -1;
     return `
       <div class="st-item-row">
         <span class="st-qty">${item.quantity}</span>
         <span class="st-name-sku">
           <span class="st-name">${escHtml(item.productName)}</span>
           <span class="st-sku">${escHtml(sku)}</span>
+          ${subLines.map((s, idx) => `<span class="st-mod"${idx === savingsIdx ? ' style="color:#0a7a0a;font-weight:700;"' : ""}>${escHtml(s)}</span>`).join("")}
           ${mods.map(m => `<span class="st-mod">${escHtml(m)}</span>`).join("")}
         </span>
         <span class="st-price">${fmtNum(item.lineTotal)}${escHtml(taxInd)}</span>
@@ -1588,7 +1612,14 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   lines.push(`─────────────────────`);
 
   for (const item of order.items) {
-    lines.push(`${item.quantity}× ${item.productName}  ${fmtNum(item.lineTotal)}`);
+    const unit = item.unitPrice;
+    const orig = item.originalUnitPrice;
+    const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
+    lines.push(`${item.quantity}× ${item.productName}${unitStr}  ${fmtNum(item.lineTotal)}`);
+    if (orig != null && unit != null && orig > unit) {
+      const lineSaving = (orig - unit) * item.quantity;
+      lines.push(`   ↳ You save (was ${fmtNum(orig)}) -${fmtNum(lineSaving)}`);
+    }
     for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
       lines.push(`   ↳ ${v.optionName}`);
     }
