@@ -1724,25 +1724,25 @@ export function openReceiptWindow(html: string): void {
   const style = document.createElement("style");
   style.id = PRINT_STYLE_ID;
   style.media = "print";
+  // Critical: do NOT resize the iframe in print CSS. The receipt HTML
+  // inside the iframe already sets its own @page size (80mm) and
+  // dimensions; forcing 100vw/100vh here makes Android's ESC/POS USB
+  // print service receive an absurdly tall canvas and crash. The only
+  // job of this stylesheet is to hide the parent app chrome (modals,
+  // toasts, sidebar) so the printer renders the iframe's intrinsic
+  // content rather than the visible "Payment Successful" dialog.
   style.textContent = `
     html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
     body > *:not(#nexus-print-frame) { display: none !important; }
-    /* Radix Dialog portals + toast portals render outside <body>'s direct
-       children sometimes; nuke any non-iframe top-level region too. */
     [data-radix-portal], [data-sonner-toaster], [role="dialog"], [role="alertdialog"] {
       display: none !important;
     }
     #nexus-print-frame {
       display: block !important;
       position: static !important;
-      width: 100% !important;
-      height: auto !important;
-      min-height: 100vh !important;
       border: 0 !important;
       opacity: 1 !important;
       visibility: visible !important;
-      pointer-events: auto !important;
-      page-break-inside: avoid;
     }
   `;
   document.head.appendChild(style);
