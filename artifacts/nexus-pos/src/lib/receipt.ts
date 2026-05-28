@@ -242,8 +242,19 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   }
 
   // ── Items ─────────────────────────────────────────────────────────────────
+  // Each line shows: "<qty>× <name> @ <unitPrice>" on the left and the line
+  // total on the right. When a per-line saving applies (promo or volume tier
+  // brought unitPrice below originalUnitPrice), we also render a green
+  // "↳ You save: -<amount>" sub-line directly under the item.
   const itemsHtml = order.items.map(item => {
-    let html = `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)}</span><span class="nowrap">${fmtNum(item.lineTotal)}</span></div>`;
+    const unit = item.unitPrice;
+    const orig = item.originalUnitPrice;
+    const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
+    let html = `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)}${unitStr}</span><span class="nowrap">${fmtNum(item.lineTotal)}</span></div>`;
+    if (orig != null && unit != null && orig > unit) {
+      const lineSaving = (orig - unit) * item.quantity;
+      html += `<div class="row sub-row savings"><span>&nbsp;&#8627; You save (was ${fmtNum(orig)})</span><span class="nowrap">-${fmtNum(lineSaving)}</span></div>`;
+    }
     for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
       html += `<div class="mod-line">&nbsp;&#8627; ${escHtml(v.optionName)}</div>`;
     }
