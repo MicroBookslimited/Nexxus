@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, eq, desc, inArray } from "drizzle-orm";
+import { and, eq, desc, inArray, isNull } from "drizzle-orm";
 import { db, productsTable, priceChangeLogsTable, rolesTable, staffTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
@@ -91,15 +91,16 @@ async function loadCandidates(
   productIds: number[] | undefined,
 ) {
   if (scope === "all") {
-    return db.select().from(productsTable).where(eq(productsTable.tenantId, tenantId));
+    return db.select().from(productsTable)
+      .where(and(eq(productsTable.tenantId, tenantId), isNull(productsTable.archivedAt)));
   }
   if (scope === "category" && categories && categories.length > 0) {
     return db.select().from(productsTable)
-      .where(and(eq(productsTable.tenantId, tenantId), inArray(productsTable.category, categories)));
+      .where(and(eq(productsTable.tenantId, tenantId), inArray(productsTable.category, categories), isNull(productsTable.archivedAt)));
   }
   if (scope === "products" && productIds && productIds.length > 0) {
     return db.select().from(productsTable)
-      .where(and(eq(productsTable.tenantId, tenantId), inArray(productsTable.id, productIds)));
+      .where(and(eq(productsTable.tenantId, tenantId), inArray(productsTable.id, productIds), isNull(productsTable.archivedAt)));
   }
   return [];
 }

@@ -5,6 +5,7 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProductStockMethodOverride } from "./productStockMethodOverride";
 import type { ProductStructureType } from "./productStructureType";
 import type { ProductUnitOfMeasure } from "./productUnitOfMeasure";
 
@@ -26,9 +27,15 @@ export interface Product {
   structureType: ProductStructureType;
   /** When false, sales tax is not applied to this product at checkout. */
   isTaxable: boolean;
+  /** When true, stock for this product is tracked per-batch with batch/lot numbers and optional expiry dates. */
+  trackBatches?: boolean;
+  /** Per-product override of the tenant-wide FIFO/LIFO stock method. */
+  stockMethodOverride?: ProductStockMethodOverride;
   hasVariants: boolean;
   hasModifiers: boolean;
   /** True when this product has at least one composite component row. */
   isComposite: boolean;
   createdAt: Date;
+  /** Soft-delete timestamp. When set the product is archived (hidden from catalog/POS/menu) but its history is preserved. NULL = active. */
+  archivedAt?: Date | null;
 }

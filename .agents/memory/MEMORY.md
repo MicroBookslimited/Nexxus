@@ -1,1 +1,2 @@
 - [Looped Labs ESC/POS Android printing](looped-labs-printing.md) — distinct USB/BT/Network package ids; print plain text via org.escpos.intent.action.PRINT, never HTML (HTML crashes the service).
+- [Repo is not typecheck-clean](typecheck-preexisting-errors.md) — api-server & nexus-pos have pre-existing TS errors; filter typecheck output to your files before assuming you broke it. typecheck:libs IS clean.

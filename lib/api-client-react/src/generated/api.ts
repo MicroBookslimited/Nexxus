@@ -21,6 +21,8 @@ import type {
   AppSettings,
   AuthenticateStaffBody,
   AvailableComposite,
+  BulkProductIdsBody,
+  BulkProductsResult,
   CashPayout,
   CashSession,
   CashSessionDetail,
@@ -607,6 +609,178 @@ export const useDeleteProduct = <
   TContext
 > => {
   return useMutation(getDeleteProductMutationOptions(options));
+};
+
+/**
+ * @summary Archive (soft-delete) multiple products. History is preserved.
+ */
+export const getBulkArchiveProductsUrl = () => {
+  return `/api/products/bulk-archive`;
+};
+
+export const bulkArchiveProducts = async (
+  bulkProductIdsBody: BulkProductIdsBody,
+  options?: RequestInit,
+): Promise<BulkProductsResult> => {
+  return customFetch<BulkProductsResult>(getBulkArchiveProductsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkProductIdsBody),
+  });
+};
+
+export const getBulkArchiveProductsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkArchiveProducts>>,
+    TError,
+    { data: BodyType<BulkProductIdsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkArchiveProducts>>,
+  TError,
+  { data: BodyType<BulkProductIdsBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkArchiveProducts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkArchiveProducts>>,
+    { data: BodyType<BulkProductIdsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkArchiveProducts(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkArchiveProductsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkArchiveProducts>>
+>;
+export type BulkArchiveProductsMutationBody = BodyType<BulkProductIdsBody>;
+export type BulkArchiveProductsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Archive (soft-delete) multiple products. History is preserved.
+ */
+export const useBulkArchiveProducts = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkArchiveProducts>>,
+    TError,
+    { data: BodyType<BulkProductIdsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkArchiveProducts>>,
+  TError,
+  { data: BodyType<BulkProductIdsBody> },
+  TContext
+> => {
+  return useMutation(getBulkArchiveProductsMutationOptions(options));
+};
+
+/**
+ * @summary Restore previously archived products
+ */
+export const getBulkRestoreProductsUrl = () => {
+  return `/api/products/bulk-restore`;
+};
+
+export const bulkRestoreProducts = async (
+  bulkProductIdsBody: BulkProductIdsBody,
+  options?: RequestInit,
+): Promise<BulkProductsResult> => {
+  return customFetch<BulkProductsResult>(getBulkRestoreProductsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkProductIdsBody),
+  });
+};
+
+export const getBulkRestoreProductsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkRestoreProducts>>,
+    TError,
+    { data: BodyType<BulkProductIdsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkRestoreProducts>>,
+  TError,
+  { data: BodyType<BulkProductIdsBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkRestoreProducts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkRestoreProducts>>,
+    { data: BodyType<BulkProductIdsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkRestoreProducts(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkRestoreProductsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkRestoreProducts>>
+>;
+export type BulkRestoreProductsMutationBody = BodyType<BulkProductIdsBody>;
+export type BulkRestoreProductsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Restore previously archived products
+ */
+export const useBulkRestoreProducts = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkRestoreProducts>>,
+    TError,
+    { data: BodyType<BulkProductIdsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkRestoreProducts>>,
+  TError,
+  { data: BodyType<BulkProductIdsBody> },
+  TContext
+> => {
+  return useMutation(getBulkRestoreProductsMutationOptions(options));
 };
 
 /**

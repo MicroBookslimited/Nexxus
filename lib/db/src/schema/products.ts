@@ -49,6 +49,11 @@ export const productsTable = pgTable("products", {
   // Optional per-product override of the tenant-wide stock method.
   // 'fifo' | 'lifo' | null (inherit from app_settings.stock_method).
   stockMethodOverride: text("stock_method_override"),
+  // Soft-delete / archive timestamp. When set, the product is hidden from
+  // the catalog, POS, online menu, and bulk-pricing tools, but all of its
+  // historical records (orders, purchase bills, accounting links) remain
+  // intact. NULL = active. Restorable by clearing this column.
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
 });
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({ id: true, createdAt: true });

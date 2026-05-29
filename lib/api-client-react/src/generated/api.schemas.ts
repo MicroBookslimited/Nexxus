@@ -31,6 +31,18 @@ export const ProductStructureType = {
   composite: "composite",
 } as const;
 
+/**
+ * Per-product override of the tenant-wide FIFO/LIFO stock method.
+ */
+export type ProductStockMethodOverride =
+  | (typeof ProductStockMethodOverride)[keyof typeof ProductStockMethodOverride]
+  | null;
+
+export const ProductStockMethodOverride = {
+  fifo: "fifo",
+  lifo: "lifo",
+} as const;
+
 export interface Product {
   id: number;
   name: string;
@@ -49,11 +61,26 @@ export interface Product {
   structureType: ProductStructureType;
   /** When false, sales tax is not applied to this product at checkout. */
   isTaxable: boolean;
+  /** When true, stock for this product is tracked per-batch with batch/lot numbers and optional expiry dates. */
+  trackBatches?: boolean;
+  /** Per-product override of the tenant-wide FIFO/LIFO stock method. */
+  stockMethodOverride?: ProductStockMethodOverride;
   hasVariants: boolean;
   hasModifiers: boolean;
   /** True when this product has at least one composite component row. */
   isComposite: boolean;
   createdAt: string;
+  /** Soft-delete timestamp. When set the product is archived (hidden from catalog/POS/menu) but its history is preserved. NULL = active. */
+  archivedAt?: string | null;
+}
+
+export interface BulkProductIdsBody {
+  /** @minItems 1 */
+  ids: number[];
+}
+
+export interface BulkProductsResult {
+  count: number;
 }
 
 export type CreateProductBodyUnitOfMeasure =
@@ -912,6 +939,10 @@ export interface EmailSentResponse {
 export type ListProductsParams = {
   category?: string;
   search?: string;
+  /**
+   * When true, include soft-deleted (archived) products in the response. Defaults to false.
+   */
+  includeArchived?: boolean;
 };
 
 export type GetAvailableCompositeParams = {

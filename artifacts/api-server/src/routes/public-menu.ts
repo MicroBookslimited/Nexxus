@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db, tenantsTable, productsTable, ordersTable, orderItemsTable, variantGroupsTable, variantOptionsTable, modifierGroupsTable, modifierOptionsTable, appSettingsTable } from "@workspace/db";
 import { z } from "zod";
 
@@ -37,7 +37,7 @@ router.get("/public/menu/:slug", async (req, res): Promise<void> => {
   if (!tenantId) { res.status(404).json({ error: "Business not found" }); return; }
 
   const products = await db.select().from(productsTable).where(
-    and(eq(productsTable.tenantId, tenantId), eq(productsTable.inStock, true))
+    and(eq(productsTable.tenantId, tenantId), eq(productsTable.inStock, true), isNull(productsTable.archivedAt))
   );
 
   const enriched = await Promise.all(products.map(async (p) => {

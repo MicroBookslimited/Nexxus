@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, like, and, inArray, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
+import { eq, like, and, inArray, isNull, isNotNull, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
 import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable, compositeProductComponentsTable } from "@workspace/db";
 import { logAudit } from "./audit";
 import {
@@ -12,6 +12,8 @@ import {
   DeleteProductParams,
   ListProductsResponse,
   ListProductsQueryParams,
+  BulkArchiveProductsBody,
+  BulkRestoreProductsBody,
 } from "@workspace/api-zod";
 import { verifyTenantToken } from "./saas-auth";
 
@@ -61,6 +63,11 @@ router.get("/products", async (req, res): Promise<void> => {
   }
 
   const conditions: SQL[] = [eq(productsTable.tenantId, tenantId)];
+  // Archived (soft-deleted) products are hidden by default. Pass
+  // includeArchived=true to surface them (e.g. the "Show archived" toggle).
+  if (!query.data.includeArchived) {
+    conditions.push(isNull(productsTable.archivedAt));
+  }
   if (query.data.category) {
     conditions.push(eq(productsTable.category, query.data.category));
   }
@@ -409,8 +416,13 @@ router.delete("/products/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  // Soft delete (archive): we never hard-delete a product because its
+  // historical records (order_items, purchase_bill_items, accounting links)
+  // must be preserved for audit/reporting. Archiving hides it from the
+  // catalog/POS/menu while keeping all history. Restorable via bulk-restore.
   const [product] = await db
-    .delete(productsTable)
+    .update(productsTable)
+    .set({ archivedAt: new Date() })
     .where(and(eq(productsTable.id, params.data.id), eq(productsTable.tenantId, tenantId)))
     .returning();
 
@@ -419,8 +431,63 @@ router.delete("/products/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  await logAudit({ tenantId, action: "product.delete", entityType: "product", entityId: product.id, details: { name: product.name } });
+  await logAudit({ tenantId, action: "product.archive", entityType: "product", entityId: product.id, details: { name: product.name } });
   res.sendStatus(204);
+});
+
+/* ── Bulk archive / restore (soft delete) ──────────────────────────────────
+ * Bulk delete preserves history by archiving rather than hard-deleting.
+ * Both endpoints are tenant-scoped and idempotent. */
+router.post("/products/bulk-archive", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const parsed = BulkArchiveProductsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const rows = await db
+    .update(productsTable)
+    .set({ archivedAt: new Date() })
+    .where(and(
+      eq(productsTable.tenantId, tenantId),
+      inArray(productsTable.id, parsed.data.ids),
+      isNull(productsTable.archivedAt),
+    ))
+    .returning({ id: productsTable.id });
+
+  if (rows.length > 0) {
+    await logAudit({ tenantId, action: "product.bulk_archive", entityType: "product", entityId: 0, details: { ids: rows.map((r) => r.id) } });
+  }
+  res.json({ count: rows.length });
+});
+
+router.post("/products/bulk-restore", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const parsed = BulkRestoreProductsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const rows = await db
+    .update(productsTable)
+    .set({ archivedAt: null })
+    .where(and(
+      eq(productsTable.tenantId, tenantId),
+      inArray(productsTable.id, parsed.data.ids),
+      isNotNull(productsTable.archivedAt),
+    ))
+    .returning({ id: productsTable.id });
+
+  if (rows.length > 0) {
+    await logAudit({ tenantId, action: "product.bulk_restore", entityType: "product", entityId: 0, details: { ids: rows.map((r) => r.id) } });
+  }
+  res.json({ count: rows.length });
 });
 
 /* ── Product location availability & pricing ── */

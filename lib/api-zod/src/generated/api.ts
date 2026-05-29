@@ -20,6 +20,12 @@ export const HealthCheckResponse = zod.object({
 export const ListProductsQueryParams = zod.object({
   category: zod.coerce.string().optional(),
   search: zod.coerce.string().optional(),
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When true, include soft-deleted (archived) products in the response. Defaults to false.",
+    ),
 });
 
 export const ListProductsResponseItem = zod.object({
@@ -52,12 +58,14 @@ export const ListProductsResponseItem = zod.object({
     .boolean()
     .optional()
     .describe(
-      "When true, stock for this product is tracked per-batch with batch/lot numbers and optional expiry dates.",
+      "When true, stock for this product is tracked per-batch with batch\/lot numbers and optional expiry dates.",
     ),
   stockMethodOverride: zod
     .enum(["fifo", "lifo"])
     .nullish()
-    .describe("Per-product override of the tenant-wide FIFO/LIFO stock method."),
+    .describe(
+      "Per-product override of the tenant-wide FIFO\/LIFO stock method.",
+    ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
   isComposite: zod
@@ -66,6 +74,12 @@ export const ListProductsResponseItem = zod.object({
       "True when this product has at least one composite component row.",
     ),
   createdAt: zod.coerce.date(),
+  archivedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. When set the product is archived (hidden from catalog\/POS\/menu) but its history is preserved. NULL = active.",
+    ),
 });
 export const ListProductsResponse = zod.array(ListProductsResponseItem);
 
@@ -138,6 +152,18 @@ export const GetProductResponse = zod.object({
     .describe(
       "When false, sales tax is not applied to this product at checkout.",
     ),
+  trackBatches: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, stock for this product is tracked per-batch with batch\/lot numbers and optional expiry dates.",
+    ),
+  stockMethodOverride: zod
+    .enum(["fifo", "lifo"])
+    .nullish()
+    .describe(
+      "Per-product override of the tenant-wide FIFO\/LIFO stock method.",
+    ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
   isComposite: zod
@@ -146,6 +172,12 @@ export const GetProductResponse = zod.object({
       "True when this product has at least one composite component row.",
     ),
   createdAt: zod.coerce.date(),
+  archivedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. When set the product is archived (hidden from catalog\/POS\/menu) but its history is preserved. NULL = active.",
+    ),
 });
 
 /**
@@ -214,6 +246,18 @@ export const UpdateProductResponse = zod.object({
     .describe(
       "When false, sales tax is not applied to this product at checkout.",
     ),
+  trackBatches: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, stock for this product is tracked per-batch with batch\/lot numbers and optional expiry dates.",
+    ),
+  stockMethodOverride: zod
+    .enum(["fifo", "lifo"])
+    .nullish()
+    .describe(
+      "Per-product override of the tenant-wide FIFO\/LIFO stock method.",
+    ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
   isComposite: zod
@@ -222,6 +266,12 @@ export const UpdateProductResponse = zod.object({
       "True when this product has at least one composite component row.",
     ),
   createdAt: zod.coerce.date(),
+  archivedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. When set the product is archived (hidden from catalog\/POS\/menu) but its history is preserved. NULL = active.",
+    ),
 });
 
 /**
@@ -229,6 +279,30 @@ export const UpdateProductResponse = zod.object({
  */
 export const DeleteProductParams = zod.object({
   id: zod.coerce.number(),
+});
+
+/**
+ * @summary Archive (soft-delete) multiple products. History is preserved.
+ */
+
+export const BulkArchiveProductsBody = zod.object({
+  ids: zod.array(zod.number()).min(1),
+});
+
+export const BulkArchiveProductsResponse = zod.object({
+  count: zod.number(),
+});
+
+/**
+ * @summary Restore previously archived products
+ */
+
+export const BulkRestoreProductsBody = zod.object({
+  ids: zod.array(zod.number()).min(1),
+});
+
+export const BulkRestoreProductsResponse = zod.object({
+  count: zod.number(),
 });
 
 /**
@@ -705,7 +779,6 @@ export const ListOrdersResponseItem = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
-  cashTendered: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -791,7 +864,6 @@ export const CreateOrderBody = zod.object({
   paymentMethod: zod.string().optional(),
   splitCardAmount: zod.number().optional(),
   splitCashAmount: zod.number().optional(),
-  cashTendered: zod.number().optional(),
   discountType: zod.enum(["percent", "fixed"]).optional(),
   discountAmount: zod.number().optional(),
   notes: zod.string().optional(),
@@ -830,7 +902,6 @@ export const GetOrderResponse = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
-  cashTendered: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -919,7 +990,6 @@ export const UpdateOrderStatusResponse = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
-  cashTendered: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -979,7 +1049,6 @@ export const ChargeOrderBody = zod.object({
   paymentMethod: zod.string(),
   splitCardAmount: zod.number().optional(),
   splitCashAmount: zod.number().optional(),
-  cashTendered: zod.number().optional(),
 });
 
 export const ChargeOrderResponse = zod.object({
@@ -1003,7 +1072,6 @@ export const ChargeOrderResponse = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
-  cashTendered: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1162,7 +1230,6 @@ export const GetRecentOrdersResponseItem = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
-  cashTendered: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1370,7 +1437,6 @@ export const GetCustomerOrdersResponseItem = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
-  cashTendered: zod.number().nullish(),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1455,6 +1521,18 @@ export const GetLowStockProductsResponseItem = zod.object({
     .describe(
       "When false, sales tax is not applied to this product at checkout.",
     ),
+  trackBatches: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, stock for this product is tracked per-batch with batch\/lot numbers and optional expiry dates.",
+    ),
+  stockMethodOverride: zod
+    .enum(["fifo", "lifo"])
+    .nullish()
+    .describe(
+      "Per-product override of the tenant-wide FIFO\/LIFO stock method.",
+    ),
   hasVariants: zod.boolean(),
   hasModifiers: zod.boolean(),
   isComposite: zod
@@ -1463,6 +1541,12 @@ export const GetLowStockProductsResponseItem = zod.object({
       "True when this product has at least one composite component row.",
     ),
   createdAt: zod.coerce.date(),
+  archivedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Soft-delete timestamp. When set the product is archived (hidden from catalog\/POS\/menu) but its history is preserved. NULL = active.",
+    ),
 });
 export const GetLowStockProductsResponse = zod.array(
   GetLowStockProductsResponseItem,

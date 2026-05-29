@@ -66,6 +66,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: includeArchived
+          in: query
+          description: When true, include soft-deleted (archived) products in the response. Defaults to false.
+          schema:
+            type: boolean
       responses:
         "200":
           description: List of products
@@ -149,6 +154,44 @@ paths:
       responses:
         "204":
           description: Deleted
+
+  /products/bulk-archive:
+    post:
+      operationId: bulkArchiveProducts
+      tags: [products]
+      summary: Archive (soft-delete) multiple products. History is preserved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkProductIdsBody"
+      responses:
+        "200":
+          description: Number of products archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkProductsResult"
+
+  /products/bulk-restore:
+    post:
+      operationId: bulkRestoreProducts
+      tags: [products]
+      summary: Restore previously archived products
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkProductIdsBody"
+      responses:
+        "200":
+          description: Number of products restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkProductsResult"
 
   /products/{id}/customize:
     get:
@@ -1567,6 +1610,11 @@ components:
         createdAt:
           type: string
           format: date-time
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Soft-delete timestamp. When set the product is archived (hidden from catalog/POS/menu) but its history is preserved. NULL = active.
       required:
         - id
         - name
@@ -1581,6 +1629,25 @@ components:
         - hasModifiers
         - isComposite
         - createdAt
+
+    BulkProductIdsBody:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: integer
+          minItems: 1
+      required:
+        - ids
+
+    BulkProductsResult:
+      type: object
+      properties:
+        count:
+          type: integer
+      required:
+        - count
 
     CreateProductBody:
       type: object

@@ -9,4 +9,8 @@
 export type ListProductsParams = {
   category?: string;
   search?: string;
+  /**
+   * When true, include soft-deleted (archived) products in the response. Defaults to false.
+   */
+  includeArchived?: boolean;
 };

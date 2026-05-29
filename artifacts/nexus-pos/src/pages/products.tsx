@@ -7,6 +7,8 @@ import {
   useCreateProduct,
   useUpdateProduct,
   useDeleteProduct,
+  useBulkArchiveProducts,
+  useBulkRestoreProducts,
   useGetProductVariants,
   useSaveProductVariants,
   useGetProductModifiers,
@@ -69,7 +71,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check, Archive, RotateCcw } from "lucide-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
@@ -2519,14 +2521,22 @@ export function Products() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   const { data: products, isLoading, refetch: refetchProducts } = useListProducts(
-    categoryFilter ? { category: categoryFilter } : {},
+    {
+      ...(categoryFilter ? { category: categoryFilter } : {}),
+      // Only send the flag when true — the server coerces any present value
+      // to `true`, so it must be omitted (not `false`) to show active only.
+      ...(showArchived ? { includeArchived: true } : {}),
+    },
   );
 
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
+  const bulkArchive = useBulkArchiveProducts();
+  const bulkRestore = useBulkRestoreProducts();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: settings } = useGetSettings();
@@ -2549,6 +2559,8 @@ export function Products() {
   const [editingProduct, setEditingProduct] = useState<GetProductResponse | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm());
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Record<number, boolean>>({});
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [restockProduct, setRestockProduct] = useState<GetProductResponse | null>(null);
   const [restockForm, setRestockForm] = useState<RestockForm>(emptyRestockForm());
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -2965,6 +2977,69 @@ export function Products() {
     );
   };
 
+  // ── Bulk selection / archive / restore ──────────────────────────────────
+  const selectedList = useMemo(
+    () => Object.entries(selectedIds).filter(([, v]) => v).map(([k]) => Number(k)),
+    [selectedIds],
+  );
+  const selectedCount = selectedList.length;
+  const visibleIds = useMemo(() => (filteredProducts ?? []).map((p) => p.id), [filteredProducts]);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds[id]);
+  const toggleSelect = (id: number) =>
+    setSelectedIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  const toggleSelectAll = () =>
+    setSelectedIds((prev) => {
+      const n = { ...prev };
+      if (allVisibleSelected) visibleIds.forEach((id) => delete n[id]);
+      else visibleIds.forEach((id) => { n[id] = true; });
+      return n;
+    });
+  const clearSelection = () => setSelectedIds({});
+
+  const doBulkArchive = () => {
+    if (selectedList.length === 0) return;
+    bulkArchive.mutate(
+      { data: { ids: selectedList } },
+      {
+        onSuccess: (res) => {
+          toast({ title: `${res.count} product${res.count === 1 ? "" : "s"} archived`, description: "History is preserved. Toggle 'Show archived' to restore." });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          clearSelection();
+          setBulkConfirmOpen(false);
+        },
+        onError: () => toast({ title: "Bulk archive failed", variant: "destructive" }),
+      },
+    );
+  };
+
+  const doBulkRestore = () => {
+    if (selectedList.length === 0) return;
+    bulkRestore.mutate(
+      { data: { ids: selectedList } },
+      {
+        onSuccess: (res) => {
+          toast({ title: `${res.count} product${res.count === 1 ? "" : "s"} restored` });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          clearSelection();
+        },
+        onError: () => toast({ title: "Restore failed", variant: "destructive" }),
+      },
+    );
+  };
+
+  const doRestoreOne = (id: number) => {
+    bulkRestore.mutate(
+      { data: { ids: [id] } },
+      {
+        onSuccess: () => {
+          toast({ title: "Product restored" });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+        },
+        onError: () => toast({ title: "Restore failed", variant: "destructive" }),
+      },
+    );
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-8 space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -3062,7 +3137,38 @@ export function Products() {
             <List className="h-3.5 w-3.5" />List
           </button>
         </div>
+        {/* Show archived toggle */}
+        {canManage && (
+          <Button
+            size="sm"
+            variant={showArchived ? "default" : "outline"}
+            onClick={() => { setShowArchived((v) => !v); clearSelection(); }}
+            className="gap-1.5 shrink-0"
+            title="Archived products are hidden from the catalog and POS but keep their full sales/purchase history."
+          >
+            <Archive className="h-3.5 w-3.5" />
+            {showArchived ? "Showing archived" : "Show archived"}
+          </Button>
+        )}
       </div>
+      )}
+
+      {/* ── Bulk selection action bar ── */}
+      {pageTab === "products" && canManage && viewMode === "list" && selectedCount > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2.5">
+          <span className="text-sm font-semibold">{selectedCount} selected</span>
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={clearSelection}>Clear</Button>
+          <div className="flex-1" />
+          {showArchived ? (
+            <Button size="sm" variant="default" className="gap-1.5" disabled={bulkRestore.isPending} onClick={doBulkRestore}>
+              <RotateCcw className="h-3.5 w-3.5" />Restore selected
+            </Button>
+          ) : (
+            <Button size="sm" variant="destructive" className="gap-1.5" onClick={() => setBulkConfirmOpen(true)}>
+              <Trash2 className="h-3.5 w-3.5" />Delete selected
+            </Button>
+          )}
+        </div>
       )}
 
       {/* ── PRODUCTS TAB ── */}
@@ -3159,7 +3265,17 @@ export function Products() {
           <div className="overflow-x-auto">
           <div className="min-w-[680px]">
           {/* Header row */}
-          <div className="grid grid-cols-[minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          <div className="grid grid-cols-[32px_minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            {canManage ? (
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-primary cursor-pointer self-center"
+                checked={allVisibleSelected}
+                onChange={toggleSelectAll}
+                title="Select all"
+                aria-label="Select all products"
+              />
+            ) : <span />}
             <span>Product</span>
             <span>Category</span>
             <span className="text-right">Price</span>
@@ -3188,10 +3304,23 @@ export function Products() {
                 className="border-b border-border/50"
               >
                 {/* Main row */}
-                <div className={`grid grid-cols-[minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-3 items-center hover:bg-secondary/20 transition-colors group`}>
+                <div className={`grid grid-cols-[32px_minmax(140px,1fr)_110px_90px_130px_90px_110px] gap-4 px-4 py-3 items-center hover:bg-secondary/20 transition-colors group ${selectedIds[product.id] ? "bg-primary/5" : ""}`}>
+                  {/* Selection checkbox */}
+                  {canManage ? (
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-primary cursor-pointer"
+                      checked={!!selectedIds[product.id]}
+                      onChange={() => toggleSelect(product.id)}
+                      aria-label={`Select ${product.name}`}
+                    />
+                  ) : <span />}
                   {/* Name + description */}
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold truncate">{product.name}</p>
+                    <p className="text-sm font-semibold truncate flex items-center gap-1.5">
+                      {product.archivedAt && <Badge variant="secondary" className="text-[9px] h-4 px-1 gap-0.5 shrink-0"><Archive className="h-2.5 w-2.5" />Archived</Badge>}
+                      <span className="truncate">{product.name}</span>
+                    </p>
                     {product.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{product.description}</p>}
                   </div>
 
@@ -3252,11 +3381,15 @@ export function Products() {
                         <Pencil className="h-3 w-3" />
                       </Button>
                     )}
-                    {canManage && (
-                      <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
+                    {canManage && (product.archivedAt ? (
+                      <Button size="icon" variant="outline" className="h-7 w-7 text-emerald-400 border-emerald-400/40 hover:bg-emerald-400/10" title="Restore" onClick={() => doRestoreOne(product.id)}>
+                        <RotateCcw className="h-3 w-3" />
+                      </Button>
+                    ) : (
+                      <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" title="Delete (archive)" onClick={() => setDeleteId(product.id)}>
                         <Trash2 className="h-3 w-3" />
                       </Button>
-                    )}
+                    ))}
                   </div>
                 </div>
 
@@ -4239,13 +4372,31 @@ export function Products() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete product?</AlertDialogTitle>
             <AlertDialogDescription>
-              This product will be permanently removed from the catalog along with all its variants and modifiers.
+              This product will be hidden from the catalog, POS, and online menu. Its sales and purchase history is kept, and you can restore it anytime from "Show archived".
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleDelete}>
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk delete (archive) confirm */}
+      <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedCount} product{selectedCount === 1 ? "" : "s"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The selected product{selectedCount === 1 ? "" : "s"} will be hidden from the catalog, POS, and online menu. All sales and purchase history is preserved, and you can restore {selectedCount === 1 ? "it" : "them"} anytime from "Show archived".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={bulkArchive.isPending} onClick={doBulkArchive}>
+              {bulkArchive.isPending ? "Deleting…" : `Delete ${selectedCount}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
