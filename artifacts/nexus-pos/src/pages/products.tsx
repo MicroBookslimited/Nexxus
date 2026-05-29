@@ -2727,6 +2727,8 @@ export function Products() {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [showOutOfStock, setShowOutOfStock] = useState(false);
+  const [showLowStock, setShowLowStock] = useState(false);
 
   const { data: products, isLoading, refetch: refetchProducts } = useListProducts(
     {
@@ -3294,21 +3296,53 @@ export function Products() {
         </div>
       </div>
 
-      {/* Low stock / out of stock alert banner */}
+      {/* Low stock / out of stock summary buttons (click to reveal details) */}
       {pageTab === "products" && !isLoading && (lowStockProducts.length > 0 || outOfStockProducts.length > 0) && (
-        <div className="flex flex-wrap gap-3">
-          {outOfStockProducts.length > 0 && (
-            <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm">
-              <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-              <span className="font-medium text-destructive">{outOfStockProducts.length} product{outOfStockProducts.length > 1 ? "s" : ""} out of stock</span>
-              <span className="text-muted-foreground text-xs">{outOfStockProducts.map(p => p.name).join(", ")}</span>
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-3">
+            {outOfStockProducts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowOutOfStock((v) => !v)}
+                aria-expanded={showOutOfStock}
+                className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm transition-colors ${showOutOfStock ? "border-destructive bg-destructive/15" : "border-destructive/40 bg-destructive/10 hover:bg-destructive/15"}`}
+              >
+                <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+                <span className="font-medium text-destructive">{outOfStockProducts.length} out of stock</span>
+                <ChevronDown className={`h-4 w-4 text-destructive transition-transform ${showOutOfStock ? "rotate-180" : ""}`} />
+              </button>
+            )}
+            {lowStockProducts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowLowStock((v) => !v)}
+                aria-expanded={showLowStock}
+                className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm transition-colors ${showLowStock ? "border-yellow-500 bg-yellow-500/15" : "border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/15"}`}
+              >
+                <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />
+                <span className="font-medium text-yellow-500">{lowStockProducts.length} running low</span>
+                <ChevronDown className={`h-4 w-4 text-yellow-500 transition-transform ${showLowStock ? "rotate-180" : ""}`} />
+              </button>
+            )}
+          </div>
+          {showOutOfStock && outOfStockProducts.length > 0 && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm">
+              <p className="font-medium text-destructive mb-1.5">Out of stock ({outOfStockProducts.length})</p>
+              <div className="flex flex-wrap gap-1.5">
+                {outOfStockProducts.map((p) => (
+                  <Badge key={p.id} variant="outline" className="border-destructive/40 text-destructive">{p.name}</Badge>
+                ))}
+              </div>
             </div>
           )}
-          {lowStockProducts.length > 0 && (
-            <div className="flex items-center gap-2 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-2.5 text-sm">
-              <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />
-              <span className="font-medium text-yellow-500">{lowStockProducts.length} product{lowStockProducts.length > 1 ? "s" : ""} running low</span>
-              <span className="text-muted-foreground text-xs">({lowStockProducts.map(p => `${p.name} (${p.stockCount})`).join(", ")})</span>
+          {showLowStock && lowStockProducts.length > 0 && (
+            <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3 text-sm">
+              <p className="font-medium text-yellow-500 mb-1.5">Running low ({lowStockProducts.length})</p>
+              <div className="flex flex-wrap gap-1.5">
+                {lowStockProducts.map((p) => (
+                  <Badge key={p.id} variant="outline" className="border-yellow-500/40 text-yellow-500">{p.name} ({p.stockCount})</Badge>
+                ))}
+              </div>
             </div>
           )}
         </div>
