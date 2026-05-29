@@ -258,11 +258,11 @@ function LocationAssignModal({ member, onClose }: { member: StaffMember; onClose
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-md overflow-hidden">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-primary" />
-            Branch Access — {member.name}
+          <DialogTitle className="flex items-center gap-2 min-w-0">
+            <MapPin className="h-4 w-4 text-primary shrink-0" />
+            <span className="truncate">Branch Access — {member.name}</span>
           </DialogTitle>
         </DialogHeader>
         <div className="py-2">
@@ -280,12 +280,12 @@ function LocationAssignModal({ member, onClose }: { member: StaffMember; onClose
                       {isSelected && <div className="h-2 w-2 bg-white rounded-sm" />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{loc.name}</p>
+                      <p className="text-sm font-medium truncate">{loc.name}</p>
                       {loc.address && <p className="text-xs text-muted-foreground truncate">{loc.address}</p>}
                     </div>
                     {isSelected && (
                       <button
-                        className={cn("text-xs px-2 py-0.5 rounded-full border transition-colors shrink-0", isPrimary ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/50")}
+                        className={cn("text-xs px-2.5 py-1 rounded-full border whitespace-nowrap transition-colors shrink-0", isPrimary ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/50")}
                         onClick={e => { e.stopPropagation(); setPrimaryId(isPrimary ? null : loc.id); }}
                       >
                         {isPrimary ? "Primary" : "Set Primary"}
