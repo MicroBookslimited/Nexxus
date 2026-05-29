@@ -83,6 +83,53 @@ export interface BulkProductsResult {
   count: number;
 }
 
+export interface DuplicateProduct {
+  id: number;
+  name: string;
+  category: string;
+  price: number;
+  stockCount: number;
+  barcode?: string | null;
+  createdAt: string;
+  hasVariants: boolean;
+  hasModifiers: boolean;
+  isComposite: boolean;
+  isCompositeChild: boolean;
+  /** True when the product is a simple SKU eligible for merging (not variant/composite/composite-child). */
+  mergeable: boolean;
+}
+
+export type DuplicateGroupMatchType =
+  (typeof DuplicateGroupMatchType)[keyof typeof DuplicateGroupMatchType];
+
+export const DuplicateGroupMatchType = {
+  exact: "exact",
+  similar: "similar",
+} as const;
+
+export interface DuplicateGroup {
+  /** Normalized name shared by the group. */
+  key: string;
+  matchType: DuplicateGroupMatchType;
+  products: DuplicateProduct[];
+}
+
+export interface MergeProductsBody {
+  /** The product that remains after the merge. */
+  survivorId: number;
+  /**
+   * Products to merge into the survivor (must not include survivorId).
+   * @minItems 1
+   */
+  mergeIds: number[];
+}
+
+export interface MergeProductsResult {
+  survivorId: number;
+  mergedCount: number;
+  combinedStock: number;
+}
+
 export type CreateProductBodyUnitOfMeasure =
   (typeof CreateProductBodyUnitOfMeasure)[keyof typeof CreateProductBodyUnitOfMeasure];
 

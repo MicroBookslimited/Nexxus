@@ -44,6 +44,7 @@ import type {
   DailySales,
   DashboardSummary,
   DiningTable,
+  DuplicateGroup,
   EmailSentResponse,
   ExportOrdersParams,
   GetAvailableCompositeParams,
@@ -63,6 +64,8 @@ import type {
   ListOrdersParams,
   ListProductsParams,
   ListPurchasesParams,
+  MergeProductsBody,
+  MergeProductsResult,
   ModifierGroup,
   OpenCashSessionBody,
   Order,
@@ -781,6 +784,167 @@ export const useBulkRestoreProducts = <
   TContext
 > => {
   return useMutation(getBulkRestoreProductsMutationOptions(options));
+};
+
+/**
+ * @summary Find groups of duplicate products by name (exact + fuzzy similar matches).
+ */
+export const getFindDuplicateProductsUrl = () => {
+  return `/api/products/find-duplicates`;
+};
+
+export const findDuplicateProducts = async (
+  options?: RequestInit,
+): Promise<DuplicateGroup[]> => {
+  return customFetch<DuplicateGroup[]>(getFindDuplicateProductsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getFindDuplicateProductsQueryKey = () => {
+  return [`/api/products/find-duplicates`] as const;
+};
+
+export const getFindDuplicateProductsQueryOptions = <
+  TData = Awaited<ReturnType<typeof findDuplicateProducts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof findDuplicateProducts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getFindDuplicateProductsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof findDuplicateProducts>>
+  > = ({ signal }) => findDuplicateProducts({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof findDuplicateProducts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type FindDuplicateProductsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof findDuplicateProducts>>
+>;
+export type FindDuplicateProductsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Find groups of duplicate products by name (exact + fuzzy similar matches).
+ */
+
+export function useFindDuplicateProducts<
+  TData = Awaited<ReturnType<typeof findDuplicateProducts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof findDuplicateProducts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getFindDuplicateProductsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Merge duplicate products into one survivor, combining stock and re-attributing all history.
+ */
+export const getMergeProductsUrl = () => {
+  return `/api/products/merge`;
+};
+
+export const mergeProducts = async (
+  mergeProductsBody: MergeProductsBody,
+  options?: RequestInit,
+): Promise<MergeProductsResult> => {
+  return customFetch<MergeProductsResult>(getMergeProductsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(mergeProductsBody),
+  });
+};
+
+export const getMergeProductsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeProducts>>,
+    TError,
+    { data: BodyType<MergeProductsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mergeProducts>>,
+  TError,
+  { data: BodyType<MergeProductsBody> },
+  TContext
+> => {
+  const mutationKey = ["mergeProducts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mergeProducts>>,
+    { data: BodyType<MergeProductsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return mergeProducts(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MergeProductsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mergeProducts>>
+>;
+export type MergeProductsMutationBody = BodyType<MergeProductsBody>;
+export type MergeProductsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Merge duplicate products into one survivor, combining stock and re-attributing all history.
+ */
+export const useMergeProducts = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeProducts>>,
+    TError,
+    { data: BodyType<MergeProductsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof mergeProducts>>,
+  TError,
+  { data: BodyType<MergeProductsBody> },
+  TContext
+> => {
+  return useMutation(getMergeProductsMutationOptions(options));
 };
 
 /**

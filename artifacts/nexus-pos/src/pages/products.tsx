@@ -9,6 +9,10 @@ import {
   useDeleteProduct,
   useBulkArchiveProducts,
   useBulkRestoreProducts,
+  useFindDuplicateProducts,
+  getFindDuplicateProductsQueryKey,
+  useMergeProducts,
+  type DuplicateGroup,
   useGetProductVariants,
   useSaveProductVariants,
   useGetProductModifiers,
@@ -47,6 +51,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -71,7 +76,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check, Archive, RotateCcw } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check, Archive, RotateCcw, Copy, GitMerge } from "lucide-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
@@ -2515,6 +2520,203 @@ function ProductCombobox({
   );
 }
 
+function DuplicateGroupCard({ group, onMerged }: { group: DuplicateGroup; onMerged: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const mergeProducts = useMergeProducts();
+
+  const mergeable = useMemo(() => group.products.filter((p) => p.mergeable), [group]);
+  const nonMergeable = useMemo(() => group.products.filter((p) => !p.mergeable), [group]);
+
+  // Default survivor: most stock, tie-break to the oldest record.
+  const defaultSurvivorId = useMemo(() => {
+    const sorted = [...mergeable].sort(
+      (a, b) => b.stockCount - a.stockCount || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+    return sorted[0]?.id;
+  }, [mergeable]);
+
+  const [survivorId, setSurvivorId] = useState<number | undefined>(defaultSurvivorId);
+  const [checked, setChecked] = useState<Record<number, boolean>>(() =>
+    Object.fromEntries(mergeable.map((p) => [p.id, true])),
+  );
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [merged, setMerged] = useState(false);
+
+  const survivor = mergeable.find((p) => p.id === survivorId);
+  const dupeIds = mergeable.filter((p) => p.id !== survivorId && checked[p.id]).map((p) => p.id);
+  const combinedStock =
+    (survivor?.stockCount ?? 0) +
+    mergeable.filter((p) => dupeIds.includes(p.id)).reduce((s, p) => s + p.stockCount, 0);
+
+  const doMerge = () => {
+    if (!survivorId || dupeIds.length === 0) return;
+    mergeProducts.mutate(
+      { data: { survivorId, mergeIds: dupeIds } },
+      {
+        onSuccess: (res) => {
+          toast({
+            title: `Merged ${res.mergedCount} duplicate${res.mergedCount === 1 ? "" : "s"}`,
+            description: `Stock combined into the survivor (${res.combinedStock} on hand). All sales & purchase history was kept.`,
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          setConfirmOpen(false);
+          setMerged(true);
+          onMerged();
+        },
+        onError: () => toast({ title: "Merge failed", variant: "destructive" }),
+      },
+    );
+  };
+
+  if (merged) {
+    return (
+      <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 flex items-center gap-2 text-sm">
+        <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+        <span className="font-medium text-emerald-300">Merged “{group.products[0]?.name}” — duplicates archived, history preserved.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card/40">
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-border">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-semibold truncate">{group.products[0]?.name}</span>
+          <Badge
+            variant="outline"
+            className={`text-[10px] shrink-0 ${group.matchType === "exact" ? "border-primary/50 text-primary" : "border-yellow-500/50 text-yellow-400"}`}
+          >
+            {group.matchType === "exact" ? "Exact" : "Similar"}
+          </Badge>
+          <span className="text-xs text-muted-foreground shrink-0">{group.products.length} items</span>
+        </div>
+      </div>
+
+      <div className="divide-y divide-border/60">
+        {mergeable.map((p) => {
+          const isSurvivor = p.id === survivorId;
+          return (
+            <div key={p.id} className="flex items-center gap-3 px-4 py-2 text-sm">
+              <label className="flex items-center gap-2 cursor-pointer shrink-0" title="Keep this product">
+                <input
+                  type="radio"
+                  name={`survivor-${group.key}`}
+                  checked={isSurvivor}
+                  onChange={() => setSurvivorId(p.id)}
+                  className="accent-primary h-4 w-4"
+                />
+                <span className="text-[11px] text-muted-foreground w-10">{isSurvivor ? "Keep" : "Merge"}</span>
+              </label>
+              <input
+                type="checkbox"
+                disabled={isSurvivor}
+                checked={isSurvivor ? false : !!checked[p.id]}
+                onChange={() => setChecked((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
+                className="accent-primary h-4 w-4 disabled:opacity-30 shrink-0"
+                title={isSurvivor ? "The survivor cannot merge into itself" : "Include in merge"}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="truncate">{p.name}</p>
+                <p className="text-[11px] text-muted-foreground truncate">
+                  {p.category}
+                  {p.barcode ? ` · ${p.barcode}` : ""} · #{p.id}
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="font-mono text-xs">{formatCurrency(p.price)}</p>
+                <p className="text-[11px] text-muted-foreground">{p.stockCount} in stock</p>
+              </div>
+            </div>
+          );
+        })}
+        {nonMergeable.map((p) => (
+          <div key={p.id} className="flex items-center gap-3 px-4 py-2 text-sm opacity-60">
+            <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="truncate">{p.name}</p>
+              <p className="text-[11px] text-muted-foreground">
+                Not mergeable — {p.hasVariants ? "has variants" : p.isComposite ? "composite product" : "composite component"}
+              </p>
+            </div>
+            <p className="font-mono text-xs text-muted-foreground shrink-0">{p.stockCount} in stock</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-border bg-secondary/30">
+        <span className="text-xs text-muted-foreground">
+          {dupeIds.length > 0 && survivor
+            ? `Merging ${dupeIds.length} into “${survivor.name}” → ${combinedStock} in stock`
+            : "Pick a product to keep and at least one to merge"}
+        </span>
+        <Button
+          size="sm"
+          className="gap-1.5"
+          disabled={!survivorId || dupeIds.length === 0 || mergeProducts.isPending}
+          onClick={() => setConfirmOpen(true)}
+        >
+          <GitMerge className="h-3.5 w-3.5" />Merge
+        </Button>
+      </div>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge {dupeIds.length} product{dupeIds.length === 1 ? "" : "s"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This combines stock and re-attributes <strong>all</strong> past sales, purchases, and stock movements onto “{survivor?.name}”. The other {dupeIds.length} product{dupeIds.length === 1 ? "" : "s"} will be archived. <strong>This cannot be undone.</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={mergeProducts.isPending} onClick={doMerge}>
+              Merge &amp; combine
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function DuplicateMergeDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { data: groups, isLoading, refetch } = useFindDuplicateProducts({
+    query: { enabled: open, queryKey: getFindDuplicateProductsQueryKey() },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Copy className="h-5 w-5" />Find &amp; Merge Duplicate Products
+          </DialogTitle>
+          <DialogDescription>
+            Products grouped by matching names. Keep one survivor per group; the rest merge into it — stock is combined and every past sale, bill, and stock movement is re-attributed to the survivor.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {isLoading ? (
+            <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-28 rounded-lg" />)}</div>
+          ) : !groups?.length ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+              <CheckCircle2 className="h-12 w-12 opacity-30" />
+              <p className="text-lg">No duplicates found</p>
+              <p className="text-sm">Your active catalog has no products with matching names.</p>
+            </div>
+          ) : (
+            groups.map((g) => <DuplicateGroupCard key={g.key + g.matchType} group={g} onMerged={() => refetch()} />)
+          )}
+        </div>
+        <DialogFooter className="px-6 py-4 border-t border-border shrink-0">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function Products() {
   const { can } = useStaff();
   const canManage = can("inventory.manage");
@@ -2561,6 +2763,7 @@ export function Products() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Record<number, boolean>>({});
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [restockProduct, setRestockProduct] = useState<GetProductResponse | null>(null);
   const [restockForm, setRestockForm] = useState<RestockForm>(emptyRestockForm());
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -3076,6 +3279,9 @@ export function Products() {
               </Button>
               <Button variant="outline" onClick={() => setCatManagerOpen(true)} className="gap-2">
                 <Settings2 className="h-4 w-4" />Categories
+              </Button>
+              <Button variant="outline" onClick={() => setMergeDialogOpen(true)} className="gap-2 border-amber-500/40 text-amber-400 hover:text-amber-300 hover:border-amber-400/60">
+                <Copy className="h-4 w-4" />Find Duplicates
               </Button>
               <Button onClick={openAdd} className="gap-2">
                 <Plus className="h-4 w-4" />Add Product
@@ -4401,6 +4607,9 @@ export function Products() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Find & Merge Duplicates dialog */}
+      <DuplicateMergeDialog open={mergeDialogOpen} onClose={() => setMergeDialogOpen(false)} />
 
       {/* Print Label dialog */}
       <PrintLabelDialog

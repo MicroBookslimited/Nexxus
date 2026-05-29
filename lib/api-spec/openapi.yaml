@@ -193,6 +193,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/BulkProductsResult"
 
+  /products/find-duplicates:
+    get:
+      operationId: findDuplicateProducts
+      tags: [products]
+      summary: Find groups of duplicate products by name (exact + fuzzy similar matches).
+      responses:
+        "200":
+          description: Groups of potential duplicate products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DuplicateGroup"
+
+  /products/merge:
+    post:
+      operationId: mergeProducts
+      tags: [products]
+      summary: Merge duplicate products into one survivor, combining stock and re-attributing all history.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeProductsBody"
+      responses:
+        "200":
+          description: Merge result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeProductsResult"
+
   /products/{id}/customize:
     get:
       operationId: getProductCustomization
@@ -1648,6 +1682,100 @@ components:
           type: integer
       required:
         - count
+
+    DuplicateProduct:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        category:
+          type: string
+        price:
+          type: number
+          format: float
+        stockCount:
+          type: number
+          format: float
+        barcode:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        hasVariants:
+          type: boolean
+        hasModifiers:
+          type: boolean
+        isComposite:
+          type: boolean
+        isCompositeChild:
+          type: boolean
+        mergeable:
+          type: boolean
+          description: True when the product is a simple SKU eligible for merging (not variant/composite/composite-child).
+      required:
+        - id
+        - name
+        - category
+        - price
+        - stockCount
+        - createdAt
+        - hasVariants
+        - hasModifiers
+        - isComposite
+        - isCompositeChild
+        - mergeable
+
+    DuplicateGroup:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Normalized name shared by the group.
+        matchType:
+          type: string
+          enum: [exact, similar]
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/DuplicateProduct"
+      required:
+        - key
+        - matchType
+        - products
+
+    MergeProductsBody:
+      type: object
+      properties:
+        survivorId:
+          type: integer
+          description: The product that remains after the merge.
+        mergeIds:
+          type: array
+          items:
+            type: integer
+          minItems: 1
+          description: Products to merge into the survivor (must not include survivorId).
+      required:
+        - survivorId
+        - mergeIds
+
+    MergeProductsResult:
+      type: object
+      properties:
+        survivorId:
+          type: integer
+        mergedCount:
+          type: integer
+        combinedStock:
+          type: number
+          format: float
+      required:
+        - survivorId
+        - mergedCount
+        - combinedStock
 
     CreateProductBody:
       type: object

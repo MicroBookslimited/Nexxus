@@ -306,6 +306,59 @@ export const BulkRestoreProductsResponse = zod.object({
 });
 
 /**
+ * @summary Find groups of duplicate products by name (exact + fuzzy similar matches).
+ */
+export const FindDuplicateProductsResponseItem = zod.object({
+  key: zod.string().describe("Normalized name shared by the group."),
+  matchType: zod.enum(["exact", "similar"]),
+  products: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+      category: zod.string(),
+      price: zod.number(),
+      stockCount: zod.number(),
+      barcode: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+      hasVariants: zod.boolean(),
+      hasModifiers: zod.boolean(),
+      isComposite: zod.boolean(),
+      isCompositeChild: zod.boolean(),
+      mergeable: zod
+        .boolean()
+        .describe(
+          "True when the product is a simple SKU eligible for merging (not variant\/composite\/composite-child).",
+        ),
+    }),
+  ),
+});
+export const FindDuplicateProductsResponse = zod.array(
+  FindDuplicateProductsResponseItem,
+);
+
+/**
+ * @summary Merge duplicate products into one survivor, combining stock and re-attributing all history.
+ */
+
+export const MergeProductsBody = zod.object({
+  survivorId: zod
+    .number()
+    .describe("The product that remains after the merge."),
+  mergeIds: zod
+    .array(zod.number())
+    .min(1)
+    .describe(
+      "Products to merge into the survivor (must not include survivorId).",
+    ),
+});
+
+export const MergeProductsResponse = zod.object({
+  survivorId: zod.number(),
+  mergedCount: zod.number(),
+  combinedStock: zod.number(),
+});
+
+/**
  * @summary Get full variant groups + modifier groups for POS customization dialog
  */
 export const GetProductCustomizationParams = zod.object({
