@@ -2522,6 +2522,7 @@ function ProductCombobox({
 
 function DuplicateGroupCard({ group, onMerged }: { group: DuplicateGroup; onMerged: () => void }) {
   const { toast } = useToast();
+  const { staff } = useStaff();
   const queryClient = useQueryClient();
   const mergeProducts = useMergeProducts();
 
@@ -2550,9 +2551,9 @@ function DuplicateGroupCard({ group, onMerged }: { group: DuplicateGroup; onMerg
     mergeable.filter((p) => dupeIds.includes(p.id)).reduce((s, p) => s + p.stockCount, 0);
 
   const doMerge = () => {
-    if (!survivorId || dupeIds.length === 0) return;
+    if (!survivorId || dupeIds.length === 0 || !staff) return;
     mergeProducts.mutate(
-      { data: { survivorId, mergeIds: dupeIds } },
+      { data: { survivorId, mergeIds: dupeIds, staffId: staff.id } },
       {
         onSuccess: (res) => {
           toast({
@@ -2681,9 +2682,11 @@ function DuplicateGroupCard({ group, onMerged }: { group: DuplicateGroup; onMerg
 }
 
 function DuplicateMergeDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { data: groups, isLoading, refetch } = useFindDuplicateProducts({
-    query: { enabled: open, queryKey: getFindDuplicateProductsQueryKey() },
-  });
+  const { staff } = useStaff();
+  const { data: groups, isLoading, refetch } = useFindDuplicateProducts(
+    { staffId: staff?.id ?? 0 },
+    { query: { enabled: open && !!staff?.id, queryKey: getFindDuplicateProductsQueryKey({ staffId: staff?.id ?? 0 }) } },
+  );
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>

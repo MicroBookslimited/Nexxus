@@ -55,6 +55,7 @@ export * from "./duplicateGroupMatchType";
 export * from "./duplicateProduct";
 export * from "./emailSentResponse";
 export * from "./exportOrdersParams";
+export * from "./findDuplicateProductsParams";
 export * from "./getAvailableCompositeParams";
 export * from "./getDailySalesParams";
 export * from "./getHourlySalesParams";

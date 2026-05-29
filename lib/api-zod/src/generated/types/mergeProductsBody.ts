@@ -14,4 +14,6 @@ export interface MergeProductsBody {
    * @minItems 1
    */
   mergeIds: number[];
+  /** Staff member performing the merge (must be Owner/Admin or have inventory.manage). */
+  staffId: number;
 }

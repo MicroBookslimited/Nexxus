@@ -308,6 +308,14 @@ export const BulkRestoreProductsResponse = zod.object({
 /**
  * @summary Find groups of duplicate products by name (exact + fuzzy similar matches).
  */
+export const FindDuplicateProductsQueryParams = zod.object({
+  staffId: zod.coerce
+    .number()
+    .describe(
+      "Staff member performing the lookup (must be Owner\/Admin or have inventory.manage).",
+    ),
+});
+
 export const FindDuplicateProductsResponseItem = zod.object({
   key: zod.string().describe("Normalized name shared by the group."),
   matchType: zod.enum(["exact", "similar"]),
@@ -349,6 +357,11 @@ export const MergeProductsBody = zod.object({
     .min(1)
     .describe(
       "Products to merge into the survivor (must not include survivorId).",
+    ),
+  staffId: zod
+    .number()
+    .describe(
+      "Staff member performing the merge (must be Owner\/Admin or have inventory.manage).",
     ),
 });
 

@@ -1,6 +1,6 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { eq, like, and, inArray, isNull, isNotNull, sql, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
-import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable, compositeProductComponentsTable, orderItemsTable, purchaseBillItemsTable, purchasesTable, supplierReturnItemsTable, stockTransfersTable, weightLabelsTable, stockAdjustmentsTable, stockCountItemsTable, productBatchesTable, productionBatchItemsTable, productPricingTiersTable, productPurchaseUnitsTable, promotionsTable, recipesTable, recipeIngredientsTable } from "@workspace/db";
+import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable, compositeProductComponentsTable, orderItemsTable, purchaseBillItemsTable, purchasesTable, supplierReturnItemsTable, stockTransfersTable, weightLabelsTable, stockAdjustmentsTable, stockCountItemsTable, productBatchesTable, productionBatchItemsTable, productPricingTiersTable, productPurchaseUnitsTable, promotionsTable, recipesTable, recipeIngredientsTable, heldOrdersTable, staffTable, rolesTable } from "@workspace/db";
 import { logAudit } from "./audit";
 import {
   CreateProductBody,
@@ -26,6 +26,40 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
   if (!auth?.startsWith("Bearer ")) return null;
   const p = verifyTenantToken(auth.slice(7));
   return p ? p.tenantId : null;
+}
+
+/**
+ * Authorise a caller for destructive inventory operations (merge, etc.).
+ * Requires a valid tenant token, a non-technician session, and a staff member
+ * whose role is Owner/Admin or grants the `inventory.manage` permission.
+ * Mirrors the pattern in price-manager.ts.
+ */
+async function authoriseInventoryCaller(
+  req: Request,
+  res: Response,
+  staffId: number,
+): Promise<{ tenantId: number; staffId: number; staffName: string | null } | null> {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return null; }
+  const payload = verifyTenantToken(auth.slice(7));
+  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return null; }
+  if (payload.restrictedRole === "technician") {
+    res.status(403).json({ error: "Technician sessions cannot manage inventory" });
+    return null;
+  }
+  const tenantId = payload.tenantId;
+  const [staff] = await db.select().from(staffTable)
+    .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)));
+  if (!staff) { res.status(403).json({ error: "Staff not found for this tenant" }); return null; }
+  const role = (staff as { role?: string }).role ?? "";
+  let allowed = ["Owner", "Admin"].includes(role);
+  if (!allowed) {
+    const [roleRow] = await db.select().from(rolesTable)
+      .where(and(eq(rolesTable.tenantId, tenantId), eq(rolesTable.name, role)));
+    allowed = !!(roleRow && Array.isArray(roleRow.permissions) && roleRow.permissions.includes("inventory.manage"));
+  }
+  if (!allowed) { res.status(403).json({ error: "You do not have permission to manage inventory" }); return null; }
+  return { tenantId, staffId: staff.id, staffName: (staff as { name?: string }).name ?? null };
 }
 
 async function withFlags(p: typeof productsTable.$inferSelect) {
@@ -331,8 +365,11 @@ function similarityRatio(a: string, b: string): number {
 const SIMILARITY_THRESHOLD = 0.85;
 
 router.get("/products/find-duplicates", async (req, res): Promise<void> => {
-  const tenantId = getTenantId(req as never);
-  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const staffId = parseInt(String(req.query["staffId"] ?? ""), 10);
+  if (!Number.isFinite(staffId) || staffId <= 0) { res.status(400).json({ error: "staffId query param required" }); return; }
+  const authed = await authoriseInventoryCaller(req, res, staffId);
+  if (!authed) return;
+  const tenantId = authed.tenantId;
 
   const products = await db
     .select()
@@ -428,11 +465,12 @@ router.get("/products/find-duplicates", async (req, res): Promise<void> => {
 });
 
 router.post("/products/merge", async (req, res): Promise<void> => {
-  const tenantId = getTenantId(req as never);
-  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
-
   const parsed = MergeProductsBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const authed = await authoriseInventoryCaller(req, res, parsed.data.staffId);
+  if (!authed) return;
+  const tenantId = authed.tenantId;
 
   const { survivorId } = parsed.data;
   const dupeIds = [...new Set(parsed.data.mergeIds)].filter((id) => id !== survivorId);
@@ -504,17 +542,71 @@ router.post("/products/merge", async (req, res): Promise<void> => {
     await tx.update(productBatchesTable).set({ productId: survivorId }).where(inArray(productBatchesTable.productId, dupeIds));
     await tx.update(productionBatchItemsTable).set({ productId: survivorId }).where(inArray(productionBatchItemsTable.productId, dupeIds));
 
-    // 2. Drop the duplicates' config rows — the survivor's pricing/units/
-    //    promotions/location settings are authoritative after the merge.
+    // 2. Re-point the duplicates' config rows onto the survivor. Tables with no
+    //    uniqueness constraint on product_id are repointed wholesale; recipes
+    //    and per-location overrides are unique per product, so we move only what
+    //    the survivor lacks and drop the rest to avoid constraint clashes.
+    await tx.update(productPricingTiersTable).set({ productId: survivorId }).where(inArray(productPricingTiersTable.productId, dupeIds));
+    await tx.update(productPurchaseUnitsTable).set({ productId: survivorId }).where(inArray(productPurchaseUnitsTable.productId, dupeIds));
+    await tx.update(promotionsTable).set({ productId: survivorId }).where(inArray(promotionsTable.productId, dupeIds));
+
+    // recipes: unique(product_id, tenant_id). Keep the survivor's recipe if it
+    // has one; otherwise promote a single duplicate's recipe. Remaining duplicate
+    // recipes are deleted (their ingredients deleted first — no FK cascade assumed).
+    const survivorRecipe = await tx.select({ id: recipesTable.id }).from(recipesTable).where(eq(recipesTable.productId, survivorId));
     const dupeRecipes = await tx.select({ id: recipesTable.id }).from(recipesTable).where(inArray(recipesTable.productId, dupeIds));
-    if (dupeRecipes.length > 0) {
-      await tx.delete(recipeIngredientsTable).where(inArray(recipeIngredientsTable.recipeId, dupeRecipes.map((r) => r.id)));
-      await tx.delete(recipesTable).where(inArray(recipesTable.productId, dupeIds));
+    let recipeKept: number | null = survivorRecipe[0]?.id ?? null;
+    const recipesToDrop: number[] = [];
+    for (const r of dupeRecipes) {
+      if (recipeKept === null) {
+        await tx.update(recipesTable).set({ productId: survivorId }).where(eq(recipesTable.id, r.id));
+        recipeKept = r.id;
+      } else {
+        recipesToDrop.push(r.id);
+      }
     }
-    await tx.delete(productPricingTiersTable).where(inArray(productPricingTiersTable.productId, dupeIds));
-    await tx.delete(productPurchaseUnitsTable).where(inArray(productPurchaseUnitsTable.productId, dupeIds));
-    await tx.delete(promotionsTable).where(inArray(promotionsTable.productId, dupeIds));
-    await tx.delete(productLocationsTable).where(inArray(productLocationsTable.productId, dupeIds));
+    if (recipesToDrop.length > 0) {
+      await tx.delete(recipeIngredientsTable).where(inArray(recipeIngredientsTable.recipeId, recipesToDrop));
+      await tx.delete(recipesTable).where(inArray(recipesTable.id, recipesToDrop));
+    }
+
+    // product_locations: unique(product_id, location_id). Move a duplicate's
+    // override only where the survivor has none for that location; drop the rest.
+    const survivorLocs = await tx.select({ locationId: productLocationsTable.locationId }).from(productLocationsTable).where(eq(productLocationsTable.productId, survivorId));
+    const takenLocations = new Set(survivorLocs.map((l) => l.locationId));
+    const dupeLocs = await tx.select({ id: productLocationsTable.id, locationId: productLocationsTable.locationId }).from(productLocationsTable).where(inArray(productLocationsTable.productId, dupeIds));
+    const locsToDrop: number[] = [];
+    for (const l of dupeLocs) {
+      if (takenLocations.has(l.locationId)) {
+        locsToDrop.push(l.id);
+      } else {
+        await tx.update(productLocationsTable).set({ productId: survivorId }).where(eq(productLocationsTable.id, l.id));
+        takenLocations.add(l.locationId);
+      }
+    }
+    if (locsToDrop.length > 0) {
+      await tx.delete(productLocationsTable).where(inArray(productLocationsTable.id, locsToDrop));
+    }
+
+    // 2b. Best-effort: re-point product ids embedded in parked/held order payloads
+    //     (held_orders.items is a JSONB array of { productId, ... }).
+    const dupeSet = new Set(dupeIds);
+    const heldOrders = await tx.select({ id: heldOrdersTable.id, items: heldOrdersTable.items }).from(heldOrdersTable).where(eq(heldOrdersTable.tenantId, tenantId));
+    for (const ho of heldOrders) {
+      const items = ho.items;
+      if (!Array.isArray(items)) continue;
+      let changed = false;
+      const next = items.map((it) => {
+        if (dupeSet.has(it.productId)) {
+          changed = true;
+          return { ...it, productId: survivorId };
+        }
+        return it;
+      });
+      if (changed) {
+        await tx.update(heldOrdersTable).set({ items: next }).where(eq(heldOrdersTable.id, ho.id));
+      }
+    }
 
     // 3. Combine per-location inventory into the survivor (insert-or-add),
     //    then remove the duplicates' rows.

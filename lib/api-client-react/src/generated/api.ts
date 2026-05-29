@@ -47,6 +47,7 @@ import type {
   DuplicateGroup,
   EmailSentResponse,
   ExportOrdersParams,
+  FindDuplicateProductsParams,
   GetAvailableCompositeParams,
   GetDailySalesParams,
   GetHourlySalesParams,
@@ -789,41 +790,66 @@ export const useBulkRestoreProducts = <
 /**
  * @summary Find groups of duplicate products by name (exact + fuzzy similar matches).
  */
-export const getFindDuplicateProductsUrl = () => {
-  return `/api/products/find-duplicates`;
+export const getFindDuplicateProductsUrl = (
+  params: FindDuplicateProductsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/products/find-duplicates?${stringifiedParams}`
+    : `/api/products/find-duplicates`;
 };
 
 export const findDuplicateProducts = async (
+  params: FindDuplicateProductsParams,
   options?: RequestInit,
 ): Promise<DuplicateGroup[]> => {
-  return customFetch<DuplicateGroup[]>(getFindDuplicateProductsUrl(), {
+  return customFetch<DuplicateGroup[]>(getFindDuplicateProductsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getFindDuplicateProductsQueryKey = () => {
-  return [`/api/products/find-duplicates`] as const;
+export const getFindDuplicateProductsQueryKey = (
+  params?: FindDuplicateProductsParams,
+) => {
+  return [
+    `/api/products/find-duplicates`,
+    ...(params ? [params] : []),
+  ] as const;
 };
 
 export const getFindDuplicateProductsQueryOptions = <
   TData = Awaited<ReturnType<typeof findDuplicateProducts>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof findDuplicateProducts>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params: FindDuplicateProductsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof findDuplicateProducts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getFindDuplicateProductsQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getFindDuplicateProductsQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof findDuplicateProducts>>
-  > = ({ signal }) => findDuplicateProducts({ signal, ...requestOptions });
+  > = ({ signal }) =>
+    findDuplicateProducts(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof findDuplicateProducts>>,
@@ -844,15 +870,18 @@ export type FindDuplicateProductsQueryError = ErrorType<unknown>;
 export function useFindDuplicateProducts<
   TData = Awaited<ReturnType<typeof findDuplicateProducts>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof findDuplicateProducts>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getFindDuplicateProductsQueryOptions(options);
+>(
+  params: FindDuplicateProductsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof findDuplicateProducts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getFindDuplicateProductsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

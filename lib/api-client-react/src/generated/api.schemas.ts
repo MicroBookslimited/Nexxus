@@ -122,6 +122,8 @@ export interface MergeProductsBody {
    * @minItems 1
    */
   mergeIds: number[];
+  /** Staff member performing the merge (must be Owner/Admin or have inventory.manage). */
+  staffId: number;
 }
 
 export interface MergeProductsResult {
@@ -990,6 +992,13 @@ export type ListProductsParams = {
    * When true, include soft-deleted (archived) products in the response. Defaults to false.
    */
   includeArchived?: boolean;
+};
+
+export type FindDuplicateProductsParams = {
+  /**
+   * Staff member performing the lookup (must be Owner/Admin or have inventory.manage).
+   */
+  staffId: number;
 };
 
 export type GetAvailableCompositeParams = {
