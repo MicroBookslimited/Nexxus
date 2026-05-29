@@ -59,6 +59,7 @@ export function AdminSettings() {
   const [supermarketMode, setSupermarketMode] = useState(false);
   const [hardwareUiMode, setHardwareUiMode] = useState(false);
   const [escposPrintEnabled, setEscposPrintEnabled] = useState(false);
+  const [escposConnection, setEscposConnection] = useState<"usb" | "bluetooth" | "network">("usb");
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
   const [sendingTest, setSendingTest] = useState(false);
   const [sendingLowStockTest, setSendingLowStockTest] = useState(false);
@@ -109,6 +110,11 @@ export function AdminSettings() {
     setSupermarketMode(settings.supermarket_mode === "true");
     setHardwareUiMode(settings.hardware_ui_mode === "true");
     setEscposPrintEnabled(settings.escpos_print_enabled === "true");
+    setEscposConnection(
+      settings.escpos_connection === "bluetooth" || settings.escpos_connection === "network"
+        ? settings.escpos_connection
+        : "usb"
+    );
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
     setDirty(false);
   }, [settings]);
@@ -153,6 +159,7 @@ export function AdminSettings() {
           supermarket_mode: supermarketMode ? "true" : "false",
           hardware_ui_mode: hardwareUiMode ? "true" : "false",
           escpos_print_enabled: escposPrintEnabled ? "true" : "false",
+          escpos_connection: escposConnection,
           stock_method: stockMethod,
         },
       },
@@ -1292,28 +1299,62 @@ export function AdminSettings() {
             </div>
           )}
 
-          <div className="flex items-center justify-between rounded-lg border border-border p-4">
-            <div className="pr-4">
-              <p className="text-sm font-medium">Looped Labs ESC/POS Print Service (Android)</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                When enabled on an Android terminal, receipts are sent as plain ESC/POS text to the <span className="font-mono">Looped Labs ESC POS Print Service</span> app (Bluetooth/USB thermal printers). Leave OFF unless the app is installed on the device — otherwise Chrome will redirect to the Play Store. Desktop and non-Android devices always use the standard browser print regardless of this setting.
-              </p>
+          <div className="rounded-lg border border-border p-4">
+            <div className="flex items-center justify-between">
+              <div className="pr-4">
+                <p className="text-sm font-medium">Looped Labs ESC/POS Print Service (Android)</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  When enabled on an Android terminal, receipts are sent as plain ESC/POS text directly to the matching <span className="font-mono">Looped Labs ESC POS Print Service</span> app (it prints in the background without leaving NEXXUS). Pick the connection type below to match the app you installed. Leave OFF unless that app is installed — otherwise Chrome redirects to the Play Store. Desktop and non-Android devices always use the standard browser print.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={escposPrintEnabled}
+                onClick={() => { setEscposPrintEnabled(!escposPrintEnabled); markDirty(); }}
+                className={cn(
+                  "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  escposPrintEnabled ? "bg-teal-500" : "bg-muted-foreground/30"
+                )}
+              >
+                <span className={cn(
+                  "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                  escposPrintEnabled ? "translate-x-5" : "translate-x-0"
+                )} />
+              </button>
             </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={escposPrintEnabled}
-              onClick={() => { setEscposPrintEnabled(!escposPrintEnabled); markDirty(); }}
-              className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                escposPrintEnabled ? "bg-teal-500" : "bg-muted-foreground/30"
-              )}
-            >
-              <span className={cn(
-                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
-                escposPrintEnabled ? "translate-x-5" : "translate-x-0"
-              )} />
-            </button>
+            {escposPrintEnabled && (
+              <div className="mt-4 border-t border-border pt-4">
+                <p className="text-sm font-medium mb-2">Printer connection</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: "usb", label: "USB", pkg: "usbprintservice" },
+                    { value: "bluetooth", label: "Bluetooth", pkg: "escposprintservice" },
+                    { value: "network", label: "Network / WiFi", pkg: "escposnetprintservice" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => { setEscposConnection(opt.value); markDirty(); }}
+                      className={cn(
+                        "rounded-lg border p-3 text-center transition-colors",
+                        escposConnection === opt.value
+                          ? "border-teal-500 bg-teal-500/10"
+                          : "border-border hover:border-muted-foreground/40"
+                      )}
+                    >
+                      <span className="block text-sm font-medium">{opt.label}</span>
+                      <span className="block font-mono text-[10px] text-muted-foreground mt-0.5">
+                        {opt.pkg}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  In the Looped Labs app, enable <span className="font-medium">"Auto Print Selected Text and Images"</span> so receipts print without a confirmation tap.
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

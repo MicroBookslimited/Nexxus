@@ -202,26 +202,47 @@ export function buildEscPosReceiptText(
  * Looped Labs ESC POS Print Service — Android intent
  * ─────────────────────────────────────────────────────────────────
  *
- * Looped Labs accepts a standard `ACTION_SEND` / `text/plain` intent with
- * the package pinned to `com.loopedlabs.escposprintservice`. The intent
- * URL has to use SEMICOLONS (not ampersands) between fields per the
- * Android `Intent.URI_INTENT_SCHEME` spec.
+ * Looped Labs ships THREE separate apps, each with its own package id:
+ *   • USB       → com.loopedlabs.usbprintservice
+ *   • Bluetooth → com.loopedlabs.escposprintservice
+ *   • Network   → com.loopedlabs.escposnetprintservice
+ * Targeting the wrong one makes Chrome redirect to the Play Store, so
+ * the package is chosen from the tenant's `escpos_connection` setting.
  *
- * We fire it via `window.location.href` so Chrome resolves the intent
- * directly (rather than navigating). If the service is not installed
- * Chrome silently drops the navigation; we detect that the page is still
- * alive 800 ms later and fall back to the HTML iframe path so the
- * cashier still gets a printable receipt.
+ * We use Looped Labs' custom BACKGROUND print action
+ * `org.escpos.intent.action.PRINT` with `S.DATA_TYPE=TEXT`. Unlike the
+ * generic ACTION_SEND share intent (which switches to the app / share
+ * sheet) this prints silently without leaving the POS, and — critically
+ * — receives plain ESC/POS text, so the print service never has to
+ * rasterize HTML (that HTML path is what crashed the service on the
+ * ELO tablets).
+ *
+ * The intent URL uses SEMICOLONS (not ampersands) between fields per the
+ * Android `Intent.URI_INTENT_SCHEME` spec. If the matching app is not
+ * installed Chrome would normally bounce to the Play Store; we detect the
+ * page is still alive 1.5s later and fall back to the HTML iframe path.
  */
-function tryLoopedLabsPrint(receiptText: string): boolean {
+const LOOPED_LABS_PACKAGES: Record<string, string> = {
+  usb: "com.loopedlabs.usbprintservice",
+  bluetooth: "com.loopedlabs.escposprintservice",
+  network: "com.loopedlabs.escposnetprintservice",
+};
+
+function loopedLabsPackage(connection?: string): string {
+  return LOOPED_LABS_PACKAGES[connection ?? "usb"] ?? LOOPED_LABS_PACKAGES.usb;
+}
+
+function tryLoopedLabsPrint(receiptText: string, connection?: string): boolean {
   try {
     const encoded = encodeURIComponent(receiptText);
+    const pkg = loopedLabsPackage(connection);
     const intentUrl =
       "intent:" +
       "#Intent" +
-      ";action=android.intent.action.SEND" +
+      ";action=org.escpos.intent.action.PRINT" +
       ";type=text/plain" +
-      ";package=com.loopedlabs.escposprintservice" +
+      ";package=" + pkg +
+      ";S.DATA_TYPE=TEXT" +
       ";S.android.intent.extra.TEXT=" + encoded +
       ";end";
     // Use a transient anchor to avoid replacing the SPA URL in history.
@@ -279,7 +300,7 @@ export function printOrderReceipt(
     const text = buildEscPosReceiptText(order, settings);
     // eslint-disable-next-line no-console
     console.log("[print-receipt] Looped Labs receipt:\n" + text);
-    const fired = tryLoopedLabsPrint(text);
+    const fired = tryLoopedLabsPrint(text, settings.escpos_connection);
     if (!fired) {
       openReceiptWindow(html);
       return;

@@ -1,0 +1,1 @@
+- [Looped Labs ESC/POS Android printing](looped-labs-printing.md) — distinct USB/BT/Network package ids; print plain text via org.escpos.intent.action.PRINT, never HTML (HTML crashes the service).

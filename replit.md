@@ -79,6 +79,8 @@ I want iterative development. I want to be asked before you make any major chang
 
 ## Gotchas
 
+*   **Android receipt printing (Looped Labs ESC/POS)**: Looped Labs ships THREE separate apps with DISTINCT package ids — USB `com.loopedlabs.usbprintservice`, Bluetooth `com.loopedlabs.escposprintservice`, Network `com.loopedlabs.escposnetprintservice`. Targeting the wrong one makes Chrome bounce to the Play Store. The tenant picks the connection via the `escpos_connection` setting (Settings → POS Interface, shown when ESC/POS is enabled); `lib/print-receipt.ts` maps it to the package. We use the BACKGROUND action `org.escpos.intent.action.PRINT` with `S.DATA_TYPE=TEXT` (plain ESC/POS text) — NOT `ACTION_SEND` and NOT HTML. Handing Looped Labs rendered HTML (the browser print path) crashes it ("ESC POS USB Print Service has stopped"); plain text via the background action prints silently without leaving the POS. The user must also enable "Auto Print Selected Text and Images" inside the Looped Labs app. The HTML iframe path (`escpos_print_enabled` OFF) remains the default for non-Android/desktop.
+
 *   **Multi-unit product quantity edits**: Direct quantity edits for multi-unit products snap to the nearest whole multiple of the unit factor on commit.
 *   **Technician Impersonation**: Technician-impersonated sessions carry `restrictedRole: "technician"` in the JWT. Server-side: `requireFullTenant()` in orders, cash, topup, purchases, held-orders rejects writes. Frontend: nav filtered via `isTechnicianRestricted()` in `lib/tenant-token.ts`; `TECHNICIAN_ALLOWED_PATHS` lists permitted routes.
 *   **Database Migrations**: Always run `pnpm --filter @workspace/db run push` from the workspace root after schema changes.
