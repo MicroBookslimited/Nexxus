@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, like, and, inArray, isNull, isNotNull, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
+import { eq, like, and, inArray, isNull, isNotNull, sql, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
 import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable, compositeProductComponentsTable } from "@workspace/db";
 import { logAudit } from "./audit";
 import {
@@ -95,6 +95,29 @@ router.get("/products", async (req, res): Promise<void> => {
 
   const stockMap = new Map(locationStock.map((s) => [s.productId, s.stockCount]));
 
+  // ── Combined cross-location stock (dashboard / no locationId) ───────────
+  // When no specific location is requested, the displayed stock should be the
+  // SUM of a product's inventory across ALL of the tenant's locations — not
+  // the global stock_count, which manual per-location stock entry never
+  // updates (it only writes location_inventory). Without this, a tenant that
+  // distributes stock across branches sees "Out of stock" on the catalog.
+  // We only override the global value when the location sum is > 0, so
+  // single-location tenants (and undistributed stock) keep their existing
+  // global stock_count / inStock behavior untouched.
+  const locationSumMap = new Map<number, number>();
+  if (!locationId) {
+    const sums = await db
+      .select({
+        productId: locationInventoryTable.productId,
+        total: sql<number>`COALESCE(SUM(${locationInventoryTable.stockCount}), 0)`,
+      })
+      .from(locationInventoryTable)
+      .innerJoin(locationsTable, eq(locationsTable.id, locationInventoryTable.locationId))
+      .where(eq(locationsTable.tenantId, tenantId))
+      .groupBy(locationInventoryTable.productId);
+    for (const s of sums) locationSumMap.set(s.productId, Number(s.total));
+  }
+
   // ── Composite product stock derivation ─────────────────────────────────
   // For composite products, the persisted stock_count is always 0 (the row
   // is a "recipe", not a stockable item). The real availability is the
@@ -181,18 +204,29 @@ router.get("/products", async (req, res): Promise<void> => {
       const override = overrides.find((o) => o.productId === p.id);
       const effectivePrice = override?.priceOverride != null ? override.priceOverride : p.price;
       const isComposite = p.structureType === "composite";
+      // Combined cross-location total (only meaningful for non-composite when
+      // no specific location is requested and stock is actually distributed).
+      const locSum = locationSumMap.get(p.id) ?? 0;
+      const usingLocSum = !locationId && !isComposite && locSum > 0;
       // Composite stock is derived; the persisted stock_count (and any
       // location_inventory row) for a composite is meaningless.
       const effectiveStockCount = isComposite
         ? compositeStockMap.get(p.id) ?? 0
-        : (locationId && stockMap.has(p.id) ? stockMap.get(p.id)! : p.stockCount);
+        : usingLocSum
+          ? locSum
+          : (locationId && stockMap.has(p.id) ? stockMap.get(p.id)! : p.stockCount);
       // Composites are "in stock" iff at least 1 bundle can be built.
       // Simple products keep the existing per-location override semantics.
+      // When showing a combined cross-location total, a positive sum means the
+      // product is in stock somewhere — surface it even if a prior sale flipped
+      // the global inStock flag to false.
       const effectiveInStock = isComposite
         ? (locationId
             ? (override ? override.isAvailable && effectiveStockCount > 0 : effectiveStockCount > 0)
             : effectiveStockCount > 0)
-        : (locationId ? (override ? override.isAvailable && p.inStock : p.inStock) : p.inStock);
+        : usingLocSum
+          ? true
+          : (locationId ? (override ? override.isAvailable && p.inStock : p.inStock) : p.inStock);
       return withFlags({ ...p, price: effectivePrice, inStock: effectiveInStock, stockCount: effectiveStockCount });
     })
   );
