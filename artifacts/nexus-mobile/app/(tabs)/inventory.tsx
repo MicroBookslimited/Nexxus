@@ -23,6 +23,7 @@ import {
 } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { useResponsive } from "@/hooks/useResponsive";
 import { formatDate } from "@/lib/format";
 import {
   createStockAdjustment,
@@ -52,6 +53,7 @@ export default function InventoryScreen() {
 function StockCountsTab() {
   const c = useColors();
   const pad = useScreenPadding();
+  const lay = useResponsive();
   const router = useRouter();
   const { tenant } = useAuth();
   const qc = useQueryClient();
@@ -82,7 +84,15 @@ function StockCountsTab() {
       <FlatList
         data={data ?? []}
         keyExtractor={(s) => String(s.id)}
-        contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 10, paddingBottom: pad.bottom + 80 }}
+        contentContainerStyle={{
+          padding: 16,
+          paddingTop: 8,
+          gap: 10,
+          paddingBottom: pad.bottom + 80,
+          width: "100%",
+          maxWidth: lay.contentMaxWidth,
+          alignSelf: "center",
+        }}
         ListEmptyComponent={<EmptyState icon="clipboard" title="No stock counts" subtitle="Start one to reconcile inventory." />}
         renderItem={({ item }) => {
           const done = item.status === "completed" || item.status === "applied";
@@ -101,8 +111,10 @@ function StockCountsTab() {
           );
         }}
       />
-      <View style={{ position: "absolute", left: 16, right: 16, bottom: pad.bottom - 8 }}>
-        <Button label="New Count" icon="plus" onPress={() => setNewOpen(true)} />
+      <View style={{ position: "absolute", left: 0, right: 0, bottom: pad.bottom - 8, alignItems: "center", paddingHorizontal: 16 }}>
+        <View style={{ width: "100%", maxWidth: lay.contentMaxWidth }}>
+          <Button label="New Count" icon="plus" onPress={() => setNewOpen(true)} />
+        </View>
       </View>
 
       <Modal visible={newOpen} transparent animationType="fade" onRequestClose={() => setNewOpen(false)}>
@@ -137,6 +149,7 @@ function StockCountsTab() {
 function AdjustmentsTab() {
   const c = useColors();
   const pad = useScreenPadding();
+  const lay = useResponsive();
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["stock-adjustments"],
     queryFn: () => listStockAdjustments(50),
@@ -151,7 +164,15 @@ function AdjustmentsTab() {
       <FlatList
         data={data ?? []}
         keyExtractor={(a) => String(a.id)}
-        contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 10, paddingBottom: pad.bottom + 80 }}
+        contentContainerStyle={{
+          padding: 16,
+          paddingTop: 8,
+          gap: 10,
+          paddingBottom: pad.bottom + 80,
+          width: "100%",
+          maxWidth: lay.contentMaxWidth,
+          alignSelf: "center",
+        }}
         ListEmptyComponent={<EmptyState icon="sliders" title="No adjustments yet" />}
         renderItem={({ item }) => {
           const inc = item.adjustmentType === "increase";
@@ -188,8 +209,10 @@ function AdjustmentsTab() {
           );
         }}
       />
-      <View style={{ position: "absolute", left: 16, right: 16, bottom: pad.bottom - 8 }}>
-        <Button label="New Adjustment" icon="plus" onPress={() => setFormOpen(true)} />
+      <View style={{ position: "absolute", left: 0, right: 0, bottom: pad.bottom - 8, alignItems: "center", paddingHorizontal: 16 }}>
+        <View style={{ width: "100%", maxWidth: lay.contentMaxWidth }}>
+          <Button label="New Adjustment" icon="plus" onPress={() => setFormOpen(true)} />
+        </View>
       </View>
       <AdjustmentFormModal visible={formOpen} onClose={() => setFormOpen(false)} onDone={refetch} />
     </>

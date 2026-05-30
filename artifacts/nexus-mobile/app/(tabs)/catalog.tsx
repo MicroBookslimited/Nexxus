@@ -16,11 +16,13 @@ import {
   useScreenPadding,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useResponsive } from "@/hooks/useResponsive";
 import { formatMoney } from "@/lib/format";
 
 export default function CatalogScreen() {
   const c = useColors();
   const pad = useScreenPadding();
+  const r = useResponsive();
   const { data: products, isLoading, error, refetch } = useListProducts();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>("All");
@@ -60,8 +62,11 @@ export default function CatalogScreen() {
         <ErrorState message="Could not load products." onRetry={refetch} />
       ) : (
         <FlatList
+          key={`cat-${r.listColumns}`}
           data={filtered}
           keyExtractor={(p) => String(p.id)}
+          numColumns={r.listColumns}
+          columnWrapperStyle={r.listColumns > 1 ? { gap: 12, paddingHorizontal: 16 } : undefined}
           ListHeaderComponent={
             <FlatList
               horizontal
@@ -74,14 +79,20 @@ export default function CatalogScreen() {
               )}
             />
           }
-          contentContainerStyle={{ paddingBottom: pad.bottom + 16, gap: 10 }}
+          contentContainerStyle={{
+            paddingBottom: pad.bottom + 16,
+            gap: 10,
+            width: "100%",
+            maxWidth: r.contentMaxWidth,
+            alignSelf: "center",
+          }}
           ListEmptyComponent={<EmptyState icon="search" title="No products" />}
           renderItem={({ item }) => {
             const out = !item.inStock || item.stockCount <= 0;
             const low = !out && item.stockCount <= 5;
             return (
-              <View style={{ paddingHorizontal: 16 }}>
-                <Card style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <View style={r.listColumns > 1 ? { flex: 1 } : { paddingHorizontal: 16 }}>
+                <Card style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
                   <View
                     style={{
                       width: 44,

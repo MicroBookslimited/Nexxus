@@ -6,7 +6,7 @@ import {
   type Product,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -28,7 +28,6 @@ import {
   Divider,
   EmptyState,
   ErrorState,
-  Field,
   LoadingState,
   SearchBar,
   Stepper,
@@ -37,6 +36,7 @@ import {
 } from "@/components/ui";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
+import { useResponsive } from "@/hooks/useResponsive";
 import { formatMoney } from "@/lib/format";
 
 function isSimple(p: Product) {
@@ -46,12 +46,20 @@ function isSimple(p: Product) {
 export default function SellScreen() {
   const c = useColors();
   const pad = useScreenPadding();
+  const r = useResponsive();
   const cart = useCart();
   const queryClient = useQueryClient();
 
   const { data: products, isLoading, error, refetch } = useListProducts();
   const [search, setSearch] = useState("");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  // The phone-only checkout modal must not survive a switch into the tablet
+  // split-view (where the cart is always visible) — otherwise rotating back to
+  // phone would re-open it unexpectedly.
+  useEffect(() => {
+    if (r.isTablet && checkoutOpen) setCheckoutOpen(false);
+  }, [r.isTablet, checkoutOpen]);
 
   const filtered = useMemo(() => {
     const list = (products ?? []).filter((p) => !p.archivedAt);
@@ -91,6 +99,109 @@ export default function SellScreen() {
     );
   }
 
+  const onCheckoutComplete = () => queryClient.invalidateQueries();
+
+  // Column count for the product grid. In the tablet split-view the grid lives
+  // in the (narrower) left pane, so we use one fewer column than full-width.
+  const gridColumns = r.isTablet ? (r.isWide ? 3 : 2) : 2;
+
+  const productGrid = (
+    <FlatList
+      key={`grid-${gridColumns}`}
+      data={filtered}
+      keyExtractor={(p) => String(p.id)}
+      numColumns={gridColumns}
+      columnWrapperStyle={{ gap: 12, paddingHorizontal: 16 }}
+      contentContainerStyle={{
+        gap: 12,
+        paddingBottom: r.isTablet ? pad.bottom + 16 : pad.bottom + (cart.count > 0 ? 90 : 16),
+      }}
+      ListEmptyComponent={<EmptyState icon="search" title="No products found" />}
+      renderItem={({ item }) => {
+        const simple = isSimple(item);
+        const out = !item.inStock || item.stockCount <= 0;
+        return (
+          <Pressable
+            onPress={() => onAdd(item)}
+            style={({ pressed }) => ({
+              flex: 1 / gridColumns,
+              backgroundColor: c.card,
+              borderRadius: c.radius + 4,
+              borderWidth: 1,
+              borderColor: c.border,
+              padding: 14,
+              opacity: pressed ? 0.8 : 1,
+            })}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  backgroundColor: c.secondary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather name="box" size={18} color={c.accent} />
+              </View>
+              {out ? <Badge label="Out" tone="danger" /> : <Badge label={`${item.stockCount}`} tone="success" />}
+            </View>
+            <Text
+              numberOfLines={2}
+              style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold"), minHeight: 40 }}
+            >
+              {item.name}
+            </Text>
+            <Text style={{ color: c.mutedForeground, fontSize: 12, fontFamily: fontFamily("regular") }}>
+              {item.category}
+            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+              <Text style={{ color: c.accent, fontSize: 16, fontFamily: fontFamily("bold") }}>
+                {formatMoney(item.price)}
+              </Text>
+              {!simple ? <Feather name="layers" size={16} color={c.mutedForeground} /> : null}
+            </View>
+          </Pressable>
+        );
+      }}
+    />
+  );
+
+  /* ─────────── Tablet: products + persistent cart side-by-side ─────────── */
+  if (r.isTablet) {
+    const panelWidth = r.isWide ? 420 : 340;
+    return (
+      <View style={{ flex: 1, backgroundColor: c.background }}>
+        <AppHeader title="Sell" subtitle="Tap products to build a sale" />
+        <View style={{ flex: 1, flexDirection: "row" }}>
+          <View style={{ flex: 1 }}>
+            <View style={{ padding: 16, paddingBottom: 8 }}>
+              <SearchBar
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search products, SKU, barcode"
+              />
+            </View>
+            {productGrid}
+          </View>
+          <View
+            style={{
+              width: panelWidth,
+              borderLeftWidth: 1,
+              borderLeftColor: c.border,
+              backgroundColor: c.background,
+            }}
+          >
+            <CheckoutContent embedded onComplete={onCheckoutComplete} />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  /* ─────────── Phone: grid + floating cart bar + modal ─────────── */
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>
       <AppHeader title="Sell" subtitle="Tap products to build a sale" />
@@ -103,63 +214,7 @@ export default function SellScreen() {
         />
       </View>
 
-      <FlatList
-        data={filtered}
-        keyExtractor={(p) => String(p.id)}
-        numColumns={2}
-        columnWrapperStyle={{ gap: 12, paddingHorizontal: 16 }}
-        contentContainerStyle={{ gap: 12, paddingBottom: pad.bottom + (cart.count > 0 ? 90 : 16) }}
-        ListEmptyComponent={<EmptyState icon="search" title="No products found" />}
-        renderItem={({ item }) => {
-          const simple = isSimple(item);
-          const out = !item.inStock || item.stockCount <= 0;
-          return (
-            <Pressable
-              onPress={() => onAdd(item)}
-              style={({ pressed }) => ({
-                flex: 1,
-                backgroundColor: c.card,
-                borderRadius: c.radius + 4,
-                borderWidth: 1,
-                borderColor: c.border,
-                padding: 14,
-                opacity: pressed ? 0.8 : 1,
-              })}
-            >
-              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
-                <View
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 10,
-                    backgroundColor: c.secondary,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Feather name="box" size={18} color={c.accent} />
-                </View>
-                {out ? <Badge label="Out" tone="danger" /> : <Badge label={`${item.stockCount}`} tone="success" />}
-              </View>
-              <Text
-                numberOfLines={2}
-                style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold"), minHeight: 40 }}
-              >
-                {item.name}
-              </Text>
-              <Text style={{ color: c.mutedForeground, fontSize: 12, fontFamily: fontFamily("regular") }}>
-                {item.category}
-              </Text>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-                <Text style={{ color: c.accent, fontSize: 16, fontFamily: fontFamily("bold") }}>
-                  {formatMoney(item.price)}
-                </Text>
-                {!simple ? <Feather name="layers" size={16} color={c.mutedForeground} /> : null}
-              </View>
-            </Pressable>
-          );
-        }}
-      />
+      {productGrid}
 
       {cart.count > 0 ? (
         <View
@@ -212,28 +267,33 @@ export default function SellScreen() {
         </View>
       ) : null}
 
-      <CheckoutModal
+      <Modal
         visible={checkoutOpen}
-        onClose={() => setCheckoutOpen(false)}
-        onComplete={() => {
-          queryClient.invalidateQueries();
-        }}
-      />
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setCheckoutOpen(false)}
+      >
+        <CheckoutContent
+          onClose={() => setCheckoutOpen(false)}
+          onComplete={onCheckoutComplete}
+        />
+      </Modal>
     </View>
   );
 }
 
-function CheckoutModal({
-  visible,
+function CheckoutContent({
+  embedded,
   onClose,
   onComplete,
 }: {
-  visible: boolean;
-  onClose: () => void;
+  embedded?: boolean;
+  onClose?: () => void;
   onComplete: () => void;
 }) {
   const c = useColors();
   const insets = useSafeAreaInsets();
+  const pad = useScreenPadding();
   const cart = useCart();
   const createOrder = useCreateOrder();
   const { data: customers } = useListCustomers();
@@ -286,23 +346,25 @@ function CheckoutModal({
     }
   };
 
+  const empty = cart.lines.length === 0;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: c.background, paddingTop: insets.top }}>
-        {/* Header */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: 16,
-            borderBottomWidth: 1,
-            borderBottomColor: c.border,
-          }}
-        >
-          <Text style={{ color: c.foreground, fontSize: 20, fontFamily: fontFamily("bold") }}>
-            {receipt ? "Sale complete" : "Checkout"}
-          </Text>
+    <View style={{ flex: 1, backgroundColor: c.background, paddingTop: embedded ? 0 : insets.top }}>
+      {/* Header */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: 16,
+          borderBottomWidth: 1,
+          borderBottomColor: c.border,
+        }}
+      >
+        <Text style={{ color: c.foreground, fontSize: 20, fontFamily: fontFamily("bold") }}>
+          {receipt ? "Sale complete" : embedded ? "Current sale" : "Checkout"}
+        </Text>
+        {onClose ? (
           <Pressable
             onPress={() => {
               if (receipt) setReceipt(null);
@@ -312,140 +374,149 @@ function CheckoutModal({
           >
             <Feather name="x" size={26} color={c.foreground} />
           </Pressable>
-        </View>
+        ) : !receipt && !empty ? (
+          <Pressable onPress={() => cart.clear()} hitSlop={10}>
+            <Text style={{ color: c.destructive, fontSize: 14, fontFamily: fontFamily("medium") }}>Clear</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
-        {receipt ? (
-          <View style={{ flex: 1, padding: 24, alignItems: "center", justifyContent: "center", gap: 16 }}>
-            <View
-              style={{
-                width: 76,
-                height: 76,
-                borderRadius: 38,
-                backgroundColor: "rgba(34,197,94,0.16)",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Feather name="check" size={40} color="#4ADE80" />
-            </View>
-            <Text style={{ color: c.foreground, fontSize: 22, fontFamily: fontFamily("bold") }}>
-              {formatMoney(receipt.total)}
-            </Text>
-            <Text style={{ color: c.mutedForeground, fontFamily: fontFamily("regular") }}>
-              Order {receipt.orderNumber}
-            </Text>
-            <Card style={{ width: "100%", gap: 8 }}>
-              <Row label="Subtotal" value={formatMoney(receipt.subtotal)} />
-              <Row label="Tax" value={formatMoney(receipt.tax)} />
-              <Divider />
-              <Row label="Total" value={formatMoney(receipt.total)} bold />
+      {receipt ? (
+        <View style={{ flex: 1, padding: 24, alignItems: "center", justifyContent: "center", gap: 16 }}>
+          <View
+            style={{
+              width: 76,
+              height: 76,
+              borderRadius: 38,
+              backgroundColor: "rgba(34,197,94,0.16)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Feather name="check" size={40} color="#4ADE80" />
+          </View>
+          <Text style={{ color: c.foreground, fontSize: 22, fontFamily: fontFamily("bold") }}>
+            {formatMoney(receipt.total)}
+          </Text>
+          <Text style={{ color: c.mutedForeground, fontFamily: fontFamily("regular") }}>
+            Order {receipt.orderNumber}
+          </Text>
+          <Card style={{ width: "100%", gap: 8 }}>
+            <Row label="Subtotal" value={formatMoney(receipt.subtotal)} />
+            <Row label="Tax" value={formatMoney(receipt.tax)} />
+            <Divider />
+            <Row label="Total" value={formatMoney(receipt.total)} bold />
+          </Card>
+          <Button
+            label="New Sale"
+            icon="plus"
+            onPress={() => {
+              setReceipt(null);
+              onClose?.();
+            }}
+            style={{ width: "100%" }}
+          />
+        </View>
+      ) : empty && embedded ? (
+        <View style={{ flex: 1, justifyContent: "center" }}>
+          <EmptyState icon="shopping-cart" title="Cart is empty" subtitle="Tap products to add them to the sale." />
+        </View>
+      ) : (
+        <>
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}>
+            {cart.lines.map((l) => (
+              <Card key={l.product.id} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold") }}>
+                    {l.product.name}
+                  </Text>
+                  <Text style={{ color: c.accent, fontSize: 14, fontFamily: fontFamily("medium"), marginTop: 2 }}>
+                    {formatMoney(l.product.price * l.quantity)}
+                  </Text>
+                </View>
+                <Stepper value={l.quantity} onChange={(v) => cart.setQty(l.product.id, v)} />
+              </Card>
+            ))}
+
+            {/* Customer */}
+            <Card style={{ gap: 10 }}>
+              <Pressable
+                onPress={() => setShowCustomers((s) => !s)}
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Feather name="user" size={18} color={c.accent} />
+                  <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("medium") }}>
+                    {selectedCustomer ? selectedCustomer.name : "Attach customer (optional)"}
+                  </Text>
+                </View>
+                <Feather name={showCustomers ? "chevron-up" : "chevron-down"} size={20} color={c.mutedForeground} />
+              </Pressable>
+              {selectedCustomer ? (
+                <Pressable onPress={() => setCustomerId(null)}>
+                  <Text style={{ color: c.destructive, fontSize: 13, fontFamily: fontFamily("medium") }}>
+                    Remove customer
+                  </Text>
+                </Pressable>
+              ) : null}
+              {showCustomers ? (
+                <View style={{ gap: 8 }}>
+                  <SearchBar value={custSearch} onChangeText={setCustSearch} placeholder="Search customers" />
+                  {filteredCustomers.map((cust) => (
+                    <Pressable
+                      key={cust.id}
+                      onPress={() => {
+                        setCustomerId(cust.id);
+                        setShowCustomers(false);
+                      }}
+                      style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.border }}
+                    >
+                      <Text style={{ color: c.foreground, fontFamily: fontFamily("medium") }}>{cust.name}</Text>
+                      {cust.phone ? (
+                        <Text style={{ color: c.mutedForeground, fontSize: 12 }}>{cust.phone}</Text>
+                      ) : null}
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
             </Card>
+
+            {/* Payment */}
+            <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("medium"), marginTop: 4 }}>
+              PAYMENT METHOD
+            </Text>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Chip label="Cash" active={payment === "cash"} onPress={() => setPayment("cash")} />
+              <Chip label="Card" active={payment === "card"} onPress={() => setPayment("card")} />
+            </View>
+          </ScrollView>
+
+          {/* Footer */}
+          <View
+            style={{
+              padding: 16,
+              paddingBottom: embedded ? pad.bottom + 16 : insets.bottom + 16,
+              borderTopWidth: 1,
+              borderTopColor: c.border,
+              gap: 12,
+              backgroundColor: c.card,
+            }}
+          >
+            <Row label="Subtotal" value={formatMoney(cart.subtotal)} />
+            <Text style={{ color: c.mutedForeground, fontSize: 12 }}>
+              Tax is calculated on completion.
+            </Text>
             <Button
-              label="New Sale"
-              icon="plus"
-              onPress={() => {
-                setReceipt(null);
-                onClose();
-              }}
-              style={{ width: "100%" }}
+              label={`Charge ${formatMoney(cart.subtotal)}`}
+              icon="credit-card"
+              onPress={charge}
+              loading={createOrder.isPending}
+              disabled={empty}
             />
           </View>
-        ) : (
-          <>
-            <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}>
-              {cart.lines.map((l) => (
-                <Card key={l.product.id} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold") }}>
-                      {l.product.name}
-                    </Text>
-                    <Text style={{ color: c.accent, fontSize: 14, fontFamily: fontFamily("medium"), marginTop: 2 }}>
-                      {formatMoney(l.product.price * l.quantity)}
-                    </Text>
-                  </View>
-                  <Stepper value={l.quantity} onChange={(v) => cart.setQty(l.product.id, v)} />
-                </Card>
-              ))}
-
-              {/* Customer */}
-              <Card style={{ gap: 10 }}>
-                <Pressable
-                  onPress={() => setShowCustomers((s) => !s)}
-                  style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                    <Feather name="user" size={18} color={c.accent} />
-                    <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("medium") }}>
-                      {selectedCustomer ? selectedCustomer.name : "Attach customer (optional)"}
-                    </Text>
-                  </View>
-                  <Feather name={showCustomers ? "chevron-up" : "chevron-down"} size={20} color={c.mutedForeground} />
-                </Pressable>
-                {selectedCustomer ? (
-                  <Pressable onPress={() => setCustomerId(null)}>
-                    <Text style={{ color: c.destructive, fontSize: 13, fontFamily: fontFamily("medium") }}>
-                      Remove customer
-                    </Text>
-                  </Pressable>
-                ) : null}
-                {showCustomers ? (
-                  <View style={{ gap: 8 }}>
-                    <SearchBar value={custSearch} onChangeText={setCustSearch} placeholder="Search customers" />
-                    {filteredCustomers.map((cust) => (
-                      <Pressable
-                        key={cust.id}
-                        onPress={() => {
-                          setCustomerId(cust.id);
-                          setShowCustomers(false);
-                        }}
-                        style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.border }}
-                      >
-                        <Text style={{ color: c.foreground, fontFamily: fontFamily("medium") }}>{cust.name}</Text>
-                        {cust.phone ? (
-                          <Text style={{ color: c.mutedForeground, fontSize: 12 }}>{cust.phone}</Text>
-                        ) : null}
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : null}
-              </Card>
-
-              {/* Payment */}
-              <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("medium"), marginTop: 4 }}>
-                PAYMENT METHOD
-              </Text>
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <Chip label="Cash" active={payment === "cash"} onPress={() => setPayment("cash")} />
-                <Chip label="Card" active={payment === "card"} onPress={() => setPayment("card")} />
-              </View>
-            </ScrollView>
-
-            {/* Footer */}
-            <View
-              style={{
-                padding: 16,
-                paddingBottom: insets.bottom + 16,
-                borderTopWidth: 1,
-                borderTopColor: c.border,
-                gap: 12,
-                backgroundColor: c.card,
-              }}
-            >
-              <Row label="Subtotal" value={formatMoney(cart.subtotal)} />
-              <Text style={{ color: c.mutedForeground, fontSize: 12 }}>
-                Tax is calculated on completion.
-              </Text>
-              <Button
-                label={`Charge ${formatMoney(cart.subtotal)}`}
-                icon="credit-card"
-                onPress={charge}
-                loading={createOrder.isPending}
-              />
-            </View>
-          </>
-        )}
-      </View>
-    </Modal>
+        </>
+      )}
+    </View>
   );
 }
 

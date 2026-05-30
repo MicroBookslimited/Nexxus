@@ -18,11 +18,13 @@ import {
   useScreenPadding,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useResponsive } from "@/hooks/useResponsive";
 import { formatMoney, formatNumber, todayISO } from "@/lib/format";
 
 export default function ReportsScreen() {
   const c = useColors();
   const pad = useScreenPadding();
+  const lay = useResponsive();
   const today = todayISO();
 
   const dash = useGetDashboardSummary();
@@ -63,7 +65,14 @@ export default function ReportsScreen() {
     <View style={{ flex: 1, backgroundColor: c.background }}>
       <AppHeader title="Reports" subtitle="Business overview" />
       <ScrollView
-        contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: pad.bottom + 16 }}
+        contentContainerStyle={{
+          padding: 16,
+          gap: 16,
+          paddingBottom: pad.bottom + 16,
+          width: "100%",
+          maxWidth: lay.contentMaxWidth,
+          alignSelf: "center",
+        }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
       >
         {/* Today hero */}

@@ -21,11 +21,13 @@ import {
   useScreenPadding,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useResponsive } from "@/hooks/useResponsive";
 import { formatMoney, formatDate, formatNumber } from "@/lib/format";
 
 export default function CustomersScreen() {
   const c = useColors();
   const pad = useScreenPadding();
+  const r = useResponsive();
   const { data: customers, isLoading, error, refetch } = useListCustomers();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Customer | null>(null);
@@ -53,13 +55,22 @@ export default function CustomersScreen() {
         <ErrorState message="Could not load customers." onRetry={refetch} />
       ) : (
         <FlatList
+          key={`cust-${r.listColumns}`}
           data={filtered}
           keyExtractor={(x) => String(x.id)}
-          contentContainerStyle={{ paddingBottom: pad.bottom + 16, gap: 10 }}
+          numColumns={r.listColumns}
+          columnWrapperStyle={r.listColumns > 1 ? { gap: 12, paddingHorizontal: 16 } : undefined}
+          contentContainerStyle={{
+            paddingBottom: pad.bottom + 16,
+            gap: 10,
+            width: "100%",
+            maxWidth: r.contentMaxWidth,
+            alignSelf: "center",
+          }}
           ListEmptyComponent={<EmptyState icon="users" title="No customers" />}
           renderItem={({ item }) => (
-            <View style={{ paddingHorizontal: 16 }}>
-              <Card onPress={() => setSelected(item)} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <View style={r.listColumns > 1 ? { flex: 1 } : { paddingHorizontal: 16 }}>
+              <Card onPress={() => setSelected(item)} style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
                 <View
                   style={{
                     width: 44,
@@ -127,10 +138,20 @@ function CustomerDetailModal({ customer, onClose }: { customer: Customer | null;
 function CustomerDetailBody({ customer }: { customer: Customer }) {
   const c = useColors();
   const pad = useScreenPadding();
+  const r = useResponsive();
   const { data: orders, isLoading } = useGetCustomerOrders(customer.id);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: pad.bottom + 16 }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: 16,
+        gap: 16,
+        paddingBottom: pad.bottom + 16,
+        width: "100%",
+        maxWidth: r.contentMaxWidth,
+        alignSelf: "center",
+      }}
+    >
       <View style={{ alignItems: "center", gap: 8 }}>
         <View
           style={{

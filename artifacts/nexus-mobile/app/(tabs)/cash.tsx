@@ -23,6 +23,7 @@ import {
 } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { useResponsive } from "@/hooks/useResponsive";
 import { formatMoney } from "@/lib/format";
 
 function toNum(s: string): number {
@@ -33,6 +34,7 @@ function toNum(s: string): number {
 export default function CashScreen() {
   const c = useColors();
   const pad = useScreenPadding();
+  const lay = useResponsive();
   const { tenant } = useAuth();
 
   const sessionQuery = useGetCurrentCashSession({
@@ -53,9 +55,18 @@ export default function CashScreen() {
       {sessionQuery.isLoading ? (
         <LoadingState label="Checking shift…" />
       ) : !hasSession ? (
-        <OpenShiftView defaultName={tenant?.businessName ?? "Manager"} onOpened={refresh} pad={pad.bottom} />
+        <OpenShiftView defaultName={tenant?.businessName ?? "Manager"} onOpened={refresh} pad={pad.bottom} maxWidth={lay.contentMaxWidth} />
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: pad.bottom + 16 }}>
+        <ScrollView
+          contentContainerStyle={{
+            padding: 16,
+            gap: 14,
+            paddingBottom: pad.bottom + 16,
+            width: "100%",
+            maxWidth: lay.contentMaxWidth,
+            alignSelf: "center",
+          }}
+        >
           <Card style={{ gap: 12 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <Text style={{ color: c.foreground, fontSize: 17, fontFamily: fontFamily("semibold") }}>
@@ -139,7 +150,7 @@ function Line({ label, value, bold }: { label: string; value: string; bold?: boo
   );
 }
 
-function OpenShiftView({ defaultName, onOpened, pad }: { defaultName: string; onOpened: () => void; pad: number }) {
+function OpenShiftView({ defaultName, onOpened, pad, maxWidth }: { defaultName: string; onOpened: () => void; pad: number; maxWidth?: number }) {
   const c = useColors();
   const open = useOpenCashSession();
   const authStaff = useAuthenticateStaff();
@@ -165,7 +176,16 @@ function OpenShiftView({ defaultName, onOpened, pad }: { defaultName: string; on
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: pad + 16 }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: 16,
+        gap: 16,
+        paddingBottom: pad + 16,
+        width: "100%",
+        maxWidth,
+        alignSelf: "center",
+      }}
+    >
       <EmptyState icon="dollar-sign" title="No open shift" subtitle="Open a shift to start tracking cash." />
       <Card style={{ gap: 14 }}>
         <Field

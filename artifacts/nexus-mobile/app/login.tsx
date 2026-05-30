@@ -55,6 +55,7 @@ export default function LoginScreen() {
           }}
           keyboardShouldPersistTaps="handled"
         >
+          <View style={{ width: "100%", maxWidth: 420, alignSelf: "center" }}>
           <View style={{ alignItems: "center", marginBottom: 36 }}>
             <Image
               source={require("@/assets/images/icon.png")}
@@ -112,6 +113,7 @@ export default function LoginScreen() {
             ) : null}
 
             <Button label="Sign In" onPress={onSubmit} loading={loading} icon="log-in" />
+          </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
