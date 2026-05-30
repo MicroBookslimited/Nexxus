@@ -3,3 +3,4 @@
 - [Two parallel stock systems](stock-two-systems.md) — global stockCount vs per-location inventory drift; dashboard sums locations when distributed, else falls back to global.
 - [Separate product-id domains](product-id-domains.md) — POS `products` and `store_products` have independent id spaces; never cross-repoint history (e.g. merge) into `store_*` tables.
 - [Staff authz pattern](staff-auth-pattern.md) — privileged endpoints gate on a client-supplied staffId (tenant JWT has no staff identity); spoofable app-wide, fix is a dedicated task.
+- [Optimistic PATCH + scan race](optimistic-patch-scan-race.md) — counters that PATCH absolute values under barcode scanning need a sync ref + per-item write-seq guard or increments drop.

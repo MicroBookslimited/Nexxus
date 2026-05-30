@@ -15,7 +15,7 @@ import {
   AlertTriangle, BarChart2, ChevronRight, Building2, Calculator,
   ArrowUpRight, ArrowDownRight, Wallet, Package, ClipboardList,
   ArrowUp, ArrowDown, Search, ChevronDown, ChevronUp,
-  Download, Upload, Wand2,
+  Download, Upload, Wand2, ScanLine,
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { format, startOfMonth, endOfMonth, startOfYear } from "date-fns";
@@ -52,7 +52,7 @@ interface TrialBalance {
 }
 interface Overview { period: string; from: string; to: string; revenue: number; taxCollected: number; totalRevenue: number; totalExpenses: number; netIncome: number; orderCount: number; journalEntryCount: number; }
 interface QBStatus { configured: boolean; connected: boolean; realmId?: string; connectedAt?: string; tokenExpired?: boolean; lastSyncAt?: string; lastSyncStatus?: string; lastSyncMessage?: string; }
-interface StockProduct { id: number; name: string; category: string; price: number; stockCount: number; inStock: boolean; }
+interface StockProduct { id: number; name: string; category: string; price: number; stockCount: number; inStock: boolean; barcode?: string | null; }
 interface StockAdjustment { id: number; productId: number; productName: string; adjustmentType: string; quantity: number; reason: string; notes: string | null; previousStock: number; newStock: number; createdAt: string; createdBy: string | null; journalEntryId: number | null; }
 interface StockCountItem { id: number; sessionId: number; productId: number; productName: string; productCategory: string | null; systemCount: number; physicalCount: number | null; discrepancy: number | null; isAdjusted: boolean; unitCost: number | null; }
 interface StockCountSession { id: number; name: string; status: string; notes: string | null; startedAt: string; completedAt: string | null; createdBy: string | null; totalItems: number | null; totalDiscrepancies: number | null; items?: StockCountItem[]; }
@@ -803,7 +803,7 @@ function NewStockCountModal({ onClose, onCreated }: { onClose: () => void; onCre
 }
 
 /* ─── Stock Count Detail View ─── */
-function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number; onBack: () => void; onApplied: () => void }) {
+function StockCountDetail({ sessionId, products, onBack, onApplied }: { sessionId: number; products: StockProduct[]; onBack: () => void; onApplied: () => void }) {
   const { toast } = useToast();
   const [session, setSession] = useState<StockCountSession | null>(null);
   const [items, setItems] = useState<StockCountItem[]>([]);
@@ -813,7 +813,14 @@ function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number;
   const [createJE, setCreateJE] = useState(false);
   const [loading, setLoading] = useState(true);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [scanCode, setScanCode] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  // Synchronous mirror of `counts` so rapid back-to-back scans read the latest
+  // value before React re-renders. Per-item write sequence prevents an older
+  // PATCH response from clobbering a newer one when scans race.
+  const countsRef = useRef<Record<number, string>>({});
+  const writeSeqRef = useRef<Record<number, number>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -823,6 +830,7 @@ function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number;
       setItems(data.items ?? []);
       const initCounts: Record<number, string> = {};
       for (const item of data.items ?? []) { if (item.physicalCount !== null) initCounts[item.id] = String(item.physicalCount); }
+      countsRef.current = initCounts;
       setCounts(initCounts);
     } catch (e: any) { toast({ title: "Error loading session", description: e.message, variant: "destructive" }); }
     finally { setLoading(false); }
@@ -831,13 +839,56 @@ function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number;
   useEffect(() => { load(); }, [load]);
 
   async function updateCount(itemId: number, value: string) {
+    countsRef.current = { ...countsRef.current, [itemId]: value };
     setCounts(prev => ({ ...prev, [itemId]: value }));
     const n = parseInt(value, 10);
     if (isNaN(n) || n < 0) return;
+    const seq = (writeSeqRef.current[itemId] ?? 0) + 1;
+    writeSeqRef.current[itemId] = seq;
     try {
       const updated = await api<StockCountItem>(`/accounting/stock-counts/${sessionId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ physicalCount: n }) });
-      setItems(prev => prev.map(i => i.id === itemId ? updated : i));
+      // Ignore a stale response if a newer write for this item is already in flight.
+      if (writeSeqRef.current[itemId] === seq) {
+        setItems(prev => prev.map(i => i.id === itemId ? updated : i));
+      }
     } catch { /* silent — allow optimistic UI */ }
+  }
+
+  // Normalize a barcode for matching: trim whitespace (HID scanners often
+  // append spaces) and lowercase so casing differences don't matter.
+  const normalizeBarcode = (s: string | null | undefined): string => (s ?? "").trim().toLowerCase();
+
+  // Each scan of a product's barcode adds +1 to its physical count. Matches the
+  // scanned code against products[].barcode, then bumps the matching session item.
+  function consumeScan(raw: string) {
+    const code = normalizeBarcode(raw);
+    if (!code) return;
+    const matches = products.filter(p => normalizeBarcode(p.barcode) === code);
+    setScanCode("");
+    if (matches.length === 0) {
+      toast({ title: "No match", description: `No product has barcode "${raw.trim()}"`, variant: "destructive" });
+      return;
+    }
+    if (matches.length > 1) {
+      toast({ title: "Multiple products share this barcode", description: "Enter the count manually instead.", variant: "destructive" });
+      return;
+    }
+    const product = matches[0];
+    const item = items.find(i => i.productId === product.id);
+    if (!item) {
+      toast({ title: "Not in this count", description: `${product.name} isn't part of this session.`, variant: "destructive" });
+      return;
+    }
+    if (item.isAdjusted) {
+      toast({ title: "Already applied", description: `${product.name} has already been adjusted.`, variant: "destructive" });
+      return;
+    }
+    const curRaw = countsRef.current[item.id];
+    const cur = curRaw !== undefined && curRaw !== "" ? parseInt(curRaw, 10) : (item.physicalCount ?? 0);
+    const next = (isNaN(cur) ? 0 : cur) + 1;
+    updateCount(item.id, String(next));
+    toast({ title: `+1 ${product.name}`, description: `Physical count: ${next}` });
+    scanInputRef.current?.focus();
   }
 
   async function applyCount() {
@@ -858,6 +909,7 @@ function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number;
       // Local-only clear: just blank the inputs. There's no API to null out
       // physicalCount; the user can re-type to overwrite, then Apply ignores
       // null values anyway.
+      countsRef.current = {};
       setCounts({});
       toast({ title: "Cleared inputs" });
       return;
@@ -957,6 +1009,27 @@ function StockCountDetail({ sessionId, onBack, onApplied }: { sessionId: number;
           <span>{items.length - counted} remaining</span>
         </div>
       </div>
+
+      {/* Barcode scan to count */}
+      {!isCompleted && session?.status !== "voided" && (
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <ScanLine className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">Scan to count</span>
+            <span className="text-xs text-muted-foreground ml-auto hidden sm:inline">Each scan adds +1 to the product's physical count</span>
+          </div>
+          <Input
+            ref={scanInputRef}
+            autoFocus
+            className="h-9 text-sm font-mono"
+            placeholder="Scan or type a barcode, then press Enter…"
+            value={scanCode}
+            onChange={e => setScanCode(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); consumeScan(scanCode); } }}
+          />
+          <p className="text-[11px] text-muted-foreground sm:hidden">Each scan adds +1 to the product's physical count.</p>
+        </div>
+      )}
 
       {/* Bulk actions + Search */}
       {!isCompleted && session?.status !== "voided" && (
@@ -1128,7 +1201,7 @@ function InventoryPanel({ products }: { products: StockProduct[] }) {
 
   // If viewing a session
   if (activeSessionId !== null) {
-    return <StockCountDetail sessionId={activeSessionId} onBack={() => setActiveSessionId(null)} onApplied={() => { setActiveSessionId(null); loadSessions(); }} />;
+    return <StockCountDetail sessionId={activeSessionId} products={products} onBack={() => setActiveSessionId(null)} onApplied={() => { setActiveSessionId(null); loadSessions(); }} />;
   }
 
   return (
