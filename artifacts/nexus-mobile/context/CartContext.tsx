@@ -1,57 +1,101 @@
 import React, { createContext, useContext, useMemo, useState } from "react";
-import type { Product } from "@workspace/api-client-react";
+import type { ChoiceItem, Product } from "@workspace/api-client-react";
 
 export interface CartLine {
+  /** Stable per-line identity: same product + same choices stacks; different choices = separate line. */
+  lineKey: string;
   product: Product;
   quantity: number;
+  /** Per-unit price including variant price + modifier add-ons. */
+  unitPrice: number;
+  variantChoices: ChoiceItem[];
+  modifierChoices: ChoiceItem[];
+  /** Total discount applied to this line (currency, not per-unit). */
+  lineDiscount: number;
+}
+
+export interface AddToCartOptions {
+  unitPrice?: number;
+  variantChoices?: ChoiceItem[];
+  modifierChoices?: ChoiceItem[];
 }
 
 interface CartState {
   lines: CartLine[];
   count: number;
   subtotal: number;
-  add: (p: Product) => void;
-  setQty: (productId: number, q: number) => void;
-  remove: (productId: number) => void;
+  add: (p: Product, opts?: AddToCartOptions) => void;
+  setQty: (lineKey: string, q: number) => void;
+  remove: (lineKey: string) => void;
+  setDiscount: (lineKey: string, discount: number) => void;
   clear: () => void;
 }
 
 const CartCtx = createContext<CartState | null>(null);
 
+function makeLineKey(productId: number, vc: ChoiceItem[], mc: ChoiceItem[]): string {
+  const v = vc
+    .map((c) => c.optionId)
+    .sort((a, b) => a - b)
+    .join(".");
+  const m = mc
+    .map((c) => c.optionId)
+    .sort((a, b) => a - b)
+    .join(".");
+  return `${productId}|v:${v}|m:${m}`;
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
 
-  const add = (p: Product) =>
+  const add = (p: Product, opts?: AddToCartOptions) => {
+    const variantChoices = opts?.variantChoices ?? [];
+    const modifierChoices = opts?.modifierChoices ?? [];
+    const unitPrice = opts?.unitPrice ?? p.price;
+    const lineKey = makeLineKey(p.id, variantChoices, modifierChoices);
     setLines((prev) => {
-      const i = prev.findIndex((l) => l.product.id === p.id);
+      const i = prev.findIndex((l) => l.lineKey === lineKey);
       if (i >= 0) {
         const copy = [...prev];
         copy[i] = { ...copy[i]!, quantity: copy[i]!.quantity + 1 };
         return copy;
       }
-      return [...prev, { product: p, quantity: 1 }];
+      return [
+        ...prev,
+        { lineKey, product: p, quantity: 1, unitPrice, variantChoices, modifierChoices, lineDiscount: 0 },
+      ];
     });
+  };
 
-  const setQty = (productId: number, q: number) =>
+  const setQty = (lineKey: string, q: number) =>
     setLines((prev) =>
       q <= 0
-        ? prev.filter((l) => l.product.id !== productId)
-        : prev.map((l) => (l.product.id === productId ? { ...l, quantity: q } : l)),
+        ? prev.filter((l) => l.lineKey !== lineKey)
+        : prev.map((l) => (l.lineKey === lineKey ? { ...l, quantity: q } : l)),
     );
 
-  const remove = (productId: number) =>
-    setLines((prev) => prev.filter((l) => l.product.id !== productId));
+  const remove = (lineKey: string) => setLines((prev) => prev.filter((l) => l.lineKey !== lineKey));
+
+  const setDiscount = (lineKey: string, discount: number) =>
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.lineKey !== lineKey) return l;
+        const max = l.unitPrice * l.quantity;
+        const clamped = Number.isFinite(discount) ? Math.min(Math.max(0, discount), max) : 0;
+        return { ...l, lineDiscount: clamped };
+      }),
+    );
 
   const clear = () => setLines([]);
 
   const subtotal = useMemo(
-    () => lines.reduce((s, l) => s + l.product.price * l.quantity, 0),
+    () => lines.reduce((s, l) => s + Math.max(0, l.unitPrice * l.quantity - l.lineDiscount), 0),
     [lines],
   );
   const count = useMemo(() => lines.reduce((s, l) => s + l.quantity, 0), [lines]);
 
   return (
-    <CartCtx.Provider value={{ lines, count, subtotal, add, setQty, remove, clear }}>
+    <CartCtx.Provider value={{ lines, count, subtotal, add, setQty, remove, setDiscount, clear }}>
       {children}
     </CartCtx.Provider>
   );

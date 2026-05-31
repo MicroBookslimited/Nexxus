@@ -1,5 +1,5 @@
 - [Looped Labs ESC/POS Android printing](looped-labs-printing.md) — distinct USB/BT/Network package ids; print plain text via org.escpos.intent.action.PRINT, never HTML (HTML crashes the service).
-- [Repo is not typecheck-clean](typecheck-preexisting-errors.md) — api-server & nexus-pos have pre-existing TS errors; filter typecheck output to your files before assuming you broke it. typecheck:libs IS clean.
+- [Repo is not typecheck-clean](typecheck-preexisting-errors.md) — api-server & nexus-pos have pre-existing TS errors; typecheck:libs IS clean.
 - [Two parallel stock systems](stock-two-systems.md) — global stockCount vs per-location inventory drift; dashboard sums locations when distributed, else falls back to global.
 - [Separate product-id domains](product-id-domains.md) — POS `products` and `store_products` have independent id spaces; never cross-repoint history (e.g. merge) into `store_*` tables.
 - [Staff authz pattern](staff-auth-pattern.md) — privileged endpoints gate on a client-supplied staffId (tenant JWT has no staff identity); spoofable app-wide, fix is a dedicated task.

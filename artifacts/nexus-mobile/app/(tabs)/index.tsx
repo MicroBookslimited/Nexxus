@@ -28,19 +28,28 @@ import {
   Divider,
   EmptyState,
   ErrorState,
+  Field,
   LoadingState,
   SearchBar,
   Stepper,
   fontFamily,
   useScreenPadding,
 } from "@/components/ui";
-import { useCart } from "@/context/CartContext";
+import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
+import { CustomizeSheet } from "@/components/CustomizeSheet";
+import { useCart, type CartLine } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { useResponsive } from "@/hooks/useResponsive";
 import { formatMoney } from "@/lib/format";
 
 function isSimple(p: Product) {
   return !p.hasVariants && !p.hasModifiers && !p.isComposite;
+}
+
+// Products with variant or modifier groups need the customize sheet. Composite
+// products without options are added directly (they have no choices to make).
+function needsCustomization(p: Product) {
+  return p.hasVariants || p.hasModifiers;
 }
 
 export default function SellScreen() {
@@ -53,6 +62,8 @@ export default function SellScreen() {
   const { data: products, isLoading, error, refetch } = useListProducts();
   const [search, setSearch] = useState("");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [customizeProduct, setCustomizeProduct] = useState<Product | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
 
   // The phone-only checkout modal must not survive a switch into the tablet
   // split-view (where the cart is always visible) — otherwise rotating back to
@@ -74,11 +85,42 @@ export default function SellScreen() {
   }, [products, search]);
 
   const onAdd = (p: Product) => {
-    if (!isSimple(p)) {
-      Alert.alert("Use full POS", `"${p.name}" has variants or modifiers. Add it from the desktop POS.`);
+    if (needsCustomization(p)) {
+      setCustomizeProduct(p);
       return;
     }
     cart.add(p);
+  };
+
+  // Map each barcode to ALL active products carrying it, so a shared barcode is
+  // surfaced for manual disambiguation rather than silently adding the wrong one.
+  const barcodeToProductIds = useMemo(() => {
+    const map = new Map<string, number[]>();
+    (products ?? []).forEach((p) => {
+      if (!p.barcode || p.archivedAt) return;
+      const key = p.barcode.trim().toLowerCase();
+      const arr = map.get(key) ?? [];
+      arr.push(p.id);
+      map.set(key, arr);
+    });
+    return map;
+  }, [products]);
+
+  const handleScan = (raw: string) => {
+    const code = raw.trim().toLowerCase();
+    const ids = barcodeToProductIds.get(code);
+    if (!ids || ids.length === 0) {
+      Alert.alert("No match", `No product found for barcode ${raw}.`);
+      return;
+    }
+    if (ids.length > 1) {
+      Alert.alert("Shared barcode", "Multiple products use this barcode. Add it from the list instead.");
+      return;
+    }
+    const product = (products ?? []).find((p) => p.id === ids[0]);
+    if (!product) return;
+    setScanOpen(false);
+    onAdd(product);
   };
 
   if (isLoading) {
@@ -169,6 +211,47 @@ export default function SellScreen() {
     />
   );
 
+  const searchRow = (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 16, paddingBottom: 8 }}>
+      <View style={{ flex: 1 }}>
+        <SearchBar value={search} onChangeText={setSearch} placeholder="Search products, SKU, barcode" />
+      </View>
+      <Pressable
+        onPress={() => setScanOpen(true)}
+        style={({ pressed }) => ({
+          width: 50,
+          height: 50,
+          borderRadius: c.radius + 2,
+          backgroundColor: c.secondary,
+          borderWidth: 1,
+          borderColor: c.border,
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: pressed ? 0.8 : 1,
+        })}
+      >
+        <Feather name="maximize" size={20} color={c.accent} />
+      </Pressable>
+    </View>
+  );
+
+  const overlays = (
+    <>
+      <CustomizeSheet
+        productId={customizeProduct?.id ?? null}
+        visible={customizeProduct != null}
+        onClose={() => setCustomizeProduct(null)}
+        onAdd={({ unitPrice, variantChoices, modifierChoices }) => {
+          if (customizeProduct) {
+            cart.add(customizeProduct, { unitPrice, variantChoices, modifierChoices });
+          }
+          setCustomizeProduct(null);
+        }}
+      />
+      <BarcodeScannerModal visible={scanOpen} onClose={() => setScanOpen(false)} onScan={handleScan} />
+    </>
+  );
+
   /* ─────────── Tablet: products + persistent cart side-by-side ─────────── */
   if (r.isTablet) {
     const panelWidth = r.isWide ? 420 : 340;
@@ -177,13 +260,7 @@ export default function SellScreen() {
         <AppHeader title="Sell" subtitle="Tap products to build a sale" />
         <View style={{ flex: 1, flexDirection: "row" }}>
           <View style={{ flex: 1 }}>
-            <View style={{ padding: 16, paddingBottom: 8 }}>
-              <SearchBar
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search products, SKU, barcode"
-              />
-            </View>
+            {searchRow}
             {productGrid}
           </View>
           <View
@@ -197,6 +274,7 @@ export default function SellScreen() {
             <CheckoutContent embedded onComplete={onCheckoutComplete} />
           </View>
         </View>
+        {overlays}
       </View>
     );
   }
@@ -206,13 +284,7 @@ export default function SellScreen() {
     <View style={{ flex: 1, backgroundColor: c.background }}>
       <AppHeader title="Sell" subtitle="Tap products to build a sale" />
 
-      <View style={{ padding: 16, paddingBottom: 8 }}>
-        <SearchBar
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search products, SKU, barcode"
-        />
-      </View>
+      {searchRow}
 
       {productGrid}
 
@@ -278,6 +350,8 @@ export default function SellScreen() {
           onComplete={onCheckoutComplete}
         />
       </Modal>
+
+      {overlays}
     </View>
   );
 }
@@ -302,6 +376,7 @@ function CheckoutContent({
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [showCustomers, setShowCustomers] = useState(false);
   const [custSearch, setCustSearch] = useState("");
+  const [discountFor, setDiscountFor] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<{ orderNumber: string; total: number; tax: number; subtotal: number } | null>(
     null,
   );
@@ -327,7 +402,16 @@ function CheckoutContent({
     try {
       const order = await createOrder.mutateAsync({
         data: {
-          items: cart.lines.map((l) => ({ productId: l.product.id, quantity: l.quantity })),
+          items: cart.lines.map((l) => {
+            const discount = Math.min(Math.max(0, l.lineDiscount), l.unitPrice * l.quantity);
+            return {
+              productId: l.product.id,
+              quantity: l.quantity,
+              ...(l.variantChoices.length ? { variantChoices: l.variantChoices } : {}),
+              ...(l.modifierChoices.length ? { modifierChoices: l.modifierChoices } : {}),
+              ...(discount > 0 ? { discountAmount: discount } : {}),
+            };
+          }),
           paymentMethod: payment,
           ...(customerId ? { customerId } : {}),
         },
@@ -424,19 +508,50 @@ function CheckoutContent({
       ) : (
         <>
           <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}>
-            {cart.lines.map((l) => (
-              <Card key={l.product.id} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold") }}>
-                    {l.product.name}
-                  </Text>
-                  <Text style={{ color: c.accent, fontSize: 14, fontFamily: fontFamily("medium"), marginTop: 2 }}>
-                    {formatMoney(l.product.price * l.quantity)}
-                  </Text>
-                </View>
-                <Stepper value={l.quantity} onChange={(v) => cart.setQty(l.product.id, v)} />
-              </Card>
-            ))}
+            {cart.lines.map((l) => {
+              const choices = [...l.variantChoices, ...l.modifierChoices]
+                .map((ch) => ch.optionName)
+                .join(" · ");
+              const lineTotal = Math.max(0, l.unitPrice * l.quantity - l.lineDiscount);
+              return (
+                <Card key={l.lineKey} style={{ gap: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold") }}>
+                        {l.product.name}
+                      </Text>
+                      {choices ? (
+                        <Text numberOfLines={2} style={{ color: c.mutedForeground, fontSize: 12, marginTop: 2 }}>
+                          {choices}
+                        </Text>
+                      ) : null}
+                      <Text style={{ color: c.accent, fontSize: 14, fontFamily: fontFamily("medium"), marginTop: 2 }}>
+                        {formatMoney(lineTotal)}
+                        {l.lineDiscount > 0 ? (
+                          <Text style={{ color: c.mutedForeground, fontSize: 12 }}>{`  (−${formatMoney(l.lineDiscount)})`}</Text>
+                        ) : null}
+                      </Text>
+                    </View>
+                    <Stepper value={l.quantity} onChange={(v) => cart.setQty(l.lineKey, v)} />
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Pressable
+                      onPress={() => setDiscountFor(l.lineKey)}
+                      hitSlop={6}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+                    >
+                      <Feather name="tag" size={14} color={c.mutedForeground} />
+                      <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("medium") }}>
+                        {l.lineDiscount > 0 ? "Edit discount" : "Add discount"}
+                      </Text>
+                    </Pressable>
+                    <Pressable onPress={() => cart.remove(l.lineKey)} hitSlop={6}>
+                      <Feather name="trash-2" size={16} color={c.destructive} />
+                    </Pressable>
+                  </View>
+                </Card>
+              );
+            })}
 
             {/* Customer */}
             <Card style={{ gap: 10 }}>
@@ -516,7 +631,61 @@ function CheckoutContent({
           </View>
         </>
       )}
+
+      <LineDiscountModal
+        line={cart.lines.find((l) => l.lineKey === discountFor) ?? null}
+        onClose={() => setDiscountFor(null)}
+        onSave={(amt) => {
+          if (discountFor) cart.setDiscount(discountFor, amt);
+          setDiscountFor(null);
+        }}
+      />
     </View>
+  );
+}
+
+function LineDiscountModal({
+  line,
+  onClose,
+  onSave,
+}: {
+  line: CartLine | null;
+  onClose: () => void;
+  onSave: (amount: number) => void;
+}) {
+  const c = useColors();
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    setValue(line && line.lineDiscount > 0 ? String(line.lineDiscount) : "");
+  }, [line]);
+
+  return (
+    <Modal visible={!!line} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}
+      >
+        <Pressable onPress={() => {}} style={{ backgroundColor: c.card, borderRadius: c.radius + 6, padding: 20, gap: 16 }}>
+          <Text style={{ color: c.foreground, fontSize: 18, fontFamily: fontFamily("bold") }} numberOfLines={1}>
+            {line?.product.name}
+          </Text>
+          <Text style={{ color: c.mutedForeground, fontSize: 13 }}>Discount applied to the whole line.</Text>
+          <Field
+            label="Discount amount"
+            value={value}
+            onChangeText={setValue}
+            placeholder="0"
+            keyboardType="decimal-pad"
+            autoFocus
+          />
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Button label="Remove" variant="secondary" onPress={() => onSave(0)} style={{ flex: 1 }} />
+            <Button label="Save" icon="check" onPress={() => onSave(parseFloat(value) || 0)} style={{ flex: 1 }} />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
