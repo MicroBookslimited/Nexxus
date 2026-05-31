@@ -56,6 +56,39 @@ function needsCustomization(p: Product) {
   return p.hasVariants || p.hasModifiers;
 }
 
+// Turn the raw server stock error (e.g. HTTP 409 'Cannot sell "Combo Plate Test":
+// only 0 of "Gizzada" available (need 1)') into a friendly, cashier-readable
+// message. Falls back to a generic message for anything we can't parse.
+function friendlyCheckoutError(e: unknown): { title: string; message: string } {
+  const raw = e instanceof Error ? e.message : "";
+  const avail = raw.match(/only\s+(\d+)\s+of\s+"([^"]+)"\s+available\s+\(need\s+(\d+)\)/i);
+  if (avail) {
+    const have = Number(avail[1]);
+    const component = avail[2];
+    const sold = raw.match(/Cannot sell\s+"([^"]+)"/i)?.[1];
+    // For a combo/recipe, name both the menu item and the missing ingredient.
+    const isCombo = sold && sold !== component;
+    if (have <= 0) {
+      return {
+        title: "Out of stock",
+        message: isCombo
+          ? `"${component}" is sold out, so "${sold}" can't be sold right now. Remove it from the cart or restock to continue.`
+          : `"${component}" is sold out. Remove it from the cart or restock to continue.`,
+      };
+    }
+    return {
+      title: "Not enough stock",
+      message: isCombo
+        ? `Only ${have} "${component}" left — not enough for "${sold}". Reduce the quantity or restock.`
+        : `Only ${have} "${component}" left. Reduce the quantity or restock to continue.`,
+    };
+  }
+  return {
+    title: "Checkout failed",
+    message: raw || "Something went wrong. Please try again.",
+  };
+}
+
 export default function SellScreen() {
   const c = useColors();
   const pad = useScreenPadding();
@@ -480,7 +513,8 @@ function CheckoutContent({
         void doPrint(receiptOrder);
       }
     } catch (e) {
-      Alert.alert("Checkout failed", e instanceof Error ? e.message : "Please try again.");
+      const { title, message } = friendlyCheckoutError(e);
+      Alert.alert(title, message);
     }
   };
 
