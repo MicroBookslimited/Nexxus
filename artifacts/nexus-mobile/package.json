@@ -57,6 +57,9 @@
   },
   "dependencies": {
     "expo-build-properties": "~1.0.10",
-    "expo-camera": "~17.0.10"
+    "expo-camera": "~17.0.10",
+    "react-native-ble-plx": "^3.5.1",
+    "react-native-tcp-socket": "^6.4.1",
+    "react-native-thermal-printer": "^2.3.6"
   }
 }

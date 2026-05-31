@@ -15,7 +15,11 @@
       "backgroundColor": "#0B1220"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Allow NEXXUS POS to connect to Bluetooth receipt printers.",
+        "NSLocalNetworkUsageDescription": "Allow NEXXUS POS to connect to network receipt printers on your local network."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -25,7 +29,13 @@
       "package": "com.nexxuspos.mobile",
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.INTERNET"
       ]
     },
     "web": {
@@ -55,6 +65,14 @@
         "expo-camera",
         {
           "cameraPermission": "Allow NEXXUS POS to use the camera to scan product barcodes."
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": [],
+          "bluetoothAlwaysPermission": "Allow NEXXUS POS to connect to Bluetooth receipt printers."
         }
       ]
     ],

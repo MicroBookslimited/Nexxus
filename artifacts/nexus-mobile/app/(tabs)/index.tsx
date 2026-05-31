@@ -1,11 +1,13 @@
 import { Feather } from "@expo/vector-icons";
 import {
   useCreateOrder,
+  useGetSettings,
   useListCustomers,
   useListProducts,
   type Product,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -38,8 +40,10 @@ import {
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { CustomizeSheet } from "@/components/CustomizeSheet";
 import { useCart, type CartLine } from "@/context/CartContext";
+import { usePrinter } from "@/context/PrinterContext";
 import { useColors } from "@/hooks/useColors";
 import { useResponsive } from "@/hooks/useResponsive";
+import { printReceipt, type ReceiptItem, type ReceiptOrder, type ReceiptSettings } from "@/lib/escpos";
 import { formatMoney } from "@/lib/format";
 
 function isSimple(p: Product) {
@@ -368,20 +372,32 @@ function CheckoutContent({
   const c = useColors();
   const insets = useSafeAreaInsets();
   const pad = useScreenPadding();
+  const router = useRouter();
   const cart = useCart();
   const createOrder = useCreateOrder();
   const { data: customers } = useListCustomers();
+  const { data: settingsData } = useGetSettings();
+  const { config: printerConfig, ready: printerReady } = usePrinter();
+  const [printing, setPrinting] = useState(false);
 
   const [payment, setPayment] = useState<"cash" | "card">("cash");
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [showCustomers, setShowCustomers] = useState(false);
   const [custSearch, setCustSearch] = useState("");
   const [discountFor, setDiscountFor] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<{ orderNumber: string; total: number; tax: number; subtotal: number } | null>(
-    null,
-  );
+  const [receipt, setReceipt] = useState<ReceiptOrder | null>(null);
 
   const selectedCustomer = customers?.find((x) => x.id === customerId) ?? null;
+
+  const receiptSettings: ReceiptSettings = {
+    business_name: settingsData?.business_name,
+    business_address: settingsData?.business_address,
+    business_phone: settingsData?.business_phone,
+    receipt_footer: settingsData?.receipt_footer,
+    tax_rate: settingsData?.tax_rate,
+    tax_name: settingsData?.tax_name,
+    base_currency: settingsData?.base_currency,
+  };
 
   const filteredCustomers = useMemo(() => {
     const q = custSearch.trim().toLowerCase();
@@ -397,12 +413,24 @@ function CheckoutContent({
     setCustSearch("");
   };
 
+  const doPrint = async (order: ReceiptOrder) => {
+    setPrinting(true);
+    try {
+      await printReceipt(printerConfig, order, receiptSettings);
+    } catch (e) {
+      Alert.alert("Print failed", e instanceof Error ? e.message : "Could not print the receipt.");
+    } finally {
+      setPrinting(false);
+    }
+  };
+
   const charge = async () => {
     if (cart.lines.length === 0) return;
     try {
+      const lineSnapshot = cart.lines;
       const order = await createOrder.mutateAsync({
         data: {
-          items: cart.lines.map((l) => {
+          items: lineSnapshot.map((l) => {
             const discount = Math.min(Math.max(0, l.lineDiscount), l.unitPrice * l.quantity);
             return {
               productId: l.product.id,
@@ -416,15 +444,34 @@ function CheckoutContent({
           ...(customerId ? { customerId } : {}),
         },
       });
-      setReceipt({
-        orderNumber: order.orderNumber,
-        total: order.total,
-        tax: order.tax,
-        subtotal: order.subtotal,
+      const items: ReceiptItem[] = lineSnapshot.map((l) => {
+        const discount = Math.min(Math.max(0, l.lineDiscount), l.unitPrice * l.quantity);
+        return {
+          quantity: l.quantity,
+          productName: l.product.name,
+          unitPrice: l.unitPrice,
+          lineTotal: l.unitPrice * l.quantity - discount,
+          variantChoices: l.variantChoices.map((v) => ({ optionName: v.optionName })),
+          modifierChoices: l.modifierChoices.map((m) => ({ optionName: m.optionName })),
+        };
       });
+      const receiptOrder: ReceiptOrder = {
+        orderNumber: order.orderNumber,
+        createdAt: new Date(),
+        customerName: selectedCustomer?.name,
+        items,
+        subtotal: order.subtotal,
+        tax: order.tax,
+        total: order.total,
+        paymentMethod: payment === "cash" ? "Cash" : "Card",
+      };
+      setReceipt(receiptOrder);
       cart.clear();
       reset();
       onComplete();
+      if (printerReady && printerConfig.enabled && printerConfig.autoPrint) {
+        void doPrint(receiptOrder);
+      }
     } catch (e) {
       Alert.alert("Checkout failed", e instanceof Error ? e.message : "Please try again.");
     }
@@ -448,21 +495,26 @@ function CheckoutContent({
         <Text style={{ color: c.foreground, fontSize: 20, fontFamily: fontFamily("bold") }}>
           {receipt ? "Sale complete" : embedded ? "Current sale" : "Checkout"}
         </Text>
-        {onClose ? (
-          <Pressable
-            onPress={() => {
-              if (receipt) setReceipt(null);
-              onClose();
-            }}
-            hitSlop={10}
-          >
-            <Feather name="x" size={26} color={c.foreground} />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+          <Pressable onPress={() => router.push("/printer-settings")} hitSlop={10}>
+            <Feather name="printer" size={22} color={c.mutedForeground} />
           </Pressable>
-        ) : !receipt && !empty ? (
-          <Pressable onPress={() => cart.clear()} hitSlop={10}>
-            <Text style={{ color: c.destructive, fontSize: 14, fontFamily: fontFamily("medium") }}>Clear</Text>
-          </Pressable>
-        ) : null}
+          {onClose ? (
+            <Pressable
+              onPress={() => {
+                if (receipt) setReceipt(null);
+                onClose();
+              }}
+              hitSlop={10}
+            >
+              <Feather name="x" size={26} color={c.foreground} />
+            </Pressable>
+          ) : !receipt && !empty ? (
+            <Pressable onPress={() => cart.clear()} hitSlop={10}>
+              <Text style={{ color: c.destructive, fontSize: 14, fontFamily: fontFamily("medium") }}>Clear</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       {receipt ? (
@@ -491,6 +543,16 @@ function CheckoutContent({
             <Divider />
             <Row label="Total" value={formatMoney(receipt.total)} bold />
           </Card>
+          {printerConfig.enabled ? (
+            <Button
+              label={printing ? "Printing…" : "Print receipt"}
+              icon="printer"
+              variant="secondary"
+              loading={printing}
+              onPress={() => void doPrint(receipt)}
+              style={{ width: "100%" }}
+            />
+          ) : null}
           <Button
             label="New Sale"
             icon="plus"

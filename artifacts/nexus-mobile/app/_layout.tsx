@@ -18,6 +18,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LoadingState } from "@/components/ui";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
+import { PrinterProvider } from "@/context/PrinterContext";
 import { getToken } from "@/lib/nexus-api";
 
 // Point the generated API client at the shared proxy domain and let it read the
@@ -53,6 +54,7 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="login" />
       <Stack.Screen name="stock-count/[id]" />
+      <Stack.Screen name="printer-settings" />
     </Stack>
   );
 }
@@ -80,9 +82,11 @@ export default function RootLayout() {
           <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
               <AuthProvider>
-                <CartProvider>
-                  <RootLayoutNav />
-                </CartProvider>
+                <PrinterProvider>
+                  <CartProvider>
+                    <RootLayoutNav />
+                  </CartProvider>
+                </PrinterProvider>
               </AuthProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
