@@ -5,6 +5,8 @@
  * Expo Go (the native module only resolves in a development build).
  */
 
+import { bytesToBase64 } from "../base64";
+
 function loadTcp(): any {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -12,13 +14,6 @@ function loadTcp(): any {
   } catch {
     throw new Error("Network printing requires a development build (react-native-tcp-socket is not available in Expo Go).");
   }
-}
-
-function getBuffer(): { from: (b: Uint8Array) => unknown } {
-  const g = globalThis as any;
-  if (g.Buffer) return g.Buffer;
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  return require("buffer").Buffer;
 }
 
 export async function printNetwork(
@@ -31,7 +26,7 @@ export async function printNetwork(
 
   const tcpModule = loadTcp();
   const TcpSocket = tcpModule.default ?? tcpModule;
-  const Buffer = getBuffer();
+  const payload = bytesToBase64(bytes);
 
   await new Promise<void>((resolve, reject) => {
     let client: any = null;
@@ -57,7 +52,7 @@ export async function printNetwork(
     try {
       client = TcpSocket.createConnection({ host, port }, () => {
         try {
-          client.write(Buffer.from(bytes));
+          client.write(payload, "base64");
           // Give the socket a moment to flush before closing.
           setTimeout(() => finish(), 600);
         } catch (e) {
