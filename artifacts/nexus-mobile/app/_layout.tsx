@@ -55,6 +55,10 @@ function RootLayoutNav() {
       <Stack.Screen name="login" />
       <Stack.Screen name="stock-count/[id]" />
       <Stack.Screen name="printer-settings" />
+      <Stack.Screen name="product/[id]" />
+      <Stack.Screen name="product/new" />
+      <Stack.Screen name="product/edit/[id]" />
+      <Stack.Screen name="subscription" />
     </Stack>
   );
 }

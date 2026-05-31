@@ -1,20 +1,23 @@
 import { Feather } from "@expo/vector-icons";
 import {
+  useCreateCustomer,
   useGetCustomerOrders,
   useListCustomers,
   type Customer,
 } from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
-import { FlatList, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, FlatList, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   AppHeader,
   Badge,
+  Button,
   Card,
   Divider,
   EmptyState,
   ErrorState,
+  Field,
   LoadingState,
   SearchBar,
   fontFamily,
@@ -31,6 +34,7 @@ export default function CustomersScreen() {
   const { data: customers, isLoading, error, refetch } = useListCustomers();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Customer | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -43,7 +47,26 @@ export default function CustomersScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>
-      <AppHeader title="Customers" subtitle={`${customers?.length ?? 0} total`} />
+      <AppHeader
+        title="Customers"
+        subtitle={`${customers?.length ?? 0} total`}
+        right={
+          <Pressable
+            onPress={() => setAdding(true)}
+            hitSlop={8}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 10,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: c.primary,
+            }}
+          >
+            <Feather name="plus" size={20} color="#FFFFFF" />
+          </Pressable>
+        }
+      />
 
       <View style={{ padding: 16, paddingBottom: 8 }}>
         <SearchBar value={search} onChangeText={setSearch} placeholder="Search name, phone, email" />
@@ -104,7 +127,103 @@ export default function CustomersScreen() {
       )}
 
       <CustomerDetailModal customer={selected} onClose={() => setSelected(null)} />
+      <AddCustomerModal
+        visible={adding}
+        onClose={() => setAdding(false)}
+        onCreated={() => {
+          setAdding(false);
+          refetch();
+        }}
+      />
     </View>
+  );
+}
+
+function AddCustomerModal({
+  visible,
+  onClose,
+  onCreated,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const c = useColors();
+  const insets = useSafeAreaInsets();
+  const create = useCreateCustomer();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const reset = () => {
+    setName("");
+    setEmail("");
+    setPhone("");
+  };
+
+  const submit = () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      Alert.alert("Name required", "Please enter the customer's name.");
+      return;
+    }
+    create.mutate(
+      {
+        data: {
+          name: trimmed,
+          email: email.trim() || undefined,
+          phone: phone.trim() || undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          reset();
+          onCreated();
+        },
+        onError: (e) => Alert.alert("Could not add customer", (e as Error).message),
+      },
+    );
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: c.background, paddingTop: insets.top }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: 16,
+            borderBottomWidth: 1,
+            borderBottomColor: c.border,
+          }}
+        >
+          <Text style={{ color: c.foreground, fontSize: 20, fontFamily: fontFamily("bold") }}>New customer</Text>
+          <Pressable onPress={onClose} hitSlop={10}>
+            <Feather name="x" size={26} color={c.foreground} />
+          </Pressable>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }} keyboardShouldPersistTaps="handled">
+          <Field label="Name" value={name} onChangeText={setName} placeholder="Customer name" autoFocus />
+          <Field
+            label="Email (optional)"
+            value={email}
+            onChangeText={setEmail}
+            placeholder="name@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <Field
+            label="Phone (optional)"
+            value={phone}
+            onChangeText={setPhone}
+            placeholder="Phone number"
+            keyboardType="phone-pad"
+          />
+          <Button label="Add customer" icon="check" onPress={submit} loading={create.isPending} />
+        </ScrollView>
+      </View>
+    </Modal>
   );
 }
 

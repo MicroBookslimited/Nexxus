@@ -61,6 +61,7 @@ export default function SellScreen() {
   const pad = useScreenPadding();
   const r = useResponsive();
   const cart = useCart();
+  const router = useRouter();
   const queryClient = useQueryClient();
 
   const { data: products, isLoading, error, refetch } = useListProducts();
@@ -257,11 +258,17 @@ export default function SellScreen() {
   );
 
   /* ─────────── Tablet: products + persistent cart side-by-side ─────────── */
+  const accountButton = (
+    <Pressable onPress={() => router.push("/subscription")} hitSlop={8}>
+      <Feather name="user" size={22} color={c.mutedForeground} />
+    </Pressable>
+  );
+
   if (r.isTablet) {
     const panelWidth = r.isWide ? 420 : 340;
     return (
       <View style={{ flex: 1, backgroundColor: c.background }}>
-        <AppHeader title="Sell" subtitle="Tap products to build a sale" />
+        <AppHeader title="Sell" subtitle="Tap products to build a sale" right={accountButton} />
         <View style={{ flex: 1, flexDirection: "row" }}>
           <View style={{ flex: 1 }}>
             {searchRow}
@@ -286,7 +293,7 @@ export default function SellScreen() {
   /* ─────────── Phone: grid + floating cart bar + modal ─────────── */
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>
-      <AppHeader title="Sell" subtitle="Tap products to build a sale" />
+      <AppHeader title="Sell" subtitle="Tap products to build a sale" right={accountButton} />
 
       {searchRow}
 

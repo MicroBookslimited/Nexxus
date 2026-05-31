@@ -186,3 +186,92 @@ export function createStockAdjustment(body: {
     body: JSON.stringify(body),
   });
 }
+
+/* ───────────── Volume pricing tiers & purchase/sale units ───────────── */
+
+export interface PricingTier {
+  id?: number;
+  minQty: number;
+  maxQty: number | null;
+  unitPrice: number;
+}
+
+export interface PurchaseUnit {
+  id?: number;
+  unitName: string;
+  conversionFactor: number;
+  isPurchase: boolean;
+  isSale: boolean;
+}
+
+export function getPricingTiers(productId: number): Promise<PricingTier[]> {
+  return request<PricingTier[]>(`/api/products/${productId}/pricing-tiers`);
+}
+
+export function replacePricingTiers(
+  productId: number,
+  tiers: { minQty: number; maxQty: number | null; unitPrice: number }[],
+): Promise<PricingTier[]> {
+  return request<PricingTier[]>(`/api/products/${productId}/pricing-tiers`, {
+    method: "PUT",
+    body: JSON.stringify({ tiers }),
+  });
+}
+
+export function getPurchaseUnits(productId: number): Promise<PurchaseUnit[]> {
+  return request<PurchaseUnit[]>(`/api/products/${productId}/purchase-units`);
+}
+
+export function replacePurchaseUnits(
+  productId: number,
+  units: { unitName: string; conversionFactor: number; isPurchase: boolean; isSale: boolean }[],
+): Promise<PurchaseUnit[]> {
+  return request<PurchaseUnit[]>(`/api/products/${productId}/purchase-units`, {
+    method: "PUT",
+    body: JSON.stringify({ units }),
+  });
+}
+
+/* ───────────── Subscription (SaaS) ───────────── */
+
+export interface SaasPlan {
+  id: number;
+  name: string;
+  slug: string;
+  description?: string;
+  priceMonthly: number;
+  priceAnnual: number;
+  features?: string[];
+  isActive?: boolean;
+}
+
+export interface SaasSubscription {
+  id: number;
+  tenantId: number;
+  planId: number | null;
+  status: string;
+  provider?: string;
+  billingCycle?: string;
+  trialEndsAt?: string;
+  currentPeriodEnd?: string;
+}
+
+export interface SaasMeResponse {
+  tenant: { id: number; businessName: string; email: string };
+  subscription?: SaasSubscription | null;
+  plan?: SaasPlan | null;
+  nextScheduledPayment?: {
+    scheduledFor?: string;
+    amount?: number;
+    planName?: string;
+    billingCycle?: string;
+  } | null;
+}
+
+export function saasMe(): Promise<SaasMeResponse> {
+  return request<SaasMeResponse>("/api/saas/me");
+}
+
+export function getPlans(): Promise<SaasPlan[]> {
+  return request<SaasPlan[]>("/api/plans");
+}
