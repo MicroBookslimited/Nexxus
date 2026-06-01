@@ -1871,7 +1871,7 @@ function clearPrintingFlag(): void {
   try { sessionStorage.removeItem(KIOSK_PRINTING_KEY); } catch { /* ignore */ }
 }
 
-export function openReceiptWindow(html: string): void {
+export function openReceiptWindow(html: string, opts?: { receiptPageSize?: string }): void {
   // Use a hidden iframe instead of window.open. Popups are blocked by
   // default on mobile Chrome (Android) and by many desktop pop-up blockers,
   // which silently drops the print preview. A same-origin iframe always
@@ -1915,12 +1915,28 @@ export function openReceiptWindow(html: string): void {
     #nexus-print-frame {
       display: block !important;
       position: static !important;
+      ${opts?.receiptPageSize ? `width: ${opts.receiptPageSize} !important; max-width: ${opts.receiptPageSize} !important;` : ""}
       border: 0 !important;
       opacity: 1 !important;
       visibility: visible !important;
     }
   `;
   document.head.appendChild(style);
+
+  // For Android thermal receipts, also inject @page into the PARENT document.
+  // When iframe.contentWindow.print() fires, Chrome actually prints the
+  // top-level (parent) document — the iframe's own @page rule is ignored.
+  // Adding @page here makes Chrome generate a correctly-sized PDF strip
+  // instead of a full Letter/A4 canvas that crashes ESC/POS raster services.
+  const PAGE_STYLE_ID = "nexus-print-page";
+  const prevPageStyle = document.getElementById(PAGE_STYLE_ID);
+  if (prevPageStyle) prevPageStyle.parentNode?.removeChild(prevPageStyle);
+  if (opts?.receiptPageSize) {
+    const pageStyle = document.createElement("style");
+    pageStyle.id = PAGE_STYLE_ID;
+    pageStyle.textContent = `@page { size: ${opts.receiptPageSize} auto; margin: 0; }`;
+    document.head.appendChild(pageStyle);
+  }
 
   // Clear the flag once the print dialog closes. The afterprint event fires
   // reliably on all modern browsers when the dialog is dismissed (print or
@@ -1929,6 +1945,8 @@ export function openReceiptWindow(html: string): void {
   const removePrintStyle = () => {
     const s = document.getElementById(PRINT_STYLE_ID);
     if (s) s.parentNode?.removeChild(s);
+    const ps = document.getElementById("nexus-print-page");
+    if (ps) ps.parentNode?.removeChild(ps);
   };
   const afterPrintFallbackTimer = setTimeout(() => {
     clearPrintingFlag();

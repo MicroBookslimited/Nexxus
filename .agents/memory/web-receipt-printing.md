@@ -9,10 +9,15 @@ The web (browser) POS prints **every** receipt through the browser's native prin
 
 **Android exception (important):** Android POS tablets typically route browser print through an **ESC/POS pass-through print service** (e.g. Looped Labs "ESC POS USB Print Service"). These services **crash** ("…keeps stopping" / "has stopped") when the print job rasterizes to a large bitmap. So on Android we print a **stripped-down, image-free, compact monospace** receipt instead. Desktop/Windows is left on the full styled receipt — the user wanted desktop untouched.
 
-**Two separate levers — both matter:**
+**Three separate levers — all matter:**
 1. **Content weight** — no logo image, no giant pickup number, no colors.
-2. **Page format** — this turned out to be the *bigger* lever. Stripping content alone did NOT stop the crash; the printed page must be pinned to the exact thermal width with **`@page { margin: 0 }`** and an **explicit `html,body { width: 80mm/58mm }`**. Without that, the browser hands the service a Letter/A4-sized canvas (mostly blank) that rasterizes huge and crashes it, even with lean text.
-**Why:** A user confirmed via the Android print PREVIEW that the lean text receipt was already rendering (no logo/number) yet still crashed — proving the crash is canvas dimensions, not content. Their other POS prints fine through the same Android print dialog, so a correctly-sized strip is the goal.
-**How to apply:** Keep the Android branch printing the lean builder AND keep the page pinned to paper width with zero page margin. Never add a logo/huge fonts to the Android print path. Do NOT reintroduce WebUSB or Looped-Labs-intent transports (both tried and removed). If a correctly-sized lean strip *still* crashes a given service, the only remaining option is sending raw text to the service (share-sheet/intent), bypassing the print framework entirely.
+2. **Page format** — the printed page must be pinned to the exact thermal width: `@page { size: <w> auto; margin: 0 }` and explicit `html,body { width: <w> }`.
+3. **Where @page lives** — this is the critical architectural gotcha (see below).
+
+**CRITICAL ARCHITECTURAL GOTCHA — @page must be in the PARENT document, not the iframe:**
+`openReceiptWindow` uses a hidden 0×0 iframe and calls `iframe.contentWindow.print()`. On Android Chrome, this triggers printing of the **top-level parent document** (not just the iframe). The parent's `@page` rule controls the PDF page dimensions — the iframe's own `@page` is completely ignored. So you MUST inject `@page { size: ${receiptPageSize} auto; margin: 0; }` into the **parent document** (via a dynamically-injected `<style id="nexus-print-page">` element) and remove it on `afterprint`. `openReceiptWindow` now accepts `opts.receiptPageSize`; `printOrderReceipt` passes the paper size (80mm/58mm) from settings on Android. Also: pin `#nexus-print-frame { width: <paperWidth> }` in the parent's `@media print` stylesheet so the iframe layout element is correctly sized.
+
+**Why:** User confirmed via Android print PREVIEW that the lean text receipt was rendering correctly yet the service still crashed — proving the crash was page DIMENSIONS, not content. The iframe's `@page` was being silently ignored; Chrome was generating a full Letter/A4-sized PDF which rasterized to a huge bitmap → OOM crash.
+**How to apply:** Always call `openReceiptWindow(html, { receiptPageSize })` on Android. Never embed the @page fix only in the iframe HTML. Clean up the injected `<style>` on afterprint (already handled). If a correctly-sized lean strip *still* crashes, the only remaining option is bypassing the print framework entirely (raw text transport).
 
 **Scope:** The mobile Expo app has its own native ESC/POS thermal printing (Network/Bluetooth/USB) — separate and unaffected.

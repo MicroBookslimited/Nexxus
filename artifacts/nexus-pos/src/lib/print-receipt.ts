@@ -42,6 +42,10 @@ export function printOrderReceipt(
   order: ReceiptOrder,
   settings: ReceiptSettings = {},
 ): void {
-  const printHtml = isAndroid() ? buildPlainReceiptHtml(order, settings) : html;
-  openReceiptWindow(printHtml);
+  if (!isAndroid()) {
+    openReceiptWindow(html);
+    return;
+  }
+  const receiptSize = settings.receipt_size === "58mm" ? "58mm" : "80mm";
+  openReceiptWindow(buildPlainReceiptHtml(order, settings), { receiptPageSize: receiptSize });
 }
