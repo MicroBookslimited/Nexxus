@@ -11,17 +11,6 @@ export interface ReceiptSettings {
   currency_rate?: string;
   receipt_size?: string;       // "58mm" | "80mm"
   receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple"
-  /** When "true", Android devices route prints through a Looped Labs
-   *  ESC POS Print Service app (background plain-text print) instead of
-   *  the standard HTML iframe. Default off — leave off unless the
-   *  matching Looped Labs app is actually installed on the terminal. */
-  escpos_print_enabled?: string;
-  /** Which Looped Labs print-service app to target. "usb" (default) →
-   *  com.loopedlabs.usbprintservice, "bluetooth" →
-   *  com.loopedlabs.escposprintservice, "network" →
-   *  com.loopedlabs.escposnetprintservice. Only used when
-   *  escpos_print_enabled === "true". */
-  escpos_connection?: string;
 }
 
 export interface ReceiptOrderItem {

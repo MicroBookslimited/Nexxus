@@ -1,4 +1,4 @@
-- [Looped Labs ESC/POS Android printing](looped-labs-printing.md) — distinct USB/BT/Network package ids; print plain text via org.escpos.intent.action.PRINT, never HTML (HTML crashes the service).
+- [Web receipt printing](web-receipt-printing.md) — web POS uses standard browser print on ALL platforms (incl. Android); Looped Labs ESC/POS path removed (it crashed). Mobile Expo ESC/POS is separate.
 - [Repo is not typecheck-clean](typecheck-preexisting-errors.md) — api-server & nexus-pos have pre-existing TS errors; typecheck:libs IS clean.
 - [Two parallel stock systems](stock-two-systems.md) — global stockCount vs per-location inventory drift; dashboard sums locations when distributed, else falls back to global.
 - [Separate product-id domains](product-id-domains.md) — POS `products` and `store_products` have independent id spaces; never cross-repoint history (e.g. merge) into `store_*` tables.
