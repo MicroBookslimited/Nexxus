@@ -26,6 +26,11 @@ export async function printNetwork(
 
   const tcpModule = loadTcp();
   const TcpSocket = tcpModule.default ?? tcpModule;
+  if (typeof TcpSocket?.createConnection !== "function") {
+    throw new Error(
+      "Network printing isn't available in this app. Direct printing needs a native development build — it doesn't work in Expo Go or the web preview.",
+    );
+  }
   const payload = bytesToBase64(bytes);
 
   await new Promise<void>((resolve, reject) => {

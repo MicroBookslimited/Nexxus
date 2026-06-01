@@ -23,6 +23,11 @@ export async function printUsb(text: string): Promise<void> {
     throw new Error("USB printing is only supported on Android.");
   }
   const ThermalPrinter = loadThermal();
+  if (typeof ThermalPrinter?.printUsb !== "function") {
+    throw new Error(
+      "USB printing isn't available in this app. Direct printing needs a native development build — it doesn't work in Expo Go or the web preview.",
+    );
+  }
   await ThermalPrinter.printUsb({
     payload: text,
     autoCut: true,

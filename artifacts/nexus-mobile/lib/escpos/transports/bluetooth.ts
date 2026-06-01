@@ -27,6 +27,11 @@ function getManager(): any {
   } catch {
     throw new Error("Bluetooth printing requires a development build (react-native-ble-plx is not available in Expo Go).");
   }
+  if (typeof mod?.BleManager !== "function") {
+    throw new Error(
+      "Bluetooth printing isn't available in this app. Direct printing needs a native development build — it doesn't work in Expo Go or the web preview.",
+    );
+  }
   _manager = new mod.BleManager();
   return _manager;
 }
