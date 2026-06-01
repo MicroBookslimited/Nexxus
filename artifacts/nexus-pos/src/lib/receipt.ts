@@ -1676,6 +1676,180 @@ export function openWhatsAppReceipt(phone: string, order: ReceiptOrder, settings
   window.open(url, "_blank");
 }
 
+/**
+ * Lightweight, image-free, plain-text receipt for printing through Android
+ * ESC/POS pass-through print services (e.g. Looped Labs "ESC POS USB Print
+ * Service"). Those services choke and crash when handed a heavy styled page
+ * (logo image, giant order number, rich CSS) because the rendered bitmap is too
+ * large. This builder strips all of that out: no logo, no big pickup number, no
+ * colors — just compact monospace text sized to the paper width, which renders
+ * to a small bitmap the service can reliably print.
+ *
+ * Used ONLY on Android (see `print-receipt.ts`); desktop/Windows keeps the full
+ * styled receipt from `buildReceiptHtml`.
+ */
+export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings = {}): string {
+  const baseCurrency      = settings.base_currency      || "JMD";
+  const secondaryCurrency = settings.secondary_currency || "";
+  const exchangeRate      = parseFloat(settings.currency_rate || "0");
+  const taxRate           = settings.tax_rate           || "15";
+  const taxName           = settings.tax_name           || "GCT";
+  const businessName      = settings.business_name      || "NEXXUS POS";
+  const businessAddress   = settings.business_address   || "";
+  const businessPhone     = settings.business_phone     || "";
+  const receiptFooter     = settings.receipt_footer     || "Thank you for your business!";
+  const receiptSize       = settings.receipt_size       || "80mm";
+  const is58mm            = receiptSize === "58mm";
+
+  const fmt = (n: number, cur = baseCurrency) => {
+    try {
+      return new Intl.NumberFormat("en-US", { style: "currency", currency: cur }).format(Math.abs(n));
+    } catch {
+      return `${cur} ${Math.abs(n).toFixed(2)}`;
+    }
+  };
+  const fmtNum = (n: number) => Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
+  const dateStr   = createdAt.toLocaleString("en-JM", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
+  const orderNum  = String(order.orderNumber);
+
+  const row = (left: string, right: string, cls = "") =>
+    `<div class="r ${cls}"><span class="l">${left}</span><span class="v">${right}</span></div>`;
+
+  // ── Items ────────────────────────────────────────────────────────────────
+  const itemsHtml = order.items.map(item => {
+    const unit = item.unitPrice;
+    const orig = item.originalUnitPrice;
+    const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
+    let html = row(`${item.quantity}&times; ${escHtml(item.productName)}${unitStr}`, fmtNum(item.lineTotal), "item");
+    if (orig != null && unit != null && orig > unit) {
+      const lineSaving = (orig - unit) * item.quantity;
+      html += row(`&nbsp;&#8627; You save (was ${fmtNum(orig)})`, `-${fmtNum(lineSaving)}`, "sub");
+    }
+    for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
+      html += `<div class="sub">&nbsp;&#8627; ${escHtml(v.optionName)}</div>`;
+    }
+    for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
+      html += `<div class="sub">&nbsp;+ ${escHtml(m.optionName)}</div>`;
+    }
+    return html;
+  }).join("");
+
+  // ── Payment ──────────────────────────────────────────────────────────────
+  const tenderedAmt = order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0
+    ? order.cashTendered : order.total;
+  const changeAmt = Math.max(0, tenderedAmt - order.total);
+  let paymentHtml = "";
+  if (order.paymentMethod === "split") {
+    paymentHtml =
+      row("Payment", "SPLIT", "sub") +
+      row("&nbsp;&nbsp;Card", fmtNum(order.splitCardAmount ?? 0), "sub") +
+      row("&nbsp;&nbsp;Cash", fmtNum(order.splitCashAmount ?? 0), "sub");
+  } else {
+    paymentHtml = row("Payment", escHtml((order.paymentMethod ?? "—").toUpperCase()), "sub");
+  }
+  paymentHtml +=
+    row("Tendered", fmtNum(tenderedAmt), "sub") +
+    row("Total", `-${fmtNum(order.total)}`, "sub") +
+    row("Change", fmtNum(changeAmt), "sub");
+
+  // ── Optional blocks ──────────────────────────────────────────────────────
+  const discountHtml = (order.discountValue ?? 0) > 0
+    ? row("Discount", `-${fmtNum(order.discountValue ?? 0)}`, "sub") : "";
+  const tierSavings  = totalTierSavings(order.items);
+  const savingsHtml  = tierSavings > 0 ? row("You Save:", `-${fmtNum(tierSavings)}`, "sub") : "";
+  const secondaryHtml = secondaryCurrency && exchangeRate > 0
+    ? row(`&asymp;&nbsp;${escHtml(secondaryCurrency)}`, fmt(order.total * exchangeRate, secondaryCurrency), "sub") : "";
+  const refundedHtml = order.status === "refunded" ? `<div class="center bold">*** REFUNDED ***</div>` : "";
+  const notesHtml    = order.notes ? `<div class="sub">Note: ${escHtml(order.notes)}</div>` : "";
+
+  let customerHtml = "";
+  if (order.customerName) {
+    customerHtml += `<div class="hr"></div>`;
+    customerHtml += `<div class="bold">Customer: ${escHtml(order.customerName)}</div>`;
+    if (order.customerPhone) customerHtml += `<div class="sub">Tel: ${escHtml(order.customerPhone)}</div>`;
+    if (order.customerEmail) customerHtml += `<div class="sub">${escHtml(order.customerEmail)}</div>`;
+    if (order.customerLoyaltyBalance != null) customerHtml += `<div class="sub">Loyalty: ${order.customerLoyaltyBalance} pts</div>`;
+    if (order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0) {
+      customerHtml += `<div class="sub bold">Account Balance Due: ${fmt(order.customerOutstandingBalance)}</div>`;
+    }
+  }
+
+  let loyaltyHtml = "";
+  if (order.loyaltyPointsEarned || order.loyaltyPointsRedeemed) {
+    loyaltyHtml += `<div class="hr"></div><div class="center bold">LOYALTY POINTS</div>`;
+    if (order.loyaltyPointsEarned) loyaltyHtml += `<div class="center">+ ${order.loyaltyPointsEarned} pts earned</div>`;
+    if (order.loyaltyPointsRedeemed) loyaltyHtml += `<div class="center">- ${order.loyaltyPointsRedeemed} pts redeemed</div>`;
+  }
+
+  const addressHtml = (businessAddress || businessPhone)
+    ? `<div class="hr"></div>` +
+      (businessAddress ? `<div class="center sub">${escHtml(businessAddress)}</div>` : "") +
+      (businessPhone   ? `<div class="center sub">Tel: ${escHtml(businessPhone)}</div>` : "")
+    : "";
+
+  const fontSize = is58mm ? "11px" : "12px";
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Receipt &ndash; ${escHtml(orderNum)}</title>
+  <meta charset="utf-8">
+  <style>
+    @page { size: ${receiptSize} auto; margin: 2mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: ${fontSize};
+      line-height: 1.4;
+      color: #000;
+      padding: 2px 4px 10px;
+    }
+    .center { text-align: center; }
+    .bold { font-weight: 700; }
+    .name { text-align: center; font-weight: 700; font-size: ${is58mm ? "13px" : "14px"}; margin-bottom: 2px; }
+    .r { display: flex; justify-content: space-between; gap: 6px; }
+    .r .l { flex: 1; word-break: break-word; }
+    .r .v { white-space: nowrap; }
+    .item { font-weight: 700; margin-top: 2px; }
+    .sub { font-size: ${is58mm ? "10px" : "11px"}; }
+    .total { font-weight: 700; font-size: ${is58mm ? "13px" : "14px"}; margin: 2px 0; }
+    .hr { border-top: 1px dashed #000; margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="name">${escHtml(businessName)}</div>
+  <div class="center bold">${order.orderType ? escHtml(order.orderType) : "Sale"}${order.guestCount ? ` &middot; ${order.guestCount} Guest${order.guestCount !== 1 ? "s" : ""}` : ""}</div>
+  <div class="center sub">Order #: ${escHtml(orderNum)}</div>
+  ${order.staffName ? `<div class="center sub">Cashier: ${escHtml(order.staffName)}</div>` : ""}
+  <div class="center sub">${dateStr}</div>
+  ${customerHtml}
+  <div class="hr"></div>
+  ${itemsHtml}
+  <div class="hr"></div>
+  ${row("Subtotal:", fmtNum(order.subtotal), "sub")}
+  ${discountHtml}
+  ${savingsHtml}
+  ${row(`${escHtml(taxName)} (${escHtml(taxRate)}%):`, fmtNum(order.tax), "sub")}
+  ${row("Total:", fmt(order.total), "total")}
+  ${secondaryHtml}
+  <div class="hr"></div>
+  ${paymentHtml}
+  ${notesHtml}
+  ${refundedHtml}
+  ${loyaltyHtml}
+  ${addressHtml}
+  <div class="hr"></div>
+  <div class="center sub">${escHtml(receiptFooter)}</div>
+  <div class="center sub">Powered by NEXXUS POS</div>
+</body>
+</html>`;
+}
+
 // sessionStorage key shared with KioskLock in App.tsx.
 // Set to "1" while the browser print dialog is open so the kiosk's
 // fullscreenchange handler knows the exit was intentional (not an escape).
