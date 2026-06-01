@@ -1,35 +1,55 @@
 /**
- * Receipt printing — standard browser print on every platform.
+ * Receipt printing.
  *
- * Receipts are printed through the browser's native print pipeline
- * (`openReceiptWindow`), which on Android Chrome routes to the system's
- * default print service (any installed print plugin, a USB/Wi-Fi printer, or
- * "Save as PDF") and on desktop uses the OS print dialog. This is the same
- * battle-tested iframe pipeline used everywhere — it handles pop-up blockers,
- * KioskLock coordination, and `@media print` isolation.
+ * Two paths:
+ *  1. **USB thermal printer (ESC/POS)** — when the cashier has enabled and
+ *     connected a USB printer on this device (Settings → POS Interface), we
+ *     send raw ESC/POS bytes straight to the printer over WebUSB. This is the
+ *     only reliable path for thermal printers (e.g. 3nStar RPT004), which can't
+ *     reproduce Android's rasterized print job and print blank otherwise.
+ *  2. **Standard browser print** — the default everywhere else: the
+ *     battle-tested `openReceiptWindow` iframe pipeline (`window.print()`),
+ *     which handles pop-up blockers, KioskLock coordination, and `@media print`.
+ *
+ * If USB printing is enabled but fails, we surface the error and fall back to
+ * the browser print window so the cashier is never left without a receipt.
  *
  * Public API: `printOrderReceipt(html, order, settings)`.
  */
+import { toast } from "@/hooks/use-toast";
 import {
   openReceiptWindow,
   type ReceiptOrder,
   type ReceiptSettings,
 } from "./receipt";
+import { isUsbPrintActive, printReceiptViaUsb } from "./escpos-usb";
 
 /**
- * Print an order receipt using the browser's standard print pipeline.
+ * Print an order receipt. Uses the USB thermal printer when configured on this
+ * device, otherwise the browser's standard print pipeline.
  *
- * Callers build the styled receipt HTML via `buildReceiptHtml(order)`; we hand
- * it straight to `openReceiptWindow`, which triggers `window.print()` from a
- * same-origin iframe so the device's default printer service handles it.
- *
- * `order` and `settings` are accepted for API stability (and potential future
- * use) but the rendered `html` is what gets printed.
+ * Fire-and-forget: callers don't need to await — errors are surfaced via toast
+ * and a browser-print fallback.
  */
-export function printOrderReceipt(
+export async function printOrderReceipt(
   html: string,
-  _order: ReceiptOrder,
-  _settings: ReceiptSettings = {},
-): void {
+  order: ReceiptOrder,
+  settings: ReceiptSettings = {},
+): Promise<void> {
+  if (isUsbPrintActive()) {
+    try {
+      await printReceiptViaUsb(order, settings);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({
+        title: "USB print failed",
+        description: `${message} — opening the standard print dialog instead.`,
+        variant: "destructive",
+      });
+      // fall through to browser print so the cashier still gets a receipt
+    }
+  }
+
   openReceiptWindow(html);
 }

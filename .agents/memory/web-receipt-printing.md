@@ -1,14 +1,12 @@
 ---
 name: Web receipt printing
-description: How the web POS (artifacts/nexus-pos) prints receipts and why the Looped Labs ESC/POS path was removed.
+description: Why thermal printers need raw WebUSB ESC/POS in the web POS, not browser print.
 ---
 
-The web POS prints receipts via the browser's native print pipeline on **every** platform, including Android.
+Thermal receipt printers (e.g. 3nStar RPT004) **cannot** be driven by the browser's standard print dialog or by ESC/POS pass-through print services.
 
-`src/lib/print-receipt.ts` is a thin wrapper: `printOrderReceipt(html, order, settings)` always calls `openReceiptWindow(html)` (hidden same-origin iframe + `window.print()`) in `src/lib/receipt.ts`. On Android Chrome this opens the system print dialog, where the user picks their default print service / connected printer / "Save as PDF".
+**Why:** Android's print framework rasterizes the receipt into an image; thermal heads can't reproduce it, so standard browser print comes out **blank**. The ESC/POS pass-through services (raw BT, Looped Labs) want raw command bytes but receive a rendered job, so they blank out or crash. Only sending the raw ESC/POS byte stream straight to the printer prints reliably.
 
-**Why:** The previous Looped Labs ESC/POS Android intent path crashed ("ESC POS USB Print Service has stopped") and nothing printed. User confirmed removal in favor of standard browser print everywhere.
+**How to apply:** For web (browser) POS, the reliable transport is **WebUSB** (`navigator.usb`) over a USB cable — needs HTTPS + a user gesture for `requestDevice()`; permission persists per-origin. WebUSB is per-device, so store the enable flag + chosen vid/pid in localStorage, never as a tenant-wide setting. Do NOT reintroduce the Looped Labs Android-intent path. (Implementation specifics live in the `replit.md` "Web receipt printing" gotcha.)
 
-**How to apply:** Do NOT reintroduce UA-based Android branching or external print-app intents in the web POS. The `escpos_print_enabled` / `escpos_connection` settings and the Settings → POS Interface ESC/POS toggle were removed; stale DB values are ignored.
-
-**Scope:** The mobile Expo app (`artifacts/nexus-mobile`) has its OWN direct ESC/POS thermal printing (Network/Bluetooth/USB transports) — that is a separate, unrelated feature and is unaffected.
+**Scope:** The mobile Expo app has its own native ESC/POS thermal printing (Network/Bluetooth/USB) — separate and unaffected.

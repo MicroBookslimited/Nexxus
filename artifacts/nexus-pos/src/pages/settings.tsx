@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY,
   setBusinessType, setBusinessFeature, type BusinessType } from "@/lib/saas-api";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
+import { UsbPrinterSettings } from "@/components/usb-printer-settings";
 import { QRCodeSVG } from "qrcode.react";
 
 
@@ -1289,12 +1290,7 @@ export function AdminSettings() {
             </div>
           )}
 
-          <div className="rounded-lg border border-border p-4">
-            <p className="text-sm font-medium">Receipt printing</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Receipts print through your device's standard print dialog. On Android, this uses the system's default print service — pick your connected printer (or "Save as PDF") in the print preview. No extra app required.
-            </p>
-          </div>
+          <UsbPrinterSettings receiptSize={receiptSize} />
         </CardContent>
       </Card>
 
