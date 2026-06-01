@@ -1872,7 +1872,7 @@ function clearPrintingFlag(): void {
 }
 
 export function openReceiptWindow(html: string, opts?: { receiptPageSize?: string }): void {
-  // ── DESKTOP (no opts) ── original iframe behaviour, unchanged ──────────────
+  // DESKTOP: original iframe behaviour, unchanged
   if (!opts?.receiptPageSize) {
     const printScript = `<scr` + `ipt>window.addEventListener('load',function(){window.focus();window.print();window.close();})<\/scr` + `ipt>`;
     const printableHtml = html.includes('</body>') ? html.replace('</body>', printScript + '</body>') : html + printScript;
@@ -1891,28 +1891,27 @@ export function openReceiptWindow(html: string, opts?: { receiptPageSize?: strin
     return;
   }
 
-  // ── ANDROID CHROME ── open a brand-new window with ONLY the receipt ────────
-  // DOM manipulation (hiding/replacing elements) is ignored by Chrome Android.
-  // A new window contains nothing but the receipt, so Chrome prints it correctly.
+  // ANDROID CHROME: blob URL with embedded auto-print script
+  // document.write() to a blank window hangs Chrome Android print preview.
+  // Loading from a blob URL works reliably.
   const receiptSize = opts.receiptPageSize ?? '80mm';
   let fullHtml = html;
   if (!fullHtml.includes('@page')) {
     fullHtml = fullHtml.replace('</head>', `<style>@page{size:${receiptSize} auto;margin:0;}</style></head>`);
   }
-  const win = window.open('', '_blank');
-  if (!win) {
-    // Popup blocked — open blob URL (user taps to print manually)
-    const blob = new Blob([fullHtml], { type: 'text/html' });
-    window.open(URL.createObjectURL(blob), '_blank');
-    return;
+  // Embed auto-print + auto-close script inside the receipt page itself
+  const autoScript = `<scr` + `ipt>window.addEventListener('load',function(){setTimeout(function(){window.print();},300);window.addEventListener('afterprint',function(){window.close();});setTimeout(function(){window.close();},120000);})<\/scr` + `ipt>`;
+  const printableHtml = fullHtml.includes('</body>') ? fullHtml.replace('</body>', autoScript + '</body>') : fullHtml + autoScript;
+  const blob = new Blob([printableHtml], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const newWin = window.open(url, '_blank');
+  // Clean up blob URL after a minute
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
+  if (!newWin) {
+    // Popup blocked - user must tap the blob URL manually
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.click();
   }
-  win.document.open();
-  win.document.write(fullHtml);
-  win.document.close();
-  win.focus();
-  setTimeout(() => {
-    try { win.print(); } catch { /* ignore */ }
-    win.addEventListener('afterprint', () => { try { win.close(); } catch { /* ignore */ } });
-    setTimeout(() => { try { win.close(); } catch { /* ignore */ } }, 60000);
-  }, 500);
 }
