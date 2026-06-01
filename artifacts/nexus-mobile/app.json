@@ -74,7 +74,8 @@
           "modes": [],
           "bluetoothAlwaysPermission": "Allow NEXXUS POS to connect to Bluetooth receipt printers."
         }
-      ]
+      ],
+      "./plugins/withUsbHost"
     ],
     "experiments": {
       "typedRoutes": true,
