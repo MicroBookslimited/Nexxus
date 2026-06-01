@@ -1960,14 +1960,19 @@ export function openReceiptWindow(html: string, opts?: { receiptPageSize?: strin
   };
   window.addEventListener("afterprint", clearOnAfterPrint, { once: true });
 
-  const printScript = `<script>(function(){` +
-    `function go(){try{window.focus();window.print();}catch(e){}}` +
-    `if(document.readyState==='complete'){setTimeout(go,50);}` +
-    `else{window.addEventListener('load',function(){setTimeout(go,50);});}` +
-    `})();<\/script>`;
-  const printableHtml = html.includes("</body>")
-    ? html.replace("</body>", `${printScript}</body>`)
-    : html + printScript;
+  // Android: no self-print script — the parent window triggers print so
+  // Chrome uses the parent @page rule. Desktop: inject the self-print script.
+  let printableHtml = html;
+  if (!opts?.receiptPageSize) {
+    const printScript = `<script>(function(){` +
+      `function go(){try{window.focus();window.print();}catch(e){}}` +
+      `if(document.readyState==='complete'){setTimeout(go,50);}` +
+      `else{window.addEventListener('load',function(){setTimeout(go,50);});}` +
+      `})();<\/script>`;
+    printableHtml = html.includes("</body>")
+      ? html.replace("</body>", `${printScript}</body>`)
+      : html + printScript;
+  }
 
   // Remove any leftover print iframe before adding a new one.
   const prev = document.getElementById("nexus-print-frame");
@@ -1980,13 +1985,23 @@ export function openReceiptWindow(html: string, opts?: { receiptPageSize?: strin
   // actually paints it before printing. display:none breaks print on some
   // mobile browsers.
   iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
   iframe.style.border = "0";
   iframe.style.opacity = "0";
   iframe.style.pointerEvents = "none";
+  if (opts?.receiptPageSize) {
+    // Android: give the iframe a real paper width so receipt content lays out
+    // correctly before the parent window.print() fires. 0×0 can cause content
+    // to wrap to 0-width; off-screen keeps it invisible on screen.
+    iframe.style.left = "-9999px";
+    iframe.style.top = "0";
+    iframe.style.width = opts.receiptPageSize;
+    iframe.style.height = "auto";
+  } else {
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+  }
 
   document.body.appendChild(iframe);
 
@@ -2001,14 +2016,20 @@ export function openReceiptWindow(html: string, opts?: { receiptPageSize?: strin
       const cw = iframe.contentWindow;
       if (cw) {
         cw.focus();
-        // The embedded printScript will fire window.print() inside the
-        // iframe's own context, which is the only reliable way on Android
-        // Chrome. Also try from here as a desktop fallback.
         setTimeout(() => {
           try {
-            cw.print();
+            if (opts?.receiptPageSize) {
+              // Android: print the TOP-LEVEL parent window so Chrome uses
+              // the parent's @page { size: 80mm } rule for PDF generation.
+              // Calling cw.print() (the iframe) can silently ignore @page
+              // and produce a full Letter/A4 PDF → rasterisation crash.
+              window.print();
+            } else {
+              // Desktop: print the iframe's own document as before.
+              cw.print();
+            }
           } catch {
-            /* iframe script will handle */
+            /* printScript inside iframe handles desktop fallback */
           }
           cleanup();
         }, 100);
