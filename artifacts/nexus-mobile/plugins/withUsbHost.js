@@ -1,4 +1,4 @@
-const { withAndroidManifest } = require('@expo/config-plugins');
+const { withAndroidManifest } = require('expo/config-plugins');
 
 module.exports = function withUsbHost(config) {
   return withAndroidManifest(config, (config) => {
