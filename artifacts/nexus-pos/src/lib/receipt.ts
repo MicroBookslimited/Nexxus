@@ -1799,15 +1799,21 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
 <head>
   <title>Receipt &ndash; ${escHtml(orderNum)}</title>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    @page { size: ${receiptSize} auto; margin: 2mm; }
+    /* Pin the page to the exact thermal paper width with NO page margins so
+       Android ESC/POS pass-through print services (Looped Labs) rasterise a
+       small, clean strip instead of a Letter/A4-sized canvas (which crashes
+       them). margin:0 + an explicit body width are the two critical levers. */
+    @page { size: ${receiptSize} auto; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: ${receiptSize}; max-width: ${receiptSize}; background: #fff; }
     body {
       font-family: 'Courier New', Courier, monospace;
       font-size: ${fontSize};
-      line-height: 1.4;
+      line-height: 1.35;
       color: #000;
-      padding: 2px 4px 10px;
+      padding: 0 2mm 4mm;
     }
     .center { text-align: center; }
     .bold { font-weight: 700; }
