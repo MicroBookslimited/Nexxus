@@ -12,9 +12,15 @@ function loadThermal(): any {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require("react-native-thermal-printer");
-    return mod.default ?? mod;
+    // mod.default is NativeModules.ThermalPrinterModule; fall back to direct NativeModules access
+    const thermal = mod.default ?? mod;
+    if (thermal && typeof thermal.printUsb === "function") return thermal;
+    // If package default didn't have printUsb, try NativeModules directly
+    const { NativeModules } = require("react-native");
+    if (NativeModules.ThermalPrinterModule) return NativeModules.ThermalPrinterModule;
+    return thermal;
   } catch {
-    throw new Error("USB printing requires a development build (react-native-thermal-printer is not available in Expo Go).");
+    throw new Error("USB printing module not available.");
   }
 }
 
