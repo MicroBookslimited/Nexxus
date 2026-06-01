@@ -1872,214 +1872,47 @@ function clearPrintingFlag(): void {
 }
 
 export function openReceiptWindow(html: string, opts?: { receiptPageSize?: string }): void {
-  // Use a hidden iframe instead of window.open. Popups are blocked by
-  // default on mobile Chrome (Android) and by many desktop pop-up blockers,
-  // which silently drops the print preview. A same-origin iframe always
-  // renders, lets us call print() from the iframe's own context, and works
-  // identically on desktop and Android.
-  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(
-    typeof navigator !== "undefined" ? navigator.userAgent : "",
-  );
-
-  // Arm the kiosk-print flag BEFORE anything else so that the
-  // fullscreenchange event (which fires when the print dialog steals focus /
-  // exits fullscreen) is ignored by KioskLock.
-  setPrintingFlag();
-
-  // Clean up any leftover print artifacts from a previous call.
-  const PRINT_STYLE_ID = "nexus-print-style";
-  const PAGE_STYLE_ID = "nexus-print-page";
-  const ANDROID_CONTAINER_ID = "nexus-android-receipt";
-  for (const id of [PRINT_STYLE_ID, PAGE_STYLE_ID, ANDROID_CONTAINER_ID, "nexus-print-frame"]) {
-    const el = document.getElementById(id);
-    if (el) el.parentNode?.removeChild(el);
-  }
-
-  // ── Android inline print path ────────────────────────────────────────────
-  // CSS @media print rules proved completely unreliable for hiding the parent
-  // app UI on Android Chrome — the "Payment Successful" dialog kept printing
-  // regardless of display:none / visibility:hidden / html{visibility:hidden}.
-  //
-  // The root cause: Android's ESC/POS print services receive whatever Chrome's
-  // print renderer hands them. When @media print CSS doesn't suppress the UI,
-  // the full POS screen is captured and sent to the printer.
-  //
-  // Solution: skip CSS entirely for hiding. Instead —
-  //   1. Extract the receipt <body> content from the lean HTML.
-  //   2. Inject it as a plain <div> directly in document.body.
-  //   3. Hide EVERY other body child with an inline-style !important
-  //      (el.style.setProperty("display","none","important")).
-  //      Inline !important beats ALL external stylesheets including Tailwind,
-  //      Radix UI portal z-index tricks, and any component's own !important.
-  //   4. Inject @page { size: <width> auto; margin: 0 } in <head>.
-  //   5. Call window.print() — only the receipt div is in the layout.
-  //   6. afterprint: restore every child's original display value & remove
-  //      all injected nodes.
-  if (opts?.receiptPageSize) {
-    const receiptSize = opts.receiptPageSize;
-
-    // Extract <style> and <body> content from the complete lean receipt HTML.
-    const styleMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
-    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    const receiptCss = styleMatch ? styleMatch[1] : "";
-    const receiptBody = bodyMatch ? bodyMatch[1] : html;
-
-    // @page rule for correct paper width and zero margins.
-    const pageStyleEl = document.createElement("style");
-    pageStyleEl.id = PRINT_STYLE_ID;
-    pageStyleEl.textContent = `@page { size: ${receiptSize} auto; margin: 0; }`;
-    document.head.appendChild(pageStyleEl);
-
-    // Receipt CSS injected globally (classes like .center, .bold, .hr, .r,
-    // .l, .v are unique to the receipt template; no collisions with app CSS).
-    const receiptStyleEl = document.createElement("style");
-    receiptStyleEl.id = PAGE_STYLE_ID;
-    receiptStyleEl.textContent = receiptCss;
-    document.head.appendChild(receiptStyleEl);
-
-    // ── Nuclear body-replacement approach ────────────────────────────────────
-    // All CSS-based hiding (display:none, visibility:hidden, inline !important)
-    // has proven unreliable — Chrome's Android print renderer keeps capturing
-    // the full app UI regardless. The only 100 % reliable approach:
-    //
-    //   1. Remove EVERY existing body child from the DOM (kept in JS memory).
-    //      Chrome cannot render what isn't in the document.
-    //   2. Inject ONLY the receipt container.
-    //   3. Wait two animation frames so Chrome composites the new DOM state.
-    //   4. Call window.print() — the body has nothing but the receipt.
-    //   5. afterprint: put all original children back; React resumes normally.
-    //
-    // The removed nodes stay alive as JS objects (savedBodyChildren holds refs).
-    // React's state is intact in memory. Re-appending restores the app.
-
-    const savedBodyChildren = Array.from(document.body.childNodes);
-    savedBodyChildren.forEach(node => document.body.removeChild(node));
-
-    const container = document.createElement("div");
-    container.id = ANDROID_CONTAINER_ID;
-    container.style.cssText = [
-      `width:${receiptSize}`,
-      `background:#fff`,
-      `font-family:'Courier New',Courier,monospace`,
-      `font-size:12px`,
-      `margin:0`,
-      `padding:0`,
-    ].join(";");
-    container.innerHTML = receiptBody;
-    document.body.appendChild(container);
-
-    const cleanup = () => {
-      clearPrintingFlag();
-      // Remove the receipt container.
-      if (container.parentNode) container.parentNode.removeChild(container);
-      // Restore all original body children in their original order.
-      savedBodyChildren.forEach(node => document.body.appendChild(node));
-      // Remove injected head styles.
-      for (const id of [PRINT_STYLE_ID, PAGE_STYLE_ID]) {
-        const s = document.getElementById(id);
-        if (s) s.parentNode?.removeChild(s);
-      }
-    };
-
-    const fallbackTimer = setTimeout(() => cleanup(), 30_000);
-    window.addEventListener("afterprint", () => {
-      clearTimeout(fallbackTimer);
-      cleanup();
-    }, { once: true });
-
-    // Double rAF: first frame queues a repaint; second frame fires after
-    // Chrome has composited the new body state. Only then trigger print.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.print();
-      });
+  // ── DESKTOP (no opts) ── original iframe behaviour, unchanged ──────────────
+  if (!opts?.receiptPageSize) {
+    const printScript = `<scr` + `ipt>window.addEventListener('load',function(){window.focus();window.print();window.close();})<\/scr` + `ipt>`;
+    const printableHtml = html.includes('</body>') ? html.replace('</body>', printScript + '</body>') : html + printScript;
+    const iframe = document.createElement('iframe');
+    iframe.id = 'nexus-print-frame';
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none';
+    document.body.appendChild(iframe);
+    const cleanup = () => setTimeout(() => { iframe.parentNode?.removeChild(iframe); }, 1000);
+    iframe.addEventListener('load', () => {
+      const cw = iframe.contentWindow;
+      if (cw) { cw.focus(); setTimeout(() => { try { cw.print(); } catch { /* ignore */ } cleanup(); }, 100); }
+      else { cleanup(); }
     });
+    iframe.srcdoc = printableHtml;
     return;
   }
 
-  // ── Desktop / non-Android path (unchanged) ───────────────────────────────
-  const style = document.createElement("style");
-  style.id = PRINT_STYLE_ID;
-  style.media = "print";
-  style.textContent = `
-    html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
-    body > *:not(#nexus-print-frame) { display: none !important; }
-    [data-radix-portal], [data-sonner-toaster], [role="dialog"], [role="alertdialog"] {
-      display: none !important;
-    }
-    #nexus-print-frame {
-      display: block !important;
-      position: static !important;
-      border: 0 !important;
-      opacity: 1 !important;
-      visibility: visible !important;
-    }
-  `;
-  document.head.appendChild(style);
-
-  const removePrintStyle = () => {
-    const s = document.getElementById(PRINT_STYLE_ID);
-    if (s) s.parentNode?.removeChild(s);
-  };
-  const afterPrintFallbackTimer = setTimeout(() => {
-    clearPrintingFlag();
-    removePrintStyle();
-  }, 30_000);
-  const clearOnAfterPrint = () => {
-    clearTimeout(afterPrintFallbackTimer);
-    clearPrintingFlag();
-    removePrintStyle();
-    window.removeEventListener("afterprint", clearOnAfterPrint);
-  };
-  window.addEventListener("afterprint", clearOnAfterPrint, { once: true });
-
-  // Desktop: inject self-print script into the iframe HTML.
-  const printScript = `<script>(function(){` +
-    `function go(){try{window.focus();window.print();}catch(e){}}` +
-    `if(document.readyState==='complete'){setTimeout(go,50);}` +
-    `else{window.addEventListener('load',function(){setTimeout(go,50);});}` +
-    `})();<\/script>`;
-  const printableHtml = html.includes("</body>")
-    ? html.replace("</body>", `${printScript}</body>`)
-    : html + printScript;
-
-  const iframe = document.createElement("iframe");
-  iframe.id = "nexus-print-frame";
-  iframe.setAttribute("aria-hidden", "true");
-  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none";
-  document.body.appendChild(iframe);
-
-  const iframeCleanup = () => {
-    setTimeout(() => { iframe.parentNode?.removeChild(iframe); }, 1000);
-  };
-
-  iframe.addEventListener("load", () => {
-    try {
-      const cw = iframe.contentWindow;
-      if (cw) {
-        cw.focus();
-        setTimeout(() => {
-          try { cw.print(); } catch { /* printScript handles fallback */ }
-          iframeCleanup();
-        }, 100);
-      } else {
-        iframeCleanup();
-      }
-    } catch {
-      iframeCleanup();
-    }
-  });
-
-  iframe.srcdoc = printableHtml;
-
-  // Mobile safety net: if the iframe approach fails, open receipt as blob URL.
-  if (isMobile) {
-    setTimeout(() => {
-      if (!document.getElementById("nexus-print-frame")) return;
-      try {
-        const blob = new Blob([printableHtml], { type: "text/html" });
-        window.open(URL.createObjectURL(blob), "_blank");
-      } catch { /* ignore */ }
-    }, 2500);
+  // ── ANDROID CHROME ── open a brand-new window with ONLY the receipt ────────
+  // DOM manipulation (hiding/replacing elements) is ignored by Chrome Android.
+  // A new window contains nothing but the receipt, so Chrome prints it correctly.
+  const receiptSize = opts.receiptPageSize ?? '80mm';
+  let fullHtml = html;
+  if (!fullHtml.includes('@page')) {
+    fullHtml = fullHtml.replace('</head>', `<style>@page{size:${receiptSize} auto;margin:0;}</style></head>`);
   }
+  const win = window.open('', '_blank');
+  if (!win) {
+    // Popup blocked — open blob URL (user taps to print manually)
+    const blob = new Blob([fullHtml], { type: 'text/html' });
+    window.open(URL.createObjectURL(blob), '_blank');
+    return;
+  }
+  win.document.open();
+  win.document.write(fullHtml);
+  win.document.close();
+  win.focus();
+  setTimeout(() => {
+    try { win.print(); } catch { /* ignore */ }
+    win.addEventListener('afterprint', () => { try { win.close(); } catch { /* ignore */ } });
+    setTimeout(() => { try { win.close(); } catch { /* ignore */ } }, 60000);
+  }, 500);
 }
