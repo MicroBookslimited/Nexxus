@@ -1894,49 +1894,78 @@ export function openReceiptWindow(html: string, opts?: { receiptPageSize?: strin
   // "Payment Successful" dialog — instead of the offscreen 0×0 iframe,
   // which is exactly what was happening on the ELO tablets.
   const PRINT_STYLE_ID = "nexus-print-style";
-  const prevStyle = document.getElementById(PRINT_STYLE_ID);
-  if (prevStyle) prevStyle.parentNode?.removeChild(prevStyle);
+  const PAGE_STYLE_ID = "nexus-print-page";
+  for (const id of [PRINT_STYLE_ID, PAGE_STYLE_ID]) {
+    const el = document.getElementById(id);
+    if (el) el.parentNode?.removeChild(el);
+  }
+
   const style = document.createElement("style");
   style.id = PRINT_STYLE_ID;
-  style.media = "print";
-  // Critical: do NOT resize the iframe in print CSS. The receipt HTML
-  // inside the iframe already sets its own @page size (80mm) and
-  // dimensions; forcing 100vw/100vh here makes Android's ESC/POS USB
-  // print service receive an absurdly tall canvas and crash. The only
-  // job of this stylesheet is to hide the parent app chrome (modals,
-  // toasts, sidebar) so the printer renders the iframe's intrinsic
-  // content rather than the visible "Payment Successful" dialog.
-  style.textContent = `
-    html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
-    body > *:not(#nexus-print-frame) { display: none !important; }
-    [data-radix-portal], [data-sonner-toaster], [role="dialog"], [role="alertdialog"] {
-      display: none !important;
-    }
-    #nexus-print-frame {
-      display: block !important;
-      position: static !important;
-      ${opts?.receiptPageSize ? `width: ${opts.receiptPageSize} !important; max-width: ${opts.receiptPageSize} !important;` : ""}
-      border: 0 !important;
-      opacity: 1 !important;
-      visibility: visible !important;
-    }
-  `;
-  document.head.appendChild(style);
 
-  // For Android thermal receipts, also inject @page into the PARENT document.
-  // When iframe.contentWindow.print() fires, Chrome actually prints the
-  // top-level (parent) document — the iframe's own @page rule is ignored.
-  // Adding @page here makes Chrome generate a correctly-sized PDF strip
-  // instead of a full Letter/A4 canvas that crashes ESC/POS raster services.
-  const PAGE_STYLE_ID = "nexus-print-page";
-  const prevPageStyle = document.getElementById(PAGE_STYLE_ID);
-  if (prevPageStyle) prevPageStyle.parentNode?.removeChild(prevPageStyle);
   if (opts?.receiptPageSize) {
-    const pageStyle = document.createElement("style");
-    pageStyle.id = PAGE_STYLE_ID;
-    pageStyle.textContent = `@page { size: ${opts.receiptPageSize} auto; margin: 0; }`;
-    document.head.appendChild(pageStyle);
+    // Android thermal path:
+    // • @page is placed at top-level (NOT inside @media print) so Chrome
+    //   picks it up regardless of how print is triggered.
+    // • html { visibility: hidden } is the nuclear hide: it forces the entire
+    //   app invisible via CSS inheritance, catching fixed/portal elements that
+    //   escape a display:none rule on body children.
+    // • display:none on body children removes them from layout so the iframe
+    //   is the first (and only) flow element and the page height fits it.
+    // • The iframe itself is visibility:visible so its receipt content shows.
+    // • position:static + width pinned so the page dimensions match the paper.
+    // NOTE: no style.media="print" here — @media print is written inline so
+    // that @page (a top-level at-rule) definitely applies in this stylesheet.
+    style.textContent = `
+      @page { size: ${opts.receiptPageSize} auto; margin: 0; }
+      @media print {
+        html {
+          visibility: hidden !important;
+          background: #fff !important;
+        }
+        body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #fff !important;
+        }
+        body > *:not(#nexus-print-frame) {
+          display: none !important;
+          visibility: hidden !important;
+        }
+        #nexus-print-frame {
+          display: block !important;
+          position: static !important;
+          left: auto !important;
+          top: auto !important;
+          width: ${opts.receiptPageSize} !important;
+          max-width: ${opts.receiptPageSize} !important;
+          height: auto !important;
+          border: 0 !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+          background: #fff !important;
+        }
+      }
+    `;
+  } else {
+    // Desktop path — unchanged from original.
+    style.media = "print";
+    style.textContent = `
+      html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
+      body > *:not(#nexus-print-frame) { display: none !important; }
+      [data-radix-portal], [data-sonner-toaster], [role="dialog"], [role="alertdialog"] {
+        display: none !important;
+      }
+      #nexus-print-frame {
+        display: block !important;
+        position: static !important;
+        border: 0 !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+      }
+    `;
   }
+  document.head.appendChild(style);
 
   // Clear the flag once the print dialog closes. The afterprint event fires
   // reliably on all modern browsers when the dialog is dismissed (print or
