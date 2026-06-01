@@ -1937,52 +1937,44 @@ export function openReceiptWindow(html: string, opts?: { receiptPageSize?: strin
     receiptStyleEl.textContent = receiptCss;
     document.head.appendChild(receiptStyleEl);
 
-    // Receipt container — off-screen on screen; brought into flow for print.
+    // ── Nuclear body-replacement approach ────────────────────────────────────
+    // All CSS-based hiding (display:none, visibility:hidden, inline !important)
+    // has proven unreliable — Chrome's Android print renderer keeps capturing
+    // the full app UI regardless. The only 100 % reliable approach:
+    //
+    //   1. Remove EVERY existing body child from the DOM (kept in JS memory).
+    //      Chrome cannot render what isn't in the document.
+    //   2. Inject ONLY the receipt container.
+    //   3. Wait two animation frames so Chrome composites the new DOM state.
+    //   4. Call window.print() — the body has nothing but the receipt.
+    //   5. afterprint: put all original children back; React resumes normally.
+    //
+    // The removed nodes stay alive as JS objects (savedBodyChildren holds refs).
+    // React's state is intact in memory. Re-appending restores the app.
+
+    const savedBodyChildren = Array.from(document.body.childNodes);
+    savedBodyChildren.forEach(node => document.body.removeChild(node));
+
     const container = document.createElement("div");
     container.id = ANDROID_CONTAINER_ID;
     container.style.cssText = [
-      `position:fixed`,
-      `left:-9999px`,
-      `top:0`,
       `width:${receiptSize}`,
       `background:#fff`,
       `font-family:'Courier New',Courier,monospace`,
       `font-size:12px`,
+      `margin:0`,
+      `padding:0`,
     ].join(";");
     container.innerHTML = receiptBody;
     document.body.appendChild(container);
 
-    // Hide every body child EXCEPT our container using inline !important.
-    // This is the only mechanism guaranteed to override all app styles.
-    type HiddenEntry = { el: HTMLElement; prevValue: string; prevPriority: string };
-    const hiddenChildren: HiddenEntry[] = [];
-    for (const child of Array.from(document.body.children)) {
-      if (child.id !== ANDROID_CONTAINER_ID) {
-        const el = child as HTMLElement;
-        hiddenChildren.push({
-          el,
-          prevValue: el.style.getPropertyValue("display"),
-          prevPriority: el.style.getPropertyPriority("display"),
-        });
-        el.style.setProperty("display", "none", "important");
-      }
-    }
-
-    // Bring the container into normal document flow for printing.
-    container.style.position = "static";
-    container.style.left = "auto";
-
     const cleanup = () => {
       clearPrintingFlag();
-      // Restore all hidden children to their original display values.
-      hiddenChildren.forEach(({ el, prevValue, prevPriority }) => {
-        if (prevValue) {
-          el.style.setProperty("display", prevValue, prevPriority || "");
-        } else {
-          el.style.removeProperty("display");
-        }
-      });
-      container.parentNode?.removeChild(container);
+      // Remove the receipt container.
+      if (container.parentNode) container.parentNode.removeChild(container);
+      // Restore all original body children in their original order.
+      savedBodyChildren.forEach(node => document.body.appendChild(node));
+      // Remove injected head styles.
       for (const id of [PRINT_STYLE_ID, PAGE_STYLE_ID]) {
         const s = document.getElementById(id);
         if (s) s.parentNode?.removeChild(s);
@@ -1995,8 +1987,13 @@ export function openReceiptWindow(html: string, opts?: { receiptPageSize?: strin
       cleanup();
     }, { once: true });
 
-    // Small delay so the DOM mutations settle before print dialog opens.
-    setTimeout(() => window.print(), 150);
+    // Double rAF: first frame queues a repaint; second frame fires after
+    // Chrome has composited the new body state. Only then trigger print.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
     return;
   }
 
