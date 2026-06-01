@@ -1,12 +1,14 @@
 ---
 name: Web receipt printing
-description: Why thermal printers need raw WebUSB ESC/POS in the web POS, not browser print.
+description: Why the web POS prints receipts via the browser dialog (not device-specific transports).
 ---
 
-Thermal receipt printers (e.g. 3nStar RPT004) **cannot** be driven by the browser's standard print dialog or by ESC/POS pass-through print services.
+The web (browser) POS prints **every** receipt through the browser's native print dialog — no device-specific transport.
 
-**Why:** Android's print framework rasterizes the receipt into an image; thermal heads can't reproduce it, so standard browser print comes out **blank**. The ESC/POS pass-through services (raw BT, Looped Labs) want raw command bytes but receive a rendered job, so they blank out or crash. Only sending the raw ESC/POS byte stream straight to the printer prints reliably.
+**Why:** Deployments use many different printer models, so a per-device transport is the wrong fit. The browser dialog is the universal answer — it works on any installed printer (thermal, inkjet, laser), supports "Save as PDF", and lets the cashier pick the printer. The user explicitly chose this over device-specific printing.
 
-**How to apply:** For web (browser) POS, the reliable transport is **WebUSB** (`navigator.usb`) over a USB cable — needs HTTPS + a user gesture for `requestDevice()`; permission persists per-origin. WebUSB is per-device, so store the enable flag + chosen vid/pid in localStorage, never as a tenant-wide setting. Do NOT reintroduce the Looped Labs Android-intent path. (Implementation specifics live in the `replit.md` "Web receipt printing" gotcha.)
+**How to apply:** Keep `printOrderReceipt` a thin wrapper over `openReceiptWindow` (iframe + `window.print()`). Do NOT reintroduce a WebUSB raw-ESC/POS path or the Looped Labs Android-intent path — both were tried and removed.
+
+**Looped Labs note:** The Looped Labs ESC/POS USB print *service* (a separate Android app a customer may install) crashes ("ESC POS USB Print Service has stopped") only when fed a heavy/complex print job; simple jobs print fine via the same browser dialog. If a customer relies on such a pass-through service, keep the receipt HTML lean.
 
 **Scope:** The mobile Expo app has its own native ESC/POS thermal printing (Network/Bluetooth/USB) — separate and unaffected.

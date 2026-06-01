@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils";
 import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY,
   setBusinessType, setBusinessFeature, type BusinessType } from "@/lib/saas-api";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
-import { UsbPrinterSettings } from "@/components/usb-printer-settings";
 import { QRCodeSVG } from "qrcode.react";
 
 
@@ -1289,8 +1288,6 @@ export function AdminSettings() {
               </ul>
             </div>
           )}
-
-          <UsbPrinterSettings receiptSize={receiptSize} />
         </CardContent>
       </Card>
 
