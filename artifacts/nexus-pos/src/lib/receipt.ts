@@ -10,7 +10,7 @@ export interface ReceiptSettings {
   secondary_currency?: string;
   currency_rate?: string;
   receipt_size?: string;       // "58mm" | "80mm"
-  receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple"
+  receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant"
 }
 
 export interface ReceiptOrderItem {
@@ -234,6 +234,183 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
       secondaryCurrency, exchangeRate,
     });
+  }
+
+  // ── Restaurant template (Loyverse-style) ───────────────────────────────────
+  // Bold business name, dotted separators, items with qty×price sub-line,
+  // and a large bold Total — mirroring the classic Loyverse receipt look.
+  if (template === "restaurant") {
+    const totalFontSize = is58mm ? "15px" : "17px";
+    const bigNumSize    = is58mm ? "48px" : "60px";
+
+    // Address: split on newlines so multi-line addresses each get their own div
+    const addrLines = businessAddress
+      ? businessAddress.split(/\n/).filter(l => l.trim())
+          .map(l => `<div>${escHtml(l.trim())}</div>`).join("")
+      : "";
+    const phoneLine = businessPhone
+      ? `<div>Tel# ${escHtml(businessPhone)}</div>` : "";
+
+    const logoHtml = businessLogoUrl
+      ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:60px;max-width:160px;object-fit:contain;" /></div>`
+      : "";
+
+    // Items: name + line total on first row, qty × unitPrice on second row,
+    // then a dotted separator after each item (matches the Loyverse layout).
+    const restItemsHtml = order.items.map(item => {
+      const unitPriceStr = item.unitPrice != null
+        ? fmt(item.unitPrice)
+        : fmt(item.lineTotal / (item.quantity || 1));
+      let html = `
+        <div class="r-row">
+          <span class="r-name">${escHtml(item.productName)}</span>
+          <span class="r-price">${fmt(item.lineTotal)}</span>
+        </div>
+        <div class="r-sub">${item.quantity} x ${unitPriceStr}</div>`;
+      for (const v of (item.variantChoices as { optionName: string }[] | null) ?? []) {
+        html += `<div class="r-mod">&nbsp;&#8627; ${escHtml(v.optionName)}</div>`;
+      }
+      for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
+        html += `<div class="r-mod">&nbsp;+ ${escHtml(m.optionName)}</div>`;
+      }
+      if (item.originalUnitPrice != null && item.unitPrice != null && item.originalUnitPrice > item.unitPrice) {
+        const saving = (item.originalUnitPrice - item.unitPrice) * item.quantity;
+        html += `<div class="r-sub r-save">&nbsp;&#8627; You save: -${fmt(saving)}</div>`;
+      }
+      html += `<div class="r-sep"></div>`;
+      return html;
+    }).join("");
+
+    // Totals block — show subtotal + tax only when there's a difference or tax
+    const showBreakdown = (order.tax ?? 0) > 0 || (order.discountValue ?? 0) > 0;
+    const breakdownHtml = showBreakdown ? `
+      <div class="r-row r-light"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
+      ${(order.discountValue ?? 0) > 0 ? `<div class="r-row r-light"><span>Discount</span><span>-${fmt(order.discountValue ?? 0)}</span></div>` : ""}
+      ${(order.tax ?? 0) > 0 ? `<div class="r-row r-light"><span>${escHtml(taxName)} (${taxRate}%)</span><span>${fmt(order.tax)}</span></div>` : ""}
+      <div class="r-sep"></div>` : "";
+
+    // Payment block
+    const tenderedAmt = order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0
+      ? order.cashTendered : order.total;
+    const changeAmt = Math.max(0, tenderedAmt - order.total);
+    let restPaymentHtml = "";
+    if (order.paymentMethod === "split") {
+      restPaymentHtml = `
+        <div class="r-row r-light"><span>Card</span><span>${fmt(order.splitCardAmount ?? 0)}</span></div>
+        <div class="r-row r-light"><span>Cash</span><span>${fmt(order.splitCashAmount ?? 0)}</span></div>`;
+    } else {
+      const pmLabel = order.paymentMethod
+        ? escHtml(order.paymentMethod.charAt(0).toUpperCase() + order.paymentMethod.slice(1))
+        : "Cash";
+      restPaymentHtml = `<div class="r-row r-light"><span>${pmLabel}</span><span>${fmt(order.total)}</span></div>`;
+      if (order.paymentMethod === "cash" && changeAmt > 0) {
+        restPaymentHtml += `<div class="r-row r-light"><span>Change</span><span>${fmt(changeAmt)}</span></div>`;
+      }
+    }
+
+    const secondaryHtml2 = secondaryCurrency && exchangeRate > 0
+      ? `<div class="r-row r-light"><span>&asymp;&nbsp;${escHtml(secondaryCurrency)}</span><span>${fmt(order.total * exchangeRate, secondaryCurrency)}</span></div>` : "";
+
+    const notesHtml2 = order.notes
+      ? `<div class="r-note">Note: ${escHtml(order.notes)}</div>` : "";
+    const refundedHtml2 = order.status === "refunded"
+      ? `<div class="r-refunded">&#9733; REFUNDED &#9733;</div>` : "";
+
+    const loyaltyHtml2 = (order.loyaltyPointsEarned || order.loyaltyPointsRedeemed) ? `
+      <div class="r-sep"></div>
+      ${order.loyaltyPointsEarned   ? `<div class="r-light r-center">Loyalty earned: +${order.loyaltyPointsEarned} pts</div>` : ""}
+      ${order.loyaltyPointsRedeemed ? `<div class="r-light r-center">Loyalty redeemed: -${order.loyaltyPointsRedeemed} pts</div>` : ""}
+      ${order.customerLoyaltyBalance != null ? `<div class="r-light r-center">Balance: ${order.customerLoyaltyBalance} pts</div>` : ""}` : "";
+
+    const customerHtml2 = order.customerName ? `
+      <div class="r-sep"></div>
+      <div class="r-light">Customer: ${escHtml(order.customerName)}</div>
+      ${order.customerPhone ? `<div class="r-light">Tel: ${escHtml(order.customerPhone)}</div>` : ""}
+      ${order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0
+        ? `<div class="r-light r-due">Account Balance Due: ${fmt(order.customerOutstandingBalance)}</div>` : ""}` : "";
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Receipt &ndash; ${escHtml(order.orderNumber)}</title>
+  <meta charset="utf-8">
+  <style>
+    @page { size: ${receiptSize} auto; margin: 4mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      padding: ${bodyPadding};
+      font-family: 'Courier New', Courier, monospace;
+      font-size: ${baseFontSize};
+      line-height: 1.65;
+      color: #000;
+    }
+    .r-biz  { font-size: ${is58mm ? "14px" : "16px"}; font-weight: 700; text-align: center; margin-bottom: 2px; }
+    .r-addr { font-size: ${subFontSize}; text-align: center; line-height: 1.5; }
+    .r-sep  { border-top: 1px dotted #555; margin: 4px 0; }
+    .r-meta { font-size: ${baseFontSize}; margin: 1px 0; }
+    .r-row  { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; margin: 1px 0; }
+    .r-name { flex: 1; }
+    .r-price{ white-space: nowrap; }
+    .r-sub  { font-size: ${subFontSize}; color: #333; padding-left: 2px; margin-bottom: 2px; }
+    .r-mod  { font-size: ${subFontSize}; color: #555; padding-left: 10px; }
+    .r-save { color: #0a7a0a; font-weight: 700; }
+    .r-light{ font-size: ${subFontSize}; display: flex; justify-content: space-between; margin: 1px 0; }
+    .r-center{ text-align: center; display: block; }
+    .r-total{
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-weight: 700;
+      font-size: ${totalFontSize};
+      margin: 4px 0 2px;
+    }
+    .r-total span { white-space: nowrap; }
+    .r-footer { text-align: center; font-size: ${subFontSize}; margin: 6px 0 2px; }
+    .r-powered{ text-align: center; font-size: 8px; color: #aaa; margin: 2px 0 4px; letter-spacing: 1px; }
+    .r-bignum { text-align: center; font-size: ${bigNumSize}; font-weight: 900; letter-spacing: 6px; line-height: 1; margin-top: 6px; }
+    .r-note  { font-size: ${subFontSize}; font-style: italic; margin: 3px 0; }
+    .r-refunded { color: red; font-weight: bold; text-align: center; font-size: 12px; border: 1px solid red; padding: 3px; margin: 4px 0; letter-spacing: 1px; }
+    .r-due   { color: #c00; font-weight: 700; display: flex; justify-content: space-between; margin: 1px 0; }
+  </style>
+</head>
+<body>
+
+  ${logoHtml}
+  <div class="r-biz">${escHtml(businessName)}</div>
+  <div class="r-addr">${addrLines}${phoneLine}</div>
+
+  <div class="r-sep"></div>
+
+  ${order.staffName ? `<div class="r-meta">Employee: ${escHtml(order.staffName)}</div>` : ""}
+  <div class="r-meta">${escHtml(order.orderType || "Sale")}</div>
+  ${order.customerName && !order.staffName ? "" : ""}
+  ${customerHtml2}
+
+  <div class="r-sep"></div>
+
+  ${restItemsHtml}
+
+  ${breakdownHtml}
+
+  <div class="r-total"><span>Total</span><span>${fmt(order.total)}</span></div>
+  ${secondaryHtml2}
+
+  <div class="r-sep"></div>
+
+  ${restPaymentHtml}
+
+  <div class="r-sep"></div>
+
+  ${notesHtml2}
+  ${refundedHtml2}
+  ${loyaltyHtml2}
+
+  ${receiptFooter ? `<div class="r-footer">${escHtml(receiptFooter)}</div>` : ""}
+  <div class="r-powered">Powered by NEXXUS POS</div>
+
+  <div class="r-sep"></div>
+  <div class="r-bignum">${lastThree}</div>
+
+</body>
+</html>`;
   }
 
   // ── Items ─────────────────────────────────────────────────────────────────

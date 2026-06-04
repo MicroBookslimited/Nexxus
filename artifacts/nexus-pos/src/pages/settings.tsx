@@ -44,7 +44,7 @@ export function AdminSettings() {
   const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
   const [receiptFooter, setReceiptFooter] = useState("");
   const [receiptSize, setReceiptSize] = useState<"58mm" | "80mm">("80mm");
-  const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple">("classic");
+  const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant">("classic");
   const [baseCurrency, setBaseCurrency] = useState("JMD");
   const [secondaryCurrency, setSecondaryCurrency] = useState("");
   const [currencyRate, setCurrencyRate] = useState("");
@@ -93,7 +93,7 @@ export function AdminSettings() {
     setTaxMode((settings.tax_mode as "exclusive" | "inclusive") ?? "exclusive");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
     setReceiptSize((settings.receipt_size as "58mm" | "80mm") ?? "80mm");
-    setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple") ?? "classic");
+    setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant") ?? "classic");
     setBaseCurrency(settings.base_currency ?? "JMD");
     setSecondaryCurrency(settings.secondary_currency ?? "");
     setCurrencyRate(settings.currency_rate ?? "");
@@ -671,6 +671,32 @@ export function AdminSettings() {
                         ))}
                       </div>
                       <div className="text-center text-[5px] tracking-widest font-bold mt-0.5">*** CUSTOMER COPY ***</div>
+                    </div>
+                  ),
+                },
+                {
+                  id: "restaurant",
+                  name: "Restaurant",
+                  desc: "Loyverse-style — dotted separators, item qty×price sub-line, bold large Total",
+                  preview: (
+                    <div className="font-mono text-[7px] leading-tight text-center py-1 space-y-px">
+                      <div className="font-bold text-[8px]">Business Name</div>
+                      <div className="text-muted-foreground text-[5px]">123 Main Street</div>
+                      <div className="text-muted-foreground text-[5px]">Tel# 876-000-0000</div>
+                      <div className="border-t border-dotted border-muted-foreground/50 my-0.5" />
+                      <div className="text-left text-[6px] text-muted-foreground">Employee: Owner</div>
+                      <div className="text-left text-[6px] text-muted-foreground">Dine in</div>
+                      <div className="border-t border-dotted border-muted-foreground/50 my-0.5" />
+                      <div className="flex justify-between"><span>Fried Chicken</span><span>$8.00</span></div>
+                      <div className="text-left text-muted-foreground text-[5px]">1 x $8.00</div>
+                      <div className="border-t border-dotted border-muted-foreground/50 my-0.5" />
+                      <div className="flex justify-between font-bold text-[9px]"><span>Total</span><span>$8.00</span></div>
+                      <div className="border-t border-dotted border-muted-foreground/50 my-0.5" />
+                      <div className="flex justify-between text-muted-foreground text-[5px]"><span>Cash</span><span>$8.00</span></div>
+                      <div className="border-t border-dotted border-muted-foreground/50 my-0.5" />
+                      <div className="text-muted-foreground text-[5px]">Enjoy your meal!</div>
+                      <div className="border-t border-dotted border-muted-foreground/50 my-0.5" />
+                      <div className="font-black text-[16px] leading-none tracking-widest">042</div>
                     </div>
                   ),
                 },
