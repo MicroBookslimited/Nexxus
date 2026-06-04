@@ -632,6 +632,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       padding: ${bodyPadding};
       font-family: 'Courier New', Courier, monospace;
       font-size: ${baseFontSize};
+      font-weight: 700;
       line-height: 1.65;
       color: #000;
     }
@@ -952,6 +953,7 @@ function buildSupermarketReceiptHtml(
       padding: ${bodyPadding};
       font-family: 'Courier New', Courier, monospace;
       font-size: ${baseFontSize};
+      font-weight: 700;
       line-height: 1.5;
       color: #000;
     }
@@ -1293,6 +1295,7 @@ function buildConvenienceReceiptHtml(
       padding: ${bodyPadding};
       font-family: 'Courier New', Courier, monospace;
       font-size: ${baseFontSize};
+      font-weight: 700;
       line-height: 1.55;
       color: #000;
     }
@@ -1592,6 +1595,7 @@ function buildStapleReceiptHtml(
       padding: ${bodyPadding};
       font-family: 'Courier New', Courier, monospace;
       font-size: ${baseFontSize};
+      font-weight: 700;
       line-height: 1.55;
       color: #000;
     }
@@ -1989,6 +1993,7 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
     body {
       font-family: 'Courier New', Courier, monospace;
       font-size: ${fontSize};
+      font-weight: 700;
       line-height: 1.35;
       color: #000;
       padding: 0 2mm 4mm;
