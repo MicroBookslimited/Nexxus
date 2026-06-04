@@ -341,34 +341,35 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       padding: ${bodyPadding};
       font-family: 'Courier New', Courier, monospace;
       font-size: ${baseFontSize};
+      font-weight: 700;
       line-height: 1.65;
       color: #000;
     }
-    .r-biz  { font-size: ${is58mm ? "14px" : "16px"}; font-weight: 700; text-align: center; margin-bottom: 2px; }
+    .r-biz  { font-size: ${is58mm ? "14px" : "16px"}; font-weight: 900; text-align: center; margin-bottom: 2px; }
     .r-addr { font-size: ${subFontSize}; text-align: center; line-height: 1.5; }
-    .r-sep  { border-top: 1px dotted #555; margin: 4px 0; }
+    .r-sep  { border-top: 1px dotted #000; margin: 4px 0; }
     .r-meta { font-size: ${baseFontSize}; margin: 1px 0; }
     .r-row  { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; margin: 1px 0; }
     .r-name { flex: 1; }
     .r-price{ white-space: nowrap; }
-    .r-sub  { font-size: ${subFontSize}; color: #333; padding-left: 2px; margin-bottom: 2px; }
-    .r-mod  { font-size: ${subFontSize}; color: #555; padding-left: 10px; }
-    .r-save { color: #0a7a0a; font-weight: 700; }
+    .r-sub  { font-size: ${subFontSize}; padding-left: 2px; margin-bottom: 2px; }
+    .r-mod  { font-size: ${subFontSize}; padding-left: 10px; }
+    .r-save { color: #0a7a0a; }
     .r-light{ font-size: ${subFontSize}; display: flex; justify-content: space-between; margin: 1px 0; }
     .r-center{ text-align: center; display: block; }
     .r-total{
       display: flex; justify-content: space-between; align-items: baseline;
-      font-weight: 700;
+      font-weight: 900;
       font-size: ${totalFontSize};
       margin: 4px 0 2px;
     }
     .r-total span { white-space: nowrap; }
     .r-footer { text-align: center; font-size: ${subFontSize}; margin: 6px 0 2px; }
-    .r-powered{ text-align: center; font-size: 8px; color: #aaa; margin: 2px 0 4px; letter-spacing: 1px; }
+    .r-powered{ text-align: center; font-size: 8px; margin: 2px 0 4px; letter-spacing: 1px; }
     .r-bignum { text-align: center; font-size: ${bigNumSize}; font-weight: 900; letter-spacing: 6px; line-height: 1; margin-top: 6px; }
     .r-note  { font-size: ${subFontSize}; font-style: italic; margin: 3px 0; }
-    .r-refunded { color: red; font-weight: bold; text-align: center; font-size: 12px; border: 1px solid red; padding: 3px; margin: 4px 0; letter-spacing: 1px; }
-    .r-due   { color: #c00; font-weight: 700; display: flex; justify-content: space-between; margin: 1px 0; }
+    .r-refunded { color: red; font-weight: 900; text-align: center; font-size: 12px; border: 2px solid red; padding: 3px; margin: 4px 0; letter-spacing: 1px; }
+    .r-due   { color: #c00; display: flex; justify-content: space-between; margin: 1px 0; }
   </style>
 </head>
 <body>
