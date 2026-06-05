@@ -16,6 +16,7 @@ export interface CreateProductBody {
   category: string;
   imageUrl?: string;
   barcode?: string;
+  sku?: string;
   inStock?: boolean;
   stockCount?: number;
   soldByWeight?: boolean;

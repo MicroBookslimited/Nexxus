@@ -280,7 +280,9 @@ export function PosSupermarket() {
     const code = searchTerm.trim();
     if (!code) return;
     const norm = code.toLowerCase();
-    const matches = productList.filter((p) => (p.barcode ?? "").toLowerCase() === norm);
+    const matches = productList.filter(
+      (p) => (p.barcode ?? "").toLowerCase() === norm || (p.sku ?? "").toLowerCase() === norm,
+    );
     if (matches.length === 0) {
       toast({
         title: "No product found",

@@ -51,6 +51,7 @@ export interface Product {
   category: string;
   imageUrl?: string | null;
   barcode?: string | null;
+  sku?: string | null;
   inStock: boolean;
   stockCount: number;
   soldByWeight: boolean;
@@ -169,6 +170,7 @@ export interface CreateProductBody {
   category: string;
   imageUrl?: string;
   barcode?: string;
+  sku?: string;
   inStock?: boolean;
   stockCount?: number;
   soldByWeight?: boolean;

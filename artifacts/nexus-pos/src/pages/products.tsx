@@ -235,6 +235,7 @@ type ProductForm = {
   price: string;
   category: string;
   barcode: string;
+  sku: string;
   inStock: boolean;
   stockCount: string;
   soldByWeight: boolean;
@@ -259,6 +260,7 @@ const emptyForm = (): ProductForm => ({
   price: "",
   category: "Beverages",
   barcode: "",
+  sku: "",
   inStock: true,
   stockCount: "0",
   soldByWeight: false,
@@ -1081,16 +1083,17 @@ const IMPORT_FIELDS = [
   { key: "price",       label: "Price",                 required: true  },
   { key: "category",    label: "Category",              required: false },
   { key: "description", label: "Description",           required: false },
-  { key: "barcode",     label: "Barcode / SKU",         required: false },
+  { key: "barcode",     label: "Barcode",               required: false },
+  { key: "sku",         label: "SKU",                   required: false },
   { key: "stockCount",  label: "Stock Quantity",        required: false },
   { key: "inStock",     label: "In Stock (yes/no/1/0)", required: false },
 ];
 
 const TEMPLATE_ROWS = [
-  ["Name", "Price", "Category", "Description", "Barcode", "Stock Quantity", "In Stock"],
-  ["Jerk Chicken",  "850.00", "Food",       "Seasoned jerk chicken",   "JC001", "50",  "yes"],
-  ["Ting Soda",     "120.00", "Beverages",  "Grapefruit flavour soda", "TS001", "100", "yes"],
-  ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "RC001", "30",  "yes"],
+  ["Name", "Price", "Category", "Description", "Barcode", "SKU", "Stock Quantity", "In Stock"],
+  ["Jerk Chicken",  "850.00", "Food",       "Seasoned jerk chicken",   "1234567890123", "JC001", "50",  "yes"],
+  ["Ting Soda",     "120.00", "Beverages",  "Grapefruit flavour soda", "1234567890124", "TS001", "100", "yes"],
+  ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "1234567890125", "RC001", "30",  "yes"],
 ];
 
 /**
@@ -1224,7 +1227,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         else if (l === "category")                                      auto[h] = "category";
         else if (l === "description")                                   auto[h] = "description";
         else if (l === "barcode")                                       auto[h] = "barcode";
-        else if (l === "sku")                                           { if (!Object.values(auto).includes("barcode")) auto[h] = "barcode"; }
+        else if (l === "sku")                                           auto[h] = "sku";
         else if (l === "in stock" || l === "stock quantity")            auto[h] = "stockCount";   // Loyverse qty
         else if (l === "track stock" || l === "available for sale")     auto[h] = "inStock";      // Loyverse Y/N
         // ── Generic fuzzy fallbacks (skip Loyverse "Cost" column) ──
@@ -1233,7 +1236,10 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         else if (/categ/i.test(l))                                      auto[h] = "category";
         else if (/desc/i.test(l))                                       auto[h] = "description";
         else if (/barcode/i.test(l))                                    auto[h] = "barcode";
-        else if (/sku|code/i.test(l))                                   { if (!Object.values(auto).includes("barcode")) auto[h] = "barcode"; }
+        else if (/sku/i.test(l))                                        auto[h] = "sku";
+        // "code" historically meant the scannable barcode — keep it mapping
+        // to barcode for backward compatibility with older import files.
+        else if (/code/i.test(l))                                       auto[h] = "barcode";
         else if (/stock.*qty|qty.*stock|quantity|stock.count/i.test(l)) auto[h] = "stockCount";
         else if (/in.?stock|available/i.test(l))                        auto[h] = "inStock";
       });
@@ -1274,7 +1280,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       const category   = d.category?.trim() || "General";
       try {
         await new Promise<void>((resolve, reject) => {
-          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false } },
+          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, sku: d.sku?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false } },
             { onSuccess: () => resolve(), onError: (e) => reject(e) });
         });
         out.push({ row: i + 2, name: d.name, status: "ok" });
@@ -3102,6 +3108,7 @@ export function Products() {
       price: p.price.toString(),
       category: p.category,
       barcode: p.barcode ?? "",
+      sku: p.sku ?? "",
       inStock: p.inStock,
       stockCount: p.stockCount.toString(),
       soldByWeight: !!pp.soldByWeight,
@@ -3131,6 +3138,7 @@ export function Products() {
       price: parseFloat(form.price),
       category: form.category,
       barcode: form.barcode || undefined,
+      sku: form.sku || undefined,
       inStock: isComposite ? true : form.inStock,
       stockCount: isComposite ? 0 : (parseFloat(form.stockCount) || 0),
       soldByWeight: form.soldByWeight,
@@ -3445,6 +3453,7 @@ export function Products() {
                       <CardTitle className="text-sm font-semibold leading-snug flex-1 truncate">{product.name}</CardTitle>
                       <Badge variant="outline" className="text-[10px] shrink-0">{product.category}</Badge>
                     </div>
+                    {product.sku && <p className="text-[11px] text-muted-foreground/80 font-mono truncate mt-0.5">SKU: {product.sku}</p>}
                   </CardHeader>
                   <CardContent className="pt-0 space-y-3">
                     <div className="flex items-center justify-between">
@@ -3565,6 +3574,7 @@ export function Products() {
                       <span className="truncate">{product.name}</span>
                     </p>
                     {product.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{product.description}</p>}
+                    {product.sku && <p className="text-[11px] text-muted-foreground/80 font-mono truncate mt-0.5">SKU: {product.sku}</p>}
                   </div>
 
                   {/* Category */}
@@ -4402,9 +4412,15 @@ export function Products() {
                   <Label>Description</Label>
                   <Input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional description" />
                 </div>
-                <div className="grid gap-1.5">
-                  <Label>Barcode</Label>
-                  <Input value={form.barcode} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} placeholder="EAN / UPC" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label>Barcode</Label>
+                    <Input value={form.barcode} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} placeholder="EAN / UPC" />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label>SKU</Label>
+                    <Input value={form.sku} onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))} placeholder="e.g. JC001" />
+                  </div>
                 </div>
                 <Separator />
                 {/* Product structure: Simple SKUs track their own stock;
@@ -4455,7 +4471,7 @@ export function Products() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="grid gap-1.5">
                       <Label>Stock count</Label>
-                      <Input type="number" min="0" value={form.stockCount} onChange={(e) => setForm((f) => ({ ...f, stockCount: e.target.value }))} />
+                      <Input type="number" min="0" value={form.stockCount} onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, stockCount: v, inStock: (parseFloat(v) || 0) > 0 ? true : f.inStock })); }} />
                     </div>
                     <div className="flex items-end gap-2 pb-0.5">
                       <Switch id="inStock" checked={form.inStock} onCheckedChange={(v) => setForm((f) => ({ ...f, inStock: v }))} />

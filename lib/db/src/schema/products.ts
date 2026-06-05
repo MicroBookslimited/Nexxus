@@ -11,6 +11,9 @@ export const productsTable = pgTable("products", {
   category: text("category").notNull(),
   imageUrl: text("image_url"),
   barcode: text("barcode"),
+  // Stock-keeping unit. Optional, human-assigned identifier. Distinct from
+  // barcode (which is the scanned EAN/UPC). Both are matched at the POS.
+  sku: text("sku"),
   inStock: boolean("in_stock").notNull().default(true),
   stockCount: real("stock_count").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

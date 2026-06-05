@@ -451,6 +451,7 @@ export function PosHardware() {
       return (
         p.name.toLowerCase().includes(q) ||
         (p.barcode ?? "").toLowerCase().includes(q) ||
+        (p.sku ?? "").toLowerCase().includes(q) ||
         (p.category ?? "").toLowerCase().includes(q)
       );
     });
@@ -461,7 +462,10 @@ export function PosHardware() {
     if (e.key !== "Enter") return;
     const code = searchTerm.trim();
     if (!code) return;
-    const match = productList.find((p) => (p.barcode ?? "").toLowerCase() === code.toLowerCase());
+    const lc = code.toLowerCase();
+    const match = productList.find(
+      (p) => (p.barcode ?? "").toLowerCase() === lc || (p.sku ?? "").toLowerCase() === lc,
+    );
     if (match) {
       addToCart(match.id);
       setSearchTerm("");

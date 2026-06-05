@@ -81,6 +81,7 @@ async function withFlags(p: typeof productsTable.$inferSelect) {
     imageUrl: p.imageUrl ?? undefined,
     description: p.description ?? undefined,
     barcode: p.barcode ?? undefined,
+    sku: p.sku ?? undefined,
     hasVariants: Number(vCount.n) > 0,
     hasModifiers: Number(mCount.n) > 0,
     isComposite: Number(cCount.n) > 0,
@@ -302,6 +303,7 @@ router.post("/products", async (req, res): Promise<void> => {
       category: parsed.data.category,
       imageUrl: parsed.data.imageUrl,
       barcode: parsed.data.barcode,
+      sku: parsed.data.sku,
       inStock: parsed.data.inStock ?? true,
       stockCount: isComposite ? 0 : (parsed.data.stockCount ?? 0),
       soldByWeight: parsed.data.soldByWeight ?? false,
@@ -697,6 +699,7 @@ router.put("/products/:id", async (req, res): Promise<void> => {
     category: parsed.data.category,
     imageUrl: parsed.data.imageUrl,
     barcode: parsed.data.barcode,
+    sku: parsed.data.sku,
     inStock: parsed.data.inStock,
     stockCount: parsed.data.stockCount,
   };

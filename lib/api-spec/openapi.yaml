@@ -1636,6 +1636,9 @@ components:
         barcode:
           type: string
           nullable: true
+        sku:
+          type: string
+          nullable: true
         inStock:
           type: boolean
         stockCount:
@@ -1828,6 +1831,8 @@ components:
         imageUrl:
           type: string
         barcode:
+          type: string
+        sku:
           type: string
         inStock:
           type: boolean

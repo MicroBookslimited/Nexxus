@@ -1145,7 +1145,8 @@ export function POS() {
     const barcodeMatches =
       products?.filter(
         (p: NonNullable<typeof products>[number]) =>
-          normalizeBarcode(p.barcode) === normalizedCode,
+          normalizeBarcode(p.barcode) === normalizedCode ||
+          normalizeBarcode(p.sku) === normalizedCode,
       ) ?? [];
     if (barcodeMatches.length === 1) {
       const [barcodeMatch] = barcodeMatches;
@@ -1206,7 +1207,8 @@ export function POS() {
     const normalizedCode = normalizeBarcode(code);
     const hasAnyMatch = products.some(
       (p: NonNullable<typeof products>[number]) =>
-        normalizeBarcode(p.barcode) === normalizedCode,
+        normalizeBarcode(p.barcode) === normalizedCode ||
+        normalizeBarcode(p.sku) === normalizedCode,
     );
     if (!isEan && !hasAnyMatch) return;
     const t = setTimeout(() => {
