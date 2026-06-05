@@ -41,6 +41,9 @@ import {
   ArrowLeftRight,
   ChevronRight,
   RefreshCw,
+  Banknote,
+  CreditCard,
+  SplitSquareHorizontal,
 } from "lucide-react";
 import { buildReceiptHtml, receiptOrderFrom } from "@/lib/receipt";
 import { printOrderReceipt } from "@/lib/print-receipt";
@@ -69,6 +72,24 @@ function formatCurrency(val: number, currency = "JMD") {
   } catch {
     return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(val);
   }
+}
+
+/**
+ * Quick cash-tender suggestions for the amount due: the exact amount rounded up
+ * to the next whole unit, plus the next round denominations (50/100/500/1000/5000)
+ * that are >= the total. Deduped, ascending, capped to a handful of buttons.
+ */
+function cashSuggestions(total: number): number[] {
+  if (total <= 0) return [];
+  const set = new Set<number>();
+  set.add(Number(total.toFixed(2)));
+  for (const step of [50, 100, 500, 1000, 5000]) {
+    set.add(Math.ceil(total / step) * step);
+  }
+  return Array.from(set)
+    .filter((v) => v >= total)
+    .sort((a, b) => a - b)
+    .slice(0, 5);
 }
 
 type CartLine = {
@@ -136,8 +157,10 @@ export function PosSupermarket() {
   /* ── Cart ──────────────────────────────────────────────────────────────── */
   const [cart, setCart] = useState<CartLine[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "split">("cash");
   const [cashTenderedInput, setCashTenderedInput] = useState("");
+  const [splitCashInput, setSplitCashInput] = useState("");
+  const [splitCardInput, setSplitCardInput] = useState("");
 
   // Numeric keypad: quantity for the next scanned item (or for a selected line).
   const [qtyInput, setQtyInput] = useState("");
@@ -244,6 +267,9 @@ export function PosSupermarket() {
     setCart([]);
     setSelectedKey(null);
     setCashTenderedInput("");
+    setSplitCashInput("");
+    setSplitCardInput("");
+    setPaymentMethod("cash");
     setQtyInput("");
   };
 
@@ -367,6 +393,29 @@ export function PosSupermarket() {
       : undefined;
   const changeDue = cashTendered != null ? Math.max(0, cashTendered - total) : 0;
 
+  /* ── Split payment ─────────────────────────────────────────────────────── */
+  const splitCash = parseFloat(splitCashInput) || 0;
+  const splitCard = parseFloat(splitCardInput) || 0;
+  const splitSum = splitCash + splitCard;
+  const splitRemaining = total - splitSum;
+  const isSplitValid =
+    paymentMethod === "split" &&
+    splitCash >= 0 &&
+    splitCard >= 0 &&
+    Math.abs(splitRemaining) < 0.01 &&
+    total > 0;
+
+  // Pick a payment method; pre-fill a balanced 50/50 split for convenience.
+  const selectPayment = (m: "cash" | "card" | "split") => {
+    setPaymentMethod(m);
+    if (m === "split") {
+      const half = Number((total / 2).toFixed(2));
+      setSplitCashInput(half > 0 ? String(half) : "");
+      setSplitCardInput(total - half > 0 ? String(Number((total - half).toFixed(2))) : "");
+    }
+    focusScanInput();
+  };
+
   /* ── Checkout ──────────────────────────────────────────────────────────── */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [receiptOrder, setReceiptOrder] = useState<any>(null);
@@ -377,15 +426,26 @@ export function PosSupermarket() {
       toast({ title: "Cart is empty", variant: "destructive" });
       return;
     }
+    if (paymentMethod === "split" && !isSplitValid) {
+      toast({
+        title: "Invalid split",
+        description: "Cash and card amounts must add up to the total.",
+        variant: "destructive",
+      });
+      return;
+    }
     createOrder.mutate(
       {
-        // `cashTendered` is accepted by the API but missing from the generated
-        // CreateOrderBody type, so the body is cast (same pattern as the other layouts).
+        // `cashTendered` / split amounts are accepted by the API but missing from
+        // the generated CreateOrderBody type, so the body is cast (same pattern as
+        // the other layouts).
         data: {
           paymentMethod,
           staffId: sessionStaff?.id ?? undefined,
           items: cart.map((c) => ({ productId: c.productId, quantity: c.quantity })),
-          cashTendered,
+          cashTendered: paymentMethod === "split" ? undefined : cashTendered,
+          splitCashAmount: paymentMethod === "split" ? splitCash : undefined,
+          splitCardAmount: paymentMethod === "split" ? splitCard : undefined,
           notes: undefined,
           customerId: selectedCustomerId ?? undefined,
           orderType: "counter",
@@ -447,13 +507,13 @@ export function PosSupermarket() {
   /* ────────────────────────────────────────────────────────────────────── */
   if (locked) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0B1E2D]">
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-8 w-full max-w-xs">
           <div className="flex flex-col items-center gap-2 mb-2">
             {businessLogoUrl ? (
               <>
                 <img src={businessLogoUrl} alt={businessDisplayName || "Business Logo"} className="max-h-24 max-w-48 object-contain" />
-                {businessDisplayName && <p className="text-sm text-slate-300 text-center">{businessDisplayName}</p>}
+                {businessDisplayName && <p className="text-sm text-muted-foreground text-center">{businessDisplayName}</p>}
               </>
             ) : (
               <>
@@ -470,21 +530,21 @@ export function PosSupermarket() {
 
   if (checkingShift) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B1E2D]">
-        <p className="text-sm text-slate-400 animate-pulse">Checking shift status…</p>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground animate-pulse">Checking shift status…</p>
       </div>
     );
   }
 
   if (noOpenShift || !cashSession) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0B1E2D] gap-6 px-6 text-center">
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background gap-6 px-6 text-center">
         <div className="h-16 w-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
-          <Store className="h-8 w-8 text-amber-400" />
+          <Store className="h-8 w-8 text-amber-500" />
         </div>
         <div className="max-w-sm">
-          <h2 className="text-xl font-bold mb-1 text-white">No Open Shift</h2>
-          <p className="text-sm text-slate-400">A cash drawer shift must be opened before you can process sales.</p>
+          <h2 className="text-xl font-bold mb-1 text-foreground">No Open Shift</h2>
+          <p className="text-sm text-muted-foreground">A cash drawer shift must be opened before you can process sales.</p>
         </div>
         <button
           onClick={() => navigate("/cash")}
@@ -500,44 +560,44 @@ export function PosSupermarket() {
   /* Main render                                                             */
   /* ────────────────────────────────────────────────────────────────────── */
   return (
-    <div className="flex flex-col h-full min-h-0 bg-[#0B1E2D] text-slate-100">
+    <div className="flex flex-col h-full min-h-0 bg-background text-foreground">
       {/* ── Top bar ──────────────────────────────────────────────────── */}
-      <div className="shrink-0 px-4 py-3 border-b border-white/5 bg-gradient-to-r from-[#0B1E2D] via-[#0d2238] to-[#0B1E2D] flex items-center gap-3">
+      <div className="shrink-0 px-4 py-3 border-b border-border bg-card flex items-center gap-3">
         <div className="flex items-center gap-3 shrink-0">
           <img src={nexxusLogoUrl} alt="NEXXUS POS" className="h-9 w-auto" />
-          <div className="hidden md:flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 px-3 py-1">
-            <Store className="h-3.5 w-3.5 text-cyan-300" />
-            <span className="text-xs font-semibold text-cyan-200 tracking-wide">Supermarket Mode</span>
+          <div className="hidden md:flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 px-3 py-1 shadow-sm">
+            <Store className="h-3.5 w-3.5 text-white" />
+            <span className="text-xs font-semibold text-white tracking-wide">Supermarket Mode</span>
           </div>
         </div>
 
         <div className="ml-auto flex items-center gap-2 shrink-0">
           <button
             onClick={() => navigate("/dashboard")}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-[#0a1a2a] border border-white/10 px-3 h-11 text-xs text-slate-300 hover:bg-white/5 transition"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-muted border border-border px-3 h-11 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition"
           >
             <ArrowLeftRight className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Dashboard</span>
           </button>
-          <div className="flex items-center gap-2 rounded-xl bg-[#0a1a2a] border border-white/10 px-3 h-11">
-            <div className="h-7 w-7 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-xs font-bold text-[#0B1E2D]">
+          <div className="flex items-center gap-2 rounded-xl bg-muted border border-border px-3 h-11">
+            <div className="h-7 w-7 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-xs font-bold text-white">
               {sessionStaff?.name?.charAt(0).toUpperCase() ?? "U"}
             </div>
             <div className="hidden lg:flex flex-col leading-tight">
-              <span className="text-xs font-semibold text-slate-100">{sessionStaff?.name ?? "—"}</span>
-              <span className="text-[10px] text-slate-400 capitalize">{sessionStaff?.role ?? ""}</span>
+              <span className="text-xs font-semibold text-foreground">{sessionStaff?.name ?? "—"}</span>
+              <span className="text-[10px] text-muted-foreground capitalize">{sessionStaff?.role ?? ""}</span>
             </div>
           </div>
           <button
             onClick={() => window.location.reload()}
-            className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-[#0a1a2a] border border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 transition"
+            className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-muted border border-border text-muted-foreground hover:bg-accent hover:text-primary transition"
             title="Reload screen"
           >
             <RefreshCw className="h-4 w-4" />
           </button>
           <button
             onClick={() => { setLocked(true); clearStaff(); }}
-            className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-[#0a1a2a] border border-white/10 text-slate-300 hover:bg-amber-500/10 hover:text-amber-300 transition"
+            className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-muted border border-border text-muted-foreground hover:bg-accent hover:text-amber-500 transition"
             title="Lock"
           >
             <LockKeyhole className="h-4 w-4" />
@@ -548,19 +608,19 @@ export function PosSupermarket() {
       {/* ── Body: big bill (left) + controls (right) ─────────────────── */}
       <div className="flex flex-1 min-h-0">
         {/* ── LEFT: bold bill preview ───────────────────────────────── */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-white/5">
-          <div className="shrink-0 px-6 py-4 border-b border-white/5 flex items-center justify-between bg-[#0d2238]/40">
-            <h2 className="text-lg font-extrabold text-slate-100 tracking-wide flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5 text-cyan-300" />
+        <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+          <div className="shrink-0 px-6 py-4 border-b border-border flex items-center justify-between bg-muted/40">
+            <h2 className="text-lg font-extrabold text-foreground tracking-wide flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5 text-cyan-500" />
               CURRENT BILL
-              <span className="text-sm font-semibold text-slate-400">
+              <span className="text-sm font-semibold text-muted-foreground">
                 ({itemCount} {itemCount === 1 ? "item" : "items"})
               </span>
             </h2>
             {cart.length > 0 && (
               <button
                 onClick={() => requestSupermarketAction({ type: "clear" }, true)}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 h-9 text-sm text-slate-300 hover:bg-rose-500/10 hover:text-rose-300 transition"
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 h-9 text-sm font-semibold text-white bg-rose-500 hover:bg-rose-600 transition"
                 title="Clear bill"
               >
                 <Trash2 className="h-4 w-4" />
@@ -570,7 +630,7 @@ export function PosSupermarket() {
           </div>
 
           {/* Column headers */}
-          <div className="shrink-0 grid grid-cols-[1fr_120px_160px_44px] gap-4 px-6 py-2 text-xs font-bold tracking-widest text-slate-400 uppercase border-b border-white/5 bg-[#0a1a2a]/50">
+          <div className="shrink-0 grid grid-cols-[1fr_120px_160px_44px] gap-4 px-6 py-2 text-xs font-bold tracking-widest text-muted-foreground uppercase border-b border-border bg-muted/40">
             <div>Item</div>
             <div className="text-center">Qty</div>
             <div className="text-right">Amount</div>
@@ -581,9 +641,9 @@ export function PosSupermarket() {
           <div className="flex-1 overflow-y-auto">
             {cart.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-8">
-                <ScanBarcode className="h-14 w-14 text-slate-700" />
-                <p className="text-lg font-semibold text-slate-500">Scan an item to begin</p>
-                <p className="text-sm text-slate-600">Use the scanner or type a barcode and press Enter.</p>
+                <ScanBarcode className="h-14 w-14 text-muted-foreground/40" />
+                <p className="text-lg font-semibold text-muted-foreground">Scan an item to begin</p>
+                <p className="text-sm text-muted-foreground/70">Use the scanner or type a barcode and press Enter.</p>
               </div>
             ) : (
               cart.map((c) => {
@@ -592,38 +652,38 @@ export function PosSupermarket() {
                   <div
                     key={c.cartKey}
                     onClick={() => setSelectedKey(selected ? null : c.cartKey)}
-                    className={`grid grid-cols-[1fr_120px_160px_44px] gap-4 px-6 py-3.5 items-center border-b border-white/5 cursor-pointer transition ${
-                      selected ? "bg-cyan-500/10" : "hover:bg-white/5"
+                    className={`grid grid-cols-[1fr_120px_160px_44px] gap-4 px-6 py-3.5 items-center border-b border-border cursor-pointer transition ${
+                      selected ? "bg-cyan-500/10 dark:bg-cyan-500/15" : "hover:bg-accent"
                     }`}
                   >
                     <div className="min-w-0">
-                      <div className="text-xl font-bold text-slate-50 truncate">{c.productName}</div>
-                      <div className="text-sm font-mono text-cyan-300/80 truncate">
+                      <div className="text-xl font-bold text-foreground truncate">{c.productName}</div>
+                      <div className="text-sm font-mono text-cyan-600 dark:text-cyan-300/80 truncate">
                         {c.barcode ?? `#${c.productId}`} · @ {formatCurrency(c.price, baseCurrency)}
                       </div>
                     </div>
                     <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => requestSupermarketAction({ type: "decrease", cartKey: c.cartKey }, true)}
-                        className="h-9 w-9 rounded-lg bg-[#0a1a2a] border border-white/10 text-slate-300 hover:bg-rose-500/10 hover:text-rose-300 transition flex items-center justify-center"
+                        className="h-9 w-9 rounded-lg bg-rose-500 text-white hover:bg-rose-600 transition flex items-center justify-center shadow-sm"
                       >
                         <Minus className="h-4 w-4" />
                       </button>
-                      <span className="font-mono text-xl font-extrabold w-10 text-center text-slate-50">{c.quantity}</span>
+                      <span className="font-mono text-xl font-extrabold w-10 text-center text-foreground">{c.quantity}</span>
                       <button
                         onClick={() => incQty(c.cartKey)}
-                        className="h-9 w-9 rounded-lg bg-[#0a1a2a] border border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 transition flex items-center justify-center"
+                        className="h-9 w-9 rounded-lg bg-cyan-500 text-white hover:bg-cyan-600 transition flex items-center justify-center shadow-sm"
                       >
                         <Plus className="h-4 w-4" />
                       </button>
                     </div>
-                    <div className="text-right font-mono text-2xl font-extrabold text-slate-50">
+                    <div className="text-right font-mono text-2xl font-extrabold text-foreground">
                       {formatCurrency(c.price * c.quantity, baseCurrency)}
                     </div>
                     <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => requestSupermarketAction({ type: "remove", cartKey: c.cartKey }, true)}
-                        className="h-9 w-9 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-500/10 transition flex items-center justify-center"
+                        className="h-9 w-9 rounded-lg text-muted-foreground hover:text-white hover:bg-rose-500 transition flex items-center justify-center"
                         title="Remove"
                       >
                         <X className="h-4 w-4" />
@@ -637,25 +697,25 @@ export function PosSupermarket() {
           </div>
 
           {/* Big totals footer */}
-          <div className="shrink-0 px-6 py-4 border-t border-white/10 bg-[#0a1a2a]/60 space-y-1.5">
-            <div className="flex justify-between text-sm text-slate-400">
+          <div className="shrink-0 px-6 py-4 border-t border-border bg-muted/40 space-y-1.5">
+            <div className="flex justify-between text-sm text-muted-foreground">
               <span>Subtotal</span>
               <span className="font-mono">{formatCurrency(subtotal, baseCurrency)}</span>
             </div>
             {taxMode === "exclusive" && (
-              <div className="flex justify-between text-sm text-slate-400">
+              <div className="flex justify-between text-sm text-muted-foreground">
                 <span>Tax ({taxPct}%)</span>
                 <span className="font-mono">{formatCurrency(tax, baseCurrency)}</span>
               </div>
             )}
-            <div className="flex items-center justify-between pt-2 mt-1 border-t border-white/10">
-              <span className="text-2xl font-extrabold text-slate-100">TOTAL</span>
-              <span className="text-5xl font-extrabold font-mono bg-gradient-to-r from-cyan-300 to-blue-300 bg-clip-text text-transparent">
+            <div className="flex items-center justify-between pt-2 mt-1 border-t border-border">
+              <span className="text-2xl font-extrabold text-foreground">TOTAL</span>
+              <span className="text-5xl font-extrabold font-mono bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent">
                 {formatCurrency(total, baseCurrency)}
               </span>
             </div>
             {cashTendered != null && (
-              <div className="flex items-center justify-between pt-1 text-emerald-300">
+              <div className="flex items-center justify-between pt-1 text-emerald-600 dark:text-emerald-300">
                 <span className="text-sm font-semibold">Change Due</span>
                 <span className="font-mono text-2xl font-bold">{formatCurrency(changeDue, baseCurrency)}</span>
               </div>
@@ -664,13 +724,13 @@ export function PosSupermarket() {
         </div>
 
         {/* ── MIDDLE/RIGHT: scan + keypad + customer + payment ──────── */}
-        <div className="w-[440px] shrink-0 flex flex-col bg-[#0a1a2a]/60 min-h-0 overflow-y-auto">
+        <div className="w-[440px] shrink-0 flex flex-col bg-card border-l border-border min-h-0 overflow-y-auto">
           <div className="p-4 space-y-4">
             {/* Scan box */}
             <div>
-              <Label className="text-xs text-slate-400 mb-1.5 block">Scan or type SKU / barcode</Label>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Scan or type SKU / barcode</Label>
               <div className="relative">
-                <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-cyan-400 pointer-events-none" />
+                <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-cyan-500 pointer-events-none" />
                 <Input
                   ref={searchInputRef}
                   autoFocus
@@ -678,13 +738,13 @@ export function PosSupermarket() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyDown={handleSearchKey}
                   placeholder="Scan a barcode…"
-                  className="pl-11 pr-10 h-14 text-lg bg-[#0d2238] border-cyan-400/30 focus-visible:border-cyan-400 focus-visible:ring-cyan-400/20 text-slate-100 placeholder:text-slate-500 rounded-xl"
+                  className="pl-11 pr-10 h-14 text-lg bg-background border-cyan-500/40 focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20 text-foreground placeholder:text-muted-foreground rounded-xl"
                   autoComplete="off"
                 />
                 {searchTerm && (
                   <button
                     onClick={() => { setSearchTerm(""); searchInputRef.current?.focus(); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -693,30 +753,38 @@ export function PosSupermarket() {
             </div>
 
             {/* Quantity keypad */}
-            <div className="rounded-2xl bg-[#0d2238] border border-white/5 p-3">
+            <div className="rounded-2xl bg-muted/50 border border-border p-3">
               <div className="flex items-center justify-between mb-2 px-1">
-                <span className="text-xs font-semibold text-slate-400">
+                <span className="text-xs font-semibold text-muted-foreground">
                   {selectedKey ? "Set qty for selected" : "Qty for next scan"}
                 </span>
-                <span className="font-mono text-2xl font-extrabold text-cyan-300">× {qtyInput || "1"}</span>
+                <span className="font-mono text-2xl font-extrabold text-cyan-600 dark:text-cyan-300">× {qtyInput || "1"}</span>
               </div>
               <div className="grid grid-cols-3 gap-2">
-                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"].map((k) => (
-                  <Button
-                    key={k}
-                    variant="outline"
-                    className="h-12 text-lg font-bold bg-[#0a1a2a] border-white/10 text-slate-100 hover:bg-cyan-500/10 hover:text-cyan-200"
-                    onClick={() => keypadPress(k)}
-                  >
-                    {k === "back" ? <Delete className="h-5 w-5" /> : k === "clear" ? "C" : k}
-                  </Button>
-                ))}
+                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"].map((k) => {
+                  const isClear = k === "clear";
+                  const isBack = k === "back";
+                  const tone = isClear
+                    ? "bg-rose-500 hover:bg-rose-600 text-white"
+                    : isBack
+                      ? "bg-amber-500 hover:bg-amber-600 text-white"
+                      : "bg-secondary hover:bg-secondary/70 text-foreground";
+                  return (
+                    <Button
+                      key={k}
+                      className={`h-12 text-lg font-bold border-0 shadow-sm ${tone}`}
+                      onClick={() => keypadPress(k)}
+                    >
+                      {isBack ? <Delete className="h-5 w-5" /> : isClear ? "C" : k}
+                    </Button>
+                  );
+                })}
               </div>
               {selectedKey && (
                 <Button
                   onClick={applyQtyToSelected}
                   disabled={qtyInput === ""}
-                  className="mt-2 w-full h-11 bg-cyan-600 hover:bg-cyan-500 font-bold disabled:opacity-40"
+                  className="mt-2 w-full h-11 bg-cyan-600 hover:bg-cyan-500 text-white font-bold disabled:opacity-40"
                 >
                   Set Quantity
                 </Button>
@@ -725,24 +793,24 @@ export function PosSupermarket() {
 
             {/* Customer */}
             {selectedCustomer ? (
-              <div className="rounded-xl bg-cyan-500/10 border border-cyan-400/20 px-3 py-2.5 flex items-center gap-2">
-                <div className="h-7 w-7 rounded-full bg-cyan-400 text-[#0B1E2D] flex items-center justify-center text-xs font-bold">
+              <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/30 px-3 py-2.5 flex items-center gap-2">
+                <div className="h-7 w-7 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs font-bold">
                   {selectedCustomer.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-cyan-100 truncate text-sm">{selectedCustomer.name}</div>
+                  <div className="font-semibold text-foreground truncate text-sm">{selectedCustomer.name}</div>
                   {selectedCustomer.phone && (
-                    <div className="text-xs text-cyan-300/70 truncate">{selectedCustomer.phone}</div>
+                    <div className="text-xs text-muted-foreground truncate">{selectedCustomer.phone}</div>
                   )}
                 </div>
-                <button onClick={() => setSelectedCustomerId(null)} className="text-slate-400 hover:text-rose-300" title="Clear customer">
+                <button onClick={() => setSelectedCustomerId(null)} className="text-muted-foreground hover:text-rose-500" title="Clear customer">
                   <X className="h-4 w-4" />
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => setCustomerOpen(true)}
-                className="w-full rounded-xl border border-dashed border-cyan-400/30 px-3 py-2.5 text-sm text-slate-400 hover:bg-cyan-500/5 hover:text-cyan-200 transition flex items-center justify-center gap-2"
+                className="w-full rounded-xl border border-dashed border-cyan-500/40 px-3 py-2.5 text-sm text-muted-foreground hover:bg-cyan-500/5 hover:text-cyan-600 dark:hover:text-cyan-200 transition flex items-center justify-center gap-2"
               >
                 <UserPlus className="h-4 w-4" />
                 Add Customer (optional)
@@ -750,44 +818,128 @@ export function PosSupermarket() {
             )}
 
             {/* Payment method */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
-                onClick={() => setPaymentMethod("cash")}
-                className={`h-12 rounded-xl text-sm font-bold transition border ${
+                onClick={() => selectPayment("cash")}
+                className={`h-14 rounded-xl text-sm font-bold transition flex flex-col items-center justify-center gap-1 ${
                   paymentMethod === "cash"
-                    ? "bg-cyan-500/20 border-cyan-400/50 text-cyan-100"
-                    : "bg-[#0d2238] border-white/10 text-slate-400 hover:text-slate-200"
+                    ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30"
+                    : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
                 }`}
               >
+                <Banknote className="h-5 w-5" />
                 Cash
               </button>
               <button
-                onClick={() => setPaymentMethod("card")}
-                className={`h-12 rounded-xl text-sm font-bold transition border ${
+                onClick={() => selectPayment("card")}
+                className={`h-14 rounded-xl text-sm font-bold transition flex flex-col items-center justify-center gap-1 ${
                   paymentMethod === "card"
-                    ? "bg-cyan-500/20 border-cyan-400/50 text-cyan-100"
-                    : "bg-[#0d2238] border-white/10 text-slate-400 hover:text-slate-200"
+                    ? "bg-blue-500 text-white shadow-md shadow-blue-500/30"
+                    : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
                 }`}
               >
+                <CreditCard className="h-5 w-5" />
                 Card
               </button>
+              <button
+                onClick={() => selectPayment("split")}
+                className={`h-14 rounded-xl text-sm font-bold transition flex flex-col items-center justify-center gap-1 ${
+                  paymentMethod === "split"
+                    ? "bg-violet-500 text-white shadow-md shadow-violet-500/30"
+                    : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                <SplitSquareHorizontal className="h-5 w-5" />
+                Split
+              </button>
             </div>
+
+            {/* Cash: tendered + quick suggestions */}
             {paymentMethod === "cash" && (
-              <Input
-                type="number"
-                inputMode="decimal"
-                placeholder="Cash tendered"
-                value={cashTenderedInput}
-                onChange={(e) => setCashTenderedInput(e.target.value)}
-                className="h-12 bg-[#0d2238] border-white/10 text-slate-100 placeholder:text-slate-500 text-base"
-              />
+              <div className="space-y-2">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="Cash tendered"
+                  value={cashTenderedInput}
+                  onChange={(e) => setCashTenderedInput(e.target.value)}
+                  className="h-12 bg-background border-border text-foreground placeholder:text-muted-foreground text-base"
+                />
+                {total > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {cashSuggestions(total).map((amt, i) => (
+                      <button
+                        key={amt}
+                        onClick={() => { setCashTenderedInput(String(amt)); focusScanInput(); }}
+                        className="h-11 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold text-sm hover:bg-emerald-500 hover:text-white transition"
+                      >
+                        {i === 0 && Math.abs(amt - total) < 0.01 ? "Exact" : formatCurrency(amt, baseCurrency)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Split: cash + card amounts that must sum to the total */}
+            {paymentMethod === "split" && (
+              <div className="rounded-xl bg-muted/50 border border-border p-3 space-y-2.5">
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
+                    <Banknote className="h-3.5 w-3.5 text-emerald-500" /> Cash portion
+                  </Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={splitCashInput}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSplitCashInput(v);
+                      const cash = parseFloat(v) || 0;
+                      setSplitCardInput(total - cash > 0 ? String(Number((total - cash).toFixed(2))) : "0");
+                    }}
+                    className="h-11 bg-background border-border text-foreground text-base"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
+                    <CreditCard className="h-3.5 w-3.5 text-blue-500" /> Card portion
+                  </Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={splitCardInput}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSplitCardInput(v);
+                      const card = parseFloat(v) || 0;
+                      setSplitCashInput(total - card > 0 ? String(Number((total - card).toFixed(2))) : "0");
+                    }}
+                    className="h-11 bg-background border-border text-foreground text-base"
+                  />
+                </div>
+                <div
+                  className={`flex items-center justify-between text-xs font-semibold rounded-lg px-2.5 py-1.5 ${
+                    isSplitValid
+                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                      : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                  }`}
+                >
+                  <span>{isSplitValid ? "Balanced" : "Remaining"}</span>
+                  <span className="font-mono">
+                    {isSplitValid ? formatCurrency(total, baseCurrency) : formatCurrency(splitRemaining, baseCurrency)}
+                  </span>
+                </div>
+              </div>
             )}
 
             {/* Checkout */}
             <button
               onClick={handleCheckout}
-              disabled={cart.length === 0 || createOrder.isPending}
-              className="w-full h-16 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-500 text-white text-lg font-extrabold shadow-lg shadow-cyan-500/20 hover:brightness-110 active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+              disabled={cart.length === 0 || createOrder.isPending || (paymentMethod === "split" && !isSplitValid)}
+              className="w-full h-16 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-lg font-extrabold shadow-lg shadow-cyan-500/20 hover:brightness-110 active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
             >
               <ShoppingCart className="h-6 w-6" />
               {createOrder.isPending ? "PROCESSING…" : `CHECKOUT · ${formatCurrency(total, baseCurrency)}`}
