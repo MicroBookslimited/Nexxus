@@ -455,6 +455,16 @@ export function PosSupermarket() {
       {
         onSuccess: (data) => {
           setReceiptOrder(data);
+          if (settings?.auto_print_receipt === "true") {
+            const ro = receiptOrderFrom(data, {
+              name: selectedCustomer?.name ?? null,
+              phone: selectedCustomer?.phone ?? null,
+              email: selectedCustomer?.email ?? null,
+              loyaltyPoints: selectedCustomer?.loyaltyPoints ?? null,
+              outstandingBalance: null,
+            });
+            printOrderReceipt(buildReceiptHtml(ro, settings), ro, settings);
+          }
           if (data?.customerId && selectedCustomer) {
             setReceiptCustomerInfo({
               id: selectedCustomer.id,

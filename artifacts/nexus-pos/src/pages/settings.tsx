@@ -45,6 +45,7 @@ export function AdminSettings() {
   const [receiptFooter, setReceiptFooter] = useState("");
   const [receiptSize, setReceiptSize] = useState<"58mm" | "80mm">("80mm");
   const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant">("classic");
+  const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState("JMD");
   const [secondaryCurrency, setSecondaryCurrency] = useState("");
   const [currencyRate, setCurrencyRate] = useState("");
@@ -94,6 +95,7 @@ export function AdminSettings() {
     setTaxMode((settings.tax_mode as "exclusive" | "inclusive") ?? "exclusive");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
     setReceiptSize((settings.receipt_size as "58mm" | "80mm") ?? "80mm");
+    setAutoPrintReceipt(settings.auto_print_receipt === "true");
     setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant") ?? "classic");
     setBaseCurrency(settings.base_currency ?? "JMD");
     setSecondaryCurrency(settings.secondary_currency ?? "");
@@ -138,6 +140,7 @@ export function AdminSettings() {
           tax_mode: taxMode,
           receipt_footer: receiptFooter,
           receipt_size: receiptSize,
+          auto_print_receipt: autoPrintReceipt ? "true" : "false",
           receipt_template: receiptTemplate,
           base_currency: baseCurrency.toUpperCase().trim() || "JMD",
           secondary_currency: secondaryCurrency.toUpperCase().trim(),
@@ -478,6 +481,31 @@ export function AdminSettings() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Auto-print (silent printing) */}
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div className="pr-4">
+              <p className="text-sm font-medium">Auto-print receipts (silent printing)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                When on, the receipt prints automatically the moment a sale completes — sent to your default / last-used printer through the browser's print box. Turn off to print only when you tap "Print receipt".
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoPrintReceipt}
+              onClick={() => { setAutoPrintReceipt(!autoPrintReceipt); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                autoPrintReceipt ? "bg-primary" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                autoPrintReceipt ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
           </div>
 
           {/* Receipt Template */}

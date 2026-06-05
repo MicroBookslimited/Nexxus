@@ -1735,6 +1735,20 @@ export function POS() {
             });
           }
           setReceiptOrder(data);
+          if (settings?.auto_print_receipt === "true") {
+            const autoCust: CustomerReceiptInfo | null =
+              data?.customerId && selectedCustomer
+                ? {
+                    id: selectedCustomer.id,
+                    name: selectedCustomer.name,
+                    phone: selectedCustomer.phone ?? null,
+                    email: selectedCustomer.email ?? null,
+                    loyaltyPoints: selectedCustomer.loyaltyPoints,
+                    outstandingBalance: 0,
+                  }
+                : null;
+            printReceiptWindow(data, settings ?? {}, autoCust);
+          }
           // Receipts can be printed/sent the moment the receipt dialog
           // opens — sometimes faster than a network round-trip — so we
           // seed customer info SYNCHRONOUSLY from the in-memory cart
