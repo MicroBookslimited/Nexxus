@@ -58,6 +58,7 @@ export function AdminSettings() {
   const [allowOverselling, setAllowOverselling] = useState(false);
   const [supermarketMode, setSupermarketMode] = useState(false);
   const [hardwareUiMode, setHardwareUiMode] = useState(false);
+  const [supermarketUiMode, setSupermarketUiMode] = useState(false);
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
   const [sendingTest, setSendingTest] = useState(false);
   const [sendingLowStockTest, setSendingLowStockTest] = useState(false);
@@ -107,6 +108,7 @@ export function AdminSettings() {
     setAllowOverselling(settings.allow_overselling === "true");
     setSupermarketMode(settings.supermarket_mode === "true");
     setHardwareUiMode(settings.hardware_ui_mode === "true");
+    setSupermarketUiMode(settings.supermarket_ui_mode === "true");
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
     setDirty(false);
   }, [settings]);
@@ -150,6 +152,7 @@ export function AdminSettings() {
           allow_overselling: allowOverselling ? "true" : "false",
           supermarket_mode: supermarketMode ? "true" : "false",
           hardware_ui_mode: hardwareUiMode ? "true" : "false",
+          supermarket_ui_mode: supermarketUiMode ? "true" : "false",
           stock_method: stockMethod,
         },
       },
@@ -1276,7 +1279,7 @@ export function AdminSettings() {
             POS Interface
           </CardTitle>
           <CardDescription>
-            Switch between the default cashier layout and the Hardware Store layout
+            Switch between the default cashier layout, the Hardware Store layout, and the Supermarket (scan-only) layout
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1291,7 +1294,12 @@ export function AdminSettings() {
               type="button"
               role="switch"
               aria-checked={hardwareUiMode}
-              onClick={() => { setHardwareUiMode(!hardwareUiMode); markDirty(); }}
+              onClick={() => {
+                const next = !hardwareUiMode;
+                setHardwareUiMode(next);
+                if (next) setSupermarketUiMode(false);
+                markDirty();
+              }}
               className={cn(
                 "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 hardwareUiMode ? "bg-teal-500" : "bg-muted-foreground/30"
@@ -1310,6 +1318,47 @@ export function AdminSettings() {
                 <li>• /pos now opens the hardware-store layout</li>
                 <li>• Products are shown in a fast, scannable list with SKU column</li>
                 <li>• Cart stays fixed on the right; categories scroll horizontally on top</li>
+                <li>• Disable this toggle to return to the standard POS layout</li>
+              </ul>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Supermarket Layout (scan-only)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Built for high-speed checkout lanes: items are added only by scanning a barcode (or typing a code and pressing Enter) — there is no product grid. A large, bold bill preview fills the left, with the scan box, a numeric quantity keypad, customer, payment, and a big checkout button on the right. Reuses the same pricing, cart, and checkout logic.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={supermarketUiMode}
+              onClick={() => {
+                const next = !supermarketUiMode;
+                setSupermarketUiMode(next);
+                if (next) setHardwareUiMode(false);
+                markDirty();
+              }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                supermarketUiMode ? "bg-cyan-500" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                supermarketUiMode ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+          {supermarketUiMode && (
+            <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/20 p-3 text-xs text-cyan-700 dark:text-cyan-400 space-y-1">
+              <p className="font-medium">Supermarket Layout is active</p>
+              <ul className="space-y-0.5 ml-2">
+                <li>• /pos now opens the scan-only supermarket layout</li>
+                <li>• Items are added only by barcode scan — no product grid</li>
+                <li>• Large bill preview on the left; scan box + quantity keypad + checkout on the right</li>
+                <li>• Variant/modifier products fall back to the standard POS</li>
                 <li>• Disable this toggle to return to the standard POS layout</li>
               </ul>
             </div>

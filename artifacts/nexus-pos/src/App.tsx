@@ -13,6 +13,7 @@ import { Login } from "@/pages/login";
 import { Dashboard } from "@/pages/dashboard";
 import { POS } from "@/pages/pos";
 import { PosHardware } from "@/pages/pos-hardware";
+import { PosSupermarket } from "@/pages/pos-supermarket";
 import { useGetSettings } from "@workspace/api-client-react";
 import { Orders } from "@/pages/orders";
 import { Products } from "@/pages/products";
@@ -145,9 +146,10 @@ function ProtectedRoute({ component: Component, permission }: { component: React
   );
 }
 
-// Dispatches /pos to either the standard POS layout or the Hardware Store
-// layout based on the `hardware_ui_mode` tenant setting. Both layouts use the
-// same cart/pricing/checkout API hooks — only the UI differs.
+// Dispatches /pos to the standard POS, the Hardware Store layout, or the
+// Supermarket (scan-only) layout based on tenant settings. All layouts use the
+// same cart/pricing/checkout API hooks — only the UI differs. Supermarket takes
+// precedence over Hardware when both flags are somehow set.
 function PosModeDispatcher() {
   const { data: settings, isLoading } = useGetSettings();
   if (isLoading) {
@@ -157,6 +159,7 @@ function PosModeDispatcher() {
       </div>
     );
   }
+  if (settings?.supermarket_ui_mode === "true") return <PosSupermarket />;
   if (settings?.hardware_ui_mode === "true") return <PosHardware />;
   return <POS />;
 }
