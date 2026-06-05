@@ -40,6 +40,7 @@ import {
   Store,
   ArrowLeftRight,
   ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 import { buildReceiptHtml, receiptOrderFrom } from "@/lib/receipt";
 import { printOrderReceipt } from "@/lib/print-receipt";
@@ -527,6 +528,13 @@ export function PosSupermarket() {
               <span className="text-[10px] text-slate-400 capitalize">{sessionStaff?.role ?? ""}</span>
             </div>
           </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-[#0a1a2a] border border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 transition"
+            title="Reload screen"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
           <button
             onClick={() => { setLocked(true); clearStaff(); }}
             className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-[#0a1a2a] border border-white/10 text-slate-300 hover:bg-amber-500/10 hover:text-amber-300 transition"

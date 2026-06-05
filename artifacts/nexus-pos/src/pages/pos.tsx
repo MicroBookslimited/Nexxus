@@ -36,7 +36,7 @@ import {
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote, Layers,
-  Tag, PenLine, PackagePlus, Calculator, Delete,
+  Tag, PenLine, PackagePlus, Calculator, Delete, RefreshCw,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -2044,6 +2044,13 @@ export function POS() {
             )}
           </div>
           <div className="shrink-0 flex items-center gap-1.5">
+            <button
+              title="Reload screen"
+              onClick={() => window.location.reload()}
+              className="flex items-center justify-center rounded-md border border-slate-500 bg-slate-600 p-1.5 text-white hover:bg-slate-500 hover:border-slate-400 active:scale-95 transition-all duration-150 shadow-sm"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </button>
             <button
               title="Switch user"
               onClick={() => { setLocked(true); clearStaff(); setSessionLocationId(null); }}
