@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings, useListStaff } from "@workspace/api-client-react";
+import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings, useListStaff, useRefundOrderItems } from "@workspace/api-client-react";
 import { useStaff } from "@/contexts/StaffContext";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom } from "@/lib/receipt";
 import { printOrderReceipt } from "@/lib/print-receipt";
@@ -14,7 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, ChevronUp, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert, RotateCcw, Printer, CalendarDays, X, WifiOff, FileSpreadsheet } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, CreditCard, Banknote, SplitSquareHorizontal, Receipt, ShieldAlert, RotateCcw, Printer, CalendarDays, X, WifiOff, FileSpreadsheet, Plus, Minus } from "lucide-react";
 import { getQueue, type QueuedRequest } from "@/lib/offline-queue";
 import { PinPad } from "@/components/PinPad";
 import { 
@@ -27,7 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 
@@ -88,6 +88,9 @@ export function Orders() {
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [orderToRefund, setOrderToRefund] = useState<number | null>(null);
   const [refundReason, setRefundReason] = useState("");
+  // Per-line refund quantities, keyed by order_item id. Capped at each line's
+  // current (remaining) quantity. A value of 0 means "don't refund this line".
+  const [refundQuantities, setRefundQuantities] = useState<Record<number, number>>({});
   const [reprintOrder, setReprintOrder] = useState<NonNullable<typeof orders>[0] | null>(null);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [whatsappOrder, setWhatsappOrder] = useState<NonNullable<typeof orders>[0] | null>(null);
@@ -144,6 +147,7 @@ export function Orders() {
     (staffList ?? []).map((s) => [s.id, s.name])
   );
   const updateStatus = useUpdateOrderStatus();
+  const refundItems = useRefundOrderItems();
   const chargeOrder = useChargeOrder();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -170,15 +174,31 @@ export function Orders() {
 
   const handleRefundConfirm = () => {
     if (!orderToRefund || !refundReason.trim()) return;
-    updateStatus.mutate(
-      { id: orderToRefund, data: { status: "refunded", voidReason: refundReason } },
+    const lines = Object.entries(refundQuantities)
+      .map(([id, qty]) => ({ orderItemId: Number(id), quantity: qty }))
+      .filter((l) => l.quantity > 0);
+    if (lines.length === 0) return;
+    refundItems.mutate(
+      { id: orderToRefund, data: { items: lines, reason: refundReason } },
       {
-        onSuccess: () => {
-          toast({ title: "Order Refunded", description: "Stock has been restored." });
+        onSuccess: (updated) => {
+          const fully = updated.status === "refunded";
+          toast({
+            title: fully ? "Order Fully Refunded" : "Items Refunded",
+            description: "Stock has been restored and the sale total adjusted.",
+          });
           queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
           setRefundDialogOpen(false);
           setOrderToRefund(null);
           setRefundReason("");
+          setRefundQuantities({});
+        },
+        onError: (err: unknown) => {
+          toast({
+            variant: "destructive",
+            title: "Refund failed",
+            description: err instanceof Error ? err.message : "Could not process the refund.",
+          });
         },
       }
     );
@@ -236,6 +256,7 @@ export function Orders() {
     } else if (type === "refund") {
       setOrderToRefund(orderId);
       setRefundReason("");
+      setRefundQuantities({});
       setRefundDialogOpen(true);
     } else if (type === "reprint") {
       const order = orders?.find(o => o.id === orderId) ?? null;
@@ -418,7 +439,10 @@ export function Orders() {
     URL.revokeObjectURL(url);
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, refundedTotal?: number | null) => {
+    if (status === 'completed' && (refundedTotal ?? 0) > 0) {
+      return <Badge className="bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-0">Partially refunded</Badge>;
+    }
     switch (status) {
       case 'open': return <Badge className="bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border-0">Open</Badge>;
       case 'completed': return <Badge className="bg-green-500/10 text-green-500 hover:bg-green-500/20 border-0">Completed</Badge>;
@@ -703,7 +727,7 @@ export function Orders() {
                       {format(new Date(order.createdAt), "dd/MM/yyyy, h:mm a")}
                     </TableCell>
                     <TableCell>
-                      {getStatusBadge(order.status)}
+                      {getStatusBadge(order.status, order.refundedTotal)}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {order.items.length} items
@@ -1055,39 +1079,96 @@ export function Orders() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Refund Dialog */}
-      <AlertDialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <RotateCcw className="h-4 w-4 text-amber-500" />
-              Refund this order?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              The order will be marked as refunded and inventory will be restored. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="my-4 space-y-2">
-            <Label htmlFor="refundReason">Reason for refund <span className="text-destructive">*</span></Label>
-            <Input
-              id="refundReason"
-              value={refundReason}
-              onChange={e => setRefundReason(e.target.value)}
-              placeholder="e.g. Wrong item, Customer complaint, Duplicate charge…"
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); handleRefundConfirm(); }}
-              disabled={!refundReason.trim()}
-              className="bg-amber-500 text-white hover:bg-amber-600"
-            >
-              Confirm Refund
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Refund Dialog — per-item (partial) refund */}
+      <Dialog open={refundDialogOpen} onOpenChange={(open) => { setRefundDialogOpen(open); if (!open) { setOrderToRefund(null); setRefundReason(""); setRefundQuantities({}); } }}>
+        <DialogContent className="sm:max-w-lg">
+          {(() => {
+            const refundOrder = orders?.find(o => o.id === orderToRefund);
+            if (!refundOrder) return null;
+            // Only lines with remaining quantity can be refunded.
+            const refundable = refundOrder.items.filter(i => i.quantity > 0);
+            const perUnit = (i: { lineTotal: number; quantity: number }) => i.quantity > 0 ? i.lineTotal / i.quantity : 0;
+            const totalLineRefundValue = refundable.reduce(
+              (sum, i) => sum + perUnit(i) * (refundQuantities[i.id] ?? 0), 0,
+            );
+            // Estimate scaled by total/subtotal so tax + discounts are included.
+            const estRefund = refundOrder.subtotal > 0
+              ? refundOrder.total * (totalLineRefundValue / refundOrder.subtotal)
+              : 0;
+            const anySelected = refundable.some(i => (refundQuantities[i.id] ?? 0) > 0);
+            const setQty = (id: number, qty: number, max: number) => {
+              const clamped = Math.max(0, Math.min(max, qty));
+              setRefundQuantities(prev => ({ ...prev, [id]: clamped }));
+            };
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <RotateCcw className="h-4 w-4 text-amber-500" />
+                    Refund items — {refundOrder.orderNumber}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Choose how many of each item to refund. Stock is restored and the sale total is reduced. This cannot be undone.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="my-2 max-h-[45vh] overflow-y-auto space-y-2 pr-1">
+                  {refundable.map(item => {
+                    const qty = refundQuantities[item.id] ?? 0;
+                    return (
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{item.productName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatCurrency(perUnit(item))} each · {item.quantity} available
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button type="button" variant="outline" size="icon" className="h-7 w-7" disabled={qty <= 0} onClick={() => setQty(item.id, qty - 1, item.quantity)}>
+                            <Minus className="h-3.5 w-3.5" />
+                          </Button>
+                          <span className="w-7 text-center text-sm font-mono tabular-nums">{qty}</span>
+                          <Button type="button" variant="outline" size="icon" className="h-7 w-7" disabled={qty >= item.quantity} onClick={() => setQty(item.id, qty + 1, item.quantity)}>
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setQty(item.id, item.quantity, item.quantity)}>
+                            All
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {refundable.length === 0 && (
+                    <p className="text-sm text-muted-foreground py-4 text-center">All items on this order have already been refunded.</p>
+                  )}
+                </div>
+                <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">Estimated refund</span>
+                  <span className="font-mono font-semibold text-amber-500">{formatCurrency(estRefund)}</span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  <Label htmlFor="refundReason">Reason for refund <span className="text-destructive">*</span></Label>
+                  <Input
+                    id="refundReason"
+                    value={refundReason}
+                    onChange={e => setRefundReason(e.target.value)}
+                    placeholder="e.g. Wrong item, Customer complaint, Damaged goods…"
+                  />
+                </div>
+                <DialogFooter className="mt-4">
+                  <Button variant="outline" onClick={() => setRefundDialogOpen(false)}>Cancel</Button>
+                  <Button
+                    onClick={() => handleRefundConfirm()}
+                    disabled={!refundReason.trim() || !anySelected || refundItems.isPending}
+                    className="bg-amber-500 text-white hover:bg-amber-600"
+                  >
+                    {refundItems.isPending ? "Processing…" : "Confirm Refund"}
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Charge Dialog */}
       <Dialog open={chargeDialogOpen} onOpenChange={setChargeDialogOpen}>

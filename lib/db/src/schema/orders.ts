@@ -26,6 +26,10 @@ export const ordersTable = pgTable("orders", {
   orderType: text("order_type").default("counter"),
   loyaltyPointsRedeemed: integer("loyalty_points_redeemed").default(0),
   loyaltyDiscount: real("loyalty_discount").default(0),
+  // Cumulative money refunded back to the customer via partial (per-item)
+  // refunds. Stays 0 for orders never partially refunded. A completed order
+  // with refundedTotal > 0 is shown as "Partially refunded".
+  refundedTotal: real("refunded_total").default(0),
   staffId: integer("staff_id"),
   locationId: integer("location_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -38,7 +42,13 @@ export const orderItemsTable = pgTable("order_items", {
   productId: integer("product_id").notNull(),
   productName: text("product_name").notNull(),
   // `real` to support decimal quantities for sold-by-weight items (e.g. 1.75 kg).
+  // On a partial refund `quantity` is REDUCED to the remaining (un-refunded)
+  // amount so reports — which SUM(quantity)/SUM(lineTotal) for completed
+  // orders — automatically reflect the refund with no query changes.
   quantity: real("quantity").notNull(),
+  // Cumulative quantity refunded for this line. The originally-sold quantity
+  // is recoverable as (quantity + refundedQuantity).
+  refundedQuantity: real("refunded_quantity").default(0),
   unitPrice: real("unit_price").notNull(),
   // Original (pre-tier) unit price captured at sale time so receipts can show
   // tier-pricing savings (originalUnitPrice - unitPrice) * quantity. Nullable

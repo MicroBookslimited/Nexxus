@@ -12,6 +12,8 @@ export interface OrderItem {
   productId: number;
   productName: string;
   quantity: number;
+  /** Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity. */
+  refundedQuantity?: number | null;
   unitPrice: number;
   /** Original (pre-tier) unit price; used to compute volume-pricing savings on receipts. */
   originalUnitPrice?: number | null;

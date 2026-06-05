@@ -273,6 +273,8 @@ export interface OrderItem {
   productId: number;
   productName: string;
   quantity: number;
+  /** Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity. */
+  refundedQuantity?: number | null;
   unitPrice: number;
   /** Original (pre-tier) unit price; used to compute volume-pricing savings on receipts. */
   originalUnitPrice?: number | null;
@@ -294,6 +296,8 @@ export interface Order {
   discountValue?: number | null;
   tax: number;
   total: number;
+  /** Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded. */
+  refundedTotal?: number | null;
   paymentMethod?: string | null;
   splitCardAmount?: number | null;
   splitCashAmount?: number | null;
@@ -372,6 +376,17 @@ export const UpdateOrderStatusBodyStatus = {
 export interface UpdateOrderStatusBody {
   status: UpdateOrderStatusBodyStatus;
   voidReason?: string;
+}
+
+export type RefundOrderItemsBodyItemsItem = {
+  orderItemId: number;
+  /** Quantity to refund for this line (must be > 0 and <= the line's remaining quantity). */
+  quantity: number;
+};
+
+export interface RefundOrderItemsBody {
+  items: RefundOrderItemsBodyItemsItem[];
+  reason: string;
 }
 
 export type HeldOrderDiscountType =

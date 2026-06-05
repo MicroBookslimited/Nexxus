@@ -543,6 +543,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/Order"
 
+  /orders/{id}/refund-items:
+    post:
+      operationId: refundOrderItems
+      tags: [orders]
+      summary: Refund specific items / quantities from a completed order (partial refund)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefundOrderItemsBody"
+      responses:
+        "200":
+          description: Updated order (status stays completed while partial, flips to refunded when fully refunded)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
   /orders/{id}/charge:
     post:
       operationId: chargeOrder
@@ -2000,6 +2025,11 @@ components:
         total:
           type: number
           format: float
+        refundedTotal:
+          type: number
+          format: float
+          nullable: true
+          description: Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.
         paymentMethod:
           type: string
           nullable: true
@@ -2052,6 +2082,11 @@ components:
           type: string
         quantity:
           type: integer
+        refundedQuantity:
+          type: number
+          format: float
+          nullable: true
+          description: Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity.
         unitPrice:
           type: number
           format: float
@@ -2180,6 +2215,29 @@ components:
           type: string
       required:
         - status
+
+    RefundOrderItemsBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              orderItemId:
+                type: integer
+              quantity:
+                type: number
+                format: float
+                description: Quantity to refund for this line (must be > 0 and <= the line's remaining quantity).
+            required:
+              - orderItemId
+              - quantity
+        reason:
+          type: string
+      required:
+        - items
+        - reason
 
     HeldOrder:
       type: object

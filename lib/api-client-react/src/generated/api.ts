@@ -76,6 +76,7 @@ import type {
   Purchase,
   PurchaseBill,
   PurchaseBillWithItems,
+  RefundOrderItemsBody,
   ReportSummary,
   SaveCompositeComponentsBody,
   SaveModifiersBody,
@@ -2149,6 +2150,93 @@ export const useUpdateOrderStatus = <
   TContext
 > => {
   return useMutation(getUpdateOrderStatusMutationOptions(options));
+};
+
+/**
+ * @summary Refund specific items / quantities from a completed order (partial refund)
+ */
+export const getRefundOrderItemsUrl = (id: number) => {
+  return `/api/orders/${id}/refund-items`;
+};
+
+export const refundOrderItems = async (
+  id: number,
+  refundOrderItemsBody: RefundOrderItemsBody,
+  options?: RequestInit,
+): Promise<Order> => {
+  return customFetch<Order>(getRefundOrderItemsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(refundOrderItemsBody),
+  });
+};
+
+export const getRefundOrderItemsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refundOrderItems>>,
+    TError,
+    { id: number; data: BodyType<RefundOrderItemsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refundOrderItems>>,
+  TError,
+  { id: number; data: BodyType<RefundOrderItemsBody> },
+  TContext
+> => {
+  const mutationKey = ["refundOrderItems"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refundOrderItems>>,
+    { id: number; data: BodyType<RefundOrderItemsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return refundOrderItems(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefundOrderItemsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refundOrderItems>>
+>;
+export type RefundOrderItemsMutationBody = BodyType<RefundOrderItemsBody>;
+export type RefundOrderItemsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Refund specific items / quantities from a completed order (partial refund)
+ */
+export const useRefundOrderItems = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refundOrderItems>>,
+    TError,
+    { id: number; data: BodyType<RefundOrderItemsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof refundOrderItems>>,
+  TError,
+  { id: number; data: BodyType<RefundOrderItemsBody> },
+  TContext
+> => {
+  return useMutation(getRefundOrderItemsMutationOptions(options));
 };
 
 /**

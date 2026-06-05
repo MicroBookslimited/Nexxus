@@ -842,6 +842,12 @@ export const ListOrdersResponseItem = zod.object({
   discountValue: zod.number().nullish(),
   tax: zod.number(),
   total: zod.number(),
+  refundedTotal: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+    ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
@@ -854,6 +860,12 @@ export const ListOrdersResponseItem = zod.object({
       productId: zod.number(),
       productName: zod.string(),
       quantity: zod.number(),
+      refundedQuantity: zod
+        .number()
+        .nullish()
+        .describe(
+          "Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity.",
+        ),
       unitPrice: zod.number(),
       originalUnitPrice: zod
         .number()
@@ -982,6 +994,12 @@ export const GetOrderResponse = zod.object({
   discountValue: zod.number().nullish(),
   tax: zod.number(),
   total: zod.number(),
+  refundedTotal: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+    ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
@@ -994,6 +1012,12 @@ export const GetOrderResponse = zod.object({
       productId: zod.number(),
       productName: zod.string(),
       quantity: zod.number(),
+      refundedQuantity: zod
+        .number()
+        .nullish()
+        .describe(
+          "Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity.",
+        ),
       unitPrice: zod.number(),
       originalUnitPrice: zod
         .number()
@@ -1070,6 +1094,12 @@ export const UpdateOrderStatusResponse = zod.object({
   discountValue: zod.number().nullish(),
   tax: zod.number(),
   total: zod.number(),
+  refundedTotal: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+    ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
@@ -1082,6 +1112,114 @@ export const UpdateOrderStatusResponse = zod.object({
       productId: zod.number(),
       productName: zod.string(),
       quantity: zod.number(),
+      refundedQuantity: zod
+        .number()
+        .nullish()
+        .describe(
+          "Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity.",
+        ),
+      unitPrice: zod.number(),
+      originalUnitPrice: zod
+        .number()
+        .nullish()
+        .describe(
+          "Original (pre-tier) unit price; used to compute volume-pricing savings on receipts.",
+        ),
+      discountAmount: zod.number().nullish(),
+      variantAdjustment: zod.number().nullish(),
+      modifierAdjustment: zod.number().nullish(),
+      variantChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
+      modifierChoices: zod
+        .array(
+          zod.object({
+            groupId: zod.number(),
+            groupName: zod.string(),
+            optionId: zod.number(),
+            optionName: zod.string(),
+            priceAdjustment: zod.number(),
+          }),
+        )
+        .nullish(),
+      lineTotal: zod.number(),
+    }),
+  ),
+  createdAt: zod.coerce.date(),
+  completedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Refund specific items / quantities from a completed order (partial refund)
+ */
+export const RefundOrderItemsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RefundOrderItemsBody = zod.object({
+  items: zod.array(
+    zod.object({
+      orderItemId: zod.number(),
+      quantity: zod
+        .number()
+        .describe(
+          "Quantity to refund for this line (must be > 0 and <= the line's remaining quantity).",
+        ),
+    }),
+  ),
+  reason: zod.string(),
+});
+
+export const RefundOrderItemsResponse = zod.object({
+  id: zod.number(),
+  orderNumber: zod.string(),
+  status: zod.enum([
+    "open",
+    "pending",
+    "ready",
+    "completed",
+    "cancelled",
+    "refunded",
+    "voided",
+  ]),
+  subtotal: zod.number(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  discountValue: zod.number().nullish(),
+  tax: zod.number(),
+  total: zod.number(),
+  refundedTotal: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+    ),
+  paymentMethod: zod.string().nullish(),
+  splitCardAmount: zod.number().nullish(),
+  splitCashAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  voidReason: zod.string().nullish(),
+  customerId: zod.number().nullish(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      productId: zod.number(),
+      productName: zod.string(),
+      quantity: zod.number(),
+      refundedQuantity: zod
+        .number()
+        .nullish()
+        .describe(
+          "Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity.",
+        ),
       unitPrice: zod.number(),
       originalUnitPrice: zod
         .number()
@@ -1152,6 +1290,12 @@ export const ChargeOrderResponse = zod.object({
   discountValue: zod.number().nullish(),
   tax: zod.number(),
   total: zod.number(),
+  refundedTotal: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+    ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
@@ -1164,6 +1308,12 @@ export const ChargeOrderResponse = zod.object({
       productId: zod.number(),
       productName: zod.string(),
       quantity: zod.number(),
+      refundedQuantity: zod
+        .number()
+        .nullish()
+        .describe(
+          "Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity.",
+        ),
       unitPrice: zod.number(),
       originalUnitPrice: zod
         .number()
@@ -1310,6 +1460,12 @@ export const GetRecentOrdersResponseItem = zod.object({
   discountValue: zod.number().nullish(),
   tax: zod.number(),
   total: zod.number(),
+  refundedTotal: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+    ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
@@ -1322,6 +1478,12 @@ export const GetRecentOrdersResponseItem = zod.object({
       productId: zod.number(),
       productName: zod.string(),
       quantity: zod.number(),
+      refundedQuantity: zod
+        .number()
+        .nullish()
+        .describe(
+          "Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity.",
+        ),
       unitPrice: zod.number(),
       originalUnitPrice: zod
         .number()
@@ -1517,6 +1679,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
   discountValue: zod.number().nullish(),
   tax: zod.number(),
   total: zod.number(),
+  refundedTotal: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+    ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
@@ -1529,6 +1697,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
       productId: zod.number(),
       productName: zod.string(),
       quantity: zod.number(),
+      refundedQuantity: zod
+        .number()
+        .nullish()
+        .describe(
+          "Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity.",
+        ),
       unitPrice: zod.number(),
       originalUnitPrice: zod
         .number()

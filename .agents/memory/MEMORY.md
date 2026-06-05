@@ -8,3 +8,4 @@
 - [Expo prod bundle resolves all require()](expo-metro-prod-bundle.md) — nexus-mobile deploys as a static Expo Go bundle; Metro resolves every require() literal at build time. Never depend on Node polyfills (buffer); verify with `expo export`, not just typecheck.
 - [replit.md reorg (deferred)](replit-md-reorg.md) — user wants replit.md slimmed (Option A: move deep-dives to docs/architecture.md) LATER, once mobile apps are stable. Don't act until they confirm.
 - [Optimistic PATCH + scan race](optimistic-patch-scan-race.md) — counters that PATCH absolute values under barcode scanning need a sync ref + per-item write-seq guard or increments drop.
+- [Partial refund integrity](refund-concurrency.md) — per-item refund endpoints must aggregate duplicate line ids and lock the order row (`.for("update")`) or they over-refund money + double-restore stock.

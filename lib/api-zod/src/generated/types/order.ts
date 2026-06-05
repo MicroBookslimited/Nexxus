@@ -19,6 +19,8 @@ export interface Order {
   discountValue?: number | null;
   tax: number;
   total: number;
+  /** Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded. */
+  refundedTotal?: number | null;
   paymentMethod?: string | null;
   splitCardAmount?: number | null;
   splitCashAmount?: number | null;

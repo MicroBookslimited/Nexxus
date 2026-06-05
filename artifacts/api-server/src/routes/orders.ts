@@ -63,6 +63,9 @@ import {
   ChargeOrderParams,
   ChargeOrderBody,
   ChargeOrderResponse,
+  RefundOrderItemsParams,
+  RefundOrderItemsBody,
+  RefundOrderItemsResponse,
 } from "@workspace/api-zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { findActivePromoPrices } from "./promotions";
@@ -120,6 +123,7 @@ async function getOrderWithItems(orderId: number) {
       productId: item.productId,
       productName: item.productName,
       quantity: item.quantity,
+      refundedQuantity: item.refundedQuantity ?? undefined,
       unitPrice: item.unitPrice,
       originalUnitPrice: item.originalUnitPrice ?? undefined,
       discountAmount: item.discountAmount ?? undefined,
@@ -182,6 +186,7 @@ router.get("/orders", async (req, res): Promise<void> => {
           productId: item.productId,
           productName: item.productName,
           quantity: item.quantity,
+          refundedQuantity: item.refundedQuantity ?? undefined,
           unitPrice: item.unitPrice,
           originalUnitPrice: item.originalUnitPrice ?? undefined,
           discountAmount: item.discountAmount ?? undefined,
@@ -1181,6 +1186,184 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
   res.json(GetOrderResponse.parse(order));
 });
 
+type OrderTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Restore inventory for a single order line, mirroring the structure-aware
+ * logic used by full refund/void. `restoreQty` is the quantity to put back —
+ * the whole line for a full refund/void, or just the refunded slice for a
+ * partial (per-item) refund. Custom/miscellaneous lines (productId 0) had no
+ * stock side-effects at checkout, so they are skipped. Must run inside a
+ * transaction.
+ */
+async function restoreLineStock(
+  tx: OrderTx,
+  opts: {
+    item: typeof orderItemsTable.$inferSelect;
+    restoreQty: number;
+    tenantId: number;
+    orderId: number;
+    locationId: number | null;
+    meta?: { structureType: string | null; trackBatches: boolean | null };
+    components: Array<{ childProductId: number; quantityRequired: number }>;
+    movementType: string;
+    compositeMovementType: string;
+    noteVerb: string;
+    batchSourceType: string;
+  },
+): Promise<void> {
+  const {
+    item, restoreQty, tenantId, orderId, locationId, meta, components,
+    movementType, compositeMovementType, noteVerb, batchSourceType,
+  } = opts;
+  if (item.productId === 0 || restoreQty <= 0) return;
+
+  const isComposite = meta?.structureType === "composite";
+  if (isComposite) {
+    for (const comp of components) {
+      const restored = comp.quantityRequired * restoreQty;
+      await tx
+        .update(productsTable)
+        .set({ stockCount: sql`${productsTable.stockCount} + ${restored}`, inStock: true })
+        .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
+
+      const [afterReturn] = await tx
+        .select({ stockCount: productsTable.stockCount })
+        .from(productsTable)
+        .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
+      await tx.insert(stockMovementsTable).values({
+        tenantId,
+        productId: comp.childProductId,
+        type: compositeMovementType,
+        quantity: restored,
+        balanceAfter: afterReturn?.stockCount ?? 0,
+        referenceType: "order",
+        referenceId: orderId,
+        notes: `${noteVerb} of ${item.productName} – Order #${orderId}`,
+      });
+
+      if (locationId) {
+        await tx
+          .update(locationInventoryTable)
+          .set({ stockCount: sql`${locationInventoryTable.stockCount} + ${restored}`, updatedAt: new Date() })
+          .where(and(
+            eq(locationInventoryTable.locationId, locationId),
+            eq(locationInventoryTable.productId, comp.childProductId),
+          ));
+      }
+    }
+    return;
+  }
+
+  // Restore per-combination or per-option stock for variant products
+  {
+    const choices = (item.variantChoices as Array<{ optionId: number; optionName: string }> | null) ?? [];
+    if (choices.length > 0) {
+      const choiceOptIds = choices.map((c) => c.optionId).filter((id): id is number => typeof id === "number");
+
+      // ── Try combination-tracked restore first (multi-group) ──────────
+      if (choiceOptIds.length >= 2) {
+        const key = [...choiceOptIds].sort((a, b) => a - b).join(",");
+        const allCombos = await tx
+          .select({ id: variantCombinationsTable.id, optionIds: variantCombinationsTable.optionIds, stockCount: variantCombinationsTable.stockCount })
+          .from(variantCombinationsTable)
+          .where(and(
+            eq(variantCombinationsTable.productId, item.productId),
+            isNotNull(variantCombinationsTable.stockCount),
+          ));
+        const combo = allCombos.find((c) => {
+          const ck = [...(c.optionIds as number[])].sort((a, b) => a - b).join(",");
+          return ck === key;
+        });
+        if (combo) {
+          await tx.update(variantCombinationsTable)
+            .set({ stockCount: sql`${variantCombinationsTable.stockCount} + ${restoreQty}` })
+            .where(eq(variantCombinationsTable.id, combo.id));
+          await tx.execute(sql`
+            UPDATE products
+            SET
+              stock_count = COALESCE((
+                SELECT SUM(vc.stock_count) FROM variant_combinations vc
+                WHERE vc.product_id = ${item.productId} AND vc.stock_count IS NOT NULL
+              ), 0),
+              in_stock = true
+            WHERE id = ${item.productId} AND tenant_id = ${tenantId}
+          `);
+          return;
+        }
+      }
+
+      // ── Fall back to option-tracked restore (single-group) ──────────
+      if (choiceOptIds.length > 0) {
+        const trackedOpts = await tx
+          .select({ id: variantOptionsTable.id })
+          .from(variantOptionsTable)
+          .where(and(inArray(variantOptionsTable.id, choiceOptIds), isNotNull(variantOptionsTable.stockCount)));
+        if (trackedOpts.length > 0) {
+          for (const opt of trackedOpts) {
+            await tx.update(variantOptionsTable)
+              .set({ stockCount: sql`${variantOptionsTable.stockCount} + ${restoreQty}` })
+              .where(eq(variantOptionsTable.id, opt.id));
+          }
+          await tx.execute(sql`
+            UPDATE products
+            SET
+              stock_count = COALESCE((
+                SELECT SUM(vo.stock_count) FROM variant_options vo
+                JOIN variant_groups vg ON vg.id = vo.group_id
+                WHERE vg.product_id = ${item.productId} AND vo.stock_count IS NOT NULL
+              ), 0),
+              in_stock = true
+            WHERE id = ${item.productId} AND tenant_id = ${tenantId}
+          `);
+          return;
+        }
+      }
+    }
+  }
+
+  // Simple product restore
+  await tx
+    .update(productsTable)
+    .set({ stockCount: sql`${productsTable.stockCount} + ${restoreQty}`, inStock: true })
+    .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+
+  if (meta?.trackBatches) {
+    await tx.insert(productBatchesTable).values({
+      tenantId,
+      productId: item.productId,
+      quantityRemaining: restoreQty,
+      sourceType: batchSourceType,
+      notes: `${noteVerb} of ${item.productName} – Order #${orderId}`,
+    });
+  }
+
+  const [afterReturn] = await tx
+    .select({ stockCount: productsTable.stockCount })
+    .from(productsTable)
+    .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+  await tx.insert(stockMovementsTable).values({
+    tenantId,
+    productId: item.productId,
+    type: movementType,
+    quantity: restoreQty,
+    balanceAfter: afterReturn?.stockCount ?? 0,
+    referenceType: "order",
+    referenceId: orderId,
+    notes: `${noteVerb} – Order #${orderId}`,
+  });
+
+  if (locationId) {
+    await tx
+      .update(locationInventoryTable)
+      .set({ stockCount: sql`${locationInventoryTable.stockCount} + ${restoreQty}`, updatedAt: new Date() })
+      .where(and(
+        eq(locationInventoryTable.locationId, locationId),
+        eq(locationInventoryTable.productId, item.productId),
+      ));
+  }
+}
+
 router.patch("/orders/:id", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
@@ -1272,176 +1455,22 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     // Wrap all stock restores + movement inserts in a single
     // transaction so a partial failure (e.g. a single bad row) cannot
     // leave inventory + movements out of sync.
+    const batchSourceType = parsed.data.status === "refunded" ? "refund" : "void";
     await db.transaction(async (tx) => {
       for (const item of items) {
-        // Custom/miscellaneous lines were sold with the sentinel productId 0 and
-        // had no stock side-effects at checkout, so there is nothing to restore.
-        if (item.productId === 0) continue;
-        const isComposite = metaMap.get(item.productId)?.structureType === "composite";
-
-        if (isComposite) {
-          const components = componentsByParent.get(item.productId) ?? [];
-          for (const comp of components) {
-            const restored = comp.quantityRequired * item.quantity;
-            await tx
-              .update(productsTable)
-              .set({
-                stockCount: sql`${productsTable.stockCount} + ${restored}`,
-                inStock: true,
-              })
-              .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
-
-            const [afterReturn] = await tx
-              .select({ stockCount: productsTable.stockCount })
-              .from(productsTable)
-              .where(and(eq(productsTable.id, comp.childProductId), eq(productsTable.tenantId, tenantId)));
-            await tx.insert(stockMovementsTable).values({
-              tenantId,
-              productId: comp.childProductId,
-              type: compositeMovementType,
-              quantity: restored,
-              balanceAfter: afterReturn?.stockCount ?? 0,
-              referenceType: "order",
-              referenceId: order.id,
-              notes: `${noteVerb} of ${item.productName} – Order #${order.id}`,
-            });
-
-            if (order.locationId) {
-              await tx
-                .update(locationInventoryTable)
-                .set({
-                  stockCount: sql`${locationInventoryTable.stockCount} + ${restored}`,
-                  updatedAt: new Date(),
-                })
-                .where(and(
-                  eq(locationInventoryTable.locationId, order.locationId),
-                  eq(locationInventoryTable.productId, comp.childProductId),
-                ));
-            }
-          }
-          continue;
-        }
-
-        // Restore per-combination or per-option stock on refund/void
-        {
-          const choices = (item.variantChoices as Array<{ optionId: number; optionName: string }> | null) ?? [];
-          if (choices.length > 0) {
-            const choiceOptIds = choices.map((c) => c.optionId).filter((id): id is number => typeof id === "number");
-
-            // ── Try combination-tracked restore first (multi-group) ──────────
-            if (choiceOptIds.length >= 2) {
-              const key = [...choiceOptIds].sort((a, b) => a - b).join(",");
-              // Find the combination by matching optionIds (JSONB containment)
-              const allCombos = await tx
-                .select({ id: variantCombinationsTable.id, optionIds: variantCombinationsTable.optionIds, stockCount: variantCombinationsTable.stockCount })
-                .from(variantCombinationsTable)
-                .where(and(
-                  eq(variantCombinationsTable.productId, item.productId),
-                  isNotNull(variantCombinationsTable.stockCount),
-                ));
-              const combo = allCombos.find((c) => {
-                const ck = [...(c.optionIds as number[])].sort((a, b) => a - b).join(",");
-                return ck === key;
-              });
-              if (combo) {
-                await tx.update(variantCombinationsTable)
-                  .set({ stockCount: sql`${variantCombinationsTable.stockCount} + ${item.quantity}` })
-                  .where(eq(variantCombinationsTable.id, combo.id));
-                await tx.execute(sql`
-                  UPDATE products
-                  SET
-                    stock_count = COALESCE((
-                      SELECT SUM(vc.stock_count) FROM variant_combinations vc
-                      WHERE vc.product_id = ${item.productId} AND vc.stock_count IS NOT NULL
-                    ), 0),
-                    in_stock = true
-                  WHERE id = ${item.productId} AND tenant_id = ${tenantId}
-                `);
-                continue;
-              }
-            }
-
-            // ── Fall back to option-tracked restore (single-group) ──────────
-            if (choiceOptIds.length > 0) {
-              const trackedOpts = await tx
-                .select({ id: variantOptionsTable.id })
-                .from(variantOptionsTable)
-                .where(and(inArray(variantOptionsTable.id, choiceOptIds), isNotNull(variantOptionsTable.stockCount)));
-              if (trackedOpts.length > 0) {
-                for (const opt of trackedOpts) {
-                  await tx.update(variantOptionsTable)
-                    .set({ stockCount: sql`${variantOptionsTable.stockCount} + ${item.quantity}` })
-                    .where(eq(variantOptionsTable.id, opt.id));
-                }
-                await tx.execute(sql`
-                  UPDATE products
-                  SET
-                    stock_count = COALESCE((
-                      SELECT SUM(vo.stock_count) FROM variant_options vo
-                      JOIN variant_groups vg ON vg.id = vo.group_id
-                      WHERE vg.product_id = ${item.productId} AND vo.stock_count IS NOT NULL
-                    ), 0),
-                    in_stock = true
-                  WHERE id = ${item.productId} AND tenant_id = ${tenantId}
-                `);
-                continue;
-              }
-            }
-          }
-        }
-
-        await tx
-          .update(productsTable)
-          .set({
-            stockCount: sql`${productsTable.stockCount} + ${item.quantity}`,
-            inStock: true,
-          })
-          .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
-
-        // ── Batch restore for refund/void ──────────────────────────────
-        // We don't know which specific lot was sold, so we create a new
-        // "refund" batch row for the returned quantity. This keeps
-        // SUM(product_batches.quantityRemaining) reconciled with
-        // product.stockCount (the main invariant). Under FIFO this stock
-        // gets consumed last (it's typically the freshest on the shelf
-        // after a return); under LIFO it gets consumed first.
-        if (metaMap.get(item.productId)?.trackBatches) {
-          await tx.insert(productBatchesTable).values({
-            tenantId,
-            productId: item.productId,
-            quantityRemaining: item.quantity,
-            sourceType: parsed.data.status === "refunded" ? "refund" : "void",
-            notes: `${noteVerb} of ${item.productName} – Order #${order.id}`,
-          });
-        }
-
-        const [afterReturn] = await tx
-          .select({ stockCount: productsTable.stockCount })
-          .from(productsTable)
-          .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
-        await tx.insert(stockMovementsTable).values({
+        await restoreLineStock(tx, {
+          item,
+          restoreQty: item.quantity,
           tenantId,
-          productId: item.productId,
-          type: movementType,
-          quantity: item.quantity,
-          balanceAfter: afterReturn?.stockCount ?? 0,
-          referenceType: "order",
-          referenceId: order.id,
-          notes: `${noteVerb} – Order #${order.id}`,
+          orderId: order.id,
+          locationId: order.locationId ?? null,
+          meta: metaMap.get(item.productId),
+          components: componentsByParent.get(item.productId) ?? [],
+          movementType,
+          compositeMovementType,
+          noteVerb,
+          batchSourceType,
         });
-
-        if (order.locationId) {
-          await tx
-            .update(locationInventoryTable)
-            .set({
-              stockCount: sql`${locationInventoryTable.stockCount} + ${item.quantity}`,
-              updatedAt: new Date(),
-            })
-            .where(and(
-              eq(locationInventoryTable.locationId, order.locationId),
-              eq(locationInventoryTable.productId, item.productId),
-            ));
-        }
       }
     });
   }
@@ -1545,6 +1574,206 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
   const fullOrder = await getOrderWithItems(order.id);
   await logAudit({ tenantId, staffId: existing.staffId, action: "order.sale", entityType: "order", entityId: order.id, details: { total: existing.total, paymentMethod: parsed.data.paymentMethod } });
   res.json(ChargeOrderResponse.parse(fullOrder));
+});
+
+/**
+ * Partial (per-item) refund — refund specific items / quantities from a
+ * completed order. Revenue-adjusting: the order's monetary totals are scaled
+ * down by the refunded fraction so reports reflect the net (kept) revenue
+ * without any separate report changes. The line's `quantity` + `lineTotal`
+ * are reduced in place and `refundedQuantity` / `refundedTotal` accumulate.
+ * Status stays `completed` while any quantity remains; it flips to `refunded`
+ * once every line is fully refunded. Stock for refunded units is restored via
+ * the same structure-aware logic as a full refund.
+ */
+router.post("/orders/:id/refund-items", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = RefundOrderItemsParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const parsed = RefundOrderItemsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  // Quick existence check up front so we can 404 cleanly before locking.
+  const [pre] = await db.select({ id: ordersTable.id }).from(ordersTable)
+    .where(and(eq(ordersTable.id, params.data.id), eq(ordersTable.tenantId, tenantId)));
+  if (!pre) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+
+  // A single request may list the same line more than once — aggregate the
+  // requested quantities per orderItemId so the cap is enforced against the
+  // TOTAL requested, not each entry independently (prevents over-refund).
+  const requestedByItemId = new Map<number, number>();
+  for (const reqItem of parsed.data.items) {
+    if (!(reqItem.quantity > 0)) {
+      res.status(400).json({ error: `Refund quantity for item ${reqItem.orderItemId} must be greater than 0` });
+      return;
+    }
+    requestedByItemId.set(reqItem.orderItemId, (requestedByItemId.get(reqItem.orderItemId) ?? 0) + reqItem.quantity);
+  }
+  if (requestedByItemId.size === 0) {
+    res.status(400).json({ error: "No items to refund" });
+    return;
+  }
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  type RefundErr = { httpStatus: number; httpMessage: string };
+  const isRefundErr = (e: unknown): e is RefundErr =>
+    typeof e === "object" && e !== null && typeof (e as RefundErr).httpStatus === "number";
+
+  let refundAmount = 0;
+  let fullyRefunded = false;
+  let auditItems: Array<{ orderItemId: number; productName: string; quantity: number }> = [];
+  let auditStaffId: number | null = null;
+
+  try {
+    await db.transaction(async (tx) => {
+      // Lock the order row so concurrent refunds on the same order serialize —
+      // the second refund re-reads the already-reduced quantities and can't
+      // double-restore stock or over-refund money.
+      const [existing] = await tx.select().from(ordersTable)
+        .where(and(eq(ordersTable.id, params.data.id), eq(ordersTable.tenantId, tenantId)))
+        .for("update");
+      if (!existing) throw { httpStatus: 404, httpMessage: "Order not found" } satisfies RefundErr;
+      if (existing.status !== "completed") throw { httpStatus: 400, httpMessage: "Only completed orders can be partially refunded" } satisfies RefundErr;
+      if (!(existing.subtotal > 0)) throw { httpStatus: 400, httpMessage: "Order subtotal must be positive to refund" } satisfies RefundErr;
+      auditStaffId = existing.staffId;
+
+      const items = await tx.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, existing.id));
+      const itemsById = new Map(items.map(i => [i.id, i]));
+
+      // Validate aggregated quantities against the CURRENT remaining quantity
+      // (read under the row lock) and compute each line's refund value.
+      const refundReqs: Array<{ item: typeof orderItemsTable.$inferSelect; refundQty: number }> = [];
+      let totalLineRefundValue = 0;
+      for (const [orderItemId, refundQty] of requestedByItemId) {
+        const item = itemsById.get(orderItemId);
+        if (!item) throw { httpStatus: 400, httpMessage: `Order item ${orderItemId} is not part of this order` } satisfies RefundErr;
+        if (refundQty > item.quantity) throw { httpStatus: 400, httpMessage: `Cannot refund ${refundQty} of "${item.productName}" — only ${item.quantity} remaining` } satisfies RefundErr;
+        const perUnit = item.quantity > 0 ? item.lineTotal / item.quantity : 0;
+        totalLineRefundValue += perUnit * refundQty;
+        refundReqs.push({ item, refundQty });
+      }
+
+      // Scale the order's monetary fields by the fraction that is kept.
+      const refundFraction = Math.min(1, totalLineRefundValue / existing.subtotal);
+      const keepRatio = 1 - refundFraction;
+      const newSubtotal = round2(existing.subtotal * keepRatio);
+      const newTax = round2((existing.tax ?? 0) * keepRatio);
+      const newDiscountValue = existing.discountValue == null ? existing.discountValue : round2(existing.discountValue * keepRatio);
+      const newLoyaltyDiscount = existing.loyaltyDiscount == null ? existing.loyaltyDiscount : round2(existing.loyaltyDiscount * keepRatio);
+      const newTotal = round2(existing.total * keepRatio);
+      refundAmount = round2(existing.total - newTotal);
+      const newRefundedTotal = round2((existing.refundedTotal ?? 0) + refundAmount);
+
+      // Pre-fetch product structure + composite components for stock restore.
+      const itemProductIds = Array.from(new Set(refundReqs.map(r => r.item.productId).filter(id => id !== 0)));
+      const productMeta = itemProductIds.length === 0 ? [] : await tx
+        .select({ id: productsTable.id, structureType: productsTable.structureType, trackBatches: productsTable.trackBatches })
+        .from(productsTable)
+        .where(and(inArray(productsTable.id, itemProductIds), eq(productsTable.tenantId, tenantId)));
+      const metaMap = new Map(productMeta.map(p => [p.id, p]));
+      const compositeIds = productMeta.filter(p => p.structureType === "composite").map(p => p.id);
+      const componentsByParent = new Map<number, Array<{ childProductId: number; quantityRequired: number }>>();
+      if (compositeIds.length > 0) {
+        const compRows = await tx
+          .select({ parentId: compositeProductComponentsTable.parentProductId, childId: compositeProductComponentsTable.childProductId, qty: compositeProductComponentsTable.quantityRequired })
+          .from(compositeProductComponentsTable)
+          .where(and(eq(compositeProductComponentsTable.tenantId, tenantId), inArray(compositeProductComponentsTable.parentProductId, compositeIds)));
+        for (const r of compRows) {
+          const arr = componentsByParent.get(r.parentId) ?? [];
+          arr.push({ childProductId: r.childId, quantityRequired: r.qty });
+          componentsByParent.set(r.parentId, arr);
+        }
+      }
+
+      // Will every line be fully refunded after this? If so, flip to "refunded".
+      const refundedQtyById = new Map(refundReqs.map(r => [r.item.id, r.refundQty]));
+      fullyRefunded = items.every(it => (it.quantity - (refundedQtyById.get(it.id) ?? 0)) <= 0);
+
+      for (const { item, refundQty } of refundReqs) {
+        const perUnit = item.quantity > 0 ? item.lineTotal / item.quantity : 0;
+        const newQty = item.quantity - refundQty;
+        const newLineTotal = round2(perUnit * newQty);
+        // Conditional update (quantity >= refundQty) as defence-in-depth on top
+        // of the row lock; if the line moved underneath us, abort the refund.
+        const updated = await tx.update(orderItemsTable)
+          .set({
+            quantity: newQty,
+            lineTotal: newLineTotal,
+            refundedQuantity: sql`${orderItemsTable.refundedQuantity} + ${refundQty}`,
+          })
+          .where(and(eq(orderItemsTable.id, item.id), gte(orderItemsTable.quantity, refundQty)))
+          .returning({ id: orderItemsTable.id });
+        if (updated.length === 0) {
+          throw { httpStatus: 409, httpMessage: `"${item.productName}" changed during refund — please retry` } satisfies RefundErr;
+        }
+
+        await restoreLineStock(tx, {
+          item,
+          restoreQty: refundQty,
+          tenantId,
+          orderId: existing.id,
+          locationId: existing.locationId ?? null,
+          meta: metaMap.get(item.productId),
+          components: componentsByParent.get(item.productId) ?? [],
+          movementType: "refund",
+          compositeMovementType: "composite_refund",
+          noteVerb: "Partial refund",
+          batchSourceType: "refund",
+        });
+      }
+
+      await tx.update(ordersTable)
+        .set({
+          subtotal: newSubtotal,
+          tax: newTax,
+          discountValue: newDiscountValue,
+          loyaltyDiscount: newLoyaltyDiscount,
+          total: newTotal,
+          refundedTotal: newRefundedTotal,
+          status: fullyRefunded ? "refunded" : "completed",
+          voidReason: parsed.data.reason,
+        })
+        .where(and(eq(ordersTable.id, existing.id), eq(ordersTable.tenantId, tenantId)));
+
+      auditItems = refundReqs.map(r => ({ orderItemId: r.item.id, productName: r.item.productName, quantity: r.refundQty }));
+    });
+  } catch (e) {
+    if (isRefundErr(e)) {
+      res.status(e.httpStatus).json({ error: e.httpMessage });
+      return;
+    }
+    throw e;
+  }
+
+  const fullOrder = await getOrderWithItems(params.data.id);
+  await logAudit({
+    tenantId,
+    staffId: auditStaffId,
+    action: "order.refund_items",
+    entityType: "order",
+    entityId: params.data.id,
+    details: {
+      reason: parsed.data.reason,
+      refundAmount,
+      fullyRefunded,
+      items: auditItems,
+    },
+  });
+  res.json(RefundOrderItemsResponse.parse(fullOrder));
 });
 
 export default router;
