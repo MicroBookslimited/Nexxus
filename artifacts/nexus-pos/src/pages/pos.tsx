@@ -36,7 +36,7 @@ import {
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote, Layers,
-  Tag, PenLine, PackagePlus,
+  Tag, PenLine, PackagePlus, Calculator, Delete,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -101,6 +101,9 @@ type CartItem = {
   lineDiscountBy?: string | null;
   /** When false, this item does not attract sales tax. Mirrors product.isTaxable. */
   isTaxable?: boolean;
+  /** A custom / miscellaneous item entered via the calculator (not in the catalog).
+   * Sent to the server with no productId; productId is the sentinel 0 locally. */
+  isCustom?: boolean;
 };
 
 const VARIANT_COLORS = [
@@ -679,6 +682,11 @@ export function POS() {
     isTaxable?: boolean;
   } | null>(null);
   const [weightModalValue, setWeightModalValue] = useState<string>("");
+  // Misc/custom-item calculator: sell something not in the catalog.
+  const [miscOpen, setMiscOpen] = useState(false);
+  const [miscPrice, setMiscPrice] = useState<string>("");
+  const [miscName, setMiscName] = useState<string>("");
+  const [miscQty, setMiscQty] = useState<number>(1);
 
   // ── Unit-picker modal: shown when a product has multiple sale units
   // configured (e.g. each + Case + Dozen) so the cashier can pick which
@@ -1019,6 +1027,56 @@ export function POS() {
         },
       ];
     });
+  };
+
+  // ── Misc/custom item calculator ──────────────────────────────────────────
+  // Press a number on the keypad to build the price. Each custom item is its
+  // own cart line (unique key) so two misc items never merge.
+  const miscKeyPress = (k: string) => {
+    setMiscPrice((prev) => {
+      if (k === "back") return prev.slice(0, -1);
+      if (k === "clear") return "";
+      if (k === ".") {
+        if (prev.includes(".")) return prev;
+        return prev === "" ? "0." : prev + ".";
+      }
+      if (prev.includes(".")) {
+        const dec = prev.split(".")[1] ?? "";
+        if (dec.length >= 2) return prev; // cap at 2 decimal places
+      }
+      // Avoid leading zeros like "00"
+      if (prev === "0") return k;
+      return prev + k;
+    });
+  };
+
+  const confirmMiscItem = () => {
+    const price = parseFloat(miscPrice);
+    if (!Number.isFinite(price) || price < 0) return;
+    if (!(miscQty > 0)) return;
+    const name = miscName.trim() || "Custom Item";
+    const cartKey = `custom:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`;
+    setCart((prev) => [
+      ...prev,
+      {
+        cartKey,
+        productId: 0,
+        productName: name,
+        basePrice: price,
+        effectivePrice: price,
+        quantity: miscQty,
+        itemDiscount: 0,
+        variantChoices: [],
+        modifierChoices: [],
+        isTaxable: true,
+        isCustom: true,
+      },
+    ]);
+    toast({ title: "Added custom item", description: `${name} — ${formatCurrency(price * miscQty, baseCurrency)}` });
+    setMiscOpen(false);
+    setMiscPrice("");
+    setMiscName("");
+    setMiscQty(1);
   };
 
   const handleCustomizeConfirm = (variantChoices: ChoiceItem[], modifierChoices: ChoiceItem[], combinationPrice: number | null) => {
@@ -1629,7 +1687,9 @@ export function POS() {
           paymentMethod,
           staffId: sessionStaff?.id ?? undefined,
           items: cart.map((item) => ({
-            productId: item.productId,
+            productId: item.isCustom ? undefined : item.productId,
+            customName: item.isCustom ? item.productName : undefined,
+            customPrice: item.isCustom ? item.effectivePrice : undefined,
             quantity: item.quantity,
             discountAmount: (() => {
               let d = item.itemDiscount || 0;
@@ -1843,17 +1903,25 @@ export function POS() {
     const held = heldOrders?.find((h) => h.id === id);
     if (!held) return;
     setCart(
-      held.items.map((item) => ({
-        cartKey: makeCartKey(item.productId, [], []),
-        productId: item.productId,
-        productName: item.productName,
-        basePrice: item.price,
-        effectivePrice: item.price,
-        quantity: item.quantity,
-        itemDiscount: 0,
-        variantChoices: [],
-        modifierChoices: [],
-      })),
+      held.items.map((item, idx) => {
+        // Custom/misc lines were held with the sentinel productId 0; restore the
+        // isCustom flag and give each a unique cartKey (makeCartKey(0,…) collides).
+        const isCustom = item.productId === 0;
+        return {
+          cartKey: isCustom
+            ? `custom:recall:${Date.now()}:${idx}`
+            : makeCartKey(item.productId, [], []),
+          productId: item.productId,
+          productName: item.productName,
+          basePrice: item.price,
+          effectivePrice: item.price,
+          quantity: item.quantity,
+          itemDiscount: 0,
+          variantChoices: [],
+          modifierChoices: [],
+          ...(isCustom ? { isCustom: true, isTaxable: true } : {}),
+        };
+      }),
     );
     if (held.discountType) setDiscountType(held.discountType as "percent" | "fixed");
     if (held.discountAmount) setDiscountAmount(held.discountAmount);
@@ -2032,6 +2100,14 @@ export function POS() {
                   <span className="hidden sm:inline text-sm font-medium">Add</span>
                 </Button>
               )}
+              <Button
+                onClick={() => setMiscOpen(true)}
+                className="h-11 px-3 shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white border-0 gap-1.5"
+                title="Sell a miscellaneous item not in the system"
+              >
+                <Calculator className="h-4 w-4" />
+                <span className="hidden sm:inline text-sm font-medium">Misc</span>
+              </Button>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
               <button
@@ -3158,6 +3234,75 @@ export function POS() {
           <DialogFooter>
             <Button variant="outline" onClick={() => { setWeightModalProduct(null); setWeightModalValue(""); }}>Cancel</Button>
             <Button onClick={confirmWeightEntry} disabled={!(parseFloat(weightModalValue) > 0)}>Add to Cart</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Misc / custom item calculator */}
+      <Dialog
+        open={miscOpen}
+        onOpenChange={(o) => { if (!o) { setMiscOpen(false); setMiscPrice(""); setMiscName(""); setMiscQty(1); } }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-indigo-600" />
+              Custom Item
+            </DialogTitle>
+            <DialogDescription>Sell something that isn't in your catalogue. Enter a price and an optional name.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Item name (optional)</Label>
+              <Input
+                value={miscName}
+                onChange={(e) => setMiscName(e.target.value)}
+                placeholder="Custom Item"
+                className="mt-1"
+              />
+            </div>
+            <div className="rounded-lg border-2 border-indigo-500/40 bg-muted/40 px-4 py-3 text-right">
+              <div className="text-xs text-muted-foreground">Unit price</div>
+              <div className="text-3xl font-mono font-bold tabular-nums">
+                {formatCurrency(parseFloat(miscPrice) || 0, baseCurrency)}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "back"].map((k) => (
+                <Button
+                  key={k}
+                  variant="outline"
+                  className="h-14 text-xl font-semibold"
+                  onClick={() => miscKeyPress(k)}
+                >
+                  {k === "back" ? <Delete className="h-5 w-5" /> : k}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Quantity</Label>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setMiscQty((q) => Math.max(1, q - 1))}>
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <span className="w-10 text-center text-lg font-bold tabular-nums">{miscQty}</span>
+                <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setMiscQty((q) => q + 1)}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            {parseFloat(miscPrice) > 0 && (
+              <div className="text-right text-sm text-muted-foreground">
+                Line total:{" "}
+                <span className="text-foreground font-bold">
+                  {formatCurrency((parseFloat(miscPrice) || 0) * miscQty, baseCurrency)}
+                </span>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setMiscOpen(false); setMiscPrice(""); setMiscName(""); setMiscQty(1); }}>Cancel</Button>
+            <Button onClick={confirmMiscItem} disabled={!(parseFloat(miscPrice) > 0)} className="bg-indigo-600 hover:bg-indigo-700">Add to Cart</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

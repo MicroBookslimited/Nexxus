@@ -216,7 +216,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     if (typeof item.quantity !== "number" || !Number.isFinite(item.quantity) || item.quantity <= 0) {
       res.status(400).json({
         error: "INVALID_QUANTITY",
-        message: `Quantity for product ${item.productId} must be a positive number`,
+        message: `Quantity for ${item.productId != null ? `product ${item.productId}` : "custom item"} must be a positive number`,
       });
       return;
     }
@@ -266,7 +266,9 @@ router.post("/orders", async (req, res): Promise<void> => {
   // Bulk-fetch active promos ONCE with a single timestamp so every line in
   // the order resolves against the same instant (prevents boundary races at
   // promo start/end times and avoids per-item N+1 queries).
-  const orderProductIds = parsed.data.items.map((i) => i.productId);
+  const orderProductIds = parsed.data.items
+    .map((i) => i.productId)
+    .filter((id): id is number => typeof id === "number");
   const activePromos = await findActivePromoPrices(tenantId, orderProductIds);
   type ChoiceItem = { groupId: number; groupName: string; optionId: number; optionName: string; priceAdjustment: number };
   const resolvedItems: Array<{
@@ -282,9 +284,50 @@ router.post("/orders", async (req, res): Promise<void> => {
     modifierChoices: ChoiceItem[] | undefined;
     lineTotal: number;
     notes: string | undefined;
+    /** Custom/miscellaneous item not in the catalog: no product lookup,
+     * no stock/promo/tier/recipe side effects. Stored with productId 0. */
+    isCustom?: boolean;
   }> = [];
 
   for (const item of parsed.data.items) {
+    // ── Custom / miscellaneous item (not in the catalog) ─────────────────
+    // No product lookup, promo, tier, stock, or recipe logic. The cashier
+    // supplies the price (and optionally a name); it is taxable by default
+    // and stored with the sentinel productId 0 (order_items has no FK).
+    if (item.productId == null) {
+      const customPrice = item.customPrice;
+      if (typeof customPrice !== "number" || !Number.isFinite(customPrice) || customPrice < 0) {
+        res.status(400).json({
+          error: "INVALID_CUSTOM_PRICE",
+          message: "A custom item requires a non-negative customPrice",
+        });
+        return;
+      }
+      const customName = (item.customName ?? "").trim() || "Custom Item";
+      const itemDiscount = item.discountAmount ?? 0;
+      const lineTotal = Math.max(0, customPrice * item.quantity - itemDiscount);
+      rawSubtotal += lineTotal;
+      nonPromoRawSubtotal += lineTotal;
+      taxableRawSubtotal += lineTotal;
+      nonPromoTaxableRawSubtotal += lineTotal;
+      resolvedItems.push({
+        productId: 0,
+        productName: customName,
+        quantity: item.quantity,
+        unitPrice: customPrice,
+        originalUnitPrice: customPrice,
+        discountAmount: itemDiscount > 0 ? itemDiscount : undefined,
+        variantAdjustment: undefined,
+        modifierAdjustment: undefined,
+        variantChoices: undefined,
+        modifierChoices: undefined,
+        lineTotal,
+        notes: undefined,
+        isCustom: true,
+      });
+      continue;
+    }
+
     const [product] = await db
       .select()
       .from(productsTable)
@@ -538,6 +581,8 @@ router.post("/orders", async (req, res): Promise<void> => {
       //    quantityRequired. A single failing child rolls back the whole
       //    order.
       for (const item of resolvedItems) {
+        // Custom/miscellaneous items have no catalog product → no stock to deduct.
+        if (item.isCustom) continue;
         const isComposite = metaMap.get(item.productId)?.structureType === "composite";
 
         if (isComposite) {
@@ -891,6 +936,8 @@ router.post("/orders", async (req, res): Promise<void> => {
 
       // 4. Per-item stock-movement audit + location inventory + recipe BOM.
       for (const item of resolvedItems) {
+        // Custom/miscellaneous items have no catalog product → no movements/inventory/recipe.
+        if (item.isCustom) continue;
         const isComposite = metaMap.get(item.productId)?.structureType === "composite";
 
         if (isComposite) {
@@ -1227,6 +1274,9 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     // leave inventory + movements out of sync.
     await db.transaction(async (tx) => {
       for (const item of items) {
+        // Custom/miscellaneous lines were sold with the sentinel productId 0 and
+        // had no stock side-effects at checkout, so there is nothing to restore.
+        if (item.productId === 0) continue;
         const isComposite = metaMap.get(item.productId)?.structureType === "composite";
 
         if (isComposite) {

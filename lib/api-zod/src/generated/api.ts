@@ -900,9 +900,26 @@ export const ListOrdersResponse = zod.array(ListOrdersResponseItem);
 export const CreateOrderBody = zod.object({
   items: zod.array(
     zod.object({
-      productId: zod.number(),
+      productId: zod
+        .number()
+        .optional()
+        .describe(
+          "Required for catalog products. Omit for a custom\/miscellaneous item, in which case customName and customPrice are used.",
+        ),
       quantity: zod.number(),
       discountAmount: zod.number().optional(),
+      customName: zod
+        .string()
+        .optional()
+        .describe(
+          "Display name for a custom\/miscellaneous item not in the catalog. Used only when productId is omitted.",
+        ),
+      customPrice: zod
+        .number()
+        .optional()
+        .describe(
+          "Unit price for a custom\/miscellaneous item not in the catalog. Used only when productId is omitted.",
+        ),
       variantChoices: zod
         .array(
           zod.object({

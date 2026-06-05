@@ -306,9 +306,14 @@ export interface Order {
 }
 
 export type CreateOrderBodyItemsItem = {
-  productId: number;
+  /** Required for catalog products. Omit for a custom/miscellaneous item, in which case customName and customPrice are used. */
+  productId?: number;
   quantity: number;
   discountAmount?: number;
+  /** Display name for a custom/miscellaneous item not in the catalog. Used only when productId is omitted. */
+  customName?: string;
+  /** Unit price for a custom/miscellaneous item not in the catalog. Used only when productId is omitted. */
+  customPrice?: number;
   variantChoices?: ChoiceItem[];
   modifierChoices?: ChoiceItem[];
 };

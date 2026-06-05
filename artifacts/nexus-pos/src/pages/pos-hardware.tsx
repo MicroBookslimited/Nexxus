@@ -44,6 +44,7 @@ import {
   ClipboardList,
   PenLine,
   Calculator,
+  Delete,
   LockKeyhole,
   ArrowLeftRight,
   StickyNote,
@@ -104,6 +105,9 @@ type CartLine = {
   quantity: number;
   isTaxable: boolean;
   imageUrl: string | null;
+  /** A custom / miscellaneous item entered via the calculator (not in the catalog).
+   * Sent to the server with no productId; productId is the sentinel 0 locally. */
+  isCustom?: boolean;
 };
 
 /* Category → icon map (hardware-store flavoured). Falls back to a box icon. */
@@ -190,6 +194,54 @@ export function PosHardware() {
   const [notes, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card">("cash");
   const [cashTenderedInput, setCashTenderedInput] = useState("");
+  // Misc/custom-item calculator: sell something not in the catalog.
+  const [miscOpen, setMiscOpen] = useState(false);
+  const [miscPrice, setMiscPrice] = useState("");
+  const [miscName, setMiscName] = useState("");
+  const [miscQty, setMiscQty] = useState(1);
+
+  const miscKeyPress = (k: string) => {
+    setMiscPrice((prev) => {
+      if (k === "back") return prev.slice(0, -1);
+      if (k === "clear") return "";
+      if (k === ".") {
+        if (prev.includes(".")) return prev;
+        return prev === "" ? "0." : prev + ".";
+      }
+      if (prev.includes(".")) {
+        const dec = prev.split(".")[1] ?? "";
+        if (dec.length >= 2) return prev;
+      }
+      if (prev === "0") return k;
+      return prev + k;
+    });
+  };
+
+  const confirmMiscItem = () => {
+    const price = parseFloat(miscPrice);
+    if (!Number.isFinite(price) || price < 0) return;
+    if (!(miscQty > 0)) return;
+    const name = miscName.trim() || "Custom Item";
+    setCart((prev) => [
+      ...prev,
+      {
+        cartKey: `custom:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
+        productId: 0,
+        productName: name,
+        barcode: null,
+        price,
+        quantity: miscQty,
+        isTaxable: true,
+        imageUrl: null,
+        isCustom: true,
+      },
+    ]);
+    toast({ title: "Added custom item", description: `${name} — ${formatCurrency(price * miscQty, baseCurrency)}` });
+    setMiscOpen(false);
+    setMiscPrice("");
+    setMiscName("");
+    setMiscQty(1);
+  };
   const cartBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -289,6 +341,9 @@ export function PosHardware() {
     setCart(
       held.items.map((item, idx) => {
         const p = productMap.get(item.productId);
+        // Custom/misc lines were held with the sentinel productId 0; restore the
+        // isCustom flag so checkout sends customName/customPrice (not productId 0).
+        const isCustom = item.productId === 0;
         return {
           cartKey: `${item.productId}:recall:${Date.now()}:${idx}`,
           productId: item.productId,
@@ -297,7 +352,8 @@ export function PosHardware() {
           imageUrl: p?.imageUrl ?? null,
           price: item.price,
           quantity: item.quantity,
-          isTaxable: p?.isTaxable ?? true,
+          isTaxable: isCustom ? true : (p?.isTaxable ?? true),
+          ...(isCustom ? { isCustom: true } : {}),
         };
       }),
     );
@@ -454,7 +510,11 @@ export function PosHardware() {
         data: {
           paymentMethod,
           staffId: sessionStaff?.id ?? undefined,
-          items: cart.map((c) => ({ productId: c.productId, quantity: c.quantity })),
+          items: cart.map((c) =>
+            c.isCustom
+              ? { customName: c.productName, customPrice: c.price, quantity: c.quantity }
+              : { productId: c.productId, quantity: c.quantity },
+          ),
           cashTendered,
           discountType: discount > 0 ? "fixed" : undefined,
           discountAmount: discount > 0 ? discount : undefined,
@@ -616,6 +676,16 @@ export function PosHardware() {
               <ScanBarcode className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
             )}
           </div>
+
+          {/* Misc / custom item */}
+          <button
+            onClick={() => setMiscOpen(true)}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-[#0a1a2a] border border-indigo-400/30 px-3 h-11 text-sm font-medium text-indigo-200 hover:bg-indigo-500/10 transition"
+            title="Sell a miscellaneous item not in the system"
+          >
+            <Calculator className="h-4 w-4" />
+            <span className="hidden sm:inline">Misc</span>
+          </button>
 
           {/* Add customer */}
           <button
@@ -1066,7 +1136,75 @@ export function PosHardware() {
         </div>
       </div>
 
-      {/* ── Customer dialog ──────────────────────────────────────────── */}
+      {/* ── Misc / custom item calculator ───────────────────────────── */}
+      <Dialog
+        open={miscOpen}
+        onOpenChange={(o) => { if (!o) { setMiscOpen(false); setMiscPrice(""); setMiscName(""); setMiscQty(1); } }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-indigo-500" />
+              Custom Item
+            </DialogTitle>
+            <DialogDescription>Sell something that isn't in your catalogue. Enter a price and an optional name.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Item name (optional)</Label>
+              <Input
+                value={miscName}
+                onChange={(e) => setMiscName(e.target.value)}
+                placeholder="Custom Item"
+                className="mt-1"
+              />
+            </div>
+            <div className="rounded-lg border-2 border-indigo-500/40 bg-muted/40 px-4 py-3 text-right">
+              <div className="text-xs text-muted-foreground">Unit price</div>
+              <div className="text-3xl font-mono font-bold tabular-nums">
+                {formatCurrency(parseFloat(miscPrice) || 0, baseCurrency)}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "back"].map((k) => (
+                <Button
+                  key={k}
+                  variant="outline"
+                  className="h-14 text-xl font-semibold"
+                  onClick={() => miscKeyPress(k)}
+                >
+                  {k === "back" ? <Delete className="h-5 w-5" /> : k}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Quantity</Label>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setMiscQty((q) => Math.max(1, q - 1))}>
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <span className="w-10 text-center text-lg font-bold tabular-nums">{miscQty}</span>
+                <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setMiscQty((q) => q + 1)}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            {parseFloat(miscPrice) > 0 && (
+              <div className="text-right text-sm text-muted-foreground">
+                Line total:{" "}
+                <span className="text-foreground font-bold">
+                  {formatCurrency((parseFloat(miscPrice) || 0) * miscQty, baseCurrency)}
+                </span>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setMiscOpen(false); setMiscPrice(""); setMiscName(""); setMiscQty(1); }}>Cancel</Button>
+            <Button onClick={confirmMiscItem} disabled={!(parseFloat(miscPrice) > 0)} className="bg-indigo-600 hover:bg-indigo-700">Add to Cart</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={customerOpen} onOpenChange={setCustomerOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

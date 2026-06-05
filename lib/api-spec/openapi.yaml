@@ -2103,11 +2103,19 @@ components:
             properties:
               productId:
                 type: integer
+                description: Required for catalog products. Omit for a custom/miscellaneous item, in which case customName and customPrice are used.
               quantity:
                 type: integer
               discountAmount:
                 type: number
                 format: float
+              customName:
+                type: string
+                description: Display name for a custom/miscellaneous item not in the catalog. Used only when productId is omitted.
+              customPrice:
+                type: number
+                format: float
+                description: Unit price for a custom/miscellaneous item not in the catalog. Used only when productId is omitted.
               variantChoices:
                 type: array
                 items:
@@ -2117,7 +2125,6 @@ components:
                 items:
                   $ref: "#/components/schemas/ChoiceItem"
             required:
-              - productId
               - quantity
         paymentMethod:
           type: string
