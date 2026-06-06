@@ -139,10 +139,36 @@ const CATEGORY_ICONS: Record<string, { Icon: React.ComponentType<{ className?: s
   outdoor:       { Icon: Trees,      tint: "from-emerald-500 to-emerald-700" },
 };
 
+/* Vivid fallback palette so categories not in the map above still each get a
+   distinct, colourful card (picked deterministically from the category name). */
+const FALLBACK_TINTS = [
+  "from-rose-500    to-rose-700",
+  "from-orange-500  to-orange-700",
+  "from-amber-500   to-amber-700",
+  "from-lime-500    to-lime-700",
+  "from-emerald-500 to-emerald-700",
+  "from-teal-500    to-teal-700",
+  "from-cyan-500    to-cyan-700",
+  "from-sky-500     to-sky-700",
+  "from-blue-500    to-blue-700",
+  "from-indigo-500  to-indigo-700",
+  "from-violet-500  to-violet-700",
+  "from-fuchsia-500 to-fuchsia-700",
+  "from-pink-500    to-pink-700",
+];
+
+function hashString(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
 function getCategoryIcon(name: string) {
-  return CATEGORY_ICONS[name.toLowerCase()] ?? {
+  const known = CATEGORY_ICONS[name.toLowerCase()];
+  if (known) return known;
+  return {
     Icon: Package,
-    tint: "from-teal-500 to-teal-700",
+    tint: FALLBACK_TINTS[hashString(name) % FALLBACK_TINTS.length],
   };
 }
 
@@ -829,13 +855,13 @@ export function PosHardware() {
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={handleSearchKey}
               placeholder="Search SKU / Barcode / Product Name…"
-              className="pl-10 pr-10 h-11 text-sm bg-[#0a1a2a] border-teal-400/30 focus-visible:border-teal-400 focus-visible:ring-teal-400/20 text-slate-100 placeholder:text-slate-500 rounded-xl"
+              className="pl-10 pr-10 h-11 text-sm bg-white border-teal-400/30 focus-visible:border-teal-400 focus-visible:ring-teal-400/20 text-slate-900 placeholder:text-slate-400 rounded-xl"
               autoComplete="off"
             />
             {searchTerm ? (
               <button
                 onClick={() => setSearchTerm("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -884,17 +910,24 @@ export function PosHardware() {
             </div>
             <button
               onClick={() => window.location.reload()}
-              className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-[#0a1a2a] border border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 transition"
+              className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-sky-600 text-white shadow-md hover:brightness-110 active:scale-[0.98] transition"
               title="Reload screen"
             >
               <RefreshCw className="h-4 w-4" />
             </button>
             <button
               onClick={() => { setLocked(true); clearStaff(); }}
-              className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-[#0a1a2a] border border-white/10 text-slate-300 hover:bg-amber-500/10 hover:text-amber-300 transition"
+              className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-md hover:brightness-110 active:scale-[0.98] transition"
               title="Lock"
             >
               <LockKeyhole className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => navigate("/cash?close=1")}
+              className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-md hover:brightness-110 active:scale-[0.98] transition"
+              title="Close shift"
+            >
+              <X className="h-5 w-5" />
             </button>
           </div>
         </div>
@@ -908,7 +941,7 @@ export function PosHardware() {
             sublabel={`${productList.length}`}
             Icon={Boxes}
             active={categoryFilter === null}
-            tint="from-teal-500/30 to-cyan-700/10"
+            tint="from-teal-500 to-cyan-600"
             onClick={() => setCategoryFilter(null)}
           />
           {categories.map((cat) => {
@@ -1746,7 +1779,7 @@ function CategoryCard({
       className={`shrink-0 relative w-[120px] h-[88px] rounded-2xl border transition overflow-hidden flex flex-col items-center justify-center gap-1 active:scale-95 ${
         active
           ? "border-white ring-2 ring-white/80 shadow-[0_0_24px_-4px_rgba(255,255,255,0.55)] scale-[1.03]"
-          : "border-white/10 brightness-90 hover:brightness-110"
+          : "border-white/10 hover:brightness-110"
       }`}
     >
       <div className={`absolute inset-0 bg-gradient-to-br ${tint}`} />
