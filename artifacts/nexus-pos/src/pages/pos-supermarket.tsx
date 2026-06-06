@@ -584,7 +584,7 @@ export function PosSupermarket() {
         <div className="ml-auto flex items-center gap-2 shrink-0">
           <button
             onClick={() => navigate("/dashboard")}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-muted border border-border px-3 h-11 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 px-3 h-11 text-xs font-semibold text-white shadow transition"
           >
             <ArrowLeftRight className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Dashboard</span>
@@ -600,14 +600,14 @@ export function PosSupermarket() {
           </div>
           <button
             onClick={() => window.location.reload()}
-            className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-muted border border-border text-muted-foreground hover:bg-accent hover:text-primary transition"
+            className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white shadow transition"
             title="Reload screen"
           >
             <RefreshCw className="h-4 w-4" />
           </button>
           <button
             onClick={() => { setLocked(true); clearStaff(); }}
-            className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-muted border border-border text-muted-foreground hover:bg-accent hover:text-amber-500 transition"
+            className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow transition"
             title="Lock"
           >
             <LockKeyhole className="h-4 w-4" />
