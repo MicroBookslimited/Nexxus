@@ -2055,22 +2055,26 @@ function clearPrintingFlag(): void {
 }
 
 export function openReceiptWindow(html: string, opts?: { receiptPageSize?: string }): void {
-  // DESKTOP: original iframe behaviour, unchanged
+  // DESKTOP: hidden same-origin iframe. The print dialog is triggered exactly
+  // once from the iframe's `load` handler below. We deliberately do NOT inject a
+  // separate auto-print script into the iframe HTML — doing both made the print
+  // preview re-open a second time after the first print finished.
   if (!opts?.receiptPageSize) {
-    const printScript = `<scr` + `ipt>window.addEventListener('load',function(){window.focus();window.print();window.close();})<\/scr` + `ipt>`;
-    const printableHtml = html.includes('</body>') ? html.replace('</body>', printScript + '</body>') : html + printScript;
     const iframe = document.createElement('iframe');
     iframe.id = 'nexus-print-frame';
     iframe.setAttribute('aria-hidden', 'true');
     iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none';
     document.body.appendChild(iframe);
+    let printed = false;
     const cleanup = () => setTimeout(() => { iframe.parentNode?.removeChild(iframe); }, 1000);
     iframe.addEventListener('load', () => {
+      if (printed) return; // guard against any duplicate load events
+      printed = true;
       const cw = iframe.contentWindow;
       if (cw) { cw.focus(); setTimeout(() => { try { cw.print(); } catch { /* ignore */ } cleanup(); }, 100); }
       else { cleanup(); }
     });
-    iframe.srcdoc = printableHtml;
+    iframe.srcdoc = html;
     return;
   }
 
