@@ -19,6 +19,7 @@ import { EmailVerificationBanner } from "@/components/EmailVerificationBanner";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useStaff } from "@/contexts/StaffContext";
+import { usePosChrome } from "@/contexts/PosChromeContext";
 import { PinPad } from "@/components/PinPad";
 import { ShiftClockButton } from "@/components/ShiftClockButton";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
@@ -192,6 +193,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const profileRef = useRef<HTMLDivElement>(null);
   const { theme, toggleTheme } = useTheme();
   const { staff, setStaff, can, clearStaff } = useStaff();
+  const { headerHidden } = usePosChrome();
   const [switchUserOpen, setSwitchUserOpen] = useState(false);
 
   // Tracks which group labels are expanded (desktop dropdown & mobile accordion)
@@ -319,6 +321,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <ImpersonationBanner />
 
       {/* ── TOP HEADER ───────────────────────────────────────── */}
+      {!(headerHidden && location === "/pos") && (
       <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-border px-3 sm:px-5 py-1 bg-card gap-2">
 
         {/* Logo */}
@@ -522,6 +525,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+      )}
 
       {/* ── MOBILE FULL-SCREEN DRAWER ────────────────────────── */}
       {drawerOpen && (

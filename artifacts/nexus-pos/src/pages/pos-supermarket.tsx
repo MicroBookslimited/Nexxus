@@ -12,6 +12,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
+import { usePosChrome } from "@/contexts/PosChromeContext";
 import { useToast } from "@/hooks/use-toast";
 import { PinPad } from "@/components/PinPad";
 import { Button } from "@/components/ui/button";
@@ -146,7 +147,7 @@ export function PosSupermarket() {
 
   /* ── Search / scanner ───────────────────────────────────────────────── */
   const [searchTerm, setSearchTerm] = useState("");
-  const [showTopMenu, setShowTopMenu] = useState(false);
+  const { headerHidden, toggleHeader } = usePosChrome();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Re-focus the scan box so USB scanners keep working after any interaction
@@ -609,8 +610,15 @@ export function PosSupermarket() {
           </div>
         </div>
 
-        {showTopMenu && (
         <div className="ml-auto flex items-center gap-2 shrink-0">
+          <button
+            onClick={toggleHeader}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card hover:bg-muted px-3 h-11 text-xs font-semibold text-foreground shadow-sm transition"
+            title={headerHidden ? "Show menu" : "Hide menu"}
+          >
+            {headerHidden ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+            <span className="hidden sm:inline">{headerHidden ? "Menu" : "Hide"}</span>
+          </button>
           <button
             onClick={() => navigate("/dashboard")}
             className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 px-3 h-11 text-xs font-semibold text-white shadow transition"
@@ -650,7 +658,6 @@ export function PosSupermarket() {
             <LockKeyhole className="h-4 w-4" />
           </button>
         </div>
-        )}
       </div>
 
       {/* ── Body: big bill (left) + controls (right) ─────────────────── */}
@@ -658,23 +665,13 @@ export function PosSupermarket() {
         {/* ── LEFT: bold bill preview ───────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0 border-r border-border">
           <div className="shrink-0 px-6 py-4 border-b border-border flex items-center justify-between bg-muted/40">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowTopMenu((v) => !v)}
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 h-9 text-sm font-semibold text-foreground hover:bg-muted transition"
-                title={showTopMenu ? "Hide menu" : "Show menu"}
-              >
-                {showTopMenu ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                <span className="hidden sm:inline">{showTopMenu ? "Hide" : "Menu"}</span>
-              </button>
-              <h2 className="text-lg font-extrabold text-foreground tracking-wide flex items-center gap-2">
-                <ShoppingCart className="h-5 w-5 text-cyan-500" />
-                CURRENT BILL
-                <span className="text-sm font-semibold text-muted-foreground">
-                  ({itemCount} {itemCount === 1 ? "item" : "items"})
-                </span>
-              </h2>
-            </div>
+            <h2 className="text-lg font-extrabold text-foreground tracking-wide flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5 text-cyan-500" />
+              CURRENT BILL
+              <span className="text-sm font-semibold text-muted-foreground">
+                ({itemCount} {itemCount === 1 ? "item" : "items"})
+              </span>
+            </h2>
             {cart.length > 0 && (
               <button
                 onClick={() => requestSupermarketAction({ type: "clear" }, true)}

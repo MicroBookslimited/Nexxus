@@ -44,6 +44,7 @@ import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
 import { useStaff } from "@/contexts/StaffContext";
+import { usePosChrome } from "@/contexts/PosChromeContext";
 import { useLocation, Link } from "wouter";
 import { useQueryClient, useQueries, useQuery } from "@tanstack/react-query";
 import { getPricingTiers, previewTierPrice, type PricingTier } from "@/lib/saas-api";
@@ -606,7 +607,7 @@ export function POS() {
   };
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [showTopMenu, setShowTopMenu] = useState(false);
+  const { headerHidden, toggleHeader } = usePosChrome();
   const [cart, setCart] = useState<CartItem[]>([]);
   const cartBottomRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -2059,8 +2060,15 @@ export function POS() {
               </div>
             )}
           </div>
-          {showTopMenu && (
           <div className="shrink-0 flex items-center gap-1.5">
+            <button
+              title={headerHidden ? "Show menu" : "Hide menu"}
+              onClick={toggleHeader}
+              className="flex items-center gap-1.5 rounded-md border border-slate-500 bg-slate-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-500 hover:border-slate-400 active:scale-95 transition-all duration-150 shadow-sm"
+            >
+              {headerHidden ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+              {headerHidden ? "Menu" : "Hide"}
+            </button>
             <button
               title="Reload screen"
               onClick={() => window.location.reload()}
@@ -2094,7 +2102,6 @@ export function POS() {
               </button>
             )}
           </div>
-          )}
         </div>
       )}
       <div className="flex flex-1 min-h-0">
@@ -2134,15 +2141,6 @@ export function POS() {
               >
                 <Calculator className="h-4 w-4" />
                 <span className="hidden sm:inline text-sm font-medium">Misc</span>
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowTopMenu((v) => !v)}
-                className="h-11 px-3 shrink-0 gap-1.5"
-                title={showTopMenu ? "Hide menu" : "Show menu"}
-              >
-                {showTopMenu ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                <span className="hidden sm:inline text-sm font-medium">{showTopMenu ? "Hide" : "Menu"}</span>
               </Button>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">

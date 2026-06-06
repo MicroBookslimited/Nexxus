@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { StaffProvider } from "@/contexts/StaffContext";
+import { PosChromeProvider } from "@/contexts/PosChromeContext";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { PWAUpdatePrompt } from "@/components/PWAUpdatePrompt";
 import NotFound from "@/pages/not-found";
@@ -419,14 +420,16 @@ function POSApp() {
           persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}
         >
           <TooltipProvider>
-            <WouterRouter base="/app">
-              <POSRouter />
-            </WouterRouter>
-            <Toaster />
-            <OfflineBanner />
-            <PWAUpdatePrompt />
-            <FullscreenFab />
-            <KioskLock />
+            <PosChromeProvider>
+              <WouterRouter base="/app">
+                <POSRouter />
+              </WouterRouter>
+              <Toaster />
+              <OfflineBanner />
+              <PWAUpdatePrompt />
+              <FullscreenFab />
+              <KioskLock />
+            </PosChromeProvider>
           </TooltipProvider>
         </PersistQueryClientProvider>
       </StaffProvider>

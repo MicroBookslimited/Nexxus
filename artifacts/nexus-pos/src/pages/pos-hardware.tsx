@@ -16,6 +16,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
+import { usePosChrome } from "@/contexts/PosChromeContext";
 import { useToast } from "@/hooks/use-toast";
 import { PinPad } from "@/components/PinPad";
 import { Button } from "@/components/ui/button";
@@ -183,7 +184,7 @@ export function PosHardware() {
 
   /* ── Search / categories ─────────────────────────────────────────────── */
   const [searchTerm, setSearchTerm] = useState("");
-  const [showTopMenu, setShowTopMenu] = useState(false);
+  const { headerHidden, toggleHeader } = usePosChrome();
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -695,7 +696,6 @@ export function PosHardware() {
             )}
           </div>
 
-          {showTopMenu && (<>
           {/* Misc / custom item */}
           <button
             onClick={() => setMiscOpen(true)}
@@ -717,6 +717,14 @@ export function PosHardware() {
 
           {/* User badge */}
           <div className="shrink-0 flex items-center gap-2">
+            <button
+              onClick={toggleHeader}
+              className="h-11 inline-flex items-center gap-1.5 rounded-xl bg-[#0a1a2a] border border-white/10 px-3 text-sm font-medium text-slate-300 hover:bg-white/5 transition"
+              title={headerHidden ? "Show menu" : "Hide menu"}
+            >
+              {headerHidden ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              <span className="hidden sm:inline">{headerHidden ? "Menu" : "Hide"}</span>
+            </button>
             <div className="flex items-center gap-2 rounded-xl bg-[#0a1a2a] border border-white/10 px-3 h-11">
               <div className="h-7 w-7 rounded-full bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-xs font-bold text-[#0B1E2D]">
                 {sessionStaff?.name?.charAt(0).toUpperCase() ?? "U"}
@@ -741,21 +749,12 @@ export function PosHardware() {
               <LockKeyhole className="h-4 w-4" />
             </button>
           </div>
-          </>)}
         </div>
       </div>
 
       {/* ── Category cards row ───────────────────────────────────────── */}
       <div className="shrink-0 border-b border-white/5 bg-[#0d2238]/40">
         <div className="flex gap-3 overflow-x-auto px-4 py-3 scrollbar-hide">
-          <button
-            onClick={() => setShowTopMenu((v) => !v)}
-            className="shrink-0 self-center inline-flex items-center gap-1.5 rounded-xl bg-[#0a1a2a] border border-white/10 px-3 h-11 text-sm font-medium text-slate-300 hover:bg-white/5 transition"
-            title={showTopMenu ? "Hide menu" : "Show menu"}
-          >
-            {showTopMenu ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            <span className="hidden sm:inline">{showTopMenu ? "Hide" : "Menu"}</span>
-          </button>
           <CategoryCard
             label="All"
             sublabel={`${productList.length}`}
