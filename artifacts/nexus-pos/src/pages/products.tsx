@@ -3484,23 +3484,23 @@ export function Products() {
                         )}
                       </div>
                     </div>
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Print Label" onClick={() => setPrintProduct(product)}>
-                        <Printer className="h-3 w-3" />
+                    <div className="flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button size="sm" variant="outline" className="h-9 px-3 text-sm" title="Print Label" onClick={() => setPrintProduct(product)}>
+                        <Printer className="h-4 w-4" />
                       </Button>
                       {canManage && (
-                        <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" onClick={() => openRestock(product)}>
-                          <PackagePlus className="h-3 w-3 mr-1" />Restock
+                        <Button size="sm" variant="outline" className="h-9 text-sm px-3 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" onClick={() => openRestock(product)}>
+                          <PackagePlus className="h-4 w-4 mr-1.5" />Restock
                         </Button>
                       )}
                       {canManage && (
-                        <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => openEdit(product)}>
-                          <Pencil className="h-3 w-3 mr-1" />Edit
+                        <Button size="sm" variant="outline" className="flex-1 h-9 text-sm" onClick={() => openEdit(product)}>
+                          <Pencil className="h-4 w-4 mr-1.5" />Edit
                         </Button>
                       )}
                       {canManage && (
-                        <Button size="sm" variant="outline" className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
-                          <Trash2 className="h-3 w-3" />
+                        <Button size="sm" variant="outline" className="h-9 px-3 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(product.id)}>
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
@@ -3620,27 +3620,27 @@ export function Products() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button size="icon" variant="outline" className="h-7 w-7" title="Print Label" onClick={() => setPrintProduct(product)}>
-                      <Printer className="h-3 w-3" />
+                  <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button size="icon" variant="outline" className="h-9 w-9" title="Print Label" onClick={() => setPrintProduct(product)}>
+                      <Printer className="h-4 w-4" />
                     </Button>
                     {canManage && (
-                      <Button size="icon" variant="outline" className="h-7 w-7 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" title="Restock" onClick={() => openRestock(product)}>
-                        <PackagePlus className="h-3 w-3" />
+                      <Button size="icon" variant="outline" className="h-9 w-9 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" title="Restock" onClick={() => openRestock(product)}>
+                        <PackagePlus className="h-4 w-4" />
                       </Button>
                     )}
                     {canManage && (
-                      <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => openEdit(product)}>
-                        <Pencil className="h-3 w-3" />
+                      <Button size="icon" variant="outline" className="h-9 w-9" onClick={() => openEdit(product)}>
+                        <Pencil className="h-4 w-4" />
                       </Button>
                     )}
                     {canManage && (product.archivedAt ? (
-                      <Button size="icon" variant="outline" className="h-7 w-7 text-emerald-400 border-emerald-400/40 hover:bg-emerald-400/10" title="Restore" onClick={() => doRestoreOne(product.id)}>
-                        <RotateCcw className="h-3 w-3" />
+                      <Button size="icon" variant="outline" className="h-9 w-9 text-emerald-400 border-emerald-400/40 hover:bg-emerald-400/10" title="Restore" onClick={() => doRestoreOne(product.id)}>
+                        <RotateCcw className="h-4 w-4" />
                       </Button>
                     ) : (
-                      <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" title="Delete (archive)" onClick={() => setDeleteId(product.id)}>
-                        <Trash2 className="h-3 w-3" />
+                      <Button size="icon" variant="outline" className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:border-destructive" title="Delete (archive)" onClick={() => setDeleteId(product.id)}>
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     ))}
                   </div>
