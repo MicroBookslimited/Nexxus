@@ -10,7 +10,7 @@ export interface ReceiptSettings {
   secondary_currency?: string;
   currency_rate?: string;
   receipt_size?: string;       // "58mm" | "80mm"
-  receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant"
+  receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant" | "hardware"
 }
 
 export interface ReceiptOrderItem {
@@ -229,6 +229,16 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   // ── Staple-store template ──────────────────────────────────────────────────
   if (template === "staple") {
     return buildStapleReceiptHtml(order, settings, {
+      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+      businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
+      taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
+      secondaryCurrency, exchangeRate,
+    });
+  }
+
+  // ── Hardware-store half-letter template — full sheet, render & early-return ─
+  if (template === "hardware") {
+    return buildHardwareReceiptHtml(order, settings, {
       escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
       businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
       taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
@@ -1735,6 +1745,265 @@ function buildStapleReceiptHtml(
   <div class="st-customer-copy">*** CUSTOMER COPY ***</div>
   <div class="st-powered">Powered by NEXXUS POS</div>
 
+</body>
+</html>`;
+}
+
+/**
+ * Render the "hardware" receipt template — a half-letter (9in × 5.5in) landscape
+ * sheet styled after a hardware / building-supply invoice (see the VALU FRAME
+ * sample). Unlike the thermal templates this is a full sheet-fed page: centered
+ * business header, a Bill-To block, a multi-column line-item table
+ * (Item / Qty / Attribute / Size / Price / Ext Price), boxed totals, a payment
+ * line, a CSS barcode and a footer. Every value is mapped from the live
+ * ReceiptOrder / ReceiptSettings — nothing is hard-coded sample data.
+ */
+function buildHardwareReceiptHtml(
+  order: ReceiptOrder,
+  _settings: ReceiptSettings,
+  ctx: ReceiptCtx,
+): string {
+  const {
+    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+    businessPhone, businessLogoUrl, receiptFooter, taxRate, taxName,
+    secondaryCurrency, exchangeRate,
+  } = ctx;
+
+  const addressLines = (businessAddress || "")
+    .split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+
+  const logoHtml = businessLogoUrl
+    ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:54px;max-width:220px;object-fit:contain;" /></div>`
+    : "";
+
+  // Choices → comma-joined text for the Attribute / Size columns.
+  const joinChoices = (
+    choices: Array<{ optionName: string }> | null | undefined,
+  ): string =>
+    (choices ?? []).map(c => c.optionName).filter(Boolean).join(", ");
+
+  // Item rows — Item Name | Qty | Attribute | Size | Price (unit) | Ext Price.
+  const itemRowsHtml = order.items.map((item) => {
+    const attribute = joinChoices(item.variantChoices as { optionName: string }[] | null);
+    const size      = joinChoices(item.modifierChoices as { optionName: string }[] | null);
+    const unit      = item.unitPrice != null
+      ? item.unitPrice
+      : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
+    return `
+      <tr>
+        <td class="hw-item">${escHtml(item.productName)}</td>
+        <td class="hw-num">${fmtNum(item.quantity)}</td>
+        <td class="hw-attr">${escHtml(attribute || "—")}</td>
+        <td class="hw-attr">${escHtml(size || "—")}</td>
+        <td class="hw-num">${fmtNum(unit)}</td>
+        <td class="hw-num">${fmtNum(item.lineTotal)}</td>
+      </tr>`;
+  }).join("");
+
+  const discountLineHtml = (order.discountValue ?? 0) > 0 ? `
+    <div class="hw-tot-row">
+      <span class="hw-tot-label">Discount</span>
+      <span class="hw-tot-val" style="color:#c00;">-$${fmtNum(order.discountValue ?? 0)}</span>
+    </div>` : "";
+
+  const secondaryLineHtml = (secondaryCurrency && exchangeRate > 0) ? `
+    <div class="hw-tot-row">
+      <span class="hw-tot-label">≈ ${escHtml(secondaryCurrency)}</span>
+      <span class="hw-tot-val">${fmt(order.total * exchangeRate, secondaryCurrency)}</span>
+    </div>` : "";
+
+  // Payment line — mirror the sample's single "Cash: $X" line, with change due
+  // when the customer tendered more than the total.
+  const isCash  = order.paymentMethod === "cash";
+  const isSplit = order.paymentMethod === "split";
+  const payLabel = (() => {
+    if (isCash)  return "Cash";
+    if (order.paymentMethod === "card" || order.paymentMethod === "credit") return "Card";
+    if (isSplit) return "Split";
+    if (order.paymentMethod === "topup")   return "Top-up";
+    if (order.paymentMethod === "loyalty") return "Loyalty";
+    return order.paymentMethod
+      ? order.paymentMethod.charAt(0).toUpperCase() + order.paymentMethod.slice(1)
+      : "Payment";
+  })();
+  const tenderedAmt = isCash
+    ? ((order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total)
+    : order.total;
+  const changeDue = isCash ? Math.max(0, tenderedAmt - order.total) : 0;
+  const paymentBlockHtml = isSplit
+    ? `
+      <div class="hw-tot-row"><span class="hw-tot-label">Card</span><span class="hw-tot-val">$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
+      <div class="hw-tot-row"><span class="hw-tot-label">Cash</span><span class="hw-tot-val">$${fmtNum(order.splitCashAmount ?? 0)}</span></div>`
+    : `
+      <div class="hw-tot-row"><span class="hw-tot-label">${escHtml(payLabel)}</span><span class="hw-tot-val">$${fmtNum(tenderedAmt)}</span></div>
+      ${changeDue > 0 ? `<div class="hw-tot-row"><span class="hw-tot-label">Change Due</span><span class="hw-tot-val">$${fmtNum(changeDue)}</span></div>` : ""}`;
+
+  const taxPct = parseFloat(taxRate) || 0;
+  const refundedHtml = order.status === "refunded"
+    ? `<div class="hw-refunded">★ REFUNDED ★</div>` : "";
+  const notesHtml = order.notes
+    ? `<div class="hw-note">Note: ${escHtml(order.notes)}</div>` : "";
+  const outstandingHtml = (order.customerName && order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0)
+    ? `<div class="hw-note" style="color:#c00;font-weight:700;">Account Balance Due: ${fmt(order.customerOutstandingBalance)}</div>` : "";
+
+  // CSS barcode — deterministic from the order number (same approach as the
+  // staple/supermarket templates).
+  const seed = orderNum.repeat(8);
+  const bars: string[] = [];
+  for (let i = 0; i < 56; i++) {
+    const code = seed.charCodeAt(i % seed.length);
+    const w = 1 + (code % 3);
+    const isBar = (i + code) % 2 === 0;
+    bars.push(`<span style="display:inline-block;width:${w}px;height:100%;background:${isBar ? "#000" : "transparent"};"></span>`);
+  }
+  const barcodeDigits = orderNum.replace(/\D/g, "") || orderNum;
+  const barcodeHtml = `
+    <div class="hw-barcode">
+      <div style="display:inline-flex;align-items:stretch;height:34px;">${bars.join("")}</div>
+      <div class="hw-barcode-num">${escHtml(barcodeDigits)}</div>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Receipt — ${escHtml(orderNum)}</title>
+  <meta charset="utf-8">
+  <style>
+    @page { size: 9in 5.5in; margin: 0.3in; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #000;
+      padding: 4px;
+    }
+    .hw-topbar {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr 1fr;
+      gap: 8px;
+      align-items: start;
+      margin-bottom: 6px;
+    }
+    .hw-meta-left  { font-size: 10px; }
+    .hw-meta-right { font-size: 10px; text-align: right; }
+    .hw-receipt-no { font-size: 14px; font-weight: 800; margin-bottom: 2px; }
+    .hw-biz-name   { font-size: 17px; font-weight: 800; text-align: center; line-height: 1.15; }
+    .hw-biz-line   { font-size: 10px; text-align: center; }
+    .hw-rule { border: 0; border-top: 1px solid #000; margin: 5px 0; }
+    .hw-billto { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
+    .hw-billto span { font-weight: 400; }
+    table.hw-items {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+      margin-bottom: 4px;
+    }
+    table.hw-items th {
+      text-align: left;
+      font-weight: 700;
+      border-bottom: 1px solid #000;
+      padding: 2px 4px;
+      white-space: nowrap;
+    }
+    table.hw-items td {
+      padding: 2px 4px;
+      vertical-align: top;
+      border-bottom: 1px dotted #bbb;
+    }
+    .hw-item { width: 38%; word-break: break-word; }
+    .hw-attr { width: 16%; }
+    .hw-num  { text-align: right; white-space: nowrap; }
+    th.hw-num { text-align: right; }
+    .hw-totals {
+      width: 46%;
+      margin-left: auto;
+      margin-top: 4px;
+    }
+    .hw-tot-row {
+      display: flex; justify-content: space-between; gap: 8px;
+      font-size: 11px; padding: 1px 0;
+    }
+    .hw-tot-label { }
+    .hw-tot-val   { text-align: right; white-space: nowrap; }
+    .hw-tot-row.hw-grand {
+      font-size: 13px; font-weight: 800;
+      border-top: 1px solid #000; border-bottom: 1px solid #000;
+      padding: 3px 0; margin: 2px 0;
+    }
+    .hw-note { font-size: 10px; margin-top: 4px; }
+    .hw-refunded { text-align: center; font-weight: 800; color: #c00; margin: 4px 0; }
+    .hw-barcode { text-align: center; margin-top: 8px; }
+    .hw-barcode-num { font-size: 10px; letter-spacing: 2px; margin-top: 2px; }
+    .hw-footer { text-align: center; font-size: 11px; margin-top: 6px; }
+    .hw-powered { text-align: center; font-size: 8px; color: #666; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  ${logoHtml}
+  <div class="hw-topbar">
+    <div class="hw-meta-left">
+      <div>Printed: ${escHtml(dateStr)}</div>
+      ${order.staffName ? `<div>Cashier: ${escHtml(order.staffName)}</div>` : ""}
+    </div>
+    <div>
+      <div class="hw-biz-name">${escHtml(businessName)}</div>
+      ${addressLines.map(l => `<div class="hw-biz-line">${escHtml(l)}</div>`).join("")}
+      ${businessPhone ? `<div class="hw-biz-line">Tel: ${escHtml(businessPhone)}</div>` : ""}
+    </div>
+    <div class="hw-meta-right">
+      <div class="hw-receipt-no">Sales Receipt #${escHtml(orderNum)}</div>
+      <div>${escHtml(dateStr)}</div>
+      <div>Page 1</div>
+    </div>
+  </div>
+
+  <hr class="hw-rule" />
+
+  ${order.customerName ? `<div class="hw-billto">Bill To: <span>${escHtml(order.customerName)}</span></div>` : ""}
+
+  <table class="hw-items">
+    <thead>
+      <tr>
+        <th class="hw-item">Item Name</th>
+        <th class="hw-num">Qty</th>
+        <th class="hw-attr">Attribute</th>
+        <th class="hw-attr">Size</th>
+        <th class="hw-num">Price</th>
+        <th class="hw-num">Ext Price</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemRowsHtml}
+    </tbody>
+  </table>
+
+  <div class="hw-totals">
+    <div class="hw-tot-row">
+      <span class="hw-tot-label">Subtotal</span>
+      <span class="hw-tot-val">$${fmtNum(order.subtotal)}</span>
+    </div>
+    ${discountLineHtml}
+    <div class="hw-tot-row">
+      <span class="hw-tot-label">${escHtml(taxName)} (${taxPct}%)</span>
+      <span class="hw-tot-val">+$${fmtNum(order.tax)}</span>
+    </div>
+    <div class="hw-tot-row hw-grand">
+      <span class="hw-tot-label">Receipt Total</span>
+      <span class="hw-tot-val">${fmt(order.total)}</span>
+    </div>
+    ${secondaryLineHtml}
+    ${paymentBlockHtml}
+  </div>
+
+  ${notesHtml}
+  ${outstandingHtml}
+  ${refundedHtml}
+
+  ${barcodeHtml}
+
+  <div class="hw-footer">${escHtml(receiptFooter)}</div>
+  <div class="hw-powered">Powered by NEXXUS POS</div>
 </body>
 </html>`;
 }

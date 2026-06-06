@@ -44,7 +44,7 @@ export function AdminSettings() {
   const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
   const [receiptFooter, setReceiptFooter] = useState("");
   const [receiptSize, setReceiptSize] = useState<"58mm" | "80mm">("80mm");
-  const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant">("classic");
+  const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant" | "hardware">("classic");
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState("JMD");
   const [secondaryCurrency, setSecondaryCurrency] = useState("");
@@ -96,7 +96,7 @@ export function AdminSettings() {
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
     setReceiptSize((settings.receipt_size as "58mm" | "80mm") ?? "80mm");
     setAutoPrintReceipt(settings.auto_print_receipt === "true");
-    setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant") ?? "classic");
+    setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant" | "hardware") ?? "classic");
     setBaseCurrency(settings.base_currency ?? "JMD");
     setSecondaryCurrency(settings.secondary_currency ?? "");
     setCurrencyRate(settings.currency_rate ?? "");
@@ -728,6 +728,44 @@ export function AdminSettings() {
                       <div className="text-muted-foreground text-[5px]">Enjoy your meal!</div>
                       <div className="border-t border-dotted border-muted-foreground/50 my-0.5" />
                       <div className="font-black text-[16px] leading-none tracking-widest">042</div>
+                    </div>
+                  ),
+                },
+                {
+                  id: "hardware",
+                  name: "Hardware Store (Half-Letter)",
+                  desc: "9\"×5.5\" sheet invoice — centered business header, Bill To, Item/Qty/Attribute/Size/Price/Ext Price columns, boxed totals, barcode",
+                  preview: (
+                    <div className="font-sans text-[6px] leading-tight py-1 space-y-px">
+                      <div className="grid grid-cols-3 gap-1 items-start">
+                        <div className="text-muted-foreground text-[5px] leading-tight">Printed: 6/6/26<br />Cashier: Nicole</div>
+                        <div className="text-center">
+                          <div className="font-black text-[8px] leading-tight">BUSINESS NAME</div>
+                          <div className="text-muted-foreground text-[5px]">Address · Tel</div>
+                        </div>
+                        <div className="text-right text-[5px] leading-tight">
+                          <div className="font-black text-[6px]">Sales Receipt #59239</div>
+                          <div className="text-muted-foreground">Page 1</div>
+                        </div>
+                      </div>
+                      <div className="border-t border-foreground/60 my-0.5" />
+                      <div className="font-bold">Bill To: <span className="font-normal">Glass Pro</span></div>
+                      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-1 font-bold border-b border-foreground/60 pb-px">
+                        <span>Item</span><span>Qty</span><span>Price</span><span>Ext</span>
+                      </div>
+                      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-1">
+                        <span>8X1 Self-Drilling</span><span>100</span><span>10.00</span><span>1,000.00</span>
+                      </div>
+                      <div className="flex justify-end gap-2 mt-0.5"><span className="text-muted-foreground">Subtotal</span><span>$5,000.00</span></div>
+                      <div className="flex justify-end gap-2"><span className="text-muted-foreground">Tax 0%</span><span>+$0.00</span></div>
+                      <div className="flex justify-end gap-2 font-black border-y border-foreground/60"><span>Receipt Total</span><span>$5,000.00</span></div>
+                      <div className="flex justify-end gap-2"><span className="text-muted-foreground">Cash</span><span>$5,000.00</span></div>
+                      <div className="flex justify-center gap-px h-2.5 mt-1">
+                        {Array.from({ length: 24 }).map((_, i) => (
+                          <span key={i} className={cn("inline-block h-full", i % 2 === 0 ? "bg-foreground" : "bg-transparent")} style={{ width: ((i % 3) + 1) + "px" }} />
+                        ))}
+                      </div>
+                      <div className="text-center text-muted-foreground text-[5px] mt-0.5">Thanks for shopping with us!</div>
                     </div>
                   ),
                 },
