@@ -64,6 +64,9 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronUp,
+  Banknote,
+  CreditCard,
+  SplitSquareHorizontal,
 } from "lucide-react";
 
 import {
@@ -116,22 +119,22 @@ type CartLine = {
 
 /* Category → icon map (hardware-store flavoured). Falls back to a box icon. */
 const CATEGORY_ICONS: Record<string, { Icon: React.ComponentType<{ className?: string }>; tint: string }> = {
-  tools:         { Icon: Wrench,     tint: "from-amber-500/30  to-amber-700/10" },
-  hardware:      { Icon: Bolt,       tint: "from-zinc-400/30   to-zinc-700/10"  },
-  electrical:    { Icon: Lightbulb,  tint: "from-yellow-400/30 to-yellow-700/10" },
-  plumbing:      { Icon: Droplets,   tint: "from-sky-400/30    to-sky-700/10"   },
-  lumber:        { Icon: Hammer,     tint: "from-orange-500/30 to-orange-800/10" },
-  paint:         { Icon: PaintBucket,tint: "from-rose-500/30   to-rose-800/10"   },
-  garden:        { Icon: Trees,      tint: "from-emerald-500/30 to-emerald-800/10" },
-  "garden & outdoor": { Icon: Trees, tint: "from-emerald-500/30 to-emerald-800/10" },
-  "building materials":{ Icon: Boxes,tint: "from-slate-400/30  to-slate-700/10" },
-  outdoor:       { Icon: Trees,      tint: "from-emerald-500/30 to-emerald-800/10" },
+  tools:         { Icon: Wrench,     tint: "from-amber-500   to-amber-700" },
+  hardware:      { Icon: Bolt,       tint: "from-zinc-500    to-zinc-700"  },
+  electrical:    { Icon: Lightbulb,  tint: "from-yellow-500  to-yellow-700" },
+  plumbing:      { Icon: Droplets,   tint: "from-sky-500     to-sky-700"   },
+  lumber:        { Icon: Hammer,     tint: "from-orange-500  to-orange-700" },
+  paint:         { Icon: PaintBucket,tint: "from-rose-500    to-rose-700"   },
+  garden:        { Icon: Trees,      tint: "from-emerald-500 to-emerald-700" },
+  "garden & outdoor": { Icon: Trees, tint: "from-emerald-500 to-emerald-700" },
+  "building materials":{ Icon: Boxes,tint: "from-slate-500   to-slate-700" },
+  outdoor:       { Icon: Trees,      tint: "from-emerald-500 to-emerald-700" },
 };
 
 function getCategoryIcon(name: string) {
   return CATEGORY_ICONS[name.toLowerCase()] ?? {
     Icon: Package,
-    tint: "from-teal-500/30 to-teal-800/10",
+    tint: "from-teal-500 to-teal-700",
   };
 }
 
@@ -197,7 +200,9 @@ export function PosHardware() {
   /* ── Cart ──────────────────────────────────────────────────────────────── */
   const [cart, setCart] = useState<CartLine[]>([]);
   const [notes, setNotes] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "split">("cash");
+  const [splitCashInput, setSplitCashInput] = useState("");
+  const [splitCardInput, setSplitCardInput] = useState("");
   const [cashTenderedInput, setCashTenderedInput] = useState("");
   // Misc/custom-item calculator: sell something not in the catalog.
   const [miscOpen, setMiscOpen] = useState(false);
@@ -299,6 +304,9 @@ export function PosHardware() {
     setCart([]);
     setNotes("");
     setCashTenderedInput("");
+    setSplitCashInput("");
+    setSplitCardInput("");
+    setPaymentMethod("cash");
     setDiscountAmount(0);
     setSelectedCustomerId(null);
   };
@@ -501,9 +509,38 @@ export function PosHardware() {
   const [receiptOrder, setReceiptOrder] = useState<any>(null);
   const [receiptCustomerInfo, setReceiptCustomerInfo] = useState<CustomerReceiptInfo | null>(null);
 
+  /* ── Split payment ─────────────────────────────────────────────────────── */
+  const splitCash = parseFloat(splitCashInput) || 0;
+  const splitCard = parseFloat(splitCardInput) || 0;
+  const splitRemaining = total - (splitCash + splitCard);
+  const isSplitValid =
+    paymentMethod === "split" &&
+    splitCash >= 0 &&
+    splitCard >= 0 &&
+    Math.abs(splitRemaining) < 0.01 &&
+    total > 0;
+
+  // Pick a payment method; pre-fill a balanced 50/50 split for convenience.
+  const selectPayment = (m: "cash" | "card" | "split") => {
+    setPaymentMethod(m);
+    if (m === "split") {
+      const half = Number((total / 2).toFixed(2));
+      setSplitCashInput(half > 0 ? String(half) : "");
+      setSplitCardInput(total - half > 0 ? String(Number((total - half).toFixed(2))) : "");
+    }
+  };
+
   const handleCheckout = () => {
     if (cart.length === 0) {
       toast({ title: "Cart is empty", variant: "destructive" });
+      return;
+    }
+    if (paymentMethod === "split" && !isSplitValid) {
+      toast({
+        title: "Invalid split",
+        description: "Cash + card portions must add up to the total.",
+        variant: "destructive",
+      });
       return;
     }
     const cashTendered =
@@ -513,9 +550,9 @@ export function PosHardware() {
 
     createOrder.mutate(
       {
-        // `cashTendered` is accepted by the API but missing from the generated
-        // CreateOrderBody type, so the body is cast to bypass that staleness
-        // (same pattern as the standard POS).
+        // `cashTendered` / split amounts are accepted by the API but missing
+        // from the generated CreateOrderBody type, so the body is cast to
+        // bypass that staleness (same pattern as the standard POS).
         data: {
           paymentMethod,
           staffId: sessionStaff?.id ?? undefined,
@@ -524,7 +561,9 @@ export function PosHardware() {
               ? { customName: c.productName, customPrice: c.price, quantity: c.quantity }
               : { productId: c.productId, quantity: c.quantity },
           ),
-          cashTendered,
+          cashTendered: paymentMethod === "split" ? undefined : cashTendered,
+          splitCashAmount: paymentMethod === "split" ? splitCash : undefined,
+          splitCardAmount: paymentMethod === "split" ? splitCard : undefined,
           discountType: discount > 0 ? "fixed" : undefined,
           discountAmount: discount > 0 ? discount : undefined,
           notes: notes.trim() || undefined,
@@ -699,7 +738,7 @@ export function PosHardware() {
           {/* Misc / custom item */}
           <button
             onClick={() => setMiscOpen(true)}
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-[#0a1a2a] border border-indigo-400/30 px-3 h-11 text-sm font-medium text-indigo-200 hover:bg-indigo-500/10 transition"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 px-3 h-11 text-sm font-bold text-white shadow-md hover:brightness-110 active:scale-[0.98] transition"
             title="Sell a miscellaneous item not in the system"
           >
             <Calculator className="h-4 w-4" />
@@ -709,7 +748,7 @@ export function PosHardware() {
           {/* Add customer */}
           <button
             onClick={() => setCustomerOpen(true)}
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-[#0a1a2a] border border-teal-400/30 px-3 h-11 text-sm font-medium text-teal-200 hover:bg-teal-500/10 transition"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 px-3 h-11 text-sm font-bold text-white shadow-md hover:brightness-110 active:scale-[0.98] transition"
           >
             <UserPlus className="h-4 w-4" />
             <span className="hidden sm:inline">{selectedCustomer ? selectedCustomer.name : "Add Customer"}</span>
@@ -1005,26 +1044,39 @@ export function PosHardware() {
             </div>
 
             {/* Payment method */}
-            <div className="grid grid-cols-2 gap-1.5 pt-1.5">
+            <div className="grid grid-cols-3 gap-1.5 pt-1.5">
               <button
-                onClick={() => setPaymentMethod("cash")}
-                className={`h-9 rounded-lg text-xs font-semibold transition border ${
+                onClick={() => selectPayment("cash")}
+                className={`h-11 rounded-lg text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
                   paymentMethod === "cash"
-                    ? "bg-teal-500/20 border-teal-400/50 text-teal-100"
-                    : "bg-[#0d2238] border-white/10 text-slate-400 hover:text-slate-200"
+                    ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30"
+                    : "bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/30"
                 }`}
               >
+                <Banknote className="h-4 w-4" />
                 Cash
               </button>
               <button
-                onClick={() => setPaymentMethod("card")}
-                className={`h-9 rounded-lg text-xs font-semibold transition border ${
+                onClick={() => selectPayment("card")}
+                className={`h-11 rounded-lg text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
                   paymentMethod === "card"
-                    ? "bg-teal-500/20 border-teal-400/50 text-teal-100"
-                    : "bg-[#0d2238] border-white/10 text-slate-400 hover:text-slate-200"
+                    ? "bg-blue-500 text-white shadow-lg shadow-blue-500/30"
+                    : "bg-blue-500/15 text-blue-200 hover:bg-blue-500/30"
                 }`}
               >
+                <CreditCard className="h-4 w-4" />
                 Card
+              </button>
+              <button
+                onClick={() => selectPayment("split")}
+                className={`h-11 rounded-lg text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
+                  paymentMethod === "split"
+                    ? "bg-violet-500 text-white shadow-lg shadow-violet-500/30"
+                    : "bg-violet-500/15 text-violet-200 hover:bg-violet-500/30"
+                }`}
+              >
+                <SplitSquareHorizontal className="h-4 w-4" />
+                Split
               </button>
             </div>
             {paymentMethod === "cash" && (
@@ -1036,6 +1088,60 @@ export function PosHardware() {
                 onChange={(e) => setCashTenderedInput(e.target.value)}
                 className="h-9 mt-1 bg-[#0d2238] border-white/10 text-slate-100 placeholder:text-slate-500 text-xs"
               />
+            )}
+            {paymentMethod === "split" && (
+              <div className="mt-1 rounded-lg bg-[#0d2238] border border-white/10 p-2.5 space-y-2">
+                <div>
+                  <Label className="text-[10px] text-slate-400 mb-1 flex items-center gap-1.5">
+                    <Banknote className="h-3 w-3 text-emerald-400" /> Cash portion
+                  </Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={splitCashInput}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSplitCashInput(v);
+                      const cash = parseFloat(v) || 0;
+                      setSplitCardInput(total - cash > 0 ? String(Number((total - cash).toFixed(2))) : "0");
+                    }}
+                    className="h-9 bg-[#0a1a2a] border-white/10 text-slate-100 text-xs"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-slate-400 mb-1 flex items-center gap-1.5">
+                    <CreditCard className="h-3 w-3 text-blue-400" /> Card portion
+                  </Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={splitCardInput}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSplitCardInput(v);
+                      const card = parseFloat(v) || 0;
+                      setSplitCashInput(total - card > 0 ? String(Number((total - card).toFixed(2))) : "0");
+                    }}
+                    className="h-9 bg-[#0a1a2a] border-white/10 text-slate-100 text-xs"
+                  />
+                </div>
+                <div
+                  className={`flex items-center justify-between text-[11px] font-semibold rounded-md px-2 py-1.5 ${
+                    isSplitValid
+                      ? "bg-emerald-500/15 text-emerald-300"
+                      : "bg-amber-500/15 text-amber-300"
+                  }`}
+                >
+                  <span>{isSplitValid ? "Balanced" : "Remaining"}</span>
+                  <span className="font-mono">
+                    {isSplitValid
+                      ? formatCurrency(splitCash + splitCard, baseCurrency)
+                      : formatCurrency(splitRemaining, baseCurrency)}
+                  </span>
+                </div>
+              </div>
             )}
 
             <button
@@ -1056,18 +1162,21 @@ export function PosHardware() {
           Icon={ScanBarcode}
           label="Quick Add"
           sub="SKU / Barcode"
+          color="from-cyan-500 to-cyan-700"
           onClick={() => searchInputRef.current?.focus()}
         />
         <QuickAction
           Icon={ClipboardList}
           label="Recent Items"
           sub={`${cart.length} in cart`}
+          color="from-indigo-500 to-indigo-700"
           onClick={() => cartBottomRef.current?.scrollIntoView({ behavior: "smooth" })}
         />
         <QuickAction
           Icon={Tag}
           label="Discount"
           sub={discount > 0 ? `-${fmtNum(discount)}` : "Apply"}
+          color="from-rose-500 to-rose-700"
           onClick={() => {
             setDiscountInput(discount > 0 ? String(discount) : "");
             setDiscountOpen(true);
@@ -1077,12 +1186,14 @@ export function PosHardware() {
           Icon={Calculator}
           label="Price Check"
           sub="Scan to view"
+          color="from-emerald-500 to-emerald-700"
           onClick={() => searchInputRef.current?.focus()}
         />
         <QuickAction
           Icon={PenLine}
           label="Notes"
           sub={notes ? "Has note" : "Add note"}
+          color="from-amber-500 to-amber-600"
           onClick={() => {
             const n = prompt("Order note:", notes);
             if (n !== null) setNotes(n);
@@ -1445,8 +1556,8 @@ function CategoryCard({
       onClick={onClick}
       className={`shrink-0 relative w-[120px] h-[88px] rounded-2xl border transition overflow-hidden flex flex-col items-center justify-center gap-1 active:scale-95 ${
         active
-          ? "border-teal-400 shadow-[0_0_24px_-4px_rgba(45,212,191,0.55)]"
-          : "border-white/10 hover:border-teal-400/40"
+          ? "border-white ring-2 ring-white/80 shadow-[0_0_24px_-4px_rgba(255,255,255,0.55)] scale-[1.03]"
+          : "border-white/10 brightness-90 hover:brightness-110"
       }`}
     >
       <div className={`absolute inset-0 bg-gradient-to-br ${tint}`} />
@@ -1466,21 +1577,23 @@ function QuickAction({
   label,
   sub,
   onClick,
+  color,
 }: {
   Icon: React.ComponentType<{ className?: string }>;
   label: string;
   sub: string;
   onClick: () => void;
+  color: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-[#0a1a2a] border border-white/10 px-3 h-10 text-xs text-slate-300 hover:bg-teal-500/10 hover:border-teal-400/30 transition"
+      className={`shrink-0 inline-flex items-center gap-2 rounded-xl px-3 h-10 text-xs text-white shadow-md hover:brightness-110 active:scale-[0.98] transition bg-gradient-to-br ${color}`}
     >
-      <Icon className="h-3.5 w-3.5 text-teal-300" />
+      <Icon className="h-3.5 w-3.5 text-white" />
       <div className="flex flex-col items-start leading-tight">
-        <span className="font-semibold text-slate-100">{label}</span>
-        <span className="text-[10px] text-slate-500">{sub}</span>
+        <span className="font-bold text-white">{label}</span>
+        <span className="text-[10px] text-white/70">{sub}</span>
       </div>
     </button>
   );
