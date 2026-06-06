@@ -490,11 +490,20 @@ export function PosSupermarket() {
           const payload = (apiErr?.body ?? apiErr?.data) as
             | { error?: string; message?: string; productName?: string; available?: number; requested?: number }
             | undefined;
-          toast({
-            title: "Payment failed",
-            description: payload?.message ?? apiErr?.message ?? "Could not complete the sale.",
-            variant: "destructive",
-          });
+          const name = payload?.productName;
+          const avail = payload?.available;
+          let title = "Payment failed";
+          let description = "The payment couldn't be completed. Please check the cart and try again.";
+          if (name !== undefined && avail !== undefined) {
+            if (avail === 0) {
+              title = "Out of stock";
+              description = `"${name}" is out of stock and can't be sold.`;
+            } else {
+              title = "Not enough stock";
+              description = `Only ${avail} of "${name}" left in stock. Reduce the quantity and try again.`;
+            }
+          }
+          toast({ title, description, variant: "destructive" });
         },
       },
     );
