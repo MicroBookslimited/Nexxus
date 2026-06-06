@@ -276,6 +276,21 @@ export function PosSupermarket() {
 
   /* ── Numeric keypad ───────────────────────────────────────────────────── */
   const keypadPress = (k: string) => {
+    // When cash is selected, route digits to the cash tendered field.
+    if (paymentMethod === "cash") {
+      if (k === "clear") {
+        setCashTenderedInput("");
+      } else if (k === "back") {
+        setCashTenderedInput((prev) => prev.slice(0, -1));
+      } else {
+        setCashTenderedInput((prev) => {
+          const next = (prev + k).replace(/^0+(?=\d)/, "");
+          return next.slice(0, 10);
+        });
+      }
+      return;
+    }
+    // Otherwise route to qty input (for scanning / set-qty).
     focusScanInput();
     if (k === "clear") {
       setQtyInput("");
@@ -780,13 +795,19 @@ export function PosSupermarket() {
               </div>
             </div>
 
-            {/* Quantity keypad */}
+            {/* Quantity / cash keypad */}
             <div className="rounded-2xl bg-muted/50 border border-border p-3">
               <div className="flex items-center justify-between mb-2 px-1">
                 <span className="text-xs font-semibold text-muted-foreground">
-                  {selectedKey ? "Set qty for selected" : "Qty for next scan"}
+                  {paymentMethod === "cash"
+                    ? "Cash tendered"
+                    : selectedKey ? "Set qty for selected" : "Qty for next scan"}
                 </span>
-                <span className="font-mono text-2xl font-extrabold text-cyan-600 dark:text-cyan-300">× {qtyInput || "1"}</span>
+                <span className="font-mono text-2xl font-extrabold text-cyan-600 dark:text-cyan-300">
+                  {paymentMethod === "cash"
+                    ? (cashTenderedInput || "0")
+                    : `× ${qtyInput || "1"}`}
+                </span>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"].map((k) => {
@@ -808,7 +829,7 @@ export function PosSupermarket() {
                   );
                 })}
               </div>
-              {selectedKey && (
+              {paymentMethod !== "cash" && selectedKey && (
                 <Button
                   onClick={applyQtyToSelected}
                   disabled={qtyInput === ""}
