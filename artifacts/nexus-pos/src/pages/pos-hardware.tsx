@@ -238,6 +238,7 @@ export function PosHardware() {
   const [splitCashInput, setSplitCashInput] = useState("");
   const [splitCardInput, setSplitCardInput] = useState("");
   const [cashTenderedInput, setCashTenderedInput] = useState("");
+  const [cashDialogOpen, setCashDialogOpen] = useState(false);
   // Misc/custom-item calculator: sell something not in the catalog.
   const [miscOpen, setMiscOpen] = useState(false);
   const [miscPrice, setMiscPrice] = useState("");
@@ -663,7 +664,22 @@ export function PosHardware() {
       setSplitCashInput(half > 0 ? String(half) : "");
       setSplitCardInput(total - half > 0 ? String(Number((total - half).toFixed(2))) : "");
     }
+    if (m === "cash") {
+      setCashDialogOpen(true);
+    }
   };
+
+  // Cash-tendered popup keypad.
+  const cashKeyPress = (k: string) => {
+    setCashTenderedInput((prev) => {
+      if (k === "back") return prev.slice(0, -1);
+      if (k === "clear") return "";
+      if (k === ".") return prev.includes(".") ? prev : prev === "" ? "0." : prev + ".";
+      return prev + k;
+    });
+  };
+  const cashTenderedValue = parseFloat(cashTenderedInput) || 0;
+  const cashChangeDue = Math.max(0, cashTenderedValue - total);
 
   const handleCheckout = () => {
     if (cart.length === 0) {
@@ -1232,14 +1248,37 @@ export function PosHardware() {
               </button>
             </div>
             {paymentMethod === "cash" && (
-              <Input
-                type="number"
-                inputMode="decimal"
-                placeholder="Cash tendered"
-                value={cashTenderedInput}
-                onChange={(e) => setCashTenderedInput(e.target.value)}
-                className="h-9 mt-1 bg-[#0d2238] border-white/10 text-slate-100 placeholder:text-slate-500 text-xs"
-              />
+              <button
+                onClick={() => setCashDialogOpen(true)}
+                className="mt-1 w-full rounded-lg bg-[#0d2238] border border-white/10 px-3 py-2 text-left hover:border-emerald-400/50 transition"
+              >
+                {cashTenderedValue > 0 ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-[10px] text-slate-400">Cash tendered</span>
+                      <span className="text-sm font-mono font-bold text-slate-100">
+                        {formatCurrency(cashTenderedValue, baseCurrency)}
+                      </span>
+                    </div>
+                    <div className="flex flex-col leading-tight text-right">
+                      <span className={`text-[10px] ${cashTenderedValue >= total ? "text-emerald-400" : "text-amber-400"}`}>
+                        {cashTenderedValue >= total ? "Change due" : "Still owed"}
+                      </span>
+                      <span className={`text-sm font-mono font-bold ${cashTenderedValue >= total ? "text-emerald-300" : "text-amber-300"}`}>
+                        {formatCurrency(
+                          cashTenderedValue >= total ? cashChangeDue : total - cashTenderedValue,
+                          baseCurrency,
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-300">
+                    <Banknote className="h-4 w-4" />
+                    Enter cash tendered
+                  </div>
+                )}
+              </button>
             )}
             {paymentMethod === "split" && (
               <div className="mt-1 rounded-lg bg-[#0d2238] border border-white/10 p-2.5 space-y-2">
@@ -1498,6 +1537,66 @@ export function PosHardware() {
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setMiscOpen(false); setMiscPrice(""); setMiscName(""); setMiscQty(1); }}>Cancel</Button>
             <Button onClick={confirmMiscItem} disabled={!(parseFloat(miscPrice) > 0)} className="bg-indigo-600 hover:bg-indigo-700">Add to Cart</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Cash tendered popup ─────────────────────────────────────── */}
+      <Dialog open={cashDialogOpen} onOpenChange={setCashDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Banknote className="h-5 w-5 text-emerald-500" />
+              Cash Payment
+            </DialogTitle>
+            <DialogDescription>Enter the cash received from the customer.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-lg bg-muted/40 px-4 py-2.5">
+              <span className="text-sm text-muted-foreground">Total due</span>
+              <span className="text-xl font-mono font-bold tabular-nums">
+                {formatCurrency(total, baseCurrency)}
+              </span>
+            </div>
+            <div className="rounded-lg border-2 border-emerald-500/40 bg-muted/40 px-4 py-3 text-right">
+              <div className="text-xs text-muted-foreground">Cash tendered</div>
+              <div className="text-3xl font-mono font-bold tabular-nums">
+                {formatCurrency(cashTenderedValue, baseCurrency)}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "back"].map((k) => (
+                <Button
+                  key={k}
+                  variant="outline"
+                  className="h-14 text-xl font-semibold"
+                  onClick={() => cashKeyPress(k)}
+                >
+                  {k === "back" ? <Delete className="h-5 w-5" /> : k}
+                </Button>
+              ))}
+            </div>
+            <div
+              className={`flex items-center justify-between rounded-lg px-4 py-2.5 ${
+                cashTenderedValue >= total && total > 0
+                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+                  : "bg-amber-500/15 text-amber-600 dark:text-amber-300"
+              }`}
+            >
+              <span className="text-sm font-semibold">
+                {cashTenderedValue >= total ? "Change due" : "Still owed"}
+              </span>
+              <span className="text-lg font-mono font-bold tabular-nums">
+                {formatCurrency(
+                  cashTenderedValue >= total ? cashChangeDue : total - cashTenderedValue,
+                  baseCurrency,
+                )}
+              </span>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setCashTenderedInput(""); setCashDialogOpen(false); }}>Clear</Button>
+            <Button onClick={() => setCashDialogOpen(false)} className="bg-emerald-600 hover:bg-emerald-700">Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
