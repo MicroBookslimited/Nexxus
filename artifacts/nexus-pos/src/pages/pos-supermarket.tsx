@@ -39,6 +39,7 @@ import {
   Delete,
   Store,
   ArrowLeftRight,
+  UserRound,
   ChevronRight,
   RefreshCw,
   Banknote,
@@ -604,6 +605,14 @@ export function PosSupermarket() {
             title="Reload screen"
           >
             <RefreshCw className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => { setLocked(true); clearStaff(); }}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-violet-500 hover:bg-violet-600 px-3 h-11 text-xs font-semibold text-white shadow transition"
+            title="Switch user"
+          >
+            <UserRound className="h-4 w-4" />
+            <span className="hidden sm:inline">Switch User</span>
           </button>
           <button
             onClick={() => { setLocked(true); clearStaff(); }}
