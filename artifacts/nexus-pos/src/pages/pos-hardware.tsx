@@ -78,7 +78,7 @@ import {
 } from "@/components/ui/sheet";
 import { buildReceiptHtml, openReceiptWindow, receiptOrderFrom } from "@/lib/receipt";
 import { printOrderReceipt } from "@/lib/print-receipt";
-import { fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
+import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, getPurchaseUnits, type PurchaseUnit } from "@/lib/saas-api";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Helpers                                                                    */
@@ -108,10 +108,18 @@ type CartLine = {
   productId: number;
   productName: string;
   barcode: string | null;
+  /** Price per BASE unit. Line total is always `price * quantity`. */
   price: number;
+  /** Quantity in BASE units (e.g. 1 Dozen of 12 is stored as quantity 12). */
   quantity: number;
   isTaxable: boolean;
   imageUrl: string | null;
+  /** Cashier-selected sale unit (Dozen, Case, etc.). When set, the row shows a
+   * badge, displays the count in whole units (`quantity / unitFactor`), and the
+   * +/- buttons step by `unitFactor`. Absent = sold as single base units. */
+  unitLabel?: string;
+  unitFactor?: number;
+  unitId?: number;
   /** A custom / miscellaneous item entered via the calculator (not in the catalog).
    * Sent to the server with no productId; productId is the sentinel 0 locally. */
   isCustom?: boolean;
@@ -258,7 +266,83 @@ export function PosHardware() {
     if (cart.length > 0) cartBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [cart.length]);
 
-  const addToCart = (productId: number) => {
+  /** Minimal product shape carried into the unit picker. */
+  type PickerProduct = {
+    id: number;
+    name: string;
+    price: number;
+    barcode: string | null;
+    isTaxable: boolean;
+    imageUrl: string | null;
+  };
+  const [unitPickerState, setUnitPickerState] = useState<{
+    product: PickerProduct;
+    units: PurchaseUnit[];
+  } | null>(null);
+
+  /**
+   * Insert (or stack onto) a cart line for a product, optionally as a chosen
+   * sale unit. Quantity is stored in BASE units; a unit line stacks only with
+   * another line of the SAME product AND unit. Stepping adds one whole unit.
+   */
+  const addLineWithUnit = (
+    p: PickerProduct,
+    unit: { unitId?: number; unitLabel: string; unitFactor: number } | null,
+  ) => {
+    const unitFactor = unit && unit.unitFactor !== 1 ? unit.unitFactor : undefined;
+    const unitLabel = unitFactor ? unit!.unitLabel : undefined;
+    const unitId = unitFactor ? unit!.unitId : undefined;
+    const stepQty = unitFactor ?? 1;
+    const unitSuffix = unitFactor ? `:u${unitId ?? `f${unitFactor}`}` : "";
+    setCart((prev) => {
+      const idx = prev.findIndex(
+        (c) =>
+          c.productId === p.id &&
+          (c.unitFactor ?? 0) === (unitFactor ?? 0) &&
+          (c.unitId ?? 0) === (unitId ?? 0),
+      );
+      if (idx >= 0) {
+        return prev.map((c, i) => (i === idx ? { ...c, quantity: c.quantity + stepQty } : c));
+      }
+      return [
+        ...prev,
+        {
+          cartKey: `${p.id}${unitSuffix}:${Date.now()}`,
+          productId: p.id,
+          productName: p.name,
+          barcode: p.barcode,
+          price: p.price,
+          quantity: stepQty,
+          isTaxable: p.isTaxable,
+          imageUrl: p.imageUrl,
+          unitLabel,
+          unitFactor,
+          unitId,
+        },
+      ];
+    });
+  };
+
+  const toPicker = (productId: number): PickerProduct | null => {
+    const p = products?.find((x) => x.id === productId);
+    if (!p) return null;
+    return {
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      barcode: p.barcode ?? null,
+      isTaxable: p.isTaxable,
+      imageUrl: p.imageUrl ?? null,
+    };
+  };
+
+  /**
+   * Click path: if the product has sale-eligible units (Dozen, Case, …) open a
+   * picker so the cashier chooses the unit; otherwise add a single base unit.
+   * A failed unit lookup falls back to a single-unit add so a flaky network
+   * can't block checkout.
+   */
+  const addToCart = async (productId: number) => {
     const p = products?.find((x) => x.id === productId);
     if (!p) return;
     if (p.hasVariants || p.hasModifiers) {
@@ -269,31 +353,49 @@ export function PosHardware() {
       });
       return;
     }
-    setCart((prev) => {
-      const idx = prev.findIndex((c) => c.productId === productId);
-      if (idx >= 0) {
-        return prev.map((c, i) => (i === idx ? { ...c, quantity: c.quantity + 1 } : c));
+    const picker = toPicker(productId);
+    if (!picker) return;
+    try {
+      const allUnits = await getPurchaseUnits(p.id);
+      const saleUnits = allUnits.filter((u) => u.isSale && u.conversionFactor && u.conversionFactor !== 1);
+      if (saleUnits.length > 0) {
+        setUnitPickerState({ product: picker, units: saleUnits });
+        return;
       }
-      return [
-        ...prev,
-        {
-          cartKey: `${productId}:${Date.now()}`,
-          productId: p.id,
-          productName: p.name,
-          barcode: p.barcode ?? null,
-          price: p.price,
-          quantity: 1,
-          isTaxable: p.isTaxable,
-          imageUrl: p.imageUrl ?? null,
-        },
-      ];
-    });
+    } catch {
+      toast({
+        title: "Unit options unavailable",
+        description: `Adding ${p.name} as a single unit. Check connection if it has Dozen/Case pricing.`,
+      });
+    }
+    addLineWithUnit(picker, null);
   };
 
+  /** Confirm the picker selection (a sale unit, or "each" for the base unit). */
+  const continueAddWithUnit = (
+    unit: { unitId?: number; unitName: string; conversionFactor: number } | null,
+  ) => {
+    if (!unitPickerState) return;
+    const prod = unitPickerState.product;
+    setUnitPickerState(null);
+    addLineWithUnit(
+      prod,
+      unit && unit.conversionFactor !== 1
+        ? { unitId: unit.unitId, unitLabel: unit.unitName, unitFactor: unit.conversionFactor }
+        : null,
+    );
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  };
+
+  /** +/- steps by one whole sale unit (or one base unit when no unit is set). */
   const changeQty = (cartKey: string, delta: number) => {
     setCart((prev) =>
       prev
-        .map((c) => (c.cartKey === cartKey ? { ...c, quantity: Math.max(0, c.quantity + delta) } : c))
+        .map((c) =>
+          c.cartKey === cartKey
+            ? { ...c, quantity: Math.max(0, c.quantity + delta * (c.unitFactor ?? 1)) }
+            : c,
+        )
         .filter((c) => c.quantity > 0),
     );
   };
@@ -480,7 +582,14 @@ export function PosHardware() {
       (p) => (p.barcode ?? "").toLowerCase() === lc || (p.sku ?? "").toLowerCase() === lc,
     );
     if (match) {
-      addToCart(match.id);
+      // Scans are fast-path: add a single base unit. Multi-unit selling is via
+      // tapping the product (which opens the unit picker).
+      const picker = toPicker(match.id);
+      if (picker && !match.hasVariants && !match.hasModifiers) {
+        addLineWithUnit(picker, null);
+      } else {
+        addToCart(match.id);
+      }
       setSearchTerm("");
     }
   };
@@ -943,9 +1052,18 @@ export function PosHardware() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-slate-100 truncate">{c.productName}</div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs font-semibold text-slate-100 truncate">{c.productName}</span>
+                      {c.unitLabel && c.unitFactor && (
+                        <span className="shrink-0 rounded-md bg-amber-500/20 border border-amber-400/40 px-1.5 py-0.5 text-[9px] font-bold text-amber-200 uppercase tracking-wide">
+                          {c.unitLabel}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-[10px] font-mono text-teal-300 truncate">
-                      {c.barcode ?? `#${c.productId}`}
+                      {c.unitLabel && c.unitFactor
+                        ? `1 ${c.unitLabel} = ${c.unitFactor} × ${c.barcode ?? `#${c.productId}`}`
+                        : c.barcode ?? `#${c.productId}`}
                     </div>
                     <div className="mt-1 flex items-center gap-1">
                       <button
@@ -955,7 +1073,7 @@ export function PosHardware() {
                         <Minus className="h-3 w-3" />
                       </button>
                       <span className="font-mono text-xs font-semibold w-7 text-center text-slate-100">
-                        {c.quantity}
+                        {c.unitFactor ? c.quantity / c.unitFactor : c.quantity}
                       </span>
                       <button
                         onClick={() => changeQty(c.cartKey, +1)}
@@ -977,7 +1095,8 @@ export function PosHardware() {
                       {formatCurrency(c.price * c.quantity, baseCurrency)}
                     </div>
                     <div className="text-[10px] text-slate-500">
-                      @ {formatCurrency(c.price, baseCurrency)}
+                      @ {formatCurrency(c.unitFactor ? c.price * c.unitFactor : c.price, baseCurrency)}
+                      {c.unitLabel ? ` / ${c.unitLabel}` : ""}
                     </div>
                   </div>
                 </div>
@@ -1347,6 +1466,76 @@ export function PosHardware() {
             <Button variant="outline" onClick={() => { setMiscOpen(false); setMiscPrice(""); setMiscName(""); setMiscQty(1); }}>Cancel</Button>
             <Button onClick={confirmMiscItem} disabled={!(parseFloat(miscPrice) > 0)} className="bg-indigo-600 hover:bg-indigo-700">Add to Cart</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Unit-of-measure picker — multi-unit sales (Each / Dozen / Case …) ── */}
+      <Dialog
+        open={unitPickerState !== null}
+        onOpenChange={(o) => { if (!o) { setUnitPickerState(null); requestAnimationFrame(() => searchInputRef.current?.focus()); } }}
+      >
+        <DialogContent className="sm:max-w-sm bg-[#0d2238] border-white/10 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="text-slate-100">Choose unit — {unitPickerState?.product.name}</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              How is this being sold for this sale?
+            </DialogDescription>
+          </DialogHeader>
+          {unitPickerState && (() => {
+            const UNIT_COLORS = [
+              "bg-blue-600 hover:bg-blue-700",
+              "bg-emerald-600 hover:bg-emerald-700",
+              "bg-amber-500 hover:bg-amber-600",
+              "bg-rose-600 hover:bg-rose-700",
+              "bg-violet-600 hover:bg-violet-700",
+              "bg-cyan-600 hover:bg-cyan-700",
+              "bg-orange-600 hover:bg-orange-700",
+              "bg-pink-600 hover:bg-pink-700",
+              "bg-teal-600 hover:bg-teal-700",
+              "bg-indigo-600 hover:bg-indigo-700",
+              "bg-lime-600 hover:bg-lime-700",
+              "bg-fuchsia-600 hover:bg-fuchsia-700",
+            ];
+            const baseColor = UNIT_COLORS[0]!;
+            return (
+              <div className="space-y-2">
+                <button
+                  onClick={() => continueAddWithUnit(null)}
+                  className={`w-full rounded-lg ${baseColor} text-white transition-colors p-3 text-left flex items-center justify-between gap-3 shadow-sm`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">Each (single unit)</p>
+                    <p className="text-[11px] text-white/80">Base price per item</p>
+                  </div>
+                  <span className="font-mono text-sm text-white shrink-0">
+                    {formatCurrency(unitPickerState.product.price, baseCurrency)}
+                  </span>
+                </button>
+                {unitPickerState.units.map((u, idx) => {
+                  const factor = u.conversionFactor || 1;
+                  const unitPrice = unitPickerState.product.price * factor;
+                  const color = UNIT_COLORS[(idx + 1) % UNIT_COLORS.length]!;
+                  return (
+                    <button
+                      key={u.id ?? idx}
+                      onClick={() => continueAddWithUnit({ unitId: u.id, unitName: u.unitName, conversionFactor: factor })}
+                      className={`w-full rounded-lg ${color} text-white transition-colors p-3 text-left flex items-center justify-between gap-3 shadow-sm`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate">{u.unitName}</p>
+                        <p className="text-[11px] text-white/80">
+                          1 {u.unitName} = {factor} {factor === 1 ? "unit" : "units"}
+                        </p>
+                      </div>
+                      <span className="font-mono text-sm text-white shrink-0">
+                        {formatCurrency(unitPrice, baseCurrency)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
