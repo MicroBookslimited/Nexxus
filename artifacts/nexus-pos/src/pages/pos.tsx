@@ -37,6 +37,7 @@ import {
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote, Layers,
   Tag, PenLine, PackagePlus, Calculator, Delete, RefreshCw,
+  ChevronDown, ChevronUp,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -605,6 +606,7 @@ export function POS() {
   };
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [showTopMenu, setShowTopMenu] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const cartBottomRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -2057,6 +2059,7 @@ export function POS() {
               </div>
             )}
           </div>
+          {showTopMenu && (
           <div className="shrink-0 flex items-center gap-1.5">
             <button
               title="Reload screen"
@@ -2091,6 +2094,7 @@ export function POS() {
               </button>
             )}
           </div>
+          )}
         </div>
       )}
       <div className="flex flex-1 min-h-0">
@@ -2130,6 +2134,15 @@ export function POS() {
               >
                 <Calculator className="h-4 w-4" />
                 <span className="hidden sm:inline text-sm font-medium">Misc</span>
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowTopMenu((v) => !v)}
+                className="h-11 px-3 shrink-0 gap-1.5"
+                title={showTopMenu ? "Hide menu" : "Show menu"}
+              >
+                {showTopMenu ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                <span className="hidden sm:inline text-sm font-medium">{showTopMenu ? "Hide" : "Menu"}</span>
               </Button>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
