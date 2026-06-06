@@ -196,15 +196,15 @@ export function Ingredients() {
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">{formatCost(ing.costPerUnit)}</TableCell>
                         <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button size="sm" variant="ghost" className="h-7 px-2" title="Adjust stock" onClick={() => openAdjust(ing)}>
-                              <PackagePlus className="h-3.5 w-3.5" />
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="ghost" className="h-9 px-3" title="Adjust stock" onClick={() => openAdjust(ing)}>
+                              <PackagePlus className="h-4 w-4" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => openEdit(ing)}>
-                              <Pencil className="h-3.5 w-3.5" />
+                            <Button size="sm" variant="ghost" className="h-9 px-3" onClick={() => openEdit(ing)}>
+                              <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive hover:text-destructive" onClick={() => setDeleteId(ing.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
+                            <Button size="sm" variant="ghost" className="h-9 px-3 text-destructive hover:text-destructive" onClick={() => setDeleteId(ing.id)}>
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
                         </TableCell>

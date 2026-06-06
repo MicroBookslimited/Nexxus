@@ -551,14 +551,14 @@ function BatchesTab() {
                           {batch.totalCost != null && (
                             <span className="text-sm font-semibold text-primary">{formatCost(batch.totalCost)}</span>
                           )}
-                          <div className="flex gap-1">
+                          <div className="flex gap-2">
                             {batch.status === "draft" && (
                               <>
-                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={e => { e.stopPropagation(); setCompleteId(batch.id); }}>
-                                  <CheckCircle2 className="h-3 w-3 mr-1" /> Complete
+                                <Button size="sm" variant="outline" className="h-9 text-sm px-3" onClick={e => { e.stopPropagation(); setCompleteId(batch.id); }}>
+                                  <CheckCircle2 className="h-4 w-4 mr-1.5" /> Complete
                                 </Button>
-                                <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive hover:text-destructive" onClick={e => { e.stopPropagation(); setDeleteId(batch.id); }}>
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                <Button size="sm" variant="ghost" className="h-9 px-3 text-destructive hover:text-destructive" onClick={e => { e.stopPropagation(); setDeleteId(batch.id); }}>
+                                  <Trash2 className="h-4 w-4" />
                                 </Button>
                               </>
                             )}
