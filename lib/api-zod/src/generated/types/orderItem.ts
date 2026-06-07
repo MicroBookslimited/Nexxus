@@ -23,4 +23,6 @@ export interface OrderItem {
   variantChoices?: ChoiceItem[] | null;
   modifierChoices?: ChoiceItem[] | null;
   lineTotal: number;
+  /** Optional free-text selling unit / UOM label of the product (e.g. "each", "case"). Surfaced on the POS and receipts. NULL = not set. */
+  sellingUnit?: string | null;
 }

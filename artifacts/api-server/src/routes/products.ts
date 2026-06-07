@@ -313,6 +313,9 @@ router.post("/products", async (req, res): Promise<void> => {
       unitOfMeasure: parsed.data.soldByWeight
         ? (parsed.data.unitOfMeasure ?? "kg")
         : null,
+      // Optional free-text selling unit / UOM label. Store trimmed non-empty
+      // value or NULL so blank submissions stay "not set".
+      sellingUnit: parsed.data.sellingUnit?.trim() ? parsed.data.sellingUnit.trim() : null,
       costPrice: parsed.data.costPrice ?? null,
       structureType: parsed.data.structureType ?? "simple",
       isTaxable: parsed.data.isTaxable ?? true,
@@ -734,6 +737,12 @@ router.put("/products/:id", async (req, res): Promise<void> => {
     }
   } else if (parsed.data.unitOfMeasure !== undefined) {
     updates["unitOfMeasure"] = parsed.data.unitOfMeasure;
+  }
+  // Optional selling unit / UOM label. Only write when present in the body;
+  // a trimmed empty string (or explicit null) clears it back to NULL.
+  if (parsed.data.sellingUnit !== undefined) {
+    const su = parsed.data.sellingUnit?.trim();
+    updates["sellingUnit"] = su ? su : null;
   }
 
   // Cost basis & structure type. costPrice null is meaningful ("not yet

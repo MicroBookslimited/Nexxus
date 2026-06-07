@@ -103,6 +103,21 @@ function normalizeOrder(order: typeof ordersTable.$inferSelect) {
   };
 }
 
+/**
+ * Look up the current free-text selling unit / UOM label for a set of product
+ * ids. Returned so order-item responses can surface it on the POS + receipts.
+ * Empty productIds → empty map (no query).
+ */
+async function sellingUnitMap(tenantId: number, productIds: number[]): Promise<Map<number, string | null>> {
+  const ids = [...new Set(productIds)].filter((n): n is number => typeof n === "number");
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ id: productsTable.id, sellingUnit: productsTable.sellingUnit })
+    .from(productsTable)
+    .where(and(eq(productsTable.tenantId, tenantId), inArray(productsTable.id, ids)));
+  return new Map(rows.map((r) => [r.id, r.sellingUnit ?? null]));
+}
+
 async function getOrderWithItems(orderId: number) {
   const [order] = await db
     .select()
@@ -115,6 +130,8 @@ async function getOrderWithItems(orderId: number) {
     .select()
     .from(orderItemsTable)
     .where(eq(orderItemsTable.orderId, orderId));
+
+  const suMap = await sellingUnitMap(order.tenantId, items.map((i) => i.productId));
 
   return {
     ...normalizeOrder(order),
@@ -133,6 +150,7 @@ async function getOrderWithItems(orderId: number) {
       modifierChoices: (item.modifierChoices as any[] | null) ?? undefined,
       lineTotal: item.lineTotal,
       notes: item.notes ?? undefined,
+      sellingUnit: suMap.get(item.productId) ?? undefined,
     })),
   };
 }
@@ -173,33 +191,43 @@ router.get("/orders", async (req, res): Promise<void> => {
     .where(and(...conditions))
     .orderBy(desc(ordersTable.createdAt));
 
-  const ordersWithItems = await Promise.all(
+  const ordersWithItemsRaw = await Promise.all(
     orders.map(async (order) => {
       const items = await db
         .select()
         .from(orderItemsTable)
         .where(eq(orderItemsTable.orderId, order.id));
-      return {
-        ...normalizeOrder(order),
-        items: items.map((item) => ({
-          id: item.id,
-          productId: item.productId,
-          productName: item.productName,
-          quantity: item.quantity,
-          refundedQuantity: item.refundedQuantity ?? undefined,
-          unitPrice: item.unitPrice,
-          originalUnitPrice: item.originalUnitPrice ?? undefined,
-          discountAmount: item.discountAmount ?? undefined,
-          variantAdjustment: item.variantAdjustment ?? undefined,
-          modifierAdjustment: item.modifierAdjustment ?? undefined,
-          variantChoices: (item.variantChoices as any[] | null) ?? undefined,
-          modifierChoices: (item.modifierChoices as any[] | null) ?? undefined,
-          lineTotal: item.lineTotal,
-          notes: item.notes ?? undefined,
-        })),
-      };
+      return { order, items };
     }),
   );
+
+  // One tenant-scoped lookup for every product referenced across the page,
+  // instead of a per-order query, to avoid worsening the existing N+1.
+  const suMap = await sellingUnitMap(
+    tenantId,
+    ordersWithItemsRaw.flatMap((o) => o.items.map((i) => i.productId)),
+  );
+
+  const ordersWithItems = ordersWithItemsRaw.map(({ order, items }) => ({
+    ...normalizeOrder(order),
+    items: items.map((item) => ({
+      id: item.id,
+      productId: item.productId,
+      productName: item.productName,
+      quantity: item.quantity,
+      refundedQuantity: item.refundedQuantity ?? undefined,
+      unitPrice: item.unitPrice,
+      originalUnitPrice: item.originalUnitPrice ?? undefined,
+      discountAmount: item.discountAmount ?? undefined,
+      variantAdjustment: item.variantAdjustment ?? undefined,
+      modifierAdjustment: item.modifierAdjustment ?? undefined,
+      variantChoices: (item.variantChoices as any[] | null) ?? undefined,
+      modifierChoices: (item.modifierChoices as any[] | null) ?? undefined,
+      lineTotal: item.lineTotal,
+      notes: item.notes ?? undefined,
+      sellingUnit: suMap.get(item.productId) ?? undefined,
+    })),
+  }));
 
   res.json(ListOrdersResponse.parse(ordersWithItems));
 });

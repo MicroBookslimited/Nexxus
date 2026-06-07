@@ -1638,6 +1638,7 @@ export function POS() {
             orderId: -1,
             productId: item.productId,
             productName: item.productName,
+            sellingUnit: products?.find((p) => p.id === item.productId)?.sellingUnit ?? null,
             quantity: item.quantity,
             unitPrice: itemEffOffline,
             // Persist the original (untiered) base unit price so the receipt
@@ -2404,6 +2405,7 @@ export function POS() {
                     const itemEff = getItemEff(item);
                     const lineTotal = itemEff * item.quantity - item.itemDiscount;
                     const ci = compositeInfo(item.productId);
+                    const cartSellingUnit = products?.find((p) => p.id === item.productId)?.sellingUnit;
                     return (
                     <motion.div key={item.cartKey} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}>
                       <div className="rounded-lg bg-secondary/30 p-2">
@@ -2417,6 +2419,11 @@ export function POS() {
                               {item.unitLabel && item.unitFactor ? (
                                 <span className="ml-1 text-[10px] uppercase tracking-wider text-cyan-400/90">
                                   · {item.quantity / item.unitFactor} {item.unitLabel}
+                                </span>
+                              ) : null}
+                              {cartSellingUnit ? (
+                                <span className="ml-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                                  · {cartSellingUnit}
                                 </span>
                               ) : null}
                             </p>

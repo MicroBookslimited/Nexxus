@@ -41,6 +41,12 @@ export const ListProductsResponseItem = zod.object({
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
+  sellingUnit: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text selling unit \/ UOM label (e.g. \"each\", \"case\", \"pieces\"). Display-only; shown on the POS cart line and receipts. NULL = not set.',
+    ),
   costPrice: zod
     .number()
     .nullish()
@@ -99,6 +105,12 @@ export const CreateProductBody = zod.object({
   stockCount: zod.number().optional(),
   soldByWeight: zod.boolean().optional(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).optional(),
+  sellingUnit: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text selling unit \/ UOM label (e.g. \"each\", \"case\", \"pieces\"). Display-only; shown on the POS cart line and receipts.',
+    ),
   costPrice: zod.number().nullish(),
   structureType: zod.enum(["simple", "composite"]).optional(),
   isTaxable: zod
@@ -141,6 +153,12 @@ export const GetProductResponse = zod.object({
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
+  sellingUnit: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text selling unit \/ UOM label (e.g. \"each\", \"case\", \"pieces\"). Display-only; shown on the POS cart line and receipts. NULL = not set.',
+    ),
   costPrice: zod
     .number()
     .nullish()
@@ -202,6 +220,12 @@ export const UpdateProductBody = zod.object({
   stockCount: zod.number().optional(),
   soldByWeight: zod.boolean().optional(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).optional(),
+  sellingUnit: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text selling unit \/ UOM label (e.g. \"each\", \"case\", \"pieces\"). Display-only; shown on the POS cart line and receipts.',
+    ),
   costPrice: zod.number().nullish(),
   structureType: zod.enum(["simple", "composite"]).optional(),
   isTaxable: zod
@@ -237,6 +261,12 @@ export const UpdateProductResponse = zod.object({
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
+  sellingUnit: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text selling unit \/ UOM label (e.g. \"each\", \"case\", \"pieces\"). Display-only; shown on the POS cart line and receipts. NULL = not set.',
+    ),
   costPrice: zod
     .number()
     .nullish()
@@ -912,6 +942,12 @@ export const ListOrdersResponseItem = zod.object({
         )
         .nullish(),
       lineTotal: zod.number(),
+      sellingUnit: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
     }),
   ),
   createdAt: zod.coerce.date(),
@@ -1064,6 +1100,12 @@ export const GetOrderResponse = zod.object({
         )
         .nullish(),
       lineTotal: zod.number(),
+      sellingUnit: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
     }),
   ),
   createdAt: zod.coerce.date(),
@@ -1164,6 +1206,12 @@ export const UpdateOrderStatusResponse = zod.object({
         )
         .nullish(),
       lineTotal: zod.number(),
+      sellingUnit: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
     }),
   ),
   createdAt: zod.coerce.date(),
@@ -1266,6 +1314,12 @@ export const RefundOrderItemsResponse = zod.object({
         )
         .nullish(),
       lineTotal: zod.number(),
+      sellingUnit: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
     }),
   ),
   createdAt: zod.coerce.date(),
@@ -1360,6 +1414,12 @@ export const ChargeOrderResponse = zod.object({
         )
         .nullish(),
       lineTotal: zod.number(),
+      sellingUnit: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
     }),
   ),
   createdAt: zod.coerce.date(),
@@ -1688,6 +1748,12 @@ export const GetRecentOrdersResponseItem = zod.object({
         )
         .nullish(),
       lineTotal: zod.number(),
+      sellingUnit: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
     }),
   ),
   createdAt: zod.coerce.date(),
@@ -1937,6 +2003,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
         )
         .nullish(),
       lineTotal: zod.number(),
+      sellingUnit: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
     }),
   ),
   createdAt: zod.coerce.date(),
@@ -1966,6 +2038,12 @@ export const GetLowStockProductsResponseItem = zod.object({
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
   unitOfMeasure: zod.enum(["kg", "lb", "oz", "g"]).nullish(),
+  sellingUnit: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text selling unit \/ UOM label (e.g. \"each\", \"case\", \"pieces\"). Display-only; shown on the POS cart line and receipts. NULL = not set.',
+    ),
   costPrice: zod
     .number()
     .nullish()

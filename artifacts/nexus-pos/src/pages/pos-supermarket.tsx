@@ -712,7 +712,17 @@ export function PosSupermarket() {
                     }`}
                   >
                     <div className="min-w-0">
-                      <div className="text-xl font-bold text-foreground truncate">{c.productName}</div>
+                      <div className="text-xl font-bold text-foreground truncate flex items-center gap-2">
+                        <span className="truncate">{c.productName}</span>
+                        {(() => {
+                          const su = products?.find((p) => p.id === c.productId)?.sellingUnit;
+                          return su ? (
+                            <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                              {su}
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
                       <div className="text-sm font-mono text-cyan-600 dark:text-cyan-300/80 truncate">
                         {c.barcode ?? `#${c.productId}`} · @ {formatCurrency(c.price, baseCurrency)}
                       </div>

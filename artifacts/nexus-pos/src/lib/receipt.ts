@@ -30,6 +30,9 @@ export interface ReceiptOrderItem {
   // product name + line index so the receipt still looks supermarket-ish.
   productId?: number | null;
   barcode?: string | null;
+  // Optional free-text selling unit / UOM label (e.g. "each", "case",
+  // "pieces"). When present, surfaced next to the line item on the receipt.
+  sellingUnit?: string | null;
 }
 
 /**
@@ -157,6 +160,12 @@ export function receiptOrderFrom(
   };
 }
 
+/** HTML-escaped " (uom)" suffix for a line item, or "" when no selling unit. */
+function uomHtml(item: ReceiptOrderItem): string {
+  const u = item.sellingUnit?.trim();
+  return u ? ` (${escHtml(u)})` : "";
+}
+
 function escHtml(str: string): string {
   return String(str)
     .replace(/&/g, "&amp;")
@@ -273,7 +282,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
         : fmt(item.lineTotal / (item.quantity || 1));
       let html = `
         <div class="r-row">
-          <span class="r-name">${escHtml(item.productName)}</span>
+          <span class="r-name">${escHtml(item.productName)}${uomHtml(item)}</span>
           <span class="r-price">${fmt(item.lineTotal)}</span>
         </div>
         <div class="r-sub">${item.quantity} x ${unitPriceStr}</div>`;
@@ -433,7 +442,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     const unit = item.unitPrice;
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
-    let html = `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)}${unitStr}</span><span class="nowrap">${fmtNum(item.lineTotal)}</span></div>`;
+    let html = `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)}${uomHtml(item)}${unitStr}</span><span class="nowrap">${fmtNum(item.lineTotal)}</span></div>`;
     if (orig != null && unit != null && orig > unit) {
       const lineSaving = (orig - unit) * item.quantity;
       html += `<div class="row sub-row savings"><span>&nbsp;&#8627; You save (was ${fmtNum(orig)})</span><span class="nowrap">-${fmtNum(lineSaving)}</span></div>`;
@@ -822,7 +831,7 @@ function buildSupermarketReceiptHtml(
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     let html = `
       <div class="sm-item">
-        <span class="sm-item-name">${escHtml(qtyPrefix + item.productName.toUpperCase())}${unitStr}</span>
+        <span class="sm-item-name">${escHtml(qtyPrefix + item.productName.toUpperCase())}${uomHtml(item)}${unitStr}</span>
         <span class="sm-item-bc">${escHtml(bc)}</span>
         <span class="sm-item-price">${fmtNum(item.lineTotal)}${taxIndicator}</span>
       </div>`;
@@ -1188,7 +1197,7 @@ function buildConvenienceReceiptHtml(
     let html = `
       <div class="cv-item">
         <span class="cv-item-qty">${escHtml(qtyStr)}</span>
-        <span class="cv-item-name">${escHtml(item.productName)}${unitStr}</span>
+        <span class="cv-item-name">${escHtml(item.productName)}${uomHtml(item)}${unitStr}</span>
         <span class="cv-item-price">${fmtNum(item.lineTotal)}${taxInd}</span>
       </div>`;
     if (orig != null && unit != null && orig > unit) {
@@ -1508,7 +1517,7 @@ function buildStapleReceiptHtml(
       <div class="st-item-row">
         <span class="st-qty">${item.quantity}</span>
         <span class="st-name-sku">
-          <span class="st-name">${escHtml(item.productName)}</span>
+          <span class="st-name">${escHtml(item.productName)}${uomHtml(item)}</span>
           <span class="st-sku">${escHtml(sku)}</span>
           ${subLines.map((s, idx) => `<span class="st-mod"${idx === savingsIdx ? ' style="color:#0a7a0a;font-weight:700;"' : ""}>${escHtml(s)}</span>`).join("")}
           ${mods.map(m => `<span class="st-mod">${escHtml(m)}</span>`).join("")}
@@ -1791,7 +1800,7 @@ function buildHardwareReceiptHtml(
       : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     return `
       <tr>
-        <td class="hw-item">${escHtml(item.productName)}</td>
+        <td class="hw-item">${escHtml(item.productName)}${uomHtml(item)}</td>
         <td class="hw-num">${fmtNum(item.quantity)}</td>
         <td class="hw-attr">${escHtml(attribute || "—")}</td>
         <td class="hw-attr">${escHtml(size || "—")}</td>
@@ -2061,7 +2070,7 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
     const unit = item.unitPrice;
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
-    lines.push(`${item.quantity}× ${item.productName}${unitStr}  ${fmtNum(item.lineTotal)}`);
+    lines.push(`${item.quantity}× ${item.productName}${item.sellingUnit?.trim() ? ` (${item.sellingUnit.trim()})` : ""}${unitStr}  ${fmtNum(item.lineTotal)}`);
     if (orig != null && unit != null && orig > unit) {
       const lineSaving = (orig - unit) * item.quantity;
       lines.push(`   ↳ You save (was ${fmtNum(orig)}) -${fmtNum(lineSaving)}`);
@@ -2176,7 +2185,7 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
     const unit = item.unitPrice;
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
-    let html = row(`${item.quantity}&times; ${escHtml(item.productName)}${unitStr}`, fmtNum(item.lineTotal), "item");
+    let html = row(`${item.quantity}&times; ${escHtml(item.productName)}${uomHtml(item)}${unitStr}`, fmtNum(item.lineTotal), "item");
     if (orig != null && unit != null && orig > unit) {
       const lineSaving = (orig - unit) * item.quantity;
       html += row(`&nbsp;&#8627; You save (was ${fmtNum(orig)})`, `-${fmtNum(lineSaving)}`, "sub");

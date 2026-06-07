@@ -22,6 +22,8 @@ export interface Product {
   stockCount: number;
   soldByWeight: boolean;
   unitOfMeasure?: ProductUnitOfMeasure;
+  /** Optional free-text selling unit / UOM label (e.g. "each", "case", "pieces"). Display-only; shown on the POS cart line and receipts. NULL = not set. */
+  sellingUnit?: string | null;
   /** Per-unit acquisition cost. Used for COGS / margin reports. */
   costPrice?: number | null;
   /** Product structure. Composite parents derive cost from child components. */

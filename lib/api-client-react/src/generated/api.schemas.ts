@@ -75,6 +75,8 @@ export interface Product {
   stockCount: number;
   soldByWeight: boolean;
   unitOfMeasure?: ProductUnitOfMeasure;
+  /** Optional free-text selling unit / UOM label (e.g. "each", "case", "pieces"). Display-only; shown on the POS cart line and receipts. NULL = not set. */
+  sellingUnit?: string | null;
   /** Per-unit acquisition cost. Used for COGS / margin reports. */
   costPrice?: number | null;
   /** Product structure. Composite parents derive cost from child components. */
@@ -194,6 +196,8 @@ export interface CreateProductBody {
   stockCount?: number;
   soldByWeight?: boolean;
   unitOfMeasure?: CreateProductBodyUnitOfMeasure;
+  /** Optional free-text selling unit / UOM label (e.g. "each", "case", "pieces"). Display-only; shown on the POS cart line and receipts. */
+  sellingUnit?: string | null;
   costPrice?: number | null;
   structureType?: CreateProductBodyStructureType;
   /** When false, sales tax is not applied to this product at checkout. */
@@ -305,6 +309,8 @@ export interface OrderItem {
   variantChoices?: ChoiceItem[] | null;
   modifierChoices?: ChoiceItem[] | null;
   lineTotal: number;
+  /** Optional free-text selling unit / UOM label of the product (e.g. "each", "case"). Surfaced on the POS and receipts. NULL = not set. */
+  sellingUnit?: string | null;
 }
 
 export interface Order {

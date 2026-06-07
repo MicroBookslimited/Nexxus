@@ -21,6 +21,8 @@ export interface CreateProductBody {
   stockCount?: number;
   soldByWeight?: boolean;
   unitOfMeasure?: CreateProductBodyUnitOfMeasure;
+  /** Optional free-text selling unit / UOM label (e.g. "each", "case", "pieces"). Display-only; shown on the POS cart line and receipts. */
+  sellingUnit?: string | null;
   costPrice?: number | null;
   structureType?: CreateProductBodyStructureType;
   /** When false, sales tax is not applied to this product at checkout. */

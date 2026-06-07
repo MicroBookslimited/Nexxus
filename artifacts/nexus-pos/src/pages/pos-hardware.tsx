@@ -1280,6 +1280,7 @@ export function PosHardware() {
                 const linePrice = getLinePrice(c);
                 const tiers = pricingTiersByProduct.get(c.productId) ?? [];
                 const { tier } = previewTierPrice(c.price, c.quantity, tiers);
+                const cartSellingUnit = products?.find((p) => p.id === c.productId)?.sellingUnit;
                 return (
                 <div
                   key={c.cartKey}
@@ -1298,6 +1299,11 @@ export function PosHardware() {
                       {c.unitLabel && c.unitFactor && (
                         <span className="shrink-0 rounded-md bg-amber-500/20 border border-amber-400/40 px-1.5 py-0.5 text-[9px] font-bold text-amber-200 uppercase tracking-wide">
                           {c.unitLabel}
+                        </span>
+                      )}
+                      {cartSellingUnit && (
+                        <span className="shrink-0 rounded-md bg-white/5 border border-white/10 px-1.5 py-0.5 text-[9px] font-bold text-slate-300 uppercase tracking-wide">
+                          {cartSellingUnit}
                         </span>
                       )}
                     </div>

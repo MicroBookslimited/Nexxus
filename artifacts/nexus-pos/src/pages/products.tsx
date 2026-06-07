@@ -271,6 +271,9 @@ type ProductForm = {
   stockCount: string;
   soldByWeight: boolean;
   unitOfMeasure: WeightUnit;
+  // Optional free-text selling unit / UOM label (e.g. "each", "case",
+  // "pieces"). Empty string = "not set". Display-only on POS + receipts.
+  sellingUnit: string;
   // Cost basis for COGS / margin reports. Empty string = "not set" — we
   // send null to the API in that case so the column stays NULL.
   costPrice: string;
@@ -296,6 +299,7 @@ const emptyForm = (): ProductForm => ({
   stockCount: "0",
   soldByWeight: false,
   unitOfMeasure: "kg",
+  sellingUnit: "",
   costPrice: "",
   structureType: "simple",
   isTaxable: true,
@@ -1118,13 +1122,14 @@ const IMPORT_FIELDS = [
   { key: "sku",         label: "SKU",                   required: false },
   { key: "stockCount",  label: "Stock Quantity",        required: false },
   { key: "inStock",     label: "In Stock (yes/no/1/0)", required: false },
+  { key: "sellingUnit", label: "Unit of Measure (each/case/...)", required: false },
 ];
 
 const TEMPLATE_ROWS = [
-  ["Name", "Price", "Category", "Description", "Barcode", "SKU", "Stock Quantity", "In Stock"],
-  ["Jerk Chicken",  "850.00", "Food",       "Seasoned jerk chicken",   "1234567890123", "JC001", "50",  "yes"],
-  ["Ting Soda",     "120.00", "Beverages",  "Grapefruit flavour soda", "1234567890124", "TS001", "100", "yes"],
-  ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "1234567890125", "RC001", "30",  "yes"],
+  ["Name", "Price", "Category", "Description", "Barcode", "SKU", "Stock Quantity", "In Stock", "Unit of Measure"],
+  ["Jerk Chicken",  "850.00", "Food",       "Seasoned jerk chicken",   "1234567890123", "JC001", "50",  "yes", "each"],
+  ["Ting Soda",     "120.00", "Beverages",  "Grapefruit flavour soda", "1234567890124", "TS001", "100", "yes", "case"],
+  ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "1234567890125", "RC001", "30",  "yes", "each"],
 ];
 
 /**
@@ -1221,6 +1226,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         else if (l === "sku")                                           auto[h] = "sku";
         else if (l === "stock quantity" || l === "quantity" || l === "qty") auto[h] = "stockCount"; // numeric qty
         else if (l === "in stock" || l === "track stock" || l === "available for sale") auto[h] = "inStock"; // boolean Y/N
+        else if (l === "unit of measure" || l === "uom" || l === "selling unit" || l === "sold as" || l === "sell by" || l === "unit") auto[h] = "sellingUnit"; // free-text UOM
         // ── QuickBooks POS exact-header matches ──
         else if (l === "department")                                    auto[h] = "category";     // QBPOS category
         else if (l === "regular price" || l === "list price")           auto[h] = "price";        // QBPOS price
@@ -1240,6 +1246,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         else if (/code/i.test(l))                                       auto[h] = "barcode";
         else if (/stock.*qty|qty.*stock|quantity|stock.count/i.test(l)) auto[h] = "stockCount";
         else if (/in.?stock|available/i.test(l))                        auto[h] = "inStock";
+        else if (/unit.*measure|^uom$|selling.*unit|sold.*as|sell.*by/i.test(l)) auto[h] = "sellingUnit";
       });
       setMapping(auto);
       setStep("map");
@@ -1278,7 +1285,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       const category   = d.category?.trim() || "General";
       try {
         await new Promise<void>((resolve, reject) => {
-          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, sku: d.sku?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false } },
+          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, sku: d.sku?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false, sellingUnit: d.sellingUnit?.trim() || undefined } },
             { onSuccess: () => resolve(), onError: (e) => reject(e) });
         });
         out.push({ row: i + 2, name: d.name, status: "ok" });
@@ -3348,6 +3355,7 @@ export function Products() {
     const pp = p as GetProductResponse & {
       soldByWeight?: boolean;
       unitOfMeasure?: WeightUnit | string | null;
+      sellingUnit?: string | null;
       costPrice?: number | null;
       structureType?: StructureType | string;
       isTaxable?: boolean;
@@ -3370,6 +3378,7 @@ export function Products() {
       stockCount: p.stockCount.toString(),
       soldByWeight: !!pp.soldByWeight,
       unitOfMeasure: unit,
+      sellingUnit: pp.sellingUnit ?? "",
       costPrice: pp.costPrice != null ? String(pp.costPrice) : "",
       structureType: struct,
       isTaxable: pp.isTaxable !== false,
@@ -3400,6 +3409,7 @@ export function Products() {
       stockCount: isComposite ? 0 : (parseFloat(form.stockCount) || 0),
       soldByWeight: form.soldByWeight,
       unitOfMeasure: form.soldByWeight ? form.unitOfMeasure : undefined,
+      sellingUnit: form.sellingUnit.trim() === "" ? null : form.sellingUnit.trim(),
       costPrice: form.costPrice.trim() === "" ? null : parseFloat(form.costPrice),
       structureType: form.structureType,
       isTaxable: form.isTaxable,
@@ -5245,6 +5255,32 @@ export function Products() {
                     <Label>SKU</Label>
                     <Input value={form.sku} onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))} placeholder="e.g. JC001" />
                   </div>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>
+                    Unit of measure{" "}
+                    <span className="text-muted-foreground text-[11px]">(optional — how it's sold; shows on POS &amp; receipts)</span>
+                  </Label>
+                  <Input
+                    list="selling-unit-options"
+                    value={form.sellingUnit}
+                    onChange={(e) => setForm((f) => ({ ...f, sellingUnit: e.target.value }))}
+                    placeholder="e.g. each, case, pieces"
+                  />
+                  <datalist id="selling-unit-options">
+                    <option value="each" />
+                    <option value="case" />
+                    <option value="pieces" />
+                    <option value="box" />
+                    <option value="pack" />
+                    <option value="dozen" />
+                    <option value="pair" />
+                    <option value="set" />
+                    <option value="roll" />
+                    <option value="bag" />
+                    <option value="bottle" />
+                    <option value="carton" />
+                  </datalist>
                 </div>
                 <Separator />
                 {/* Product structure: Simple SKUs track their own stock;

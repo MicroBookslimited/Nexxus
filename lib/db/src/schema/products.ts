@@ -22,6 +22,11 @@ export const productsTable = pgTable("products", {
   soldByWeight: boolean("sold_by_weight").notNull().default(false),
   // Unit of measure for weight-priced products: lb, kg, oz, g.
   unitOfMeasure: text("unit_of_measure"),
+  // Optional free-text selling unit / unit of measure label (e.g. "each",
+  // "case", "pieces", "box"). Display-only — describes how the product is
+  // sold and surfaces on the POS cart line and printed receipts. Distinct
+  // from the weight-only `unitOfMeasure` enum above. NULL = not set.
+  sellingUnit: text("selling_unit"),
   // 6-digit Product Lookup Unit code embedded in EAN-13 weight barcodes.
   plu: text("plu"),
   // Multi-industry support:

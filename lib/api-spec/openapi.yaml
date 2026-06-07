@@ -1964,6 +1964,10 @@ components:
           type: string
           enum: [kg, lb, oz, g]
           nullable: true
+        sellingUnit:
+          type: string
+          nullable: true
+          description: Optional free-text selling unit / UOM label (e.g. "each", "case", "pieces"). Display-only; shown on the POS cart line and receipts. NULL = not set.
         costPrice:
           type: number
           format: float
@@ -2159,6 +2163,10 @@ components:
         unitOfMeasure:
           type: string
           enum: [kg, lb, oz, g]
+        sellingUnit:
+          type: string
+          nullable: true
+          description: Optional free-text selling unit / UOM label (e.g. "each", "case", "pieces"). Display-only; shown on the POS cart line and receipts.
         costPrice:
           type: number
           format: float
@@ -2440,6 +2448,10 @@ components:
         lineTotal:
           type: number
           format: float
+        sellingUnit:
+          type: string
+          nullable: true
+          description: Optional free-text selling unit / UOM label of the product (e.g. "each", "case"). Surfaced on the POS and receipts. NULL = not set.
       required:
         - id
         - productId
