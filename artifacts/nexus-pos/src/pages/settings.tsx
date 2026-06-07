@@ -60,6 +60,7 @@ export function AdminSettings() {
   const [supermarketMode, setSupermarketMode] = useState(false);
   const [hardwareUiMode, setHardwareUiMode] = useState(false);
   const [supermarketUiMode, setSupermarketUiMode] = useState(false);
+  const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
   const [sendingTest, setSendingTest] = useState(false);
   const [sendingLowStockTest, setSendingLowStockTest] = useState(false);
@@ -111,6 +112,7 @@ export function AdminSettings() {
     setSupermarketMode(settings.supermarket_mode === "true");
     setHardwareUiMode(settings.hardware_ui_mode === "true");
     setSupermarketUiMode(settings.supermarket_ui_mode === "true");
+    setKioskLockEnabled(settings.kiosk_lock_enabled === "true");
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
     setDirty(false);
   }, [settings]);
@@ -156,6 +158,7 @@ export function AdminSettings() {
           supermarket_mode: supermarketMode ? "true" : "false",
           hardware_ui_mode: hardwareUiMode ? "true" : "false",
           supermarket_ui_mode: supermarketUiMode ? "true" : "false",
+          kiosk_lock_enabled: kioskLockEnabled ? "true" : "false",
           stock_method: stockMethod,
         },
       },
@@ -1426,6 +1429,42 @@ export function AdminSettings() {
                 <li>• Large bill preview on the left; scan box + quantity keypad + checkout on the right</li>
                 <li>• Variant/modifier products fall back to the standard POS</li>
                 <li>• Disable this toggle to return to the standard POS layout</li>
+              </ul>
+            </div>
+          )}
+
+          {/* Terminal / Kiosk Lock */}
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div className="pr-4">
+              <p className="text-sm font-medium">Terminal Lock (Kiosk Mode)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                When on, the terminal enters fullscreen and locks itself: exiting fullscreen requires a manager, supervisor, or admin PIN. Leave off for normal browser behavior — most stores don't need this.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={kioskLockEnabled}
+              onClick={() => { setKioskLockEnabled(!kioskLockEnabled); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                kioskLockEnabled ? "bg-amber-500" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                kioskLockEnabled ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+          {kioskLockEnabled && (
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-700 dark:text-amber-400 space-y-1">
+              <p className="font-medium">Terminal Lock is active</p>
+              <ul className="space-y-0.5 ml-2">
+                <li>• The terminal auto-enters fullscreen on first interaction</li>
+                <li>• Exiting fullscreen shows a blocking PIN overlay</li>
+                <li>• Only manager, supervisor, or admin PINs can unlock</li>
+                <li>• Disable this toggle to return to normal browser behavior</li>
               </ul>
             </div>
           )}

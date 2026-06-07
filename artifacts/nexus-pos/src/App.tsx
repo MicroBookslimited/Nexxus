@@ -409,9 +409,46 @@ function KioskLock() {
   );
 }
 
-function POSApp() {
+// Gates all kiosk-lockdown behavior on the `kiosk_lock_enabled` tenant setting.
+// Rendered under the query provider so it can read settings. When the setting
+// is off (the default, while loading, or when no tenant is signed in) nothing
+// arms, and any stale armed flag from a previous session is cleared so a
+// terminal that was armed before the lock was disabled isn't stuck behind the
+// PIN overlay.
+function KioskActive() {
   useAutoFullscreen();
+  return (
+    <>
+      <FullscreenFab />
+      <KioskLock />
+    </>
+  );
+}
 
+function KioskController() {
+  const { data: settings, isLoading } = useGetSettings();
+  const enabled = settings?.kiosk_lock_enabled === "true";
+
+  useEffect(() => {
+    // Only clear stale armed state once settings have definitively loaded and
+    // the lock is off. Clearing during the loading window (when `enabled` is
+    // still false because data hasn't arrived) would let an enabled kiosk be
+    // bypassed by reloading before settings resolve.
+    if (!isLoading && !enabled) {
+      try {
+        sessionStorage.removeItem(KIOSK_ARMED_KEY);
+        sessionStorage.removeItem(KIOSK_PRINTING_KEY);
+      } catch {
+        /* ignore storage errors */
+      }
+    }
+  }, [isLoading, enabled]);
+
+  if (!enabled) return null;
+  return <KioskActive />;
+}
+
+function POSApp() {
   return (
     <ThemeProvider>
       <StaffProvider>
@@ -427,8 +464,7 @@ function POSApp() {
               <Toaster />
               <OfflineBanner />
               <PWAUpdatePrompt />
-              <FullscreenFab />
-              <KioskLock />
+              <KioskController />
             </PosChromeProvider>
           </TooltipProvider>
         </PersistQueryClientProvider>
