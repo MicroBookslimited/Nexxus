@@ -32,6 +32,12 @@ function normalizeCustomer(c: typeof customersTable.$inferSelect) {
     ...c,
     email: c.email ?? undefined,
     phone: c.phone ?? undefined,
+    company: c.company ?? undefined,
+    address: c.address ?? undefined,
+    city: c.city ?? undefined,
+    state: c.state ?? undefined,
+    postalCode: c.postalCode ?? undefined,
+    notes: c.notes ?? undefined,
   };
 }
 
@@ -71,6 +77,12 @@ router.post("/customers", async (req, res): Promise<void> => {
       name: parsed.data.name,
       email: parsed.data.email,
       phone: parsed.data.phone,
+      company: parsed.data.company,
+      address: parsed.data.address,
+      city: parsed.data.city,
+      state: parsed.data.state,
+      postalCode: parsed.data.postalCode,
+      notes: parsed.data.notes,
     })
     .returning();
 
@@ -198,6 +210,12 @@ router.put("/customers/:id", async (req, res): Promise<void> => {
       name: parsed.data.name,
       email: parsed.data.email,
       phone: parsed.data.phone,
+      company: parsed.data.company,
+      address: parsed.data.address,
+      city: parsed.data.city,
+      state: parsed.data.state,
+      postalCode: parsed.data.postalCode,
+      notes: parsed.data.notes,
     })
     .where(and(eq(customersTable.id, params.data.id), eq(customersTable.tenantId, tenantId)))
     .returning();

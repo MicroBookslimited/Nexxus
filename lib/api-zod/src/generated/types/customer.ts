@@ -11,6 +11,12 @@ export interface Customer {
   name: string;
   email?: string | null;
   phone?: string | null;
+  company?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  notes?: string | null;
   loyaltyPoints: number;
   totalSpent: number;
   orderCount: number;

@@ -78,6 +78,7 @@ import {
 } from "@/components/ui/tabs";
 import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check, Archive, RotateCcw, Copy, GitMerge } from "lucide-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { csvDownload, parseSpreadsheet, type ImportResult } from "@/lib/spreadsheet-import";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
 
@@ -1122,65 +1123,25 @@ const LOYVERSE_TEMPLATE_ROWS = [
   ],
 ];
 
-function csvDownload(rows: string[][], filename: string) {
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement("a"), { href: url, download: filename });
-  a.click();
-  URL.revokeObjectURL(url);
-}
+/**
+ * QuickBooks Desktop Point of Sale item-list export format. A user can export
+ * their item list from QuickBooks POS and import the file here as-is —
+ * auto-mapping below recognises the QuickBooks column names (Department → Category,
+ * Item Number → SKU, UPC → Barcode, On Hand Quantity → Stock, Regular Price → Price).
+ */
+const QUICKBOOKS_TEMPLATE_ROWS = [
+  [
+    "Item Name", "Department", "Item Number", "UPC", "Regular Price",
+    "Average Unit Cost", "On Hand Quantity", "Attribute", "Size",
+  ],
+  ["Jerk Chicken",   "Food",      "JC001", "1234567890123", "850.00", "450.00", "50",  "", ""],
+  ["Ting Soda",      "Beverages", "TS001", "1234567890124", "120.00", "60.00",  "100", "", ""],
+  ["Rum Cake Slice", "Bakery",    "RC001", "1234567890125", "350.00", "180.00", "30",  "", ""],
+];
 
-function downloadTemplate()         { csvDownload(TEMPLATE_ROWS,          "NEXUS_Product_Import_Template.csv"); }
-function downloadLoyverseTemplate() { csvDownload(LOYVERSE_TEMPLATE_ROWS, "NEXUS_Loyverse_Import_Template.csv"); }
-
-type ImportResult = { row: number; name: string; status: "ok" | "error"; error?: string };
-
-async function parseSpreadsheet(file: File): Promise<(string | number | boolean | null)[][]> {
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "csv") {
-    const Papa = (await import("papaparse")).default;
-    const text = await file.text();
-    const result = Papa.parse<(string | number | boolean | null)[]>(text, {
-      header: false,
-      skipEmptyLines: true,
-      dynamicTyping: false,
-    });
-    return result.data;
-  } else {
-    // Use exceljs — handles real Loyverse exports (no <dimension> tag,
-    // customHeight rows) that read-excel-file silently truncates to 1 row.
-    const ExcelJS = await import("exceljs");
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(await file.arrayBuffer());
-    const ws = wb.worksheets[0];
-    if (!ws) return [];
-    const out: (string | number | boolean | null)[][] = [];
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      // exceljs row.values is 1-indexed (index 0 is undefined). Slice off
-      // the leading hole and normalise cell types for downstream consumers.
-      const raw = (row.values as unknown[]).slice(1);
-      const cells = raw.map((c): string | number | boolean | null => {
-        if (c === null || c === undefined) return null;
-        if (c instanceof Date) return c.toLocaleDateString();
-        if (typeof c === "object") {
-          // Rich text { richText: [...] } or hyperlink { text, hyperlink }
-          const rt = (c as { richText?: { text: string }[]; text?: string; result?: unknown }).richText;
-          if (Array.isArray(rt)) return rt.map((s) => s.text).join("");
-          const txt = (c as { text?: string }).text;
-          if (typeof txt === "string") return txt;
-          const res = (c as { result?: unknown }).result;
-          if (typeof res === "string" || typeof res === "number" || typeof res === "boolean") return res;
-          return String(c);
-        }
-        if (typeof c === "string" || typeof c === "number" || typeof c === "boolean") return c;
-        return String(c);
-      });
-      out.push(cells);
-    });
-    return out;
-  }
-}
+function downloadTemplate()           { csvDownload(TEMPLATE_ROWS,            "NEXUS_Product_Import_Template.csv"); }
+function downloadLoyverseTemplate()   { csvDownload(LOYVERSE_TEMPLATE_ROWS,   "NEXUS_Loyverse_Import_Template.csv"); }
+function downloadQuickbooksTemplate() { csvDownload(QUICKBOOKS_TEMPLATE_ROWS, "NEXUS_QuickBooks_POS_Import_Template.csv"); }
 
 function ImportProductsDialog({ open, onClose, onImported }: {
   open: boolean;
@@ -1228,8 +1189,15 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         else if (l === "description")                                   auto[h] = "description";
         else if (l === "barcode")                                       auto[h] = "barcode";
         else if (l === "sku")                                           auto[h] = "sku";
-        else if (l === "in stock" || l === "stock quantity")            auto[h] = "stockCount";   // Loyverse qty
-        else if (l === "track stock" || l === "available for sale")     auto[h] = "inStock";      // Loyverse Y/N
+        else if (l === "stock quantity" || l === "quantity" || l === "qty") auto[h] = "stockCount"; // numeric qty
+        else if (l === "in stock" || l === "track stock" || l === "available for sale") auto[h] = "inStock"; // boolean Y/N
+        // ── QuickBooks POS exact-header matches ──
+        else if (l === "department")                                    auto[h] = "category";     // QBPOS category
+        else if (l === "regular price" || l === "list price")           auto[h] = "price";        // QBPOS price
+        else if (l === "item name" || l === "item description")         auto[h] = "name";         // QBPOS item label
+        else if (l === "upc")                                           auto[h] = "barcode";      // QBPOS barcode
+        else if (l === "item number" || l === "item #" || l === "item no" || l === "alternate lookup") auto[h] = "sku"; // QBPOS sku/lookup
+        else if (l === "on hand quantity" || l === "on hand qty" || l === "qty on hand" || l === "on hand") auto[h] = "stockCount"; // QBPOS stock
         // ── Generic fuzzy fallbacks (skip Loyverse "Cost" column) ──
         else if (/name|product/i.test(l))                               auto[h] = "name";
         else if (/price|amount/i.test(l) && !/cost/i.test(l))           auto[h] = "price";
@@ -1358,6 +1326,19 @@ function ImportProductsDialog({ open, onClose, onImported }: {
                 </div>
                 <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); downloadLoyverseTemplate(); }} className="shrink-0 border-teal-500/40 hover:bg-teal-500/10">
                   <FileDown className="h-3.5 w-3.5 mr-1.5" />Loyverse Template
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-4 rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-4">
+                <FileDown className="h-8 w-8 text-indigo-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Migrating from QuickBooks POS?</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Download the QuickBooks-format template, or export your item list from QuickBooks Point of Sale and upload that file as-is — columns are auto-detected.
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); downloadQuickbooksTemplate(); }} className="shrink-0 border-indigo-500/40 hover:bg-indigo-500/10">
+                  <FileDown className="h-3.5 w-3.5 mr-1.5" />QuickBooks Template
                 </Button>
               </div>
 

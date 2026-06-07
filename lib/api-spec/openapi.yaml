@@ -2415,6 +2415,24 @@ components:
         phone:
           type: string
           nullable: true
+        company:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postalCode:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
         loyaltyPoints:
           type: integer
         totalSpent:
@@ -2441,6 +2459,18 @@ components:
         email:
           type: string
         phone:
+          type: string
+        company:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postalCode:
+          type: string
+        notes:
           type: string
       required:
         - name

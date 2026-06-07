@@ -39,11 +39,39 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Plus, Search, Pencil, Trash2, Users, Star, Phone, Mail, ShoppingBag } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus, Search, Pencil, Trash2, Users, Star, Phone, Mail, ShoppingBag, Upload, FileDown, FileSpreadsheet, ChevronRight, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
+import { csvDownload, parseSpreadsheet, type ImportResult } from "@/lib/spreadsheet-import";
 
-type CustomerForm = { name: string; email: string; phone: string };
-const emptyForm = (): CustomerForm => ({ name: "", email: "", phone: "" });
+type CustomerForm = {
+  name: string;
+  email: string;
+  phone: string;
+  company: string;
+  address: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  notes: string;
+};
+const emptyForm = (): CustomerForm => ({
+  name: "",
+  email: "",
+  phone: "",
+  company: "",
+  address: "",
+  city: "",
+  state: "",
+  postalCode: "",
+  notes: "",
+});
 
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
@@ -75,6 +103,370 @@ function CustomerOrderHistory({ customerId }: { customerId: number }) {
   );
 }
 
+/* ─── Customer import ─── */
+
+const CUSTOMER_IMPORT_FIELDS = [
+  { key: "name",       label: "Full Name" },
+  { key: "firstName",  label: "First Name" },
+  { key: "lastName",   label: "Last Name" },
+  { key: "company",    label: "Company" },
+  { key: "email",      label: "Email" },
+  { key: "phone",      label: "Phone" },
+  { key: "address",    label: "Address" },
+  { key: "city",       label: "City" },
+  { key: "state",      label: "State / Province" },
+  { key: "postalCode", label: "Postal Code" },
+  { key: "notes",      label: "Notes" },
+];
+
+const CUSTOMER_TEMPLATE_ROWS = [
+  ["Name", "Company", "Email", "Phone", "Address", "City", "State", "Postal Code", "Notes"],
+  ["Jane Smith", "Acme Inc.", "jane@example.com", "+1 555 000 0001", "123 Main St", "Nassau", "NP", "00000", "VIP customer"],
+  ["John Brown", "", "john@example.com", "+1 555 000 0002", "456 Bay St", "Freeport", "GB", "00000", ""],
+];
+
+/**
+ * QuickBooks Desktop Point of Sale customer-list export format. A user can
+ * export their customer list from QuickBooks POS and import it here as-is —
+ * auto-mapping below combines First Name + Last Name into the NEXXUS name.
+ */
+const QUICKBOOKS_CUSTOMER_TEMPLATE_ROWS = [
+  ["First Name", "Last Name", "Company", "Phone", "Email", "Address Line 1", "City", "State", "ZIP", "Notes"],
+  ["Jane", "Smith", "Acme Inc.", "+1 555 000 0001", "jane@example.com", "123 Main St", "Nassau", "NP", "00000", "VIP customer"],
+  ["John", "Brown", "", "+1 555 000 0002", "john@example.com", "456 Bay St", "Freeport", "GB", "00000", ""],
+];
+
+function downloadCustomerTemplate()           { csvDownload(CUSTOMER_TEMPLATE_ROWS,            "NEXUS_Customer_Import_Template.csv"); }
+function downloadQuickbooksCustomerTemplate() { csvDownload(QUICKBOOKS_CUSTOMER_TEMPLATE_ROWS, "NEXUS_QuickBooks_POS_Customer_Template.csv"); }
+
+function ImportCustomersDialog({ open, onClose, onImported }: {
+  open: boolean;
+  onClose: () => void;
+  onImported: (count: number) => void;
+}) {
+  const createCustomer = useCreateCustomer();
+  const { toast } = useToast();
+  const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const [step, setStep]           = useState<"upload" | "map" | "done">("upload");
+  const [headers, setHeaders]     = useState<string[]>([]);
+  const [rows, setRows]           = useState<string[][]>([]);
+  const [mapping, setMapping]     = useState<Record<string, string>>({});
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress]   = useState(0);
+  const [results, setResults]     = useState<ImportResult[]>([]);
+
+  const reset = () => { setStep("upload"); setHeaders([]); setRows([]); setMapping({}); setImporting(false); setProgress(0); setResults([]); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const parseFile = async (file: File) => {
+    try {
+      const data = await parseSpreadsheet(file) as string[][];
+      if (!data.length) { toast({ title: "Empty file", variant: "destructive" }); return; }
+      const [hdr, ...body] = data;
+      const clean = hdr.map(h => String(h).trim());
+      setHeaders(clean);
+      setRows(body.filter(r => r.some(c => c !== null && c !== undefined && String(c).trim() !== "")));
+      const auto: Record<string, string> = {};
+      clean.forEach(h => {
+        const l = h.toLowerCase().replace(/\s*\[[^\]]*\]\s*$/, "").trim();
+        if      (l === "first name" || l === "first" || l === "given name")                 auto[h] = "firstName";
+        else if (l === "last name" || l === "last" || l === "surname" || l === "family name") auto[h] = "lastName";
+        else if (l === "name" || l === "full name" || l === "customer name" || l === "customer") auto[h] = "name";
+        else if (l === "company" || l === "company name" || l === "business")               auto[h] = "company";
+        else if (l === "email" || l === "e-mail" || l === "email address")                  auto[h] = "email";
+        else if (/^(phone|telephone|mobile|cell|phone 1|phone number|contact)/.test(l))     auto[h] = "phone";
+        else if (l === "address" || l === "address line 1" || l === "street" || l === "addr 1" || l === "address 1") auto[h] = "address";
+        else if (l === "city" || l === "town")                                              auto[h] = "city";
+        else if (l === "state" || l === "province" || l === "region" || l === "state/province") auto[h] = "state";
+        else if (l === "zip" || l === "zip code" || l === "postal code" || l === "postal" || l === "postcode") auto[h] = "postalCode";
+        else if (l === "notes" || l === "note" || l === "comment" || l === "comments")      auto[h] = "notes";
+        // Fuzzy fallbacks
+        else if (/first.*name/.test(l))                                                     auto[h] = "firstName";
+        else if (/last.*name|surname/.test(l))                                              auto[h] = "lastName";
+        else if (/company|business/.test(l))                                                auto[h] = "company";
+        else if (/e-?mail/.test(l))                                                         auto[h] = "email";
+        else if (/phone|mobile|cell|tel/.test(l))                                           auto[h] = "phone";
+        else if (/address|street/.test(l))                                                  auto[h] = "address";
+        else if (/city|town/.test(l))                                                       auto[h] = "city";
+        else if (/state|province|region/.test(l))                                           auto[h] = "state";
+        else if (/zip|postal|postcode/.test(l))                                             auto[h] = "postalCode";
+        else if (/note|comment/.test(l))                                                    auto[h] = "notes";
+        else if (/name/.test(l))                                                            auto[h] = "name";
+      });
+      setMapping(auto);
+      setStep("map");
+    } catch {
+      toast({ title: "Could not read file", description: "Please use a valid CSV or Excel file.", variant: "destructive" });
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) parseFile(f); };
+
+  const getMapped = (header: string) => mapping[header] ?? "__skip__";
+  const setMapped = (header: string, val: string) => setMapping(m => ({ ...m, [header]: val }));
+
+  const extractRow = (row: string[]): Record<string, string> => {
+    const obj: Record<string, string> = {};
+    headers.forEach((h, i) => { const f = mapping[h]; if (f && f !== "__skip__") obj[f] = String(row[i] ?? "").trim(); });
+    const combined = [obj.firstName, obj.lastName].filter(Boolean).join(" ").trim();
+    const name = (obj.name ?? "").trim() || combined;
+    return { ...obj, name };
+  };
+
+  const mappedFields = Object.values(mapping);
+  const hasName = mappedFields.includes("name") || mappedFields.includes("firstName") || mappedFields.includes("lastName");
+
+  const handleImport = async () => {
+    setImporting(true);
+    const out: ImportResult[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const d = extractRow(rows[i]);
+      setProgress(i + 1);
+      if (!d.name?.trim()) { out.push({ row: i + 2, name: `Row ${i + 2}`, status: "error", error: "Name is required" }); continue; }
+      const payload = {
+        name: d.name.trim(),
+        email: d.email?.trim() || undefined,
+        phone: d.phone?.trim() || undefined,
+        company: d.company?.trim() || undefined,
+        address: d.address?.trim() || undefined,
+        city: d.city?.trim() || undefined,
+        state: d.state?.trim() || undefined,
+        postalCode: d.postalCode?.trim() || undefined,
+        notes: d.notes?.trim() || undefined,
+      };
+      try {
+        await new Promise<void>((resolve, reject) => {
+          createCustomer.mutate({ data: payload }, { onSuccess: () => resolve(), onError: (e) => reject(e) });
+        });
+        out.push({ row: i + 2, name: d.name, status: "ok" });
+      } catch { out.push({ row: i + 2, name: d.name, status: "error", error: "Server error" }); }
+    }
+    setResults(out);
+    setImporting(false);
+    setStep("done");
+    const ok = out.filter(r => r.status === "ok").length;
+    if (ok > 0) onImported(ok);
+  };
+
+  const previewRows = rows.slice(0, 5);
+  const okCount  = results.filter(r => r.status === "ok").length;
+  const errCount = results.filter(r => r.status === "error").length;
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) handleClose(); }}>
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="h-5 w-5 text-primary" />
+            Import Customers
+          </DialogTitle>
+          <div className="flex items-center gap-1.5 text-xs pt-2">
+            {(["upload", "map", "done"] as const).map((s, i) => (
+              <React.Fragment key={s}>
+                <span className={`flex items-center gap-1.5 ${step === s ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                  <span className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${step === s ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>{i + 1}</span>
+                  {s === "upload" ? "Upload File" : s === "map" ? "Map Columns" : "Results"}
+                </span>
+                {i < 2 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+              </React.Fragment>
+            ))}
+          </div>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Step 1: Upload */}
+          {step === "upload" && (
+            <div className="space-y-4">
+              <div
+                onDrop={handleDrop} onDragOver={e => e.preventDefault()}
+                onClick={() => fileRef.current?.click()}
+                className="border-2 border-dashed border-border rounded-xl p-14 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-all text-center"
+              >
+                <Upload className="h-10 w-10 text-muted-foreground" />
+                <div>
+                  <p className="font-semibold">Drop your file here, or click to browse</p>
+                  <p className="text-xs text-muted-foreground mt-1">Supports CSV (.csv) and Excel (.xlsx, .xls)</p>
+                </div>
+                <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) parseFile(f); }} />
+              </div>
+
+              <div className="flex items-center gap-4 rounded-lg border border-border bg-secondary/20 p-4">
+                <FileDown className="h-8 w-8 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Download the import template</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Pre-filled with example rows and the exact column layout expected.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); downloadCustomerTemplate(); }} className="shrink-0">
+                  <FileDown className="h-3.5 w-3.5 mr-1.5" />Template
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-4 rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-4">
+                <FileDown className="h-8 w-8 text-indigo-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Migrating from QuickBooks POS?</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Download the QuickBooks-format template, or export your customer list from QuickBooks Point of Sale and upload it as-is — First &amp; Last name are combined automatically.
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); downloadQuickbooksCustomerTemplate(); }} className="shrink-0 border-indigo-500/40 hover:bg-indigo-500/10">
+                  <FileDown className="h-3.5 w-3.5 mr-1.5" />QuickBooks Template
+                </Button>
+              </div>
+
+              <div className="rounded-lg border border-border bg-secondary/10 p-4 text-xs text-muted-foreground space-y-1">
+                <p className="font-semibold text-foreground text-sm mb-2">Mappable fields</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                  {CUSTOMER_IMPORT_FIELDS.map(f => (
+                    <span key={f.key}><span className="font-medium text-foreground">{f.label}</span></span>
+                  ))}
+                </div>
+                <p className="pt-1">A full name (or First + Last name) is required for each customer.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Map columns */}
+          {step === "map" && (
+            <div className="space-y-5">
+              <p className="text-sm text-muted-foreground">
+                Found <span className="font-semibold text-foreground">{rows.length} customer row{rows.length !== 1 ? "s" : ""}</span>.
+                Match each spreadsheet column to the correct customer field.
+              </p>
+
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="grid grid-cols-[1fr_24px_1fr] gap-x-3 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <span>Spreadsheet Column</span><span />
+                  <span>Customer Field</span>
+                </div>
+                <div className="divide-y divide-border/60">
+                  {headers.map(h => (
+                    <div key={h} className="grid grid-cols-[1fr_24px_1fr] items-center gap-x-3 px-4 py-2.5">
+                      <p className="text-sm font-medium truncate">{h}</p>
+                      <span className="text-muted-foreground text-center text-xs">→</span>
+                      <Select value={getMapped(h)} onValueChange={v => setMapped(h, v)}>
+                        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__skip__">— Skip this column —</SelectItem>
+                          {CUSTOMER_IMPORT_FIELDS.map(f => (
+                            <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {previewRows.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Data Preview — first {previewRows.length} row{previewRows.length !== 1 ? "s" : ""}</p>
+                  <div className="rounded-lg border border-border overflow-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-secondary/40 border-b border-border">
+                          {headers.map(h => (
+                            <th key={h} className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">
+                              {h}
+                              {mapping[h] && mapping[h] !== "__skip__" && (
+                                <span className="ml-1 text-[10px] text-primary font-normal">→ {CUSTOMER_IMPORT_FIELDS.find(f => f.key === mapping[h])?.label}</span>
+                              )}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewRows.map((row, i) => (
+                          <tr key={i} className="border-b border-border/40 last:border-0 hover:bg-secondary/20">
+                            {headers.map((_, j) => (
+                              <td key={j} className="px-3 py-1.5 text-muted-foreground whitespace-nowrap max-w-[160px] truncate">{row[j]}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {!hasName && (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-2.5 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span className="text-amber-400">Map a Full Name column, or both First Name and Last Name, before importing.</span>
+                </div>
+              )}
+
+              {importing && (
+                <div className="space-y-2">
+                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                    <div className="h-full bg-primary transition-all duration-300 rounded-full" style={{ width: `${(progress / rows.length) * 100}%` }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">Importing {progress} of {rows.length}…</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Results */}
+          {step === "done" && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-5 text-center">
+                  <p className="text-3xl font-bold text-emerald-400">{okCount}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Customers imported</p>
+                </div>
+                <div className={`rounded-lg border p-5 text-center ${errCount > 0 ? "border-red-500/30 bg-red-500/5" : "border-border bg-secondary/10"}`}>
+                  <p className={`text-3xl font-bold ${errCount > 0 ? "text-red-400" : "text-muted-foreground"}`}>{errCount}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Failed rows</p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="grid grid-cols-[3rem_1fr_7rem_1fr] gap-0 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <span>Row</span><span>Name</span><span>Status</span><span>Note</span>
+                </div>
+                <div className="divide-y divide-border/60 max-h-64 overflow-y-auto">
+                  {results.map((r, i) => (
+                    <div key={i} className="grid grid-cols-[3rem_1fr_7rem_1fr] items-center gap-0 px-4 py-2 text-sm">
+                      <span className="text-muted-foreground text-xs">{r.row}</span>
+                      <span className="font-medium truncate pr-3">{r.name}</span>
+                      <span>
+                        {r.status === "ok"
+                          ? <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs">Imported</Badge>
+                          : <Badge variant="destructive" className="text-xs">Failed</Badge>}
+                      </span>
+                      <span className="text-xs text-muted-foreground truncate pl-3">{r.error ?? ""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="px-6 py-4 border-t border-border shrink-0">
+          {step === "upload" && <Button variant="outline" onClick={handleClose}>Cancel</Button>}
+          {step === "map" && (
+            <>
+              <Button variant="outline" onClick={() => { setStep("upload"); setHeaders([]); setRows([]); }} disabled={importing}>Back</Button>
+              <Button onClick={handleImport} disabled={importing || !hasName || rows.length === 0}>
+                {importing ? `Importing… (${progress}/${rows.length})` : `Import ${rows.length} Customer${rows.length !== 1 ? "s" : ""}`}
+              </Button>
+            </>
+          )}
+          {step === "done" && (
+            <>
+              {errCount > 0 && <Button variant="outline" onClick={reset}>Import Another File</Button>}
+              <Button onClick={handleClose}>Done</Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function Customers() {
   const [search, setSearch] = useState("");
   const { data: customers, isLoading } = useListCustomers(search ? { search } : {});
@@ -89,6 +481,7 @@ export function Customers() {
   const [form, setForm] = useState<CustomerForm>(emptyForm());
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [historyCustomer, setHistoryCustomer] = useState<GetCustomerResponse | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const openAdd = () => {
     setEditingCustomer(null);
@@ -98,7 +491,17 @@ export function Customers() {
 
   const openEdit = (c: GetCustomerResponse) => {
     setEditingCustomer(c);
-    setForm({ name: c.name, email: c.email ?? "", phone: c.phone ?? "" });
+    setForm({
+      name: c.name,
+      email: c.email ?? "",
+      phone: c.phone ?? "",
+      company: c.company ?? "",
+      address: c.address ?? "",
+      city: c.city ?? "",
+      state: c.state ?? "",
+      postalCode: c.postalCode ?? "",
+      notes: c.notes ?? "",
+    });
     setDialogOpen(true);
   };
 
@@ -112,6 +515,12 @@ export function Customers() {
       name: form.name.trim(),
       email: form.email.trim() || undefined,
       phone: form.phone.trim() || undefined,
+      company: form.company.trim() || undefined,
+      address: form.address.trim() || undefined,
+      city: form.city.trim() || undefined,
+      state: form.state.trim() || undefined,
+      postalCode: form.postalCode.trim() || undefined,
+      notes: form.notes.trim() || undefined,
     };
 
     if (editingCustomer) {
@@ -163,10 +572,16 @@ export function Customers() {
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Customers</h2>
           <p className="text-muted-foreground mt-1 text-sm">Manage your customer profiles and loyalty.</p>
         </div>
-        <Button onClick={openAdd} className="gap-2 self-start sm:self-auto">
-          <Plus className="h-4 w-4" />
-          Add Customer
-        </Button>
+        <div className="flex gap-2 self-start sm:self-auto">
+          <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2">
+            <Upload className="h-4 w-4" />
+            Import
+          </Button>
+          <Button onClick={openAdd} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Customer
+          </Button>
+        </div>
       </div>
 
       <div className="relative w-full sm:max-w-sm">
@@ -250,7 +665,7 @@ export function Customers() {
 
       {/* Add / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingCustomer ? "Edit Customer" : "Add Customer"}</DialogTitle>
           </DialogHeader>
@@ -260,12 +675,40 @@ export function Customers() {
               <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Jane Smith" />
             </div>
             <div className="grid gap-1.5">
-              <Label>Email</Label>
-              <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="jane@example.com" />
+              <Label>Company</Label>
+              <Input value={form.company} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))} placeholder="Acme Inc." />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Email</Label>
+                <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="jane@example.com" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Phone</Label>
+                <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+1 555 000 0000" />
+              </div>
             </div>
             <div className="grid gap-1.5">
-              <Label>Phone</Label>
-              <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+1 555 000 0000" />
+              <Label>Address</Label>
+              <Input value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} placeholder="123 Main St" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="grid gap-1.5">
+                <Label>City</Label>
+                <Input value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} placeholder="Nassau" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>State</Label>
+                <Input value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))} placeholder="NP" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Postal Code</Label>
+                <Input value={form.postalCode} onChange={(e) => setForm((f) => ({ ...f, postalCode: e.target.value }))} placeholder="00000" />
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Notes</Label>
+              <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
             </div>
           </div>
           <DialogFooter>
@@ -306,6 +749,16 @@ export function Customers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import customers dialog */}
+      <ImportCustomersDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={(count) => {
+          toast({ title: `${count} customer${count !== 1 ? "s" : ""} imported successfully` });
+          queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+        }}
+      />
     </motion.div>
   );
 }

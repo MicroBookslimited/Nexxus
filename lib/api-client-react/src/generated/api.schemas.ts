@@ -472,6 +472,12 @@ export interface Customer {
   name: string;
   email?: string | null;
   phone?: string | null;
+  company?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  notes?: string | null;
   loyaltyPoints: number;
   totalSpent: number;
   orderCount: number;
@@ -482,6 +488,12 @@ export interface CreateCustomerBody {
   name: string;
   email?: string;
   phone?: string;
+  company?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  notes?: string;
 }
 
 export interface ReportSummary {
