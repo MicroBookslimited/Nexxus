@@ -510,10 +510,14 @@ export function Layout({ children }: { children: ReactNode }) {
 
             {profileOpen && (
               <div className="absolute right-0 top-full mt-1.5 w-44 rounded-lg border border-border bg-card shadow-xl z-50 overflow-hidden">
-                <div className="px-3 py-2.5 border-b border-border">
+                <Link
+                  href="/account"
+                  onClick={() => setProfileOpen(false)}
+                  className="block px-3 py-2.5 border-b border-border hover:bg-secondary/60 transition-colors"
+                >
                   <p className="text-xs font-semibold text-foreground">My Account</p>
-                  <p className="text-[10px] text-muted-foreground truncate">Admin</p>
-                </div>
+                  <p className="text-[10px] text-muted-foreground truncate">Profile &amp; login settings</p>
+                </Link>
                 <button
                   onClick={handleSignOut}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"

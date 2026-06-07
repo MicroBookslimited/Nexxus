@@ -59,6 +59,20 @@ export const saasMe = () =>
 export const saasUpdateOnboarding = (step: number, fields: Record<string, unknown>) =>
   api<{ tenant: Tenant }>("/saas/onboarding", { method: "PATCH", body: JSON.stringify({ step, ...fields }), headers: tenantAuthHeaders() });
 
+/* ─── My Account (self-service) ─── */
+export const saasUpdateProfile = (data: { businessName?: string; ownerName?: string; phone?: string; address?: string; country?: string }) =>
+  api<{ tenant: Tenant }>("/saas/account/profile", { method: "PATCH", body: JSON.stringify(data), headers: tenantAuthHeaders() });
+
+export const saasUpdateEmail = (newEmail: string, currentPassword: string) =>
+  api<{ success: boolean; token: string; email: string }>("/saas/account/email", {
+    method: "PATCH", body: JSON.stringify({ newEmail, currentPassword }), headers: tenantAuthHeaders(),
+  });
+
+export const saasUpdatePassword = (currentPassword: string, newPassword: string) =>
+  api<{ success: boolean; token: string }>("/saas/account/password", {
+    method: "PATCH", body: JSON.stringify({ currentPassword, newPassword }), headers: tenantAuthHeaders(),
+  });
+
 export const createFirstStaff = (data: { name: string; pin: string; role: string }) =>
   api<{ id: number; name: string; role: string }>("/staff", {
     method: "POST",
@@ -469,7 +483,7 @@ export async function superadminMarketingUnsubscribesExport(): Promise<void> {
 /* ─── Types ─── */
 export interface Tenant {
   id: number; businessName: string; ownerName: string; email: string; phone?: string;
-  country?: string; status: string; onboardingStep: number; onboardingComplete: boolean;
+  address?: string; country?: string; status: string; onboardingStep: number; onboardingComplete: boolean;
   emailVerified: boolean;
 }
 

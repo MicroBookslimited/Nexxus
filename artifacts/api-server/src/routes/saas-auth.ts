@@ -364,11 +364,176 @@ router.get("/saas/me", async (req, res): Promise<void> => {
     .limit(1);
 
   res.json({
-    tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, ownerName: tenant.ownerName, phone: tenant.phone, country: tenant.country, slug: tenant.slug, onboardingStep: tenant.onboardingStep, onboardingComplete: tenant.onboardingComplete, status: tenant.status, emailVerified: tenant.emailVerified },
+    tenant: { id: tenant.id, businessName: tenant.businessName, email: tenant.email, ownerName: tenant.ownerName, phone: tenant.phone, address: tenant.address, country: tenant.country, slug: tenant.slug, onboardingStep: tenant.onboardingStep, onboardingComplete: tenant.onboardingComplete, status: tenant.status, emailVerified: tenant.emailVerified },
     subscription,
     plan,
     nextScheduledPayment: nextScheduledPayment ?? null,
   });
+});
+
+/* ─── My Account (self-service profile / email / password) ─── */
+
+/**
+ * Resolves the credential the logged-in admin authenticates with. Multi-admin
+ * tenants store the password on `tenant_admin_users`; legacy single-tenant
+ * accounts store it on `tenants`. The primary admin is mirrored on both, so we
+ * keep both in sync on change.
+ */
+async function resolveAccount(payload: { tenantId: number; adminUserId?: number }) {
+  const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.id, payload.tenantId));
+  if (!tenant) return null;
+  let adminUser: typeof tenantAdminUsersTable.$inferSelect | null = null;
+  if (payload.adminUserId) {
+    const [au] = await db
+      .select()
+      .from(tenantAdminUsersTable)
+      .where(and(eq(tenantAdminUsersTable.id, payload.adminUserId), eq(tenantAdminUsersTable.tenantId, payload.tenantId)));
+    adminUser = au ?? null;
+  }
+  // Legacy/older tokens may lack adminUserId. Fall back to the tenant's primary
+  // active admin row so credential changes stay mirrored across both stores —
+  // login checks tenant_admin_users before the tenants fallback, so an out-of-sync
+  // admin row would otherwise keep serving the old password/email.
+  if (!adminUser) {
+    const [primary] = await db
+      .select()
+      .from(tenantAdminUsersTable)
+      .where(and(
+        eq(tenantAdminUsersTable.tenantId, payload.tenantId),
+        eq(tenantAdminUsersTable.isPrimary, true),
+        eq(tenantAdminUsersTable.status, "active"),
+      ));
+    adminUser = primary ?? null;
+  }
+  const credentialHash = adminUser?.passwordHash ?? tenant.passwordHash;
+  const isPrimary = adminUser ? adminUser.isPrimary : true;
+  return { tenant, adminUser, credentialHash, isPrimary };
+}
+
+const UpdateProfileBody = z.object({
+  businessName: z.string().trim().min(1, "Business name is required").optional(),
+  ownerName: z.string().trim().min(1, "Owner name is required").optional(),
+  phone: z.string().trim().optional(),
+  address: z.string().trim().optional(),
+  country: z.string().trim().optional(),
+});
+
+router.patch("/saas/account/profile", async (req, res): Promise<void> => {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const payload = verifyTenantToken(auth.slice(7));
+  if (!payload) { res.status(401).json({ error: "Invalid token" }); return; }
+  if (payload.restrictedRole) { res.status(403).json({ error: "Not permitted for this session" }); return; }
+
+  const parsed = UpdateProfileBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }); return; }
+
+  const fields: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(parsed.data)) {
+    if (v !== undefined) fields[k] = v === "" ? null : v;
+  }
+  if (Object.keys(fields).length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
+
+  await db.update(tenantsTable).set({ ...fields, updatedAt: new Date() }).where(eq(tenantsTable.id, payload.tenantId));
+  const [updated] = await db.select().from(tenantsTable).where(eq(tenantsTable.id, payload.tenantId));
+  res.json({
+    tenant: {
+      id: updated!.id, businessName: updated!.businessName, email: updated!.email, ownerName: updated!.ownerName,
+      phone: updated!.phone, address: updated!.address, country: updated!.country, slug: updated!.slug,
+      onboardingStep: updated!.onboardingStep, onboardingComplete: updated!.onboardingComplete,
+      status: updated!.status, emailVerified: updated!.emailVerified,
+    },
+  });
+});
+
+const UpdateEmailBody = z.object({
+  newEmail: z.string().trim().email("Enter a valid email address"),
+  currentPassword: z.string().min(1, "Current password is required"),
+});
+
+router.patch("/saas/account/email", async (req, res): Promise<void> => {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const payload = verifyTenantToken(auth.slice(7));
+  if (!payload) { res.status(401).json({ error: "Invalid token" }); return; }
+  if (payload.restrictedRole) { res.status(403).json({ error: "Not permitted for this session" }); return; }
+
+  const parsed = UpdateEmailBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }); return; }
+
+  const account = await resolveAccount(payload);
+  if (!account) { res.status(404).json({ error: "Account not found" }); return; }
+  if (!account.credentialHash) { res.status(400).json({ error: "No password is set on this account" }); return; }
+
+  const valid = await bcryptjs.compare(parsed.data.currentPassword, account.credentialHash);
+  if (!valid) { res.status(400).json({ error: "Current password is incorrect" }); return; }
+
+  const newEmail = parsed.data.newEmail;
+
+  // Reject if the email is already used by another tenant or another active admin user.
+  const [tenantConflict] = await db
+    .select({ id: tenantsTable.id })
+    .from(tenantsTable)
+    .where(and(sql`lower(${tenantsTable.email}) = ${newEmail.toLowerCase()}`, sql`${tenantsTable.id} <> ${payload.tenantId}`));
+  if (tenantConflict) { res.status(409).json({ error: "That email is already in use" }); return; }
+
+  const adminConflicts = await db
+    .select({ id: tenantAdminUsersTable.id })
+    .from(tenantAdminUsersTable)
+    .where(and(
+      sql`lower(${tenantAdminUsersTable.email}) = ${newEmail.toLowerCase()}`,
+      eq(tenantAdminUsersTable.status, "active"),
+    ));
+  const conflictWithOther = adminConflicts.some((a) => a.id !== account.adminUser?.id);
+  if (conflictWithOther) { res.status(409).json({ error: "That email is already in use" }); return; }
+
+  const now = new Date();
+  if (account.adminUser) {
+    await db.update(tenantAdminUsersTable).set({ email: newEmail, updatedAt: now }).where(eq(tenantAdminUsersTable.id, account.adminUser.id));
+  }
+  if (account.isPrimary) {
+    await db.update(tenantsTable).set({ email: newEmail, emailVerified: false, emailVerificationToken: null, updatedAt: now }).where(eq(tenantsTable.id, payload.tenantId));
+  }
+
+  // Re-issue the token so its embedded email matches the new value.
+  const token = signToken(payload.tenantId, newEmail, payload.adminUserId, payload.isPrimary);
+  res.json({ success: true, token, email: newEmail });
+});
+
+const UpdatePasswordBody = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(8, "New password must be at least 8 characters"),
+});
+
+router.patch("/saas/account/password", async (req, res): Promise<void> => {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const payload = verifyTenantToken(auth.slice(7));
+  if (!payload) { res.status(401).json({ error: "Invalid token" }); return; }
+  if (payload.restrictedRole) { res.status(403).json({ error: "Not permitted for this session" }); return; }
+
+  const parsed = UpdatePasswordBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }); return; }
+
+  const account = await resolveAccount(payload);
+  if (!account) { res.status(404).json({ error: "Account not found" }); return; }
+  if (!account.credentialHash) { res.status(400).json({ error: "No password is set on this account" }); return; }
+
+  const valid = await bcryptjs.compare(parsed.data.currentPassword, account.credentialHash);
+  if (!valid) { res.status(400).json({ error: "Current password is incorrect" }); return; }
+
+  const passwordHash = await bcryptjs.hash(parsed.data.newPassword, 12);
+  const now = new Date();
+  if (account.adminUser) {
+    await db.update(tenantAdminUsersTable).set({ passwordHash, updatedAt: now }).where(eq(tenantAdminUsersTable.id, account.adminUser.id));
+  }
+  if (account.isPrimary) {
+    await db.update(tenantsTable).set({ passwordHash, updatedAt: now }).where(eq(tenantsTable.id, payload.tenantId));
+  }
+
+  // Re-issue the current session's token so this session stays signed in.
+  const token = signToken(payload.tenantId, payload.email, payload.adminUserId, payload.isPrimary);
+  res.json({ success: true, token });
 });
 
 /* ─── Email Verification ─── */
