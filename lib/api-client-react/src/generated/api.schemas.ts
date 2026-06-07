@@ -1048,6 +1048,171 @@ export interface CreatePurchaseBillBody {
   items: CreatePurchaseBillItemBody[];
 }
 
+export interface PurchaseOrderItem {
+  id: number;
+  poId: number;
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitCost: number;
+  /** Line tax rate (%). Null means the line inherits the PO's defaultTaxRate. */
+  taxRate?: number | null;
+  taxAmount: number;
+  totalCost: number;
+}
+
+export type PurchaseOrderStatus =
+  (typeof PurchaseOrderStatus)[keyof typeof PurchaseOrderStatus];
+
+export const PurchaseOrderStatus = {
+  draft: "draft",
+  sent: "sent",
+  converted: "converted",
+  cancelled: "cancelled",
+} as const;
+
+/**
+ * Whether entered unit costs are net (exclusive) or tax-inclusive.
+ */
+export type PurchaseOrderTaxMode =
+  (typeof PurchaseOrderTaxMode)[keyof typeof PurchaseOrderTaxMode];
+
+export const PurchaseOrderTaxMode = {
+  exclusive: "exclusive",
+  inclusive: "inclusive",
+} as const;
+
+export interface PurchaseOrder {
+  id: number;
+  poNumber: string;
+  supplier?: string | null;
+  status: PurchaseOrderStatus;
+  /** Expected delivery date (ISO YYYY-MM-DD) or null. */
+  expectedDate?: string | null;
+  notes?: string | null;
+  defaultTaxRate: number;
+  /** Whether entered unit costs are net (exclusive) or tax-inclusive. */
+  taxMode: PurchaseOrderTaxMode;
+  subtotal: number;
+  taxTotal: number;
+  totalCost: number;
+  /** The purchase bill this PO was converted into, if any. */
+  convertedBillId?: number | null;
+  itemCount: number;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type PurchaseOrderWithItemsStatus =
+  (typeof PurchaseOrderWithItemsStatus)[keyof typeof PurchaseOrderWithItemsStatus];
+
+export const PurchaseOrderWithItemsStatus = {
+  draft: "draft",
+  sent: "sent",
+  converted: "converted",
+  cancelled: "cancelled",
+} as const;
+
+export type PurchaseOrderWithItemsTaxMode =
+  (typeof PurchaseOrderWithItemsTaxMode)[keyof typeof PurchaseOrderWithItemsTaxMode];
+
+export const PurchaseOrderWithItemsTaxMode = {
+  exclusive: "exclusive",
+  inclusive: "inclusive",
+} as const;
+
+export interface PurchaseOrderWithItems {
+  id: number;
+  poNumber: string;
+  supplier?: string | null;
+  status: PurchaseOrderWithItemsStatus;
+  expectedDate?: string | null;
+  notes?: string | null;
+  defaultTaxRate: number;
+  taxMode: PurchaseOrderWithItemsTaxMode;
+  subtotal: number;
+  taxTotal: number;
+  totalCost: number;
+  convertedBillId?: number | null;
+  itemCount: number;
+  createdAt: string;
+  updatedAt?: string;
+  items: PurchaseOrderItem[];
+}
+
+export interface CreatePurchaseOrderItemBody {
+  productId: number;
+  quantity: number;
+  unitCost?: number;
+  /** Line tax rate (%). Omit or send null to inherit the PO default. */
+  taxRate?: number | null;
+}
+
+export type CreatePurchaseOrderBodyStatus =
+  (typeof CreatePurchaseOrderBodyStatus)[keyof typeof CreatePurchaseOrderBodyStatus];
+
+export const CreatePurchaseOrderBodyStatus = {
+  draft: "draft",
+  sent: "sent",
+} as const;
+
+/**
+ * How entered unit costs are interpreted. "exclusive" (default): cost is net, tax added on top. "inclusive": cost already includes tax and the server back-computes the net cost.
+ */
+export type CreatePurchaseOrderBodyTaxMode =
+  (typeof CreatePurchaseOrderBodyTaxMode)[keyof typeof CreatePurchaseOrderBodyTaxMode];
+
+export const CreatePurchaseOrderBodyTaxMode = {
+  exclusive: "exclusive",
+  inclusive: "inclusive",
+} as const;
+
+export interface CreatePurchaseOrderBody {
+  supplier?: string;
+  /** Expected delivery date (ISO YYYY-MM-DD). */
+  expectedDate?: string;
+  notes?: string;
+  status?: CreatePurchaseOrderBodyStatus;
+  /** Default input-tax rate (%) applied to lines that don't override. */
+  defaultTaxRate?: number;
+  /** How entered unit costs are interpreted. "exclusive" (default): cost is net, tax added on top. "inclusive": cost already includes tax and the server back-computes the net cost. */
+  taxMode?: CreatePurchaseOrderBodyTaxMode;
+  items: CreatePurchaseOrderItemBody[];
+}
+
+export type UpdatePurchaseOrderBodyStatus =
+  (typeof UpdatePurchaseOrderBodyStatus)[keyof typeof UpdatePurchaseOrderBodyStatus];
+
+export const UpdatePurchaseOrderBodyStatus = {
+  draft: "draft",
+  sent: "sent",
+  converted: "converted",
+  cancelled: "cancelled",
+} as const;
+
+export type UpdatePurchaseOrderBodyTaxMode =
+  (typeof UpdatePurchaseOrderBodyTaxMode)[keyof typeof UpdatePurchaseOrderBodyTaxMode];
+
+export const UpdatePurchaseOrderBodyTaxMode = {
+  exclusive: "exclusive",
+  inclusive: "inclusive",
+} as const;
+
+/**
+ * Update a purchase order. Status transitions: draft->sent, draft/sent->cancelled, draft/sent->converted (set with convertedBillId). Line items and tax fields may only be edited while the PO is still a draft.
+ */
+export interface UpdatePurchaseOrderBody {
+  status?: UpdatePurchaseOrderBodyStatus;
+  convertedBillId?: number | null;
+  supplier?: string | null;
+  expectedDate?: string | null;
+  notes?: string | null;
+  defaultTaxRate?: number;
+  taxMode?: UpdatePurchaseOrderBodyTaxMode;
+  /** Replacement line items (draft only). */
+  items?: CreatePurchaseOrderItemBody[];
+}
+
 export type CashSessionStatus =
   (typeof CashSessionStatus)[keyof typeof CashSessionStatus];
 

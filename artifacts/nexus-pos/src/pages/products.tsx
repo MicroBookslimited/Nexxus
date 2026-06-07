@@ -24,6 +24,11 @@ import {
   useGetPurchaseBill,
   useConfirmPurchaseBill,
   useDeletePurchaseBill,
+  useListPurchaseOrders,
+  useCreatePurchaseOrder,
+  useGetPurchaseOrder,
+  useUpdatePurchaseOrder,
+  useDeletePurchaseOrder,
   useGetSettings,
   useUpdateSettings,
   useGetProductStockHistory,
@@ -76,8 +81,9 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check, Archive, RotateCcw, Copy, GitMerge } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check, Archive, RotateCcw, Copy, GitMerge, ClipboardList, Send, Ban, ArrowRight } from "lucide-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { printPurchaseOrder } from "@/lib/purchase-order-doc";
 import { csvDownload, parseSpreadsheet, type ImportResult } from "@/lib/spreadsheet-import";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
@@ -202,6 +208,12 @@ const emptyRestockForm = (): RestockForm => ({ quantity: "", unitCost: "", notes
 type BillLineItem = { tempId: string; productId: string; quantity: string; unitCost: string; taxRate: string; batchNumber: string; expiryDate: string };
 type BillForm = { billNumber: string; supplier: string; notes: string; defaultTaxRate: string; taxMode: "exclusive" | "inclusive"; items: BillLineItem[] };
 
+// Purchase Order form. POs are an ordering document with NO batch/expiry and no
+// stock/accounting side effects. The PO number is generated server-side, so it
+// is not part of the create form. taxRate empty = inherit PO default.
+type PoLineItem = { tempId: string; productId: string; quantity: string; unitCost: string; taxRate: string };
+type PoForm = { supplier: string; expectedDate: string; notes: string; defaultTaxRate: string; taxMode: "exclusive" | "inclusive"; items: PoLineItem[] };
+
 // One row in the post-confirm "review cost changes" dialog. The user can
 // edit `newPrice` before applying.
 type CostChangeRow = {
@@ -225,6 +237,12 @@ function emptyLineItem(): BillLineItem {
 }
 function emptyBillForm(): BillForm {
   return { billNumber: generateBillNumber(), supplier: "", notes: "", defaultTaxRate: "", taxMode: "exclusive", items: [emptyLineItem()] };
+}
+function emptyPoLineItem(): PoLineItem {
+  return { tempId: makeId(), productId: "", quantity: "", unitCost: "", taxRate: "" };
+}
+function emptyPoForm(): PoForm {
+  return { supplier: "", expectedDate: "", notes: "", defaultTaxRate: "", taxMode: "exclusive", items: [emptyPoLineItem()] };
 }
 
 /* ─── Product form types ─── */
@@ -2746,7 +2764,7 @@ export function Products() {
   const deleteBill = useDeletePurchaseBill();
   const { data: vendors = [] } = useListVendors();
 
-  const [pageTab, setPageTab] = useState<"products" | "purchases">("products");
+  const [pageTab, setPageTab] = useState<"products" | "purchases" | "orders">("products");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState("details");
@@ -2772,6 +2790,22 @@ export function Products() {
   const { data: viewBillDetail } = useGetPurchaseBill(
     viewBillId ?? 0,
     { query: { enabled: !!viewBillId } },
+  );
+
+  // ── Purchase Orders ──
+  const { data: purchaseOrders, refetch: refetchPos } = useListPurchaseOrders();
+  const createPo = useCreatePurchaseOrder();
+  const updatePo = useUpdatePurchaseOrder();
+  const deletePo = useDeletePurchaseOrder();
+  const [poView, setPoView] = useState<"list" | "new">("list");
+  const [viewPoId, setViewPoId] = useState<number | null>(null);
+  const [poSupplierManual, setPoSupplierManual] = useState(false);
+  const [poForm, setPoForm] = useState<PoForm>(emptyPoForm());
+  // When set, the next saved purchase bill will mark this PO converted.
+  const [convertingPoId, setConvertingPoId] = useState<number | null>(null);
+  const { data: viewPoDetail } = useGetPurchaseOrder(
+    viewPoId ?? 0,
+    { query: { enabled: !!viewPoId } },
   );
 
   // useDeferredValue lets React keep the input responsive while filtering
@@ -2909,6 +2943,189 @@ export function Products() {
       items: f.items.map((i) => (i.tempId === tempId ? { ...i, ...patch } : i)),
     }));
 
+  /* ── Purchase Order line math (mirrors bill math; same server tax rules) ── */
+  const poLineBreakdown = (item: PoLineItem) => {
+    const qty = parseFloat(item.quantity) || 0;
+    const cost = parseFloat(item.unitCost) || 0;
+    const lineRate = item.taxRate.trim() === "" ? null : parseFloat(item.taxRate);
+    const defaultRate = parseFloat(poForm.defaultTaxRate) || 0;
+    const rate = lineRate === null || Number.isNaN(lineRate) ? defaultRate : lineRate;
+    const cents = (n: number) => Math.round(n * 100) / 100;
+    if (poForm.taxMode === "inclusive") {
+      const total = cents(qty * cost);
+      const subtotal = rate > 0 ? cents(total / (1 + rate / 100)) : total;
+      const tax = cents(total - subtotal);
+      const netCost = qty > 0 ? subtotal / qty : cost;
+      return { qty, cost: netCost, subtotal, rate, tax, total };
+    }
+    const subtotal = cents(qty * cost);
+    const tax = cents((subtotal * rate) / 100);
+    return { qty, cost, subtotal, rate, tax, total: cents(subtotal + tax) };
+  };
+
+  const poLineMargin = (item: PoLineItem) => {
+    const product = products?.find((p) => String(p.id) === item.productId);
+    if (!product) return null;
+    const cost = poLineBreakdown(item).cost;
+    const price = product.price;
+    if (!price || cost <= 0) return null;
+    const amount = price - cost;
+    const pct = (amount / price) * 100;
+    return { price, cost, amount, pct };
+  };
+
+  const poTotals = poForm.items.reduce(
+    (acc, item) => {
+      const b = poLineBreakdown(item);
+      return { subtotal: acc.subtotal + b.subtotal, tax: acc.tax + b.tax, total: acc.total + b.total };
+    },
+    { subtotal: 0, tax: 0, total: 0 },
+  );
+
+  const addPoLineItem = () =>
+    setPoForm((f) => ({ ...f, items: [...f.items, emptyPoLineItem()] }));
+  const removePoLineItem = (tempId: string) =>
+    setPoForm((f) => ({ ...f, items: f.items.filter((i) => i.tempId !== tempId) }));
+  const updatePoLineItem = (tempId: string, patch: Partial<PoLineItem>) =>
+    setPoForm((f) => ({
+      ...f,
+      items: f.items.map((i) => (i.tempId === tempId ? { ...i, ...patch } : i)),
+    }));
+
+  const handleSavePo = (status: "draft" | "sent") => {
+    const validItems = poForm.items.filter((i) => i.productId && parseInt(i.quantity) > 0);
+    if (!validItems.length) {
+      toast({ title: "Add at least one item with a product and quantity", variant: "destructive" });
+      return;
+    }
+    const defaultTaxRate = parseFloat(poForm.defaultTaxRate) || 0;
+    createPo.mutate(
+      {
+        data: {
+          supplier: poForm.supplier || undefined,
+          expectedDate: poForm.expectedDate || undefined,
+          notes: poForm.notes || undefined,
+          status,
+          defaultTaxRate,
+          taxMode: poForm.taxMode,
+          items: validItems.map((i) => ({
+            productId: parseInt(i.productId),
+            quantity: parseInt(i.quantity),
+            unitCost: parseFloat(i.unitCost) || 0,
+            taxRate: i.taxRate.trim() === "" ? null : (parseFloat(i.taxRate) || 0),
+          })),
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({
+            title: status === "sent" ? "Purchase order created & marked sent" : "Purchase order saved as draft",
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+          setPoView("list");
+          setPoForm(emptyPoForm());
+          setPoSupplierManual(false);
+          refetchPos();
+        },
+        onError: (err: unknown) => {
+          const e = err as { message?: string; data?: { error?: string } } | null;
+          const detail = e?.data?.error ?? e?.message ?? "Please check the form and try again.";
+          toast({ title: "Failed to save purchase order", description: detail, variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const handleUpdatePoStatus = (id: number, status: "sent" | "cancelled") => {
+    updatePo.mutate(
+      { id, data: { status } },
+      {
+        onSuccess: () => {
+          toast({ title: status === "sent" ? "Purchase order marked as sent" : "Purchase order cancelled" });
+          queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+          setViewPoId(null);
+          refetchPos();
+        },
+        onError: () => toast({ title: "Update failed", variant: "destructive" }),
+      },
+    );
+  };
+
+  const handleDeletePo = (id: number) => {
+    deletePo.mutate(
+      { id },
+      {
+        onSuccess: () => {
+          toast({ title: "Purchase order deleted" });
+          queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+          setViewPoId(null);
+          refetchPos();
+        },
+        onError: (err: unknown) => {
+          const e = err as { data?: { error?: string } } | null;
+          toast({ title: "Delete failed", description: e?.data?.error, variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  // Convert a PO into a new draft purchase bill: prefill the bill form from the
+  // PO's lines and jump to the bill creation view. The PO is marked "converted"
+  // only once the resulting bill is actually saved (handled in handleSaveBill).
+  const handleConvertPoToBill = (po: NonNullable<typeof viewPoDetail>) => {
+    setBillForm({
+      ...emptyBillForm(),
+      supplier: po.supplier ?? "",
+      notes: po.notes ? `From ${po.poNumber}: ${po.notes}` : `Converted from ${po.poNumber}`,
+      defaultTaxRate: po.defaultTaxRate ? String(po.defaultTaxRate) : "",
+      // PO line unit costs are persisted NET (tax already stripped out, even for
+      // inclusive POs), so the bill must treat them as exclusive — adding tax on
+      // top — to reproduce the same totals. Copying the PO's taxMode verbatim
+      // would double-strip tax on an inclusive PO.
+      taxMode: "exclusive",
+      items: po.items.length
+        ? po.items.map((it) => ({
+            tempId: makeId(),
+            productId: String(it.productId),
+            quantity: String(it.quantity),
+            unitCost: String(it.unitCost),
+            taxRate: it.taxRate === null || it.taxRate === undefined ? "" : String(it.taxRate),
+            batchNumber: "",
+            expiryDate: "",
+          }))
+        : [emptyLineItem()],
+    });
+    setConvertingPoId(po.id);
+    setBillSupplierManual(true);
+    setViewPoId(null);
+    setBillView("new");
+    setPageTab("purchases");
+    refetchProducts();
+  };
+
+  const printPoDoc = (po: NonNullable<typeof viewPoDetail>) => {
+    printPurchaseOrder(
+      {
+        poNumber: po.poNumber,
+        supplier: po.supplier,
+        status: po.status,
+        items: po.items.map((it) => ({
+          productName: it.productName,
+          quantity: it.quantity,
+          unitCost: it.unitCost,
+          totalCost: it.totalCost,
+        })),
+        subtotal: po.subtotal,
+        taxTotal: po.taxTotal,
+        totalCost: po.totalCost,
+        notes: po.notes,
+        expectedDate: po.expectedDate,
+        createdAt: po.createdAt,
+      },
+      settings ?? {},
+    );
+  };
+
   const handleSaveBill = (status: "draft" | "confirmed") => {
     if (!billForm.billNumber.trim()) {
       toast({ title: "Bill number is required", variant: "destructive" });
@@ -2953,6 +3170,21 @@ export function Products() {
           setBillForm(emptyBillForm());
           setBillSupplierManual(false);
           refetchBills();
+          // If this bill was created by converting a purchase order, mark the
+          // PO converted and link it to the new bill now that it actually exists.
+          if (convertingPoId !== null) {
+            const newBillId = (response as { id?: number } | null)?.id;
+            updatePo.mutate(
+              { id: convertingPoId, data: { status: "converted", convertedBillId: newBillId ?? null } },
+              {
+                onSettled: () => {
+                  queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+                  refetchPos();
+                },
+              },
+            );
+            setConvertingPoId(null);
+          }
           // If the server reports cost increases, open the price-adjustment
           // dialog so the user can update selling prices to keep margins.
           maybeOpenCostChangeDialog(response);
@@ -3273,6 +3505,15 @@ export function Products() {
               <ShoppingCart className="h-3.5 w-3.5" />Purchases
               {purchases && purchases.length > 0 && (
                 <span className="ml-0.5 bg-primary/20 text-primary rounded-full px-1.5 text-[10px] font-bold">{purchases.length}</span>
+              )}
+            </button>
+            <button
+              onClick={() => setPageTab("orders")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${pageTab === "orders" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"}`}
+            >
+              <ClipboardList className="h-3.5 w-3.5" />Orders
+              {purchaseOrders && purchaseOrders.length > 0 && (
+                <span className="ml-0.5 bg-primary/20 text-primary rounded-full px-1.5 text-[10px] font-bold">{purchaseOrders.length}</span>
               )}
             </button>
           </div>
@@ -3813,7 +4054,7 @@ export function Products() {
             <div className="space-y-5">
               {/* Form header */}
               <div className="flex items-center gap-3">
-                <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => setBillView("list")}>
+                <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => { setBillView("list"); setConvertingPoId(null); }}>
                   <ArrowLeft className="h-3.5 w-3.5" />Bills
                 </Button>
                 <span className="text-muted-foreground">/</span>
@@ -4106,7 +4347,7 @@ export function Products() {
 
               {/* Action buttons */}
               <div className="flex items-center gap-3 justify-end pt-2 border-t border-border">
-                <Button variant="outline" onClick={() => setBillView("list")}>Cancel</Button>
+                <Button variant="outline" onClick={() => { setBillView("list"); setConvertingPoId(null); }}>Cancel</Button>
                 <Button
                   variant="outline"
                   className="gap-2 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
@@ -4127,6 +4368,532 @@ export function Products() {
           )}
         </div>
       )}
+
+      {/* ── PURCHASE ORDERS TAB ── */}
+      {pageTab === "orders" && (
+        <div className="space-y-5">
+          {poView === "list" ? (
+            <>
+              {/* Stats */}
+              <div className="grid grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Total Orders</p>
+                    <p className="text-2xl font-bold mt-1">{purchaseOrders?.length ?? 0}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Open (Draft / Sent)</p>
+                    <p className="text-2xl font-bold mt-1 text-yellow-400">{purchaseOrders?.filter(p => p.status === "draft" || p.status === "sent").length ?? 0}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Converted</p>
+                    <p className="text-2xl font-bold mt-1 text-green-400">{purchaseOrders?.filter(p => p.status === "converted").length ?? 0}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Open Value</p>
+                    <p className="text-2xl font-bold mt-1">{formatCurrency(purchaseOrders?.filter(p => p.status === "draft" || p.status === "sent").reduce((s, p) => s + p.totalCost, 0) ?? 0)}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Header + action */}
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Purchase Orders</h3>
+                <Button className="gap-2" onClick={() => {
+                  const tenantRate = parseFloat(String(settings?.tax_rate ?? ""));
+                  setPoForm({
+                    ...emptyPoForm(),
+                    defaultTaxRate: Number.isFinite(tenantRate) ? String(tenantRate) : "",
+                  });
+                  setPoSupplierManual(false);
+                  setPoView("new");
+                  refetchProducts();
+                }}>
+                  <Plus className="h-4 w-4" />New Purchase Order
+                </Button>
+              </div>
+
+              {/* Orders table */}
+              {!purchaseOrders?.length ? (
+                <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
+                  <ClipboardList className="h-12 w-12 opacity-30" />
+                  <p className="text-lg">No purchase orders yet</p>
+                  <p className="text-sm">Create a purchase order to request goods from a supplier. Orders don't change stock or accounting until you convert them to a purchase bill.</p>
+                  <Button variant="outline" className="mt-2 gap-2" onClick={() => {
+                    const tenantRate = parseFloat(String(settings?.tax_rate ?? ""));
+                    setPoForm({
+                      ...emptyPoForm(),
+                      defaultTaxRate: Number.isFinite(tenantRate) ? String(tenantRate) : "",
+                    });
+                    setPoSupplierManual(false);
+                    setPoView("new");
+                    refetchProducts();
+                  }}>
+                    <Plus className="h-4 w-4" />New Purchase Order
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <div className="grid grid-cols-[1fr_160px_80px_100px_120px_120px_100px] gap-3 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    <span>PO #</span>
+                    <span>Supplier</span>
+                    <span className="text-center">Items</span>
+                    <span className="text-right">Total</span>
+                    <span>Status</span>
+                    <span>Expected</span>
+                    <span className="text-right">Actions</span>
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {purchaseOrders.map((po, i) => (
+                      <motion.div
+                        key={po.id}
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ delay: i * 0.02 }}
+                        className="grid grid-cols-[1fr_160px_80px_100px_120px_120px_100px] gap-3 px-4 py-3 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors group"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <ClipboardList className="h-3.5 w-3.5 text-primary shrink-0" />
+                          <p className="text-sm font-semibold font-mono truncate">{po.poNumber}</p>
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">{po.supplier ?? "—"}</p>
+                        <p className="text-sm font-bold text-center">{po.itemCount}</p>
+                        <p className="text-sm font-bold font-mono text-right">{formatCurrency(po.totalCost)}</p>
+                        <div>
+                          {po.status === "draft" ? (
+                            <Badge className="text-[10px] bg-yellow-500/20 text-yellow-400 border-yellow-500/40 hover:bg-yellow-500/30 gap-0.5">
+                              <Clock className="h-2.5 w-2.5" />Draft
+                            </Badge>
+                          ) : po.status === "sent" ? (
+                            <Badge className="text-[10px] bg-sky-500/20 text-sky-400 border-sky-500/40 hover:bg-sky-500/30 gap-0.5">
+                              <Send className="h-2.5 w-2.5" />Sent
+                            </Badge>
+                          ) : po.status === "converted" ? (
+                            <Badge className="text-[10px] bg-green-500/20 text-green-400 border-green-500/40 hover:bg-green-500/30 gap-0.5">
+                              <CheckCircle2 className="h-2.5 w-2.5" />Converted
+                            </Badge>
+                          ) : (
+                            <Badge className="text-[10px] bg-secondary text-muted-foreground border-border gap-0.5">
+                              <Ban className="h-2.5 w-2.5" />Cancelled
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {po.expectedDate
+                            ? new Date(po.expectedDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                            : "—"}
+                        </p>
+                        <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button size="icon" variant="outline" className="h-7 w-7" title="View" onClick={() => setViewPoId(po.id)}>
+                            <Eye className="h-3 w-3" />
+                          </Button>
+                          {po.status === "draft" && (
+                            <Button size="icon" variant="outline" className="h-7 w-7 text-sky-400 border-sky-500/40 hover:bg-sky-500/10" title="Mark as Sent" onClick={() => handleUpdatePoStatus(po.id, "sent")}>
+                              <Send className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {po.status === "draft" && (
+                            <Button size="icon" variant="outline" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:border-destructive" title="Delete" onClick={() => handleDeletePo(po.id)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+            </>
+          ) : (
+            /* ── NEW PURCHASE ORDER FORM ── */
+            <div className="space-y-5">
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => setPoView("list")}>
+                  <ArrowLeft className="h-3.5 w-3.5" />Orders
+                </Button>
+                <span className="text-muted-foreground">/</span>
+                <h3 className="text-lg font-semibold">New Purchase Order</h3>
+              </div>
+
+              {/* PO Info */}
+              <Card>
+                <CardContent className="pt-4 pb-4">
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">Supplier</Label>
+                      {(poSupplierManual || vendors.length === 0) ? (
+                        <div className="flex gap-1">
+                          <Input
+                            value={poForm.supplier}
+                            onChange={(e) => setPoForm((f) => ({ ...f, supplier: e.target.value }))}
+                            placeholder="Type supplier name"
+                            className="flex-1"
+                          />
+                          {vendors.length > 0 && (
+                            <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
+                              onClick={() => { setPoSupplierManual(false); setPoForm(f => ({ ...f, supplier: "" })); }}>
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <Select
+                          value={poForm.supplier}
+                          onValueChange={(v) => {
+                            if (v === "__manual__") { setPoSupplierManual(true); setPoForm(f => ({ ...f, supplier: "" })); }
+                            else setPoForm((f) => ({ ...f, supplier: v }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select vendor..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {vendors.filter(v => v.isActive).map((v) => (
+                              <SelectItem key={v.id} value={v.name}>{v.name}</SelectItem>
+                            ))}
+                            <SelectItem value="__manual__" className="text-muted-foreground italic">Enter manually...</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">Expected Date</Label>
+                      <Input
+                        type="date"
+                        value={poForm.expectedDate}
+                        onChange={(e) => setPoForm((f) => ({ ...f, expectedDate: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">Default Tax %</Label>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          placeholder="0"
+                          value={poForm.defaultTaxRate}
+                          onChange={(e) => setPoForm((f) => ({ ...f, defaultTaxRate: e.target.value }))}
+                          className="pr-7 text-right font-mono"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">Tax Mode</Label>
+                      <div className="flex h-9 rounded-md border border-border overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setPoForm((f) => ({ ...f, taxMode: "exclusive" }))}
+                          className={`flex-1 text-xs font-medium transition ${poForm.taxMode === "exclusive" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-secondary/60"}`}
+                          title="Unit costs are net; tax is added on top"
+                        >
+                          Exclusive
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPoForm((f) => ({ ...f, taxMode: "inclusive" }))}
+                          className={`flex-1 text-xs font-medium transition border-l border-border ${poForm.taxMode === "inclusive" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-secondary/60"}`}
+                          title="Unit costs already include tax; net cost is back-computed"
+                        >
+                          Inclusive
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid gap-1.5 col-span-4">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">Notes</Label>
+                      <Input
+                        value={poForm.notes}
+                        onChange={(e) => setPoForm((f) => ({ ...f, notes: e.target.value }))}
+                        placeholder="Optional notes / terms"
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Line Items */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">Line Items</h4>
+                  <span className="text-xs text-muted-foreground">{poForm.items.length} item{poForm.items.length !== 1 ? "s" : ""}</span>
+                </div>
+
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <div className="grid grid-cols-[1.5fr_60px_100px_75px_95px_100px_36px] gap-2 px-4 py-2.5 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    <span>Product</span>
+                    <span className="text-right">Qty</span>
+                    <span className="text-right">Unit Cost</span>
+                    <span className="text-right">Tax %</span>
+                    <span className="text-right">Margin</span>
+                    <span className="text-right">Line Total</span>
+                    <span />
+                  </div>
+
+                  {poForm.items.map((item) => {
+                    const margin = poLineMargin(item);
+                    const breakdown = poLineBreakdown(item);
+                    const defaultRate = parseFloat(poForm.defaultTaxRate) || 0;
+                    return (
+                      <div
+                        key={item.tempId}
+                        className="grid grid-cols-[1.5fr_60px_100px_75px_95px_100px_36px] gap-2 px-4 py-2 items-center border-b border-border/40 last:border-0"
+                      >
+                        <ProductCombobox
+                          products={products ?? []}
+                          value={item.productId}
+                          onChange={(v) => updatePoLineItem(item.tempId, { productId: v })}
+                        />
+                        <Input
+                          type="number"
+                          min="1"
+                          placeholder="0"
+                          value={item.quantity}
+                          onChange={(e) => updatePoLineItem(item.tempId, { quantity: e.target.value })}
+                          className="h-8 text-sm text-right"
+                        />
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={item.unitCost}
+                            onChange={(e) => updatePoLineItem(item.tempId, { unitCost: e.target.value })}
+                            className="h-8 text-sm pl-6 text-right"
+                          />
+                        </div>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            placeholder={defaultRate > 0 ? defaultRate.toString() : "0"}
+                            value={item.taxRate}
+                            onChange={(e) => updatePoLineItem(item.tempId, { taxRate: e.target.value })}
+                            className="h-8 text-sm pr-6 text-right"
+                            title="Leave blank to use the order's default tax rate"
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                        </div>
+                        <div className="text-right text-sm font-mono leading-tight">
+                          {margin ? (
+                            <>
+                              <div className={margin.pct < 0 ? "text-destructive font-semibold" : margin.pct < 15 ? "text-yellow-400 font-semibold" : "text-green-400 font-semibold"}>
+                                {margin.pct.toFixed(1)}%
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {formatCurrency(margin.amount)}
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </div>
+                        <div className="text-right leading-tight">
+                          <p className="text-sm font-bold font-mono text-primary">
+                            {breakdown.total > 0 ? formatCurrency(breakdown.total) : "—"}
+                          </p>
+                          {breakdown.tax > 0 && (
+                            <p className="text-[11px] text-muted-foreground font-mono">
+                              tax {formatCurrency(breakdown.tax)}
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={() => removePoLineItem(item.tempId)}
+                          disabled={poForm.items.length === 1}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+
+                  <div className="px-4 py-2.5 border-t border-border/40 bg-secondary/20">
+                    <Button size="sm" variant="ghost" className="gap-1.5 text-sm text-primary hover:text-primary" onClick={addPoLineItem}>
+                      <Plus className="h-3.5 w-3.5" />Add Item
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex items-start justify-between gap-4 px-4 py-2">
+                  <span className="text-sm text-muted-foreground pt-1">
+                    {poForm.items.filter((i) => i.productId && parseInt(i.quantity) > 0).length} valid items
+                  </span>
+                  <div className="flex flex-col items-end gap-0.5 min-w-[220px]">
+                    <div className="flex items-center justify-between w-full text-sm">
+                      <span className="text-muted-foreground">Subtotal</span>
+                      <span className="font-mono">{formatCurrency(poTotals.subtotal)}</span>
+                    </div>
+                    <div className="flex items-center justify-between w-full text-sm">
+                      <span className="text-muted-foreground">Tax</span>
+                      <span className="font-mono">{formatCurrency(poTotals.tax)}</span>
+                    </div>
+                    <div className="flex items-center justify-between w-full pt-1 mt-1 border-t border-border/60">
+                      <span className="text-sm font-medium">Grand Total</span>
+                      <span className="text-xl font-bold font-mono text-primary">{formatCurrency(poTotals.total)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 justify-end pt-2 border-t border-border">
+                <Button variant="outline" onClick={() => setPoView("list")}>Cancel</Button>
+                <Button
+                  variant="outline"
+                  className="gap-2 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
+                  onClick={() => handleSavePo("draft")}
+                  disabled={createPo.isPending}
+                >
+                  <Clock className="h-4 w-4" />Save as Draft
+                </Button>
+                <Button
+                  className="gap-2 bg-sky-600 hover:bg-sky-700 text-white"
+                  onClick={() => handleSavePo("sent")}
+                  disabled={createPo.isPending}
+                >
+                  <Send className="h-4 w-4" />Save & Mark Sent
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PURCHASE ORDER VIEW DIALOG ── */}
+      <Dialog open={!!viewPoId} onOpenChange={(o) => !o && setViewPoId(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-primary" />
+              Purchase Order: {viewPoDetail?.poNumber}
+              {viewPoDetail && (
+                <span className="ml-2">
+                  {viewPoDetail.status === "draft" ? (
+                    <Badge className="text-[10px] bg-yellow-500/20 text-yellow-400 border-yellow-500/40 gap-0.5">
+                      <Clock className="h-2.5 w-2.5" />Draft
+                    </Badge>
+                  ) : viewPoDetail.status === "sent" ? (
+                    <Badge className="text-[10px] bg-sky-500/20 text-sky-400 border-sky-500/40 gap-0.5">
+                      <Send className="h-2.5 w-2.5" />Sent
+                    </Badge>
+                  ) : viewPoDetail.status === "converted" ? (
+                    <Badge className="text-[10px] bg-green-500/20 text-green-400 border-green-500/40 gap-0.5">
+                      <CheckCircle2 className="h-2.5 w-2.5" />Converted
+                    </Badge>
+                  ) : (
+                    <Badge className="text-[10px] bg-secondary text-muted-foreground border-border gap-0.5">
+                      <Ban className="h-2.5 w-2.5" />Cancelled
+                    </Badge>
+                  )}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {viewPoDetail && (
+            <div className="flex-1 overflow-y-auto space-y-4 py-2">
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-0.5">Supplier</p>
+                  <p className="font-medium">{viewPoDetail.supplier ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-0.5">Expected Date</p>
+                  <p className="font-medium">{viewPoDetail.expectedDate ? new Date(viewPoDetail.expectedDate).toLocaleDateString("en-US", { dateStyle: "medium" }) : "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-0.5">Notes</p>
+                  <p className="font-medium">{viewPoDetail.notes ?? "—"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="grid grid-cols-[2fr_80px_100px_100px] gap-3 px-4 py-2 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <span>Product</span>
+                  <span className="text-right">Qty</span>
+                  <span className="text-right">Unit Cost</span>
+                  <span className="text-right">Total</span>
+                </div>
+                {viewPoDetail.items.map((item, i) => (
+                  <div key={item.id} className={`grid grid-cols-[2fr_80px_100px_100px] gap-3 px-4 py-2.5 items-center ${i < viewPoDetail.items.length - 1 ? "border-b border-border/50" : ""}`}>
+                    <div className="flex items-center gap-2">
+                      <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <p className="text-sm font-semibold">{item.productName}</p>
+                    </div>
+                    <p className="text-sm font-bold font-mono text-right">{item.quantity}</p>
+                    <p className="text-sm font-mono text-right">{item.unitCost > 0 ? formatCurrency(item.unitCost) : "—"}</p>
+                    <p className="text-sm font-bold font-mono text-right">{item.totalCost > 0 ? formatCurrency(item.totalCost) : "—"}</p>
+                  </div>
+                ))}
+                <div className="grid grid-cols-[2fr_80px_100px_100px] gap-3 px-4 py-2.5 border-t border-border bg-secondary/20">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase col-span-3 text-right">Grand Total</span>
+                  <p className="text-base font-bold font-mono text-right text-primary">{formatCurrency(viewPoDetail.totalCost)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setViewPoId(null)}>Close</Button>
+            {viewPoDetail && (
+              <Button variant="outline" className="gap-1.5" onClick={() => printPoDoc(viewPoDetail)}>
+                <Printer className="h-3.5 w-3.5" />Print
+              </Button>
+            )}
+            {viewPoDetail && viewPoDetail.status === "draft" && (
+              <Button
+                variant="outline"
+                className="gap-1.5 text-sky-400 border-sky-500/40 hover:bg-sky-500/10"
+                onClick={() => handleUpdatePoStatus(viewPoDetail.id, "sent")}
+                disabled={updatePo.isPending}
+              >
+                <Send className="h-3.5 w-3.5" />Mark Sent
+              </Button>
+            )}
+            {viewPoDetail && (viewPoDetail.status === "draft" || viewPoDetail.status === "sent") && (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-1.5 text-muted-foreground"
+                  onClick={() => handleUpdatePoStatus(viewPoDetail.id, "cancelled")}
+                  disabled={updatePo.isPending}
+                >
+                  <Ban className="h-3.5 w-3.5" />Cancel
+                </Button>
+                <Button
+                  className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+                  onClick={() => handleConvertPoToBill(viewPoDetail)}
+                >
+                  <ArrowRight className="h-3.5 w-3.5" />Convert to Bill
+                </Button>
+              </>
+            )}
+            {viewPoDetail && viewPoDetail.status === "draft" && (
+              <Button
+                variant="outline"
+                className="gap-1.5 text-destructive hover:bg-destructive/10 border-destructive/40"
+                onClick={() => handleDeletePo(viewPoDetail.id)}
+                disabled={deletePo.isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5" />Delete
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Cost-change price-adjustment dialog. Opens after confirming a bill
           when one or more product costs went up. Suggested prices preserve

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, boolean, real } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, boolean, real, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { productsTable } from "./products";
 
@@ -89,3 +89,65 @@ export const purchaseBillItemsTable = pgTable("purchase_bill_items", {
 });
 
 export type PurchaseBillItem = typeof purchaseBillItemsTable.$inferSelect;
+
+/**
+ * Purchase Orders — the *ordering document* sent to a supplier listing what the
+ * business intends to buy. Mirrors the purchase-bill model but is non-binding:
+ * a PO never touches stock or accounting. When acted on it is converted into a
+ * Purchase Bill (which carries the stock/cost/JE side effects). Lives in the
+ * products purchasing domain — distinct from `raw_material_purchases`
+ * (ingredients/AP/FX) in purchasing.ts.
+ */
+export const purchaseOrdersTable = pgTable(
+  "purchase_orders",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenant_id").notNull().default(0),
+    poNumber: text("po_number").notNull(),
+    supplier: text("supplier"),
+    // draft | sent | converted | cancelled
+    status: text("status").notNull().default("draft"),
+    // Expected delivery date (ISO YYYY-MM-DD) or null.
+    expectedDate: text("expected_date"),
+    notes: text("notes"),
+    // Default input-tax rate (%) applied to lines that don't override.
+    defaultTaxRate: real("default_tax_rate").notNull().default(0),
+    // "exclusive" (cost is net, tax on top) | "inclusive" (cost includes tax;
+    // server back-computes net so `unitCost` is ALWAYS stored net). Mirrors bills.
+    taxMode: text("tax_mode").notNull().default("exclusive"),
+    subtotal: real("subtotal").notNull().default(0),
+    taxTotal: real("tax_total").notNull().default(0),
+    totalCost: real("total_cost").notNull().default(0),
+    // Set when the PO is converted into a purchase bill (audit link).
+    convertedBillId: integer("converted_bill_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Backstop for the count-based PO-YY-NNNN sequence (advisory lock is the
+    // primary serializer; this index guarantees no duplicate per tenant).
+    poNumberUnique: uniqueIndex("purchase_orders_tenant_po_number_unique").on(
+      t.tenantId,
+      t.poNumber,
+    ),
+  }),
+);
+
+export type PurchaseOrder = typeof purchaseOrdersTable.$inferSelect;
+
+export const purchaseOrderItemsTable = pgTable("purchase_order_items", {
+  id: serial("id").primaryKey(),
+  poId: integer("po_id").notNull().references(() => purchaseOrdersTable.id, { onDelete: "cascade" }),
+  productId: integer("product_id").notNull().references(() => productsTable.id),
+  quantity: integer("quantity").notNull(),
+  // Per-unit cost EXCLUDING tax (always stored net, like bills).
+  unitCost: real("unit_cost").notNull().default(0),
+  // Tax rate (%) for this line. NULL = inherit PO's defaultTaxRate.
+  taxRate: real("tax_rate"),
+  // Tax amount for the line.
+  taxAmount: real("tax_amount").notNull().default(0),
+  // Line grand total = qty*unitCost + taxAmount.
+  totalCost: real("total_cost").notNull().default(0),
+});
+
+export type PurchaseOrderItem = typeof purchaseOrderItemsTable.$inferSelect;

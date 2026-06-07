@@ -2489,6 +2489,206 @@ export const ConfirmPurchaseBillResponse = zod.object({
 });
 
 /**
+ * @summary List all purchase orders
+ */
+export const ListPurchaseOrdersResponseItem = zod.object({
+  id: zod.number(),
+  poNumber: zod.string(),
+  supplier: zod.string().nullish(),
+  status: zod.enum(["draft", "sent", "converted", "cancelled"]),
+  expectedDate: zod
+    .string()
+    .nullish()
+    .describe("Expected delivery date (ISO YYYY-MM-DD) or null."),
+  notes: zod.string().nullish(),
+  defaultTaxRate: zod.number(),
+  taxMode: zod
+    .enum(["exclusive", "inclusive"])
+    .describe(
+      "Whether entered unit costs are net (exclusive) or tax-inclusive.",
+    ),
+  subtotal: zod.number(),
+  taxTotal: zod.number(),
+  totalCost: zod.number(),
+  convertedBillId: zod
+    .number()
+    .nullish()
+    .describe("The purchase bill this PO was converted into, if any."),
+  itemCount: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date().optional(),
+});
+export const ListPurchaseOrdersResponse = zod.array(
+  ListPurchaseOrdersResponseItem,
+);
+
+/**
+ * @summary Create a purchase order
+ */
+export const createPurchaseOrderBodyStatusDefault = `draft`;
+export const createPurchaseOrderBodyTaxModeDefault = `exclusive`;
+
+export const CreatePurchaseOrderBody = zod.object({
+  supplier: zod.string().optional(),
+  expectedDate: zod
+    .string()
+    .optional()
+    .describe("Expected delivery date (ISO YYYY-MM-DD)."),
+  notes: zod.string().optional(),
+  status: zod
+    .enum(["draft", "sent"])
+    .default(createPurchaseOrderBodyStatusDefault),
+  defaultTaxRate: zod
+    .number()
+    .optional()
+    .describe(
+      "Default input-tax rate (%) applied to lines that don't override.",
+    ),
+  taxMode: zod
+    .enum(["exclusive", "inclusive"])
+    .default(createPurchaseOrderBodyTaxModeDefault)
+    .describe(
+      'How entered unit costs are interpreted. \"exclusive\" (default): cost is net, tax added on top. \"inclusive\": cost already includes tax and the server back-computes the net cost.',
+    ),
+  items: zod.array(
+    zod.object({
+      productId: zod.number(),
+      quantity: zod.number(),
+      unitCost: zod.number().optional(),
+      taxRate: zod
+        .number()
+        .nullish()
+        .describe(
+          "Line tax rate (%). Omit or send null to inherit the PO default.",
+        ),
+    }),
+  ),
+});
+
+/**
+ * @summary Get a purchase order with items
+ */
+export const GetPurchaseOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetPurchaseOrderResponse = zod.object({
+  id: zod.number(),
+  poNumber: zod.string(),
+  supplier: zod.string().nullish(),
+  status: zod.enum(["draft", "sent", "converted", "cancelled"]),
+  expectedDate: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  defaultTaxRate: zod.number(),
+  taxMode: zod.enum(["exclusive", "inclusive"]),
+  subtotal: zod.number(),
+  taxTotal: zod.number(),
+  totalCost: zod.number(),
+  convertedBillId: zod.number().nullish(),
+  itemCount: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date().optional(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      poId: zod.number(),
+      productId: zod.number(),
+      productName: zod.string(),
+      quantity: zod.number(),
+      unitCost: zod.number(),
+      taxRate: zod
+        .number()
+        .nullish()
+        .describe(
+          "Line tax rate (%). Null means the line inherits the PO's defaultTaxRate.",
+        ),
+      taxAmount: zod.number(),
+      totalCost: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary Update a purchase order's status or details
+ */
+export const UpdatePurchaseOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdatePurchaseOrderBody = zod
+  .object({
+    status: zod.enum(["draft", "sent", "converted", "cancelled"]).optional(),
+    convertedBillId: zod.number().nullish(),
+    supplier: zod.string().nullish(),
+    expectedDate: zod.string().nullish(),
+    notes: zod.string().nullish(),
+    defaultTaxRate: zod.number().optional(),
+    taxMode: zod.enum(["exclusive", "inclusive"]).optional(),
+    items: zod
+      .array(
+        zod.object({
+          productId: zod.number(),
+          quantity: zod.number(),
+          unitCost: zod.number().optional(),
+          taxRate: zod
+            .number()
+            .nullish()
+            .describe(
+              "Line tax rate (%). Omit or send null to inherit the PO default.",
+            ),
+        }),
+      )
+      .optional()
+      .describe("Replacement line items (draft only)."),
+  })
+  .describe(
+    "Update a purchase order. Status transitions: draft->sent, draft\/sent->cancelled, draft\/sent->converted (set with convertedBillId). Line items and tax fields may only be edited while the PO is still a draft.",
+  );
+
+export const UpdatePurchaseOrderResponse = zod.object({
+  id: zod.number(),
+  poNumber: zod.string(),
+  supplier: zod.string().nullish(),
+  status: zod.enum(["draft", "sent", "converted", "cancelled"]),
+  expectedDate: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  defaultTaxRate: zod.number(),
+  taxMode: zod.enum(["exclusive", "inclusive"]),
+  subtotal: zod.number(),
+  taxTotal: zod.number(),
+  totalCost: zod.number(),
+  convertedBillId: zod.number().nullish(),
+  itemCount: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date().optional(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      poId: zod.number(),
+      productId: zod.number(),
+      productName: zod.string(),
+      quantity: zod.number(),
+      unitCost: zod.number(),
+      taxRate: zod
+        .number()
+        .nullish()
+        .describe(
+          "Line tax rate (%). Null means the line inherits the PO's defaultTaxRate.",
+        ),
+      taxAmount: zod.number(),
+      totalCost: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary Delete a draft purchase order
+ */
+export const DeletePurchaseOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * @summary List all stock purchases
  */
 export const ListPurchasesQueryParams = zod.object({

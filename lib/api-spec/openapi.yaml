@@ -34,6 +34,8 @@ tags:
     description: Stock purchase management
   - name: purchase-bills
     description: Multi-product purchase bill management
+  - name: purchase-orders
+    description: Purchase order management (ordering document for suppliers)
   - name: staff
     description: Staff accounts and roles
   - name: cash
@@ -1445,6 +1447,93 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PurchaseBillWithItems"
+
+  /purchase-orders:
+    get:
+      operationId: listPurchaseOrders
+      tags: [purchase-orders]
+      summary: List all purchase orders
+      responses:
+        "200":
+          description: List of purchase orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PurchaseOrder"
+    post:
+      operationId: createPurchaseOrder
+      tags: [purchase-orders]
+      summary: Create a purchase order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePurchaseOrderBody"
+      responses:
+        "201":
+          description: Created purchase order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrderWithItems"
+
+  /purchase-orders/{id}:
+    get:
+      operationId: getPurchaseOrder
+      tags: [purchase-orders]
+      summary: Get a purchase order with items
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Purchase order with items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrderWithItems"
+    patch:
+      operationId: updatePurchaseOrder
+      tags: [purchase-orders]
+      summary: Update a purchase order's status or details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePurchaseOrderBody"
+      responses:
+        "200":
+          description: Updated purchase order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrderWithItems"
+    delete:
+      operationId: deletePurchaseOrder
+      tags: [purchase-orders]
+      summary: Delete a draft purchase order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
 
   /purchases:
     get:
@@ -3612,6 +3701,251 @@ components:
       required:
         - billNumber
         - items
+
+    PurchaseOrderItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        poId:
+          type: integer
+        productId:
+          type: integer
+        productName:
+          type: string
+        quantity:
+          type: integer
+        unitCost:
+          type: number
+          format: float
+        taxRate:
+          type: number
+          format: float
+          nullable: true
+          description: Line tax rate (%). Null means the line inherits the PO's defaultTaxRate.
+        taxAmount:
+          type: number
+          format: float
+        totalCost:
+          type: number
+          format: float
+      required:
+        - id
+        - poId
+        - productId
+        - productName
+        - quantity
+        - unitCost
+        - taxAmount
+        - totalCost
+
+    PurchaseOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        poNumber:
+          type: string
+        supplier:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, sent, converted, cancelled]
+        expectedDate:
+          type: string
+          nullable: true
+          description: Expected delivery date (ISO YYYY-MM-DD) or null.
+        notes:
+          type: string
+          nullable: true
+        defaultTaxRate:
+          type: number
+          format: float
+        taxMode:
+          type: string
+          enum: [exclusive, inclusive]
+          description: Whether entered unit costs are net (exclusive) or tax-inclusive.
+        subtotal:
+          type: number
+          format: float
+        taxTotal:
+          type: number
+          format: float
+        totalCost:
+          type: number
+          format: float
+        convertedBillId:
+          type: integer
+          nullable: true
+          description: The purchase bill this PO was converted into, if any.
+        itemCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - poNumber
+        - status
+        - defaultTaxRate
+        - taxMode
+        - subtotal
+        - taxTotal
+        - totalCost
+        - itemCount
+        - createdAt
+
+    PurchaseOrderWithItems:
+      type: object
+      properties:
+        id:
+          type: integer
+        poNumber:
+          type: string
+        supplier:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, sent, converted, cancelled]
+        expectedDate:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        defaultTaxRate:
+          type: number
+          format: float
+        taxMode:
+          type: string
+          enum: [exclusive, inclusive]
+        subtotal:
+          type: number
+          format: float
+        taxTotal:
+          type: number
+          format: float
+        totalCost:
+          type: number
+          format: float
+        convertedBillId:
+          type: integer
+          nullable: true
+        itemCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseOrderItem"
+      required:
+        - id
+        - poNumber
+        - status
+        - defaultTaxRate
+        - taxMode
+        - subtotal
+        - taxTotal
+        - totalCost
+        - itemCount
+        - createdAt
+        - items
+
+    CreatePurchaseOrderItemBody:
+      type: object
+      properties:
+        productId:
+          type: integer
+        quantity:
+          type: integer
+        unitCost:
+          type: number
+          format: float
+        taxRate:
+          type: number
+          format: float
+          nullable: true
+          description: Line tax rate (%). Omit or send null to inherit the PO default.
+      required:
+        - productId
+        - quantity
+
+    CreatePurchaseOrderBody:
+      type: object
+      properties:
+        supplier:
+          type: string
+        expectedDate:
+          type: string
+          description: Expected delivery date (ISO YYYY-MM-DD).
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [draft, sent]
+          default: draft
+        defaultTaxRate:
+          type: number
+          format: float
+          description: Default input-tax rate (%) applied to lines that don't override.
+        taxMode:
+          type: string
+          enum: [exclusive, inclusive]
+          default: exclusive
+          description: >-
+            How entered unit costs are interpreted. "exclusive" (default): cost
+            is net, tax added on top. "inclusive": cost already includes tax and
+            the server back-computes the net cost.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreatePurchaseOrderItemBody"
+      required:
+        - items
+
+    UpdatePurchaseOrderBody:
+      type: object
+      description: >-
+        Update a purchase order. Status transitions: draft->sent, draft/sent->cancelled,
+        draft/sent->converted (set with convertedBillId). Line items and tax fields may
+        only be edited while the PO is still a draft.
+      properties:
+        status:
+          type: string
+          enum: [draft, sent, converted, cancelled]
+        convertedBillId:
+          type: integer
+          nullable: true
+        supplier:
+          type: string
+          nullable: true
+        expectedDate:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        defaultTaxRate:
+          type: number
+          format: float
+        taxMode:
+          type: string
+          enum: [exclusive, inclusive]
+        items:
+          type: array
+          description: Replacement line items (draft only).
+          items:
+            $ref: "#/components/schemas/CreatePurchaseOrderItemBody"
 
     CashSession:
       type: object
