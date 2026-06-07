@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, real, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, real, integer, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 import { customersTable } from "./customers";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -91,8 +91,53 @@ export const heldOrdersTable = pgTable("held_orders", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Quotations: non-binding price quotes a cashier hands to a customer. Unlike
+// held orders they persist after recall, carry a sequential quote number, an
+// optional expiry, a customer link, server-computed totals, and a lifecycle
+// status (active → converted/expired/cancelled). Converting a quote loads its
+// items into the POS cart; the real sale (stock deduction, JE) happens at
+// checkout — a quotation itself never touches stock or accounting.
+export const quotationsTable = pgTable("quotations", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
+  quoteNumber: text("quote_number").notNull(),
+  customerId: integer("customer_id").references(() => customersTable.id),
+  items: jsonb("items").notNull().$type<Array<{
+    productId: number;
+    productName: string;
+    price: number;
+    quantity: number;
+    isTaxable?: boolean;
+    isCustom?: boolean;
+    unitLabel?: string;
+    unitFactor?: number;
+    unitId?: number;
+  }>>(),
+  subtotal: real("subtotal").notNull().default(0),
+  discountType: text("discount_type"),
+  discountAmount: real("discount_amount"),
+  tax: real("tax").notNull().default(0),
+  total: real("total").notNull().default(0),
+  notes: text("notes"),
+  // active | converted | expired | cancelled
+  status: text("status").notNull().default("active"),
+  expiryDate: timestamp("expiry_date", { withTimezone: true }),
+  // Set to the resulting order id when the quote is checked out as a sale.
+  convertedOrderId: integer("converted_order_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  // Per-tenant uniqueness on the human-facing quote number so concurrent
+  // count-based generation collides loudly (23505) instead of duplicating.
+  tenantQuoteNumberUnique: uniqueIndex("quotations_tenant_quote_number_unique").on(
+    t.tenantId,
+    t.quoteNumber,
+  ),
+}));
+
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof ordersTable.$inferSelect;
 export type OrderItem = typeof orderItemsTable.$inferSelect;
 export type HeldOrder = typeof heldOrdersTable.$inferSelect;
+export type Quotation = typeof quotationsTable.$inferSelect;

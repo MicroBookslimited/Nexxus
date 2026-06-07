@@ -433,6 +433,89 @@ export interface CreateHeldOrderBody {
   discountAmount?: number;
 }
 
+export interface QuotationItem {
+  productId: number;
+  productName: string;
+  price: number;
+  quantity: number;
+  isTaxable?: boolean;
+  isCustom?: boolean;
+  unitLabel?: string;
+  unitFactor?: number;
+  unitId?: number;
+}
+
+export type QuotationDiscountType =
+  | (typeof QuotationDiscountType)[keyof typeof QuotationDiscountType]
+  | null;
+
+export const QuotationDiscountType = {
+  percent: "percent",
+  fixed: "fixed",
+} as const;
+
+export type QuotationStatus =
+  (typeof QuotationStatus)[keyof typeof QuotationStatus];
+
+export const QuotationStatus = {
+  active: "active",
+  converted: "converted",
+  expired: "expired",
+  cancelled: "cancelled",
+} as const;
+
+export interface Quotation {
+  id: number;
+  quoteNumber: string;
+  customerId?: number | null;
+  items: QuotationItem[];
+  subtotal: number;
+  discountType?: QuotationDiscountType;
+  discountAmount?: number | null;
+  tax: number;
+  total: number;
+  notes?: string | null;
+  status: QuotationStatus;
+  expiryDate?: string | null;
+  convertedOrderId?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateQuotationBodyDiscountType =
+  (typeof CreateQuotationBodyDiscountType)[keyof typeof CreateQuotationBodyDiscountType];
+
+export const CreateQuotationBodyDiscountType = {
+  percent: "percent",
+  fixed: "fixed",
+} as const;
+
+export interface CreateQuotationBody {
+  customerId?: number | null;
+  items: QuotationItem[];
+  discountType?: CreateQuotationBodyDiscountType;
+  discountAmount?: number;
+  notes?: string;
+  expiryDate?: string | null;
+}
+
+export type UpdateQuotationBodyStatus =
+  (typeof UpdateQuotationBodyStatus)[keyof typeof UpdateQuotationBodyStatus];
+
+export const UpdateQuotationBodyStatus = {
+  active: "active",
+  converted: "converted",
+  expired: "expired",
+  cancelled: "cancelled",
+} as const;
+
+export interface UpdateQuotationBody {
+  status?: UpdateQuotationBodyStatus;
+  convertedOrderId?: number | null;
+  notes?: string | null;
+  expiryDate?: string | null;
+}
+
 export interface DashboardSummary {
   todaySales: number;
   todayOrders: number;

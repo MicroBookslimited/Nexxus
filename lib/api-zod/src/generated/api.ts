@@ -1429,6 +1429,152 @@ export const DeleteHeldOrderParams = zod.object({
 });
 
 /**
+ * @summary List all quotations
+ */
+export const ListQuotationsResponseItem = zod.object({
+  id: zod.number(),
+  quoteNumber: zod.string(),
+  customerId: zod.number().nullish(),
+  items: zod.array(
+    zod.object({
+      productId: zod.number(),
+      productName: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+      isTaxable: zod.boolean().optional(),
+      isCustom: zod.boolean().optional(),
+      unitLabel: zod.string().optional(),
+      unitFactor: zod.number().optional(),
+      unitId: zod.number().optional(),
+    }),
+  ),
+  subtotal: zod.number(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  tax: zod.number(),
+  total: zod.number(),
+  notes: zod.string().nullish(),
+  status: zod.enum(["active", "converted", "expired", "cancelled"]),
+  expiryDate: zod.coerce.date().nullish(),
+  convertedOrderId: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListQuotationsResponse = zod.array(ListQuotationsResponseItem);
+
+/**
+ * @summary Create a quotation from the current cart
+ */
+export const CreateQuotationBody = zod.object({
+  customerId: zod.number().nullish(),
+  items: zod.array(
+    zod.object({
+      productId: zod.number(),
+      productName: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+      isTaxable: zod.boolean().optional(),
+      isCustom: zod.boolean().optional(),
+      unitLabel: zod.string().optional(),
+      unitFactor: zod.number().optional(),
+      unitId: zod.number().optional(),
+    }),
+  ),
+  discountType: zod.enum(["percent", "fixed"]).optional(),
+  discountAmount: zod.number().optional(),
+  notes: zod.string().optional(),
+  expiryDate: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Get a quotation by ID
+ */
+export const GetQuotationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetQuotationResponse = zod.object({
+  id: zod.number(),
+  quoteNumber: zod.string(),
+  customerId: zod.number().nullish(),
+  items: zod.array(
+    zod.object({
+      productId: zod.number(),
+      productName: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+      isTaxable: zod.boolean().optional(),
+      isCustom: zod.boolean().optional(),
+      unitLabel: zod.string().optional(),
+      unitFactor: zod.number().optional(),
+      unitId: zod.number().optional(),
+    }),
+  ),
+  subtotal: zod.number(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  tax: zod.number(),
+  total: zod.number(),
+  notes: zod.string().nullish(),
+  status: zod.enum(["active", "converted", "expired", "cancelled"]),
+  expiryDate: zod.coerce.date().nullish(),
+  convertedOrderId: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update a quotation (status / conversion / notes / expiry)
+ */
+export const UpdateQuotationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateQuotationBody = zod.object({
+  status: zod.enum(["active", "converted", "expired", "cancelled"]).optional(),
+  convertedOrderId: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  expiryDate: zod.coerce.date().nullish(),
+});
+
+export const UpdateQuotationResponse = zod.object({
+  id: zod.number(),
+  quoteNumber: zod.string(),
+  customerId: zod.number().nullish(),
+  items: zod.array(
+    zod.object({
+      productId: zod.number(),
+      productName: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+      isTaxable: zod.boolean().optional(),
+      isCustom: zod.boolean().optional(),
+      unitLabel: zod.string().optional(),
+      unitFactor: zod.number().optional(),
+      unitId: zod.number().optional(),
+    }),
+  ),
+  subtotal: zod.number(),
+  discountType: zod.enum(["percent", "fixed"]).nullish(),
+  discountAmount: zod.number().nullish(),
+  tax: zod.number(),
+  total: zod.number(),
+  notes: zod.string().nullish(),
+  status: zod.enum(["active", "converted", "expired", "cancelled"]),
+  expiryDate: zod.coerce.date().nullish(),
+  convertedOrderId: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a quotation
+ */
+export const DeleteQuotationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * @summary Get dashboard summary stats
  */
 export const GetDashboardSummaryResponse = zod.object({

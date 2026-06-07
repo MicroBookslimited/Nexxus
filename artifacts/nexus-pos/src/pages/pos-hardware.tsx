@@ -11,8 +11,11 @@ import {
   useListHeldOrders,
   useCreateHeldOrder,
   useDeleteHeldOrder,
+  useCreateQuotation,
+  useUpdateQuotation,
   getListCustomersQueryKey,
   getListHeldOrdersQueryKey,
+  getListQuotationsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
@@ -67,6 +70,7 @@ import {
   Banknote,
   CreditCard,
   SplitSquareHorizontal,
+  FileText,
 } from "lucide-react";
 
 import {
@@ -77,6 +81,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { buildReceiptHtml, openReceiptWindow, receiptOrderFrom } from "@/lib/receipt";
+import { printQuotation } from "@/lib/quotation-doc";
 import { printOrderReceipt } from "@/lib/print-receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, getPurchaseUnits, type PurchaseUnit } from "@/lib/saas-api";
 
@@ -196,7 +201,14 @@ export function PosHardware() {
   const createCustomer = useCreateCustomer();
   const createHeldOrder = useCreateHeldOrder();
   const deleteHeldOrder = useDeleteHeldOrder();
+  const createQuotation = useCreateQuotation();
+  const updateQuotation = useUpdateQuotation();
   const [heldSheetOpen, setHeldSheetOpen] = useState(false);
+  // When a quote was loaded into the cart (from the Quotations page), its id is
+  // held here so a successful checkout marks the quote "converted".
+  const [loadedQuoteId, setLoadedQuoteId] = useState<number | null>(null);
+  const [saveQuoteOpen, setSaveQuoteOpen] = useState(false);
+  const [quoteExpiry, setQuoteExpiry] = useState("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -438,7 +450,70 @@ export function PosHardware() {
     setPaymentMethod("cash");
     setDiscountAmount(0);
     setSelectedCustomerId(null);
+    setLoadedQuoteId(null);
   };
+
+  /* ── Load a pending quote (handed over from the Quotations page) ───────── */
+  const quoteLoadedRef = useRef(false);
+  useEffect(() => {
+    if (quoteLoadedRef.current) return;
+    const raw = sessionStorage.getItem("nexxus_pending_quote");
+    if (!raw) return;
+    quoteLoadedRef.current = true;
+    sessionStorage.removeItem("nexxus_pending_quote");
+    try {
+      const pending = JSON.parse(raw) as {
+        id: number;
+        quoteNumber?: string;
+        items: Array<{
+          productId: number;
+          productName: string;
+          price: number;
+          quantity: number;
+          isTaxable?: boolean;
+          isCustom?: boolean;
+          unitLabel?: string;
+          unitFactor?: number;
+          unitId?: number;
+        }>;
+        discountAmount?: number;
+        notes?: string;
+        customerId?: number | null;
+      };
+      const productMap = new Map((products ?? []).map((p) => [p.id, p]));
+      setCart(
+        pending.items.map((item, idx) => {
+          const p = productMap.get(item.productId);
+          const isCustom = item.isCustom ?? item.productId === 0;
+          return {
+            cartKey: `${item.productId}:quote:${Date.now()}:${idx}`,
+            productId: item.productId,
+            productName: item.productName,
+            barcode: p?.barcode ?? null,
+            imageUrl: p?.imageUrl ?? null,
+            price: item.price,
+            quantity: item.quantity,
+            isTaxable: isCustom ? true : (item.isTaxable ?? p?.isTaxable ?? true),
+            ...(isCustom ? { isCustom: true } : {}),
+            ...(item.unitLabel ? { unitLabel: item.unitLabel } : {}),
+            ...(item.unitFactor ? { unitFactor: item.unitFactor } : {}),
+            ...(item.unitId ? { unitId: item.unitId } : {}),
+          };
+        }),
+      );
+      if (pending.discountAmount && pending.discountAmount > 0) setDiscountAmount(pending.discountAmount);
+      if (pending.notes) setNotes(pending.notes);
+      if (pending.customerId) setSelectedCustomerId(pending.customerId);
+      setLoadedQuoteId(pending.id);
+      toast({
+        title: "Quote loaded",
+        description: `${pending.quoteNumber ?? "Quotation"} loaded into cart — complete checkout to convert it to a sale.`,
+      });
+    } catch {
+      toast({ title: "Could not load quote", variant: "destructive" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products]);
 
   const handleHoldBill = () => {
     if (cart.length === 0) {
@@ -751,6 +826,17 @@ export function PosHardware() {
           } else {
             setReceiptCustomerInfo(null);
           }
+          // If this sale was started by loading a quote, mark that quote
+          // converted and link it to the new order.
+          if (loadedQuoteId) {
+            updateQuotation.mutate(
+              { id: loadedQuoteId, data: { status: "converted", convertedOrderId: data.id } },
+              {
+                onSuccess: () =>
+                  queryClient.invalidateQueries({ queryKey: getListQuotationsQueryKey() }),
+              },
+            );
+          }
           resetCart();
           queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
         },
@@ -780,6 +866,55 @@ export function PosHardware() {
     });
     const html = buildReceiptHtml(ro, settings);
     printOrderReceipt(html, ro, settings);
+  };
+
+  /* ── Save the current cart as a quotation ──────────────────────────────── */
+  const handleSaveAsQuote = () => {
+    if (cart.length === 0) {
+      toast({ title: "Cart is empty", description: "Add items before saving a quote.", variant: "destructive" });
+      return;
+    }
+    const expiryIso = quoteExpiry ? new Date(`${quoteExpiry}T23:59:59`).toISOString() : null;
+    createQuotation.mutate(
+      {
+        data: {
+          customerId: selectedCustomerId ?? undefined,
+          items: cart.map((c) => ({
+            productId: c.productId,
+            productName: c.productName,
+            price: c.price,
+            quantity: c.quantity,
+            isTaxable: c.isTaxable,
+            ...(c.isCustom ? { isCustom: true } : {}),
+            ...(c.unitLabel ? { unitLabel: c.unitLabel } : {}),
+            ...(c.unitFactor ? { unitFactor: c.unitFactor } : {}),
+            ...(c.unitId ? { unitId: c.unitId } : {}),
+          })),
+          discountType: discount > 0 ? "fixed" : undefined,
+          discountAmount: discount > 0 ? discount : undefined,
+          notes: notes.trim() || undefined,
+          expiryDate: expiryIso,
+        },
+      },
+      {
+        onSuccess: (data) => {
+          toast({ title: "Quote saved", description: `${data.quoteNumber} created.` });
+          const cust = selectedCustomer;
+          printQuotation(
+            data,
+            settings ?? {},
+            cust
+              ? { name: cust.name, phone: cust.phone, email: cust.email, address: cust.address }
+              : null,
+          );
+          queryClient.invalidateQueries({ queryKey: getListQuotationsQueryKey() });
+          setSaveQuoteOpen(false);
+          setQuoteExpiry("");
+          resetCart();
+        },
+        onError: () => toast({ title: "Could not save quote", variant: "destructive" }),
+      },
+    );
   };
 
   /* ────────────────────────────────────────────────────────────────────── */
@@ -1402,6 +1537,17 @@ export function PosHardware() {
             Hold Bill
           </button>
 
+          {/* Save as Quote — solid pill */}
+          <button
+            onClick={() => setSaveQuoteOpen(true)}
+            disabled={cart.length === 0 || createQuotation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-full bg-sky-500 hover:bg-sky-400 active:scale-[0.98] text-[#0B1E2D] font-bold px-4 h-10 text-xs shadow-lg shadow-sky-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Save current cart as a quotation"
+          >
+            <FileText className="h-4 w-4" />
+            Save as Quote
+          </button>
+
           {/* Unhold Bill — solid pill with Sheet trigger */}
           <Sheet open={heldSheetOpen} onOpenChange={setHeldSheetOpen}>
             <SheetTrigger asChild>
@@ -1845,6 +1991,62 @@ export function PosHardware() {
             <Button onClick={printReceipt} className="bg-gradient-to-r from-teal-500 to-cyan-500">
               <Printer className="h-4 w-4 mr-1.5" />
               Print Receipt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save as Quote dialog */}
+      <Dialog open={saveQuoteOpen} onOpenChange={setSaveQuoteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-sky-500" />
+              Save as Quote
+            </DialogTitle>
+            <DialogDescription>
+              Saves the current cart as a quotation. No stock is deducted — load the quote later to
+              complete the sale.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg bg-muted px-3 py-2 text-sm flex items-center justify-between">
+              <span className="text-muted-foreground">Customer</span>
+              <span className="font-medium">{selectedCustomer?.name ?? "Walk-in"}</span>
+            </div>
+            <div className="rounded-lg bg-muted px-3 py-2 text-sm flex items-center justify-between">
+              <span className="text-muted-foreground">Total</span>
+              <span className="font-bold">{formatCurrency(total, baseCurrency)}</span>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="quote-expiry">Valid until (optional)</Label>
+              <Input
+                id="quote-expiry"
+                type="date"
+                value={quoteExpiry}
+                onChange={(e) => setQuoteExpiry(e.target.value)}
+                min={new Date().toISOString().slice(0, 10)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="quote-notes">Notes / terms (optional)</Label>
+              <textarea
+                id="quote-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                placeholder="Payment terms, delivery notes, validity conditions…"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveQuoteOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveAsQuote} disabled={createQuotation.isPending} className="gap-1.5">
+              <FileText className="h-4 w-4" />
+              {createQuotation.isPending ? "Saving…" : "Save & Print"}
             </Button>
           </DialogFooter>
         </DialogContent>

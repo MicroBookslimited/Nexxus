@@ -72,6 +72,7 @@ Each decision below is summarized; full detail lives in [docs/architecture.md](d
 *   **Supermarket POS Layout (scan-only)** — Scan-only high-speed lane layout (gated by `supermarket_ui_mode`, mutually exclusive with hardware mode). [Details](docs/architecture.md#supermarket-pos-layout-scan-only).
 *   **Auto-print Receipts (Silent Printing)** — Optional `auto_print_receipt` tenant setting that auto-prints on every checkout across all three POS layouts. [Details](docs/architecture.md#auto-print-receipts-silent-printing).
 *   **Kiosk Lockdown** — App-wide fullscreen kiosk lock; exiting fullscreen requires a manager PIN, armed flag persisted in `sessionStorage`. [Details](docs/architecture.md#kiosk-lockdown).
+*   **Quotations (Hardware Mode)** — Non-binding quotes saved from Hardware POS (auto QUO-YY-NNNN, server-computed totals, advisory-lock-serialized numbering); a dedicated `/quotations` page lists/searches/prints them and loads an accepted quote back into the POS cart, marking it converted at checkout. [Details](docs/architecture.md#quotations-hardware-mode).
 
 ## Product
 

@@ -6,7 +6,7 @@ import {
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
   FlaskConical, Factory, Store, Cpu, Landmark, Banknote, ClipboardList, Smartphone,
-  Scale, CheckCircle, Tag,
+  Scale, CheckCircle, Tag, FileText,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -52,6 +52,7 @@ const NAV_ITEMS: NavEntry[] = [
   // ── PRIORITY: critical day-to-day buttons — always show label, pinned first ──
   { href: "/pos",          label: "POS",             icon: ShoppingCart,    color: "text-emerald-400", permission: "pos.sale",           alwaysShowLabel: true },
   { href: "/orders",       label: "Order List",      icon: ListOrdered,     color: "text-purple-400",  permission: "orders.view",        alwaysShowLabel: true },
+  { href: "/quotations",   label: "Quotations",      icon: FileText,        color: "text-teal-300",    permission: "orders.view" },
   { href: "/cash",         label: "Cash Mgmt",       icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session",  alwaysShowLabel: true },
   { href: "/clock",        label: "Time Clock",      icon: Clock,           color: "text-emerald-400", permission: null },
   { href: "/register",     label: "Cash Register",   icon: Banknote,        color: "text-teal-400",    permission: "reports.view",       alwaysShowLabel: true },

@@ -18,6 +18,8 @@ tags:
     description: Order management
   - name: held-orders
     description: Held (parked) order management
+  - name: quotations
+    description: Customer price quotations
   - name: dashboard
     description: Dashboard analytics
   - name: customers
@@ -647,6 +649,93 @@ paths:
       operationId: deleteHeldOrder
       tags: [held-orders]
       summary: Delete a held order (after recall or dismiss)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /quotations:
+    get:
+      operationId: listQuotations
+      tags: [quotations]
+      summary: List all quotations
+      responses:
+        "200":
+          description: List of quotations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Quotation"
+    post:
+      operationId: createQuotation
+      tags: [quotations]
+      summary: Create a quotation from the current cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQuotationBody"
+      responses:
+        "201":
+          description: Created quotation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quotation"
+
+  /quotations/{id}:
+    get:
+      operationId: getQuotation
+      tags: [quotations]
+      summary: Get a quotation by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Quotation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quotation"
+    patch:
+      operationId: updateQuotation
+      tags: [quotations]
+      summary: Update a quotation (status / conversion / notes / expiry)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQuotationBody"
+      responses:
+        "200":
+          description: Updated quotation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quotation"
+    delete:
+      operationId: deleteQuotation
+      tags: [quotations]
+      summary: Delete a quotation
       parameters:
         - name: id
           in: path
@@ -2312,6 +2401,139 @@ components:
           format: float
       required:
         - items
+
+    QuotationItem:
+      type: object
+      properties:
+        productId:
+          type: integer
+        productName:
+          type: string
+        price:
+          type: number
+          format: float
+        quantity:
+          type: number
+          format: float
+        isTaxable:
+          type: boolean
+        isCustom:
+          type: boolean
+        unitLabel:
+          type: string
+        unitFactor:
+          type: number
+          format: float
+        unitId:
+          type: integer
+      required:
+        - productId
+        - productName
+        - price
+        - quantity
+
+    Quotation:
+      type: object
+      properties:
+        id:
+          type: integer
+        quoteNumber:
+          type: string
+        customerId:
+          type: integer
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuotationItem"
+        subtotal:
+          type: number
+          format: float
+        discountType:
+          type: string
+          enum: [percent, fixed]
+          nullable: true
+        discountAmount:
+          type: number
+          format: float
+          nullable: true
+        tax:
+          type: number
+          format: float
+        total:
+          type: number
+          format: float
+        notes:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, converted, expired, cancelled]
+        expiryDate:
+          type: string
+          format: date-time
+          nullable: true
+        convertedOrderId:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - quoteNumber
+        - items
+        - subtotal
+        - tax
+        - total
+        - status
+        - createdAt
+        - updatedAt
+
+    CreateQuotationBody:
+      type: object
+      properties:
+        customerId:
+          type: integer
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuotationItem"
+        discountType:
+          type: string
+          enum: [percent, fixed]
+        discountAmount:
+          type: number
+          format: float
+        notes:
+          type: string
+        expiryDate:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - items
+
+    UpdateQuotationBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, converted, expired, cancelled]
+        convertedOrderId:
+          type: integer
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        expiryDate:
+          type: string
+          format: date-time
+          nullable: true
 
     DashboardSummary:
       type: object
