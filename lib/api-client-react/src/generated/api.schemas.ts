@@ -468,6 +468,10 @@ export interface Quotation {
   id: number;
   quoteNumber: string;
   customerId?: number | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  customerAddress?: string | null;
   items: QuotationItem[];
   subtotal: number;
   discountType?: QuotationDiscountType;

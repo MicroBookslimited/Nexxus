@@ -2442,6 +2442,18 @@ components:
         customerId:
           type: integer
           nullable: true
+        customerName:
+          type: string
+          nullable: true
+        customerPhone:
+          type: string
+          nullable: true
+        customerEmail:
+          type: string
+          nullable: true
+        customerAddress:
+          type: string
+          nullable: true
         items:
           type: array
           items:

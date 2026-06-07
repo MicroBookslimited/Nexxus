@@ -1435,6 +1435,10 @@ export const ListQuotationsResponseItem = zod.object({
   id: zod.number(),
   quoteNumber: zod.string(),
   customerId: zod.number().nullish(),
+  customerName: zod.string().nullish(),
+  customerPhone: zod.string().nullish(),
+  customerEmail: zod.string().nullish(),
+  customerAddress: zod.string().nullish(),
   items: zod.array(
     zod.object({
       productId: zod.number(),
@@ -1497,6 +1501,10 @@ export const GetQuotationResponse = zod.object({
   id: zod.number(),
   quoteNumber: zod.string(),
   customerId: zod.number().nullish(),
+  customerName: zod.string().nullish(),
+  customerPhone: zod.string().nullish(),
+  customerEmail: zod.string().nullish(),
+  customerAddress: zod.string().nullish(),
   items: zod.array(
     zod.object({
       productId: zod.number(),
@@ -1541,6 +1549,10 @@ export const UpdateQuotationResponse = zod.object({
   id: zod.number(),
   quoteNumber: zod.string(),
   customerId: zod.number().nullish(),
+  customerName: zod.string().nullish(),
+  customerPhone: zod.string().nullish(),
+  customerEmail: zod.string().nullish(),
+  customerAddress: zod.string().nullish(),
   items: zod.array(
     zod.object({
       productId: zod.number(),

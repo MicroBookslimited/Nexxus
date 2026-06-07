@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq, gte, desc, sql } from "drizzle-orm";
-import { db, quotationsTable } from "@workspace/db";
+import { db, quotationsTable, customersTable } from "@workspace/db";
 import {
   CreateQuotationBody,
   GetQuotationParams,
@@ -24,10 +24,24 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
   return p ? p.tenantId : null;
 }
 
-function normalizeQuotation(q: typeof quotationsTable.$inferSelect) {
+type CustomerSnapshot = {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+} | null;
+
+function normalizeQuotation(
+  q: typeof quotationsTable.$inferSelect,
+  customer?: CustomerSnapshot,
+) {
   return {
     ...q,
     customerId: q.customerId ?? undefined,
+    customerName: customer?.name ?? undefined,
+    customerPhone: customer?.phone ?? undefined,
+    customerEmail: customer?.email ?? undefined,
+    customerAddress: customer?.address ?? undefined,
     discountType: q.discountType ?? undefined,
     discountAmount: q.discountAmount ?? undefined,
     notes: q.notes ?? undefined,
@@ -116,11 +130,30 @@ router.get("/quotations", async (req, res): Promise<void> => {
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
   const rows = await db
-    .select()
+    .select({
+      quotation: quotationsTable,
+      customer: {
+        name: customersTable.name,
+        phone: customersTable.phone,
+        email: customersTable.email,
+        address: customersTable.address,
+      },
+    })
     .from(quotationsTable)
+    .leftJoin(
+      customersTable,
+      and(
+        eq(quotationsTable.customerId, customersTable.id),
+        eq(customersTable.tenantId, tenantId),
+      ),
+    )
     .where(eq(quotationsTable.tenantId, tenantId))
     .orderBy(desc(quotationsTable.createdAt));
-  res.json(ListQuotationsResponse.parse(rows.map(normalizeQuotation)));
+  res.json(
+    ListQuotationsResponse.parse(
+      rows.map((row) => normalizeQuotation(row.quotation, row.customer)),
+    ),
+  );
 });
 
 router.post("/quotations", async (req, res): Promise<void> => {
@@ -144,6 +177,24 @@ router.post("/quotations", async (req, res): Promise<void> => {
   if (badItem) {
     res.status(400).json({ error: "Each item needs a positive quantity and a non-negative price" });
     return;
+  }
+
+  // Reject a customerId that doesn't belong to this tenant — otherwise the
+  // quote could later embed and leak another tenant's customer PII on read.
+  if (parsed.data.customerId != null) {
+    const [owned] = await db
+      .select({ id: customersTable.id })
+      .from(customersTable)
+      .where(
+        and(
+          eq(customersTable.id, parsed.data.customerId),
+          eq(customersTable.tenantId, tenantId),
+        ),
+      );
+    if (!owned) {
+      res.status(400).json({ error: "Customer not found" });
+      return;
+    }
   }
 
   const totals = await computeTotals(
@@ -178,7 +229,21 @@ router.post("/quotations", async (req, res): Promise<void> => {
     return created;
   });
 
-  res.status(201).json(GetQuotationResponse.parse(normalizeQuotation(row)));
+  let customer: CustomerSnapshot = null;
+  if (row.customerId != null) {
+    const [c] = await db
+      .select({
+        name: customersTable.name,
+        phone: customersTable.phone,
+        email: customersTable.email,
+        address: customersTable.address,
+      })
+      .from(customersTable)
+      .where(and(eq(customersTable.id, row.customerId), eq(customersTable.tenantId, tenantId)));
+    customer = c ?? null;
+  }
+
+  res.status(201).json(GetQuotationResponse.parse(normalizeQuotation(row, customer)));
 });
 
 router.get("/quotations/:id", async (req, res): Promise<void> => {
@@ -193,8 +258,23 @@ router.get("/quotations/:id", async (req, res): Promise<void> => {
   }
 
   const [row] = await db
-    .select()
+    .select({
+      quotation: quotationsTable,
+      customer: {
+        name: customersTable.name,
+        phone: customersTable.phone,
+        email: customersTable.email,
+        address: customersTable.address,
+      },
+    })
     .from(quotationsTable)
+    .leftJoin(
+      customersTable,
+      and(
+        eq(quotationsTable.customerId, customersTable.id),
+        eq(customersTable.tenantId, tenantId),
+      ),
+    )
     .where(and(eq(quotationsTable.id, params.data.id), eq(quotationsTable.tenantId, tenantId)));
 
   if (!row) {
@@ -202,7 +282,7 @@ router.get("/quotations/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(GetQuotationResponse.parse(normalizeQuotation(row)));
+  res.json(GetQuotationResponse.parse(normalizeQuotation(row.quotation, row.customer)));
 });
 
 router.patch("/quotations/:id", async (req, res): Promise<void> => {
