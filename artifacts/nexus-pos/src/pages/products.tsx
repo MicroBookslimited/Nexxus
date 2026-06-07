@@ -5223,7 +5223,7 @@ export function Products() {
                       }}
                     >
                       <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-h-[280px]">
                         {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         <SelectItem value="__new__" className="text-primary border-t border-border mt-1 pt-2">
                           <span className="flex items-center gap-1.5"><Plus className="h-3.5 w-3.5" />New category…</span>
