@@ -71,6 +71,7 @@ import {
   CreditCard,
   SplitSquareHorizontal,
   FileText,
+  BookOpen,
 } from "lucide-react";
 
 import {
@@ -246,7 +247,7 @@ export function PosHardware() {
   /* ── Cart ──────────────────────────────────────────────────────────────── */
   const [cart, setCart] = useState<CartLine[]>([]);
   const [notes, setNotes] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "split">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "split" | "credit">("cash");
   const [splitCashInput, setSplitCashInput] = useState("");
   const [splitCardInput, setSplitCardInput] = useState("");
   const [cashTenderedInput, setCashTenderedInput] = useState("");
@@ -576,6 +577,9 @@ export function PosHardware() {
     );
     if (held.discountAmount && held.discountAmount > 0) setDiscountAmount(held.discountAmount);
     if (held.notes) setNotes(held.notes);
+    // Recalling a held bill replaces the cart, so any previously loaded quote no
+    // longer applies — clear it so checkout can't convert the wrong quotation.
+    setLoadedQuoteId(null);
     deleteHeldOrder.mutate(
       { id },
       {
@@ -732,7 +736,7 @@ export function PosHardware() {
     total > 0;
 
   // Pick a payment method; pre-fill a balanced 50/50 split for convenience.
-  const selectPayment = (m: "cash" | "card" | "split") => {
+  const selectPayment = (m: "cash" | "card" | "split" | "credit") => {
     setPaymentMethod(m);
     if (m === "split") {
       const half = Number((total / 2).toFixed(2));
@@ -765,6 +769,14 @@ export function PosHardware() {
       toast({
         title: "Invalid split",
         description: "Cash + card portions must add up to the total.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (paymentMethod === "credit" && !selectedCustomerId) {
+      toast({
+        title: "Customer required",
+        description: "Select a customer to process a credit sale.",
         variant: "destructive",
       });
       return;
@@ -1347,7 +1359,7 @@ export function PosHardware() {
             </div>
 
             {/* Payment method */}
-            <div className="grid grid-cols-3 gap-1.5 pt-1.5">
+            <div className="grid grid-cols-2 gap-1.5 pt-1.5">
               <button
                 onClick={() => selectPayment("cash")}
                 className={`h-11 rounded-lg text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
@@ -1381,7 +1393,33 @@ export function PosHardware() {
                 <SplitSquareHorizontal className="h-4 w-4" />
                 Split
               </button>
+              <button
+                onClick={() => selectPayment("credit")}
+                className={`h-11 rounded-lg text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
+                  paymentMethod === "credit"
+                    ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30"
+                    : "bg-amber-500/15 text-amber-200 hover:bg-amber-500/30"
+                }`}
+              >
+                <BookOpen className="h-4 w-4" />
+                Credit
+              </button>
             </div>
+            {paymentMethod === "credit" && (
+              <div
+                className={`mt-1 rounded-lg border px-3 py-2 text-[11px] font-semibold ${
+                  selectedCustomerId
+                    ? "border-amber-400/40 bg-amber-500/10 text-amber-200"
+                    : "border-amber-500/50 bg-amber-500/15 text-amber-300"
+                }`}
+              >
+                {selectedCustomerId ? (
+                  <span>On account — full balance added to {selectedCustomer?.name ?? "customer"}'s account.</span>
+                ) : (
+                  <span>⚠ Select a customer above to enable this credit sale.</span>
+                )}
+              </div>
+            )}
             {paymentMethod === "cash" && (
               <button
                 onClick={() => setCashDialogOpen(true)}
@@ -1472,7 +1510,12 @@ export function PosHardware() {
 
             <button
               onClick={handleCheckout}
-              disabled={cart.length === 0 || createOrder.isPending}
+              disabled={
+                cart.length === 0 ||
+                createOrder.isPending ||
+                (paymentMethod === "split" && !isSplitValid) ||
+                (paymentMethod === "credit" && !selectedCustomerId)
+              }
               className="mt-2 w-full h-12 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-bold shadow-lg shadow-teal-500/20 hover:brightness-110 active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
             >
               <ShoppingCart className="h-5 w-5" />
@@ -1982,6 +2025,12 @@ export function PosHardware() {
                     </div>
                   </>
                 )}
+              {receiptOrder.paymentMethod === "credit" && (
+                <div className="flex justify-between text-xs font-semibold text-amber-500 pt-1.5 border-t border-border">
+                  <span>Charged to account</span>
+                  <span className="font-mono">{fmtNum(receiptOrder.total)}</span>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter className="flex-col sm:flex-row gap-2">

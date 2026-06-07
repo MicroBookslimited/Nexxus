@@ -10,4 +10,5 @@
 - [Optimistic PATCH + scan race](optimistic-patch-scan-race.md) — counters that PATCH absolute values under barcode scanning need a sync ref + per-item write-seq guard or increments drop.
 - [Drizzle push applies ALL drift](drizzle-push-unrelated-drift.md) — `db push` diffs the whole schema; pre-existing drift can prompt to truncate an unrelated table. For one additive column use `ALTER TABLE … ADD COLUMN IF NOT EXISTS` instead.
 - [Partial refund integrity](refund-concurrency.md) — per-item refund endpoints must aggregate duplicate line ids and lock the order row (`.for("update")`) or they over-refund money + double-restore stock.
+- [Loaded-quote state hygiene](loaded-quote-state-hygiene.md) — every POS cart-replacing action (recall bill, etc.) must `setLoadedQuoteId(null)`, or checkout converts the wrong quotation.
 - [API uses Supabase DB](api-uses-supabase-db.md) — api-server connects to SUPABASE_DATABASE_URL; sandbox executeSql hits local DATABASE_URL. Manual DDL must be applied to Supabase or every API query 500s.
