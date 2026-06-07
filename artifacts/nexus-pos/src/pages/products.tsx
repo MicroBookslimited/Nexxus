@@ -9,6 +9,7 @@ import {
   useDeleteProduct,
   useBulkArchiveProducts,
   useBulkRestoreProducts,
+  useListProductCategories,
   useFindDuplicateProducts,
   getFindDuplicateProductsQueryKey,
   useMergeProducts,
@@ -2763,7 +2764,26 @@ export function Products() {
   const { toast } = useToast();
   const { data: settings } = useGetSettings();
   const businessName = settings?.business_name || "My Store";
-  const categories = React.useMemo(() => parseCategorySetting(settings?.product_categories), [settings?.product_categories]);
+  const { data: inUseCategories } = useListProductCategories();
+  // Curated settings list comes first (preserves the admin's chosen order),
+  // then any category actually used by a product that isn't in that list
+  // (e.g. introduced via CSV/MBPOS import) is appended, case-insensitively
+  // de-duplicated. This keeps the filter bar, Manage dialog, and product-form
+  // dropdown showing every real category without a manual sync step.
+  const categories = React.useMemo(() => {
+    const curated = parseCategorySetting(settings?.product_categories);
+    const seen = new Set(curated.map((c) => c.toLowerCase()));
+    const merged = [...curated];
+    for (const raw of inUseCategories ?? []) {
+      const name = raw.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(name);
+    }
+    return merged;
+  }, [settings?.product_categories, inUseCategories]);
   const updateSettings = useUpdateSettings();
 
   const createPurchase = useCreatePurchase();

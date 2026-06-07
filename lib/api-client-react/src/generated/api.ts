@@ -899,6 +899,81 @@ export function useFindDuplicateProducts<
 }
 
 /**
+ * @summary List all distinct categories actually used by the tenant's products (including archived), so callers can union them with the curated settings list.
+ */
+export const getListProductCategoriesUrl = () => {
+  return `/api/products/categories`;
+};
+
+export const listProductCategories = async (
+  options?: RequestInit,
+): Promise<string[]> => {
+  return customFetch<string[]>(getListProductCategoriesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListProductCategoriesQueryKey = () => {
+  return [`/api/products/categories`] as const;
+};
+
+export const getListProductCategoriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listProductCategories>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listProductCategories>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListProductCategoriesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listProductCategories>>
+  > = ({ signal }) => listProductCategories({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listProductCategories>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListProductCategoriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listProductCategories>>
+>;
+export type ListProductCategoriesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all distinct categories actually used by the tenant's products (including archived), so callers can union them with the curated settings list.
+ */
+
+export function useListProductCategories<
+  TData = Awaited<ReturnType<typeof listProductCategories>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listProductCategories>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListProductCategoriesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Merge duplicate products into one survivor, combining stock and re-attributing all history.
  */
 export const getMergeProductsUrl = () => {

@@ -219,6 +219,21 @@ paths:
                 items:
                   $ref: "#/components/schemas/DuplicateGroup"
 
+  /products/categories:
+    get:
+      operationId: listProductCategories
+      tags: [products]
+      summary: List all distinct categories actually used by the tenant's products (including archived), so callers can union them with the curated settings list.
+      responses:
+        "200":
+          description: Distinct product category names in use
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
   /products/merge:
     post:
       operationId: mergeProducts

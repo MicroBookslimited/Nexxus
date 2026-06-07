@@ -350,6 +350,14 @@ export const FindDuplicateProductsResponse = zod.array(
 );
 
 /**
+ * @summary List all distinct categories actually used by the tenant's products (including archived), so callers can union them with the curated settings list.
+ */
+export const ListProductCategoriesResponseItem = zod.string();
+export const ListProductCategoriesResponse = zod.array(
+  ListProductCategoriesResponseItem,
+);
+
+/**
  * @summary Merge duplicate products into one survivor, combining stock and re-attributing all history.
  */
 

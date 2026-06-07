@@ -647,6 +647,28 @@ router.post("/products/merge", async (req, res): Promise<void> => {
   res.json({ survivorId, mergedCount: dupeIds.length, combinedStock });
 });
 
+// Distinct categories actually used by this tenant's products (including
+// archived, so nothing the catalog references is ever hidden). Callers union
+// this with the curated `product_categories` setting so imported categories
+// surface everywhere without a manual sync. Must stay registered before the
+// `/products/:id` route so "categories" is not parsed as an :id.
+router.get("/products/categories", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const rows = await db
+    .selectDistinct({ category: productsTable.category })
+    .from(productsTable)
+    .where(and(eq(productsTable.tenantId, tenantId), isNotNull(productsTable.category)));
+
+  const categories = rows
+    .map((r) => (r.category ?? "").trim())
+    .filter((c) => c.length > 0)
+    .sort((a, b) => a.localeCompare(b));
+
+  res.json(categories);
+});
+
 router.get("/products/:id", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
