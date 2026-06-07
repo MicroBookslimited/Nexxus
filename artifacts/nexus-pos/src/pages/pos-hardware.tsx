@@ -17,7 +17,7 @@ import {
   getListHeldOrdersQueryKey,
   getListQuotationsQueryKey,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQueries } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
 import { usePosChrome } from "@/contexts/PosChromeContext";
 import { useToast } from "@/hooks/use-toast";
@@ -84,7 +84,7 @@ import {
 import { buildReceiptHtml, openReceiptWindow, receiptOrderFrom } from "@/lib/receipt";
 import { printQuotation } from "@/lib/quotation-doc";
 import { printOrderReceipt } from "@/lib/print-receipt";
-import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, getPurchaseUnits, type PurchaseUnit } from "@/lib/saas-api";
+import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, getPurchaseUnits, type PurchaseUnit, getPricingTiers, previewTierPrice, type PricingTier } from "@/lib/saas-api";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Helpers                                                                    */
@@ -715,10 +715,31 @@ export function PosHardware() {
     }
   };
 
+  /* ── Volume / tier pricing ─────────────────────────────────────────────── */
+  const cartProductIds = Array.from(new Set(cart.map((c) => c.productId).filter((id) => id > 0)));
+  const tierQueries = useQueries({
+    queries: cartProductIds.map((pid) => ({
+      queryKey: ["pricing-tiers", pid],
+      queryFn: () => getPricingTiers(pid),
+      staleTime: 60_000,
+    })),
+  });
+  const pricingTiersByProduct = new Map<number, PricingTier[]>();
+  cartProductIds.forEach((pid, i) => {
+    pricingTiersByProduct.set(pid, (tierQueries[i]?.data as PricingTier[] | undefined) ?? []);
+  });
+  /** Effective unit price for a cart line — applies active volume tier if any. */
+  const getLinePrice = (c: CartLine): number => {
+    if (c.isCustom || !c.productId) return c.price;
+    const tiers = pricingTiersByProduct.get(c.productId) ?? [];
+    const { unitPrice } = previewTierPrice(c.price, c.quantity, tiers);
+    return unitPrice;
+  };
+
   /* ── Totals ────────────────────────────────────────────────────────────── */
-  const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
+  const subtotal = cart.reduce((s, c) => s + getLinePrice(c) * c.quantity, 0);
   const discount = Math.min(discountAmount, subtotal);
-  const taxBase = cart.reduce((s, c) => (c.isTaxable ? s + c.price * c.quantity : s), 0);
+  const taxBase = cart.reduce((s, c) => (c.isTaxable ? s + getLinePrice(c) * c.quantity : s), 0);
   // Proportionally apply the discount to the taxable portion only.
   // Default to 1 (whole cart is taxable) for an empty cart, matching pos.tsx.
   const taxableShare = subtotal > 0 ? taxBase / subtotal : 1;
@@ -909,7 +930,7 @@ export function PosHardware() {
           items: cart.map((c) => ({
             productId: c.productId,
             productName: c.productName,
-            price: c.price,
+            price: getLinePrice(c),
             quantity: c.quantity,
             isTaxable: c.isTaxable,
             ...(c.isCustom ? { isCustom: true } : {}),
@@ -1255,7 +1276,11 @@ export function PosHardware() {
                 Cart is empty. Click a product or scan a barcode to add items.
               </div>
             ) : (
-              cart.map((c) => (
+              cart.map((c) => {
+                const linePrice = getLinePrice(c);
+                const tiers = pricingTiersByProduct.get(c.productId) ?? [];
+                const { tier } = previewTierPrice(c.price, c.quantity, tiers);
+                return (
                 <div
                   key={c.cartKey}
                   className="rounded-xl bg-[#0d2238] border border-white/5 p-2.5 flex items-center gap-2.5"
@@ -1342,15 +1367,29 @@ export function PosHardware() {
                   </div>
                   <div className="text-right">
                     <div className="font-mono text-sm font-bold text-slate-100">
-                      {formatCurrency(c.price * c.quantity, baseCurrency)}
+                      {formatCurrency(linePrice * c.quantity, baseCurrency)}
                     </div>
-                    <div className="text-[10px] text-slate-500">
-                      @ {formatCurrency(c.unitFactor ? c.price * c.unitFactor : c.price, baseCurrency)}
-                      {c.unitLabel ? ` / ${c.unitLabel}` : ""}
-                    </div>
+                    {tier ? (
+                      <div className="text-[10px] font-mono flex flex-col items-end gap-0.5">
+                        <span className="text-slate-500 line-through">
+                          @ {formatCurrency(c.unitFactor ? c.price * c.unitFactor : c.price, baseCurrency)}
+                          {c.unitLabel ? ` / ${c.unitLabel}` : ""}
+                        </span>
+                        <span className="text-emerald-400">
+                          @ {formatCurrency(c.unitFactor ? linePrice * c.unitFactor : linePrice, baseCurrency)}
+                          {c.unitLabel ? ` / ${c.unitLabel}` : ""} · vol
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-500">
+                        @ {formatCurrency(c.unitFactor ? c.price * c.unitFactor : c.price, baseCurrency)}
+                        {c.unitLabel ? ` / ${c.unitLabel}` : ""}
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))
+                );
+              })
             )}
             <div ref={cartBottomRef} />
           </div>
