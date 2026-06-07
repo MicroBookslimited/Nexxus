@@ -1175,8 +1175,13 @@ export function PosHardware() {
                         <Package className="h-5 w-5 text-slate-600" />
                       )}
                     </div>
-                    <div className="font-mono text-xs text-teal-300 truncate">
-                      {p.barcode ?? `#${p.id}`}
+                    <div className="min-w-0">
+                      <div className="font-mono text-xs text-teal-300 truncate">
+                        {p.sku ?? p.barcode ?? `#${p.id}`}
+                      </div>
+                      {p.sku && p.barcode && (
+                        <div className="font-mono text-[10px] text-slate-500 truncate">{p.barcode}</div>
+                      )}
                     </div>
                     <div className="min-w-0">
                       <div className="font-semibold text-slate-100 truncate">{p.name}</div>
