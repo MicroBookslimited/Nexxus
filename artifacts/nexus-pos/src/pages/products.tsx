@@ -109,10 +109,16 @@ function CategoryManagerDialog({ open, onClose, categories, onSave }: {
   const [list, setList] = useState<string[]>([]);
   const [newCat, setNewCat] = useState("");
   const { toast } = useToast();
+  const listRef = React.useRef<HTMLDivElement>(null);
 
-  // Reset local state whenever dialog opens
+  // Reset local state and scroll position whenever dialog opens
   useEffect(() => {
-    if (open) { setList([...categories]); setNewCat(""); }
+    if (open) {
+      setList([...categories]);
+      setNewCat("");
+      // Reset scroll so the first category is always visible on open
+      if (listRef.current) listRef.current.scrollTop = 0;
+    }
   }, [open, categories]);
 
   const addCategory = () => {
@@ -164,7 +170,7 @@ function CategoryManagerDialog({ open, onClose, categories, onSave }: {
           </div>
 
           {/* List */}
-          <div className="rounded-lg border border-border divide-y divide-border/60 max-h-72 overflow-y-auto">
+          <div ref={listRef} className="rounded-lg border border-border divide-y divide-border/60 max-h-72 overflow-y-auto">
             {list.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-6">No categories yet</p>
             )}
