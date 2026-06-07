@@ -246,6 +246,8 @@ export function PosHardware() {
 
   /* ── Cart ──────────────────────────────────────────────────────────────── */
   const [cart, setCart] = useState<CartLine[]>([]);
+  /** Raw string value while a qty input is being edited (keyed by cartKey). */
+  const [qtyEdit, setQtyEdit] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "split" | "credit">("cash");
   const [splitCashInput, setSplitCashInput] = useState("");
@@ -441,6 +443,19 @@ export function PosHardware() {
   };
 
   const removeLine = (cartKey: string) => setCart((prev) => prev.filter((c) => c.cartKey !== cartKey));
+
+  /** Set an absolute display-unit quantity on a cart line, converting back to
+   *  base units and snapping to whole multiples (multi-unit gotcha). */
+  const setAbsoluteQty = (cartKey: string, displayQty: number) => {
+    const factor = cart.find((c) => c.cartKey === cartKey)?.unitFactor ?? 1;
+    const baseQty = Math.max(0, Math.round(displayQty)) * factor;
+    if (baseQty <= 0) {
+      removeLine(cartKey);
+    } else {
+      setCart((prev) => prev.map((c) => (c.cartKey === cartKey ? { ...c, quantity: baseQty } : c)));
+    }
+    setQtyEdit((prev) => { const next = { ...prev }; delete next[cartKey]; return next; });
+  };
 
   const resetCart = () => {
     setCart([]);
@@ -1273,9 +1288,43 @@ export function PosHardware() {
                       >
                         <Minus className="h-3 w-3" />
                       </button>
-                      <span className="font-mono text-xs font-semibold w-7 text-center text-slate-100">
-                        {c.unitFactor ? c.quantity / c.unitFactor : c.quantity}
-                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        className="font-mono text-xs font-semibold w-14 text-center text-slate-100 bg-[#0a1a2a] border border-white/10 rounded-md h-6 px-1 focus:outline-none focus:ring-1 focus:ring-teal-500/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        value={
+                          qtyEdit[c.cartKey] ??
+                          String(c.unitFactor ? c.quantity / c.unitFactor : c.quantity)
+                        }
+                        onChange={(e) =>
+                          setQtyEdit((prev) => ({ ...prev, [c.cartKey]: e.target.value }))
+                        }
+                        onFocus={(e) => {
+                          e.target.select();
+                          setQtyEdit((prev) => ({
+                            ...prev,
+                            [c.cartKey]: String(
+                              c.unitFactor ? c.quantity / c.unitFactor : c.quantity,
+                            ),
+                          }));
+                        }}
+                        onBlur={(e) => {
+                          const n = parseFloat(e.target.value);
+                          if (!isNaN(n) && n >= 0) setAbsoluteQty(c.cartKey, n);
+                          else
+                            setQtyEdit((prev) => {
+                              const next = { ...prev };
+                              delete next[c.cartKey];
+                              return next;
+                            });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
                       <button
                         onClick={() => changeQty(c.cartKey, +1)}
                         className="h-6 w-6 rounded-md bg-[#0a1a2a] border border-white/10 text-slate-300 hover:bg-teal-500/10 hover:text-teal-300 transition flex items-center justify-center"
