@@ -100,3 +100,23 @@ export const productPurchaseUnitsTable = pgTable("product_purchase_units", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export type ProductPurchaseUnit = typeof productPurchaseUnitsTable.$inferSelect;
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Shared, tenant-scoped catalog of reusable unit definitions.
+ * Distinct from `product_purchase_units` (which stays the per-product
+ * source of truth): this table just remembers the unit names + their
+ * canonical conversion so the Pricing & Units editor can offer them as a
+ * dropdown and so a "Units" management screen can list them.
+ *   name             — display name ("CS24", "Case", "Dozen", "Sack")
+ *   baseUnit         — the base unit this conversion is expressed in
+ *   conversionFactor — base units in 1 of this unit (e.g. CS24 = 24)
+ * ──────────────────────────────────────────────────────────────────────── */
+export const productUnitsTable = pgTable("product_units", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  name: text("name").notNull(),
+  baseUnit: text("base_unit").notNull().default("each"),
+  conversionFactor: real("conversion_factor").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type ProductUnit = typeof productUnitsTable.$inferSelect;

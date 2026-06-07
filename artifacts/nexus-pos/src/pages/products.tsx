@@ -42,6 +42,7 @@ import {
 import type { GetProductResponse } from "@workspace/api-zod";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { PricingUnitsEditor } from "@/components/PricingUnitsEditor";
+import { ProductUnitsManager } from "@/components/ProductUnitsManager";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -82,7 +83,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check, Archive, RotateCcw, Copy, GitMerge, ClipboardList, Send, Ban, ArrowRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check, Archive, RotateCcw, Copy, GitMerge, ClipboardList, Send, Ban, ArrowRight, Ruler } from "lucide-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { printPurchaseOrder } from "@/lib/purchase-order-doc";
 import { csvDownload, parseSpreadsheet, type ImportResult } from "@/lib/spreadsheet-import";
@@ -2794,7 +2795,7 @@ export function Products() {
   const deleteBill = useDeletePurchaseBill();
   const { data: vendors = [] } = useListVendors();
 
-  const [pageTab, setPageTab] = useState<"products" | "purchases" | "orders">("products");
+  const [pageTab, setPageTab] = useState<"products" | "purchases" | "orders" | "units">("products");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState("details");
@@ -3545,6 +3546,12 @@ export function Products() {
               {purchaseOrders && purchaseOrders.length > 0 && (
                 <span className="ml-0.5 bg-primary/20 text-primary rounded-full px-1.5 text-[10px] font-bold">{purchaseOrders.length}</span>
               )}
+            </button>
+            <button
+              onClick={() => setPageTab("units")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${pageTab === "units" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"}`}
+            >
+              <Ruler className="h-3.5 w-3.5" />Units
             </button>
           </div>
           {pageTab === "products" && canManage && (
@@ -4802,6 +4809,11 @@ export function Products() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── UNITS CATALOG ── */}
+      {pageTab === "units" && (
+        <ProductUnitsManager canManage={canManage} />
       )}
 
       {/* ── PURCHASE ORDER VIEW DIALOG ── */}

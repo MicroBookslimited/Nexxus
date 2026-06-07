@@ -2941,3 +2941,61 @@ export const SendEodReportEmailResponse = zod.object({
   success: zod.boolean(),
   messageId: zod.string().optional(),
 });
+
+/**
+ * @summary List the tenant's shared catalog of reusable unit definitions.
+ */
+export const ListProductUnitsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  baseUnit: zod.string(),
+  conversionFactor: zod.number(),
+});
+export const ListProductUnitsResponse = zod.array(ListProductUnitsResponseItem);
+
+/**
+ * @summary Add a reusable unit to the tenant's catalog.
+ */
+export const CreateProductUnitBody = zod.object({
+  name: zod.string(),
+  baseUnit: zod.string().optional(),
+  conversionFactor: zod.number(),
+});
+
+export const CreateProductUnitResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  baseUnit: zod.string(),
+  conversionFactor: zod.number(),
+});
+
+/**
+ * @summary Update a saved unit definition.
+ */
+export const UpdateProductUnitParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateProductUnitBody = zod.object({
+  name: zod.string().optional(),
+  baseUnit: zod.string().optional(),
+  conversionFactor: zod.number().optional(),
+});
+
+export const UpdateProductUnitResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  baseUnit: zod.string(),
+  conversionFactor: zod.number(),
+});
+
+/**
+ * @summary Delete a saved unit definition.
+ */
+export const DeleteProductUnitParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteProductUnitResponse = zod.object({
+  success: zod.boolean(),
+});

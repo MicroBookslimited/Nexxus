@@ -36,6 +36,7 @@ import type {
   CreateKdsScreenBody,
   CreateOrderBody,
   CreateProductBody,
+  CreateProductUnitBody,
   CreatePurchaseBillBody,
   CreatePurchaseBody,
   CreatePurchaseOrderBody,
@@ -45,6 +46,7 @@ import type {
   Customer,
   DailySales,
   DashboardSummary,
+  DeleteProductUnit200,
   DiningTable,
   DuplicateGroup,
   EmailSentResponse,
@@ -75,6 +77,7 @@ import type {
   PaymentMethodSales,
   Product,
   ProductCustomization,
+  ProductUnit,
   Purchase,
   PurchaseBill,
   PurchaseBillWithItems,
@@ -94,6 +97,7 @@ import type {
   UpdateKitchenOrderStatus200,
   UpdateKitchenOrderStatusBody,
   UpdateOrderStatusBody,
+  UpdateProductUnitBody,
   UpdatePurchaseOrderBody,
   UpdateQuotationBody,
   UpdateStaffBody,
@@ -7830,4 +7834,336 @@ export const useSendEodReportEmail = <
   TContext
 > => {
   return useMutation(getSendEodReportEmailMutationOptions(options));
+};
+
+/**
+ * @summary List the tenant's shared catalog of reusable unit definitions.
+ */
+export const getListProductUnitsUrl = () => {
+  return `/api/product-units`;
+};
+
+export const listProductUnits = async (
+  options?: RequestInit,
+): Promise<ProductUnit[]> => {
+  return customFetch<ProductUnit[]>(getListProductUnitsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListProductUnitsQueryKey = () => {
+  return [`/api/product-units`] as const;
+};
+
+export const getListProductUnitsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listProductUnits>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listProductUnits>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListProductUnitsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listProductUnits>>
+  > = ({ signal }) => listProductUnits({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listProductUnits>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListProductUnitsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listProductUnits>>
+>;
+export type ListProductUnitsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List the tenant's shared catalog of reusable unit definitions.
+ */
+
+export function useListProductUnits<
+  TData = Awaited<ReturnType<typeof listProductUnits>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listProductUnits>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListProductUnitsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a reusable unit to the tenant's catalog.
+ */
+export const getCreateProductUnitUrl = () => {
+  return `/api/product-units`;
+};
+
+export const createProductUnit = async (
+  createProductUnitBody: CreateProductUnitBody,
+  options?: RequestInit,
+): Promise<ProductUnit> => {
+  return customFetch<ProductUnit>(getCreateProductUnitUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createProductUnitBody),
+  });
+};
+
+export const getCreateProductUnitMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProductUnit>>,
+    TError,
+    { data: BodyType<CreateProductUnitBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createProductUnit>>,
+  TError,
+  { data: BodyType<CreateProductUnitBody> },
+  TContext
+> => {
+  const mutationKey = ["createProductUnit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createProductUnit>>,
+    { data: BodyType<CreateProductUnitBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createProductUnit(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateProductUnitMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createProductUnit>>
+>;
+export type CreateProductUnitMutationBody = BodyType<CreateProductUnitBody>;
+export type CreateProductUnitMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add a reusable unit to the tenant's catalog.
+ */
+export const useCreateProductUnit = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProductUnit>>,
+    TError,
+    { data: BodyType<CreateProductUnitBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createProductUnit>>,
+  TError,
+  { data: BodyType<CreateProductUnitBody> },
+  TContext
+> => {
+  return useMutation(getCreateProductUnitMutationOptions(options));
+};
+
+/**
+ * @summary Update a saved unit definition.
+ */
+export const getUpdateProductUnitUrl = (id: number) => {
+  return `/api/product-units/${id}`;
+};
+
+export const updateProductUnit = async (
+  id: number,
+  updateProductUnitBody: UpdateProductUnitBody,
+  options?: RequestInit,
+): Promise<ProductUnit> => {
+  return customFetch<ProductUnit>(getUpdateProductUnitUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateProductUnitBody),
+  });
+};
+
+export const getUpdateProductUnitMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProductUnit>>,
+    TError,
+    { id: number; data: BodyType<UpdateProductUnitBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateProductUnit>>,
+  TError,
+  { id: number; data: BodyType<UpdateProductUnitBody> },
+  TContext
+> => {
+  const mutationKey = ["updateProductUnit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateProductUnit>>,
+    { id: number; data: BodyType<UpdateProductUnitBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateProductUnit(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateProductUnitMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateProductUnit>>
+>;
+export type UpdateProductUnitMutationBody = BodyType<UpdateProductUnitBody>;
+export type UpdateProductUnitMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a saved unit definition.
+ */
+export const useUpdateProductUnit = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProductUnit>>,
+    TError,
+    { id: number; data: BodyType<UpdateProductUnitBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateProductUnit>>,
+  TError,
+  { id: number; data: BodyType<UpdateProductUnitBody> },
+  TContext
+> => {
+  return useMutation(getUpdateProductUnitMutationOptions(options));
+};
+
+/**
+ * @summary Delete a saved unit definition.
+ */
+export const getDeleteProductUnitUrl = (id: number) => {
+  return `/api/product-units/${id}`;
+};
+
+export const deleteProductUnit = async (
+  id: number,
+  options?: RequestInit,
+): Promise<DeleteProductUnit200> => {
+  return customFetch<DeleteProductUnit200>(getDeleteProductUnitUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteProductUnitMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteProductUnit>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteProductUnit>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteProductUnit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteProductUnit>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteProductUnit(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteProductUnitMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteProductUnit>>
+>;
+
+export type DeleteProductUnitMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a saved unit definition.
+ */
+export const useDeleteProductUnit = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteProductUnit>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteProductUnit>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteProductUnitMutationOptions(options));
 };

@@ -1798,6 +1798,85 @@ paths:
         "503":
           description: Email service not configured
 
+  /product-units:
+    get:
+      operationId: listProductUnits
+      tags: [products]
+      summary: List the tenant's shared catalog of reusable unit definitions.
+      responses:
+        "200":
+          description: Saved unit definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductUnit"
+    post:
+      operationId: createProductUnit
+      tags: [products]
+      summary: Add a reusable unit to the tenant's catalog.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductUnitBody"
+      responses:
+        "200":
+          description: The created unit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductUnit"
+
+  /product-units/{id}:
+    patch:
+      operationId: updateProductUnit
+      tags: [products]
+      summary: Update a saved unit definition.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductUnitBody"
+      responses:
+        "200":
+          description: The updated unit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductUnit"
+    delete:
+      operationId: deleteProductUnit
+      tags: [products]
+      summary: Delete a saved unit definition.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deletion result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required:
+                  - success
+
 components:
   schemas:
     HealthStatus:
@@ -1807,6 +1886,49 @@ components:
           type: string
       required:
         - status
+
+    ProductUnit:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        baseUnit:
+          type: string
+        conversionFactor:
+          type: number
+          format: float
+      required:
+        - id
+        - name
+        - baseUnit
+        - conversionFactor
+
+    CreateProductUnitBody:
+      type: object
+      properties:
+        name:
+          type: string
+        baseUnit:
+          type: string
+        conversionFactor:
+          type: number
+          format: float
+      required:
+        - name
+        - conversionFactor
+
+    UpdateProductUnitBody:
+      type: object
+      properties:
+        name:
+          type: string
+        baseUnit:
+          type: string
+        conversionFactor:
+          type: number
+          format: float
 
     Product:
       type: object

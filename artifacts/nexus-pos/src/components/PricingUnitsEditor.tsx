@@ -17,6 +17,11 @@ import {
   getPricingTiers, replacePricingTiers, type PricingTier,
   getPurchaseUnits, replacePurchaseUnits, type PurchaseUnit,
 } from "@/lib/saas-api";
+import {
+  useListProductUnits,
+  useCreateProductUnit,
+  getListProductUnitsQueryKey,
+} from "@workspace/api-client-react";
 
 type DraftTier = { minQty: string; maxQty: string; unitPrice: string };
 type DraftUnit = { unitName: string; conversionFactor: string; isPurchase: boolean; isSale: boolean };
@@ -32,6 +37,11 @@ export function PricingUnitsEditor({
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+
+  /* ─── shared unit catalog (presets for the dropdown) ─── */
+  const catalogQ = useListProductUnits();
+  const createCatalogUnit = useCreateProductUnit();
+  const catalog = catalogQ.data ?? [];
 
   /* ─── load ─── */
   const tiersQ = useQuery({
@@ -125,8 +135,25 @@ export function PricingUnitsEditor({
       }
       return replacePurchaseUnits(productId, payload);
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       qc.setQueryData(["purchase-units", productId], data);
+      // Remember any newly typed units in the shared catalog so they appear
+      // in the dropdown next time. Existing presets (case-insensitive) skipped.
+      const known = new Set(catalog.map((c) => c.name.trim().toLowerCase()));
+      const toAdd = units
+        .filter((u) => u.unitName.trim() !== "" && u.conversionFactor.trim() !== "")
+        .filter((u) => !known.has(u.unitName.trim().toLowerCase()))
+        .filter((u, i, arr) => arr.findIndex((x) => x.unitName.trim().toLowerCase() === u.unitName.trim().toLowerCase()) === i);
+      if (toAdd.length > 0) {
+        await Promise.allSettled(
+          toAdd.map((u) =>
+            createCatalogUnit.mutateAsync({
+              data: { name: u.unitName.trim(), baseUnit, conversionFactor: Number(u.conversionFactor) },
+            }),
+          ),
+        );
+        qc.invalidateQueries({ queryKey: getListProductUnitsQueryKey() });
+      }
       toast({ title: "Units saved" });
     },
     onError: (e) => toast({
@@ -211,6 +238,11 @@ export function PricingUnitsEditor({
       </section>
 
       {/* ─────── UNITS OF MEASURE ─────── */}
+      <datalist id="product-unit-catalog">
+        {catalog.map((c) => (
+          <option key={c.id} value={c.name}>{c.conversionFactor} {c.baseUnit}</option>
+        ))}
+      </datalist>
       <section className="space-y-3">
         <header className="flex items-center justify-between">
           <div>
@@ -246,8 +278,15 @@ export function PricingUnitsEditor({
               <div key={i} className="grid grid-cols-[1.2fr_1fr_auto_auto_auto] gap-2 items-center">
                 <Input
                   placeholder="e.g. Case"
+                  list="product-unit-catalog"
                   value={u.unitName}
-                  onChange={(e) => setUnits(units.map((x, j) => j === i ? { ...x, unitName: e.target.value } : x))}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    const match = catalog.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase());
+                    setUnits(units.map((x, j) => j === i
+                      ? { ...x, unitName: name, conversionFactor: match ? String(match.conversionFactor) : x.conversionFactor }
+                      : x));
+                  }}
                 />
                 <Input
                   type="number" min="0" step="0.01" placeholder="e.g. 24"

@@ -9,6 +9,25 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface ProductUnit {
+  id: number;
+  name: string;
+  baseUnit: string;
+  conversionFactor: number;
+}
+
+export interface CreateProductUnitBody {
+  name: string;
+  baseUnit?: string;
+  conversionFactor: number;
+}
+
+export interface UpdateProductUnitBody {
+  name?: string;
+  baseUnit?: string;
+  conversionFactor?: number;
+}
+
 export type ProductUnitOfMeasure =
   | (typeof ProductUnitOfMeasure)[keyof typeof ProductUnitOfMeasure]
   | null;
@@ -1424,4 +1443,8 @@ export type AuthenticateStaffBody = {
 
 export type ListPurchasesParams = {
   productId?: number;
+};
+
+export type DeleteProductUnit200 = {
+  success: boolean;
 };

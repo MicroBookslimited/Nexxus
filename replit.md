@@ -73,6 +73,7 @@ Each decision below is summarized; full detail lives in [docs/architecture.md](d
 *   **Auto-print Receipts (Silent Printing)** — Optional `auto_print_receipt` tenant setting that auto-prints on every checkout across all three POS layouts. [Details](docs/architecture.md#auto-print-receipts-silent-printing).
 *   **Kiosk Lockdown** — App-wide fullscreen kiosk lock; exiting fullscreen requires a manager PIN, armed flag persisted in `sessionStorage`. [Details](docs/architecture.md#kiosk-lockdown).
 *   **Quotations (Hardware Mode)** — Non-binding quotes saved from Hardware POS (auto QUO-YY-NNNN, server-computed totals, advisory-lock-serialized numbering); a dedicated `/quotations` page lists/searches/prints them and loads an accepted quote back into the POS cart, marking it converted at checkout. [Details](docs/architecture.md#quotations-hardware-mode).
+*   **Shared Units Catalog** — Tenant-scoped catalog of reusable unit presets (`product_units`) surfaced as a "Units" tab under Products; backs a datalist dropdown in the per-product Pricing & Units editor (prefills conversion, auto-adds new units). Per-product `product_purchase_units` flow is untouched. [Details](docs/architecture.md#shared-units-catalog).
 
 ## Product
 

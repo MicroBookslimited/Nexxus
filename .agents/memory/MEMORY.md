@@ -16,4 +16,5 @@
 - [SaaS credential dual-store sync](saas-credential-dual-store.md) — tenant email/password lives in BOTH tenants + tenant_admin_users (login checks admin row first); any change must sync both, and legacy tokens may lack adminUserId.
 - [Loaded-quote state hygiene](loaded-quote-state-hygiene.md) — every POS cart-replacing action (recall bill, etc.) must `setLoadedQuoteId(null)`, or checkout converts the wrong quotation.
 - [API uses Supabase DB](api-uses-supabase-db.md) — api-server connects to SUPABASE_DATABASE_URL; sandbox executeSql hits local DATABASE_URL. Manual DDL must be applied to Supabase or every API query 500s.
+- [Two unit tables](two-unit-tables.md) — product_units (shared tenant catalog of presets) is distinct from per-product product_purchase_units (source of truth); never conflate or repoint one into the other.
 - [Product categories union](product-categories-union.md) — category pickers must union curated `product_categories` setting + in-use categories (GET /products/categories); imports set product.category but never sync the setting.
