@@ -129,6 +129,10 @@ function CategoryManagerDialog({ open, onClose, categories, onSave }: {
     }
     setList(prev => [...prev, name]);
     setNewCat("");
+    // Scroll the list to the bottom after React flushes so the new item is visible
+    setTimeout(() => {
+      if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+    }, 0);
   };
 
   const removeCategory = (cat: string) => {
