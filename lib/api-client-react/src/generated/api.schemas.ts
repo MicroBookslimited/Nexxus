@@ -931,6 +931,17 @@ export const PurchaseBillStatus = {
   confirmed: "confirmed",
 } as const;
 
+/**
+ * Whether entered unit costs are net (exclusive) or tax-inclusive.
+ */
+export type PurchaseBillTaxMode =
+  (typeof PurchaseBillTaxMode)[keyof typeof PurchaseBillTaxMode];
+
+export const PurchaseBillTaxMode = {
+  exclusive: "exclusive",
+  inclusive: "inclusive",
+} as const;
+
 export interface PurchaseBill {
   id: number;
   billNumber: string;
@@ -938,6 +949,8 @@ export interface PurchaseBill {
   status: PurchaseBillStatus;
   notes?: string | null;
   defaultTaxRate: number;
+  /** Whether entered unit costs are net (exclusive) or tax-inclusive. */
+  taxMode?: PurchaseBillTaxMode;
   subtotal: number;
   taxTotal: number;
   totalCost: number;
@@ -966,6 +979,17 @@ export const PurchaseBillWithItemsStatus = {
   confirmed: "confirmed",
 } as const;
 
+/**
+ * Whether entered unit costs are net (exclusive) or tax-inclusive.
+ */
+export type PurchaseBillWithItemsTaxMode =
+  (typeof PurchaseBillWithItemsTaxMode)[keyof typeof PurchaseBillWithItemsTaxMode];
+
+export const PurchaseBillWithItemsTaxMode = {
+  exclusive: "exclusive",
+  inclusive: "inclusive",
+} as const;
+
 export interface PurchaseBillWithItems {
   id: number;
   billNumber: string;
@@ -973,6 +997,8 @@ export interface PurchaseBillWithItems {
   status: PurchaseBillWithItemsStatus;
   notes?: string | null;
   defaultTaxRate: number;
+  /** Whether entered unit costs are net (exclusive) or tax-inclusive. */
+  taxMode?: PurchaseBillWithItemsTaxMode;
   subtotal: number;
   taxTotal: number;
   totalCost: number;
@@ -999,6 +1025,17 @@ export const CreatePurchaseBillBodyStatus = {
   confirmed: "confirmed",
 } as const;
 
+/**
+ * How entered unit costs are interpreted. "exclusive" (default): cost is net, tax added on top. "inclusive": cost already includes tax and the server back-computes the net cost.
+ */
+export type CreatePurchaseBillBodyTaxMode =
+  (typeof CreatePurchaseBillBodyTaxMode)[keyof typeof CreatePurchaseBillBodyTaxMode];
+
+export const CreatePurchaseBillBodyTaxMode = {
+  exclusive: "exclusive",
+  inclusive: "inclusive",
+} as const;
+
 export interface CreatePurchaseBillBody {
   billNumber: string;
   supplier?: string;
@@ -1006,6 +1043,8 @@ export interface CreatePurchaseBillBody {
   status?: CreatePurchaseBillBodyStatus;
   /** Default input-tax rate (%) applied to lines that don't override. */
   defaultTaxRate?: number;
+  /** How entered unit costs are interpreted. "exclusive" (default): cost is net, tax added on top. "inclusive": cost already includes tax and the server back-computes the net cost. */
+  taxMode?: CreatePurchaseBillBodyTaxMode;
   items: CreatePurchaseBillItemBody[];
 }
 

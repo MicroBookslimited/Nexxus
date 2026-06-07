@@ -42,6 +42,10 @@ const CreatePurchaseBillBody = z.object({
   notes: z.string().optional(),
   status: z.enum(["draft", "confirmed"]).default("draft"),
   defaultTaxRate: z.number().min(0).max(100).default(0),
+  // "exclusive" (default): entered unit cost is net, tax added on top.
+  // "inclusive": entered unit cost already includes tax; the server
+  // back-computes the net cost so unitCost is always STORED net.
+  taxMode: z.enum(["exclusive", "inclusive"]).default("exclusive"),
   items: z.array(CreateBillItemBody).min(1),
 });
 
@@ -326,7 +330,7 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
     return;
   }
 
-  const { billNumber, supplier, notes, status, defaultTaxRate, items } = parsed.data;
+  const { billNumber, supplier, notes, status, defaultTaxRate, taxMode, items } = parsed.data;
 
   for (const item of items) {
     const [product] = await db.select({
@@ -349,15 +353,26 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
   // balances cleanly to two decimal places.
   const cents = (n: number) => Math.round(n * 100) / 100;
   const computed = items.map((item) => {
-    const lineSubtotal = cents(item.quantity * item.unitCost);
     const effectiveRate = item.taxRate ?? defaultTaxRate;
-    const lineTax = cents(lineSubtotal * effectiveRate / 100);
-    return {
-      ...item,
-      lineSubtotal,
-      lineTax,
-      lineTotal: cents(lineSubtotal + lineTax),
-    };
+    if (taxMode === "inclusive") {
+      // The entered unit cost already includes tax, so the entered GROSS line
+      // total is authoritative. Round the gross first, then back out the net
+      // subtotal and derive tax as (gross - net) so the persisted split always
+      // sums back to exactly what the user entered (no ±0.01 drift).
+      const lineTotal = cents(item.quantity * item.unitCost);
+      const lineSubtotal =
+        effectiveRate > 0 ? cents(lineTotal / (1 + effectiveRate / 100)) : lineTotal;
+      const lineTax = cents(lineTotal - lineSubtotal);
+      // Store net unit cost so the confirm flow (qty * unitCost) reproduces the
+      // net subtotal exactly. unitCost is ALWAYS stored net in both modes.
+      const netUnitCost = item.quantity > 0 ? lineSubtotal / item.quantity : item.unitCost;
+      return { ...item, netUnitCost, lineSubtotal, lineTax, lineTotal };
+    }
+    // Exclusive (default): entered unit cost is net, tax added on top.
+    const netUnitCost = item.unitCost;
+    const lineSubtotal = cents(item.quantity * netUnitCost);
+    const lineTax = cents((lineSubtotal * effectiveRate) / 100);
+    return { ...item, netUnitCost, lineSubtotal, lineTax, lineTotal: cents(lineSubtotal + lineTax) };
   });
   const subtotal = cents(computed.reduce((s, i) => s + i.lineSubtotal, 0));
   const taxTotal = cents(computed.reduce((s, i) => s + i.lineTax, 0));
@@ -376,6 +391,7 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
         notes: notes ?? null,
         status,
         defaultTaxRate,
+        taxMode,
         subtotal,
         taxTotal,
         totalCost,
@@ -389,7 +405,7 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
           billId: createdBill.id,
           productId: item.productId,
           quantity: item.quantity,
-          unitCost: item.unitCost,
+          unitCost: item.netUnitCost,
           taxRate: item.taxRate ?? null,
           taxAmount: item.lineTax,
           totalCost: item.lineTotal,

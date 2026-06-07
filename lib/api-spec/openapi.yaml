@@ -3446,6 +3446,10 @@ components:
         defaultTaxRate:
           type: number
           format: float
+        taxMode:
+          type: string
+          enum: [exclusive, inclusive]
+          description: Whether entered unit costs are net (exclusive) or tax-inclusive.
         subtotal:
           type: number
           format: float
@@ -3519,6 +3523,10 @@ components:
         defaultTaxRate:
           type: number
           format: float
+        taxMode:
+          type: string
+          enum: [exclusive, inclusive]
+          description: Whether entered unit costs are net (exclusive) or tax-inclusive.
         subtotal:
           type: number
           format: float
@@ -3589,6 +3597,14 @@ components:
           type: number
           format: float
           description: Default input-tax rate (%) applied to lines that don't override.
+        taxMode:
+          type: string
+          enum: [exclusive, inclusive]
+          default: exclusive
+          description: >-
+            How entered unit costs are interpreted. "exclusive" (default): cost
+            is net, tax added on top. "inclusive": cost already includes tax and
+            the server back-computes the net cost.
         items:
           type: array
           items:

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CreatePurchaseBillBodyStatus } from "./createPurchaseBillBodyStatus";
+import type { CreatePurchaseBillBodyTaxMode } from "./createPurchaseBillBodyTaxMode";
 import type { CreatePurchaseBillItemBody } from "./createPurchaseBillItemBody";
 
 export interface CreatePurchaseBillBody {
@@ -15,5 +16,7 @@ export interface CreatePurchaseBillBody {
   status?: CreatePurchaseBillBodyStatus;
   /** Default input-tax rate (%) applied to lines that don't override. */
   defaultTaxRate?: number;
+  /** How entered unit costs are interpreted. "exclusive" (default): cost is net, tax added on top. "inclusive": cost already includes tax and the server back-computes the net cost. */
+  taxMode?: CreatePurchaseBillBodyTaxMode;
   items: CreatePurchaseBillItemBody[];
 }

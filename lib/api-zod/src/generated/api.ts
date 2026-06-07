@@ -2292,6 +2292,12 @@ export const ListPurchaseBillsResponseItem = zod.object({
   status: zod.enum(["draft", "confirmed"]),
   notes: zod.string().nullish(),
   defaultTaxRate: zod.number(),
+  taxMode: zod
+    .enum(["exclusive", "inclusive"])
+    .optional()
+    .describe(
+      "Whether entered unit costs are net (exclusive) or tax-inclusive.",
+    ),
   subtotal: zod.number(),
   taxTotal: zod.number(),
   totalCost: zod.number(),
@@ -2305,6 +2311,8 @@ export const ListPurchaseBillsResponse = zod.array(
 /**
  * @summary Create a purchase bill
  */
+export const createPurchaseBillBodyTaxModeDefault = `exclusive`;
+
 export const CreatePurchaseBillBody = zod.object({
   billNumber: zod.string(),
   supplier: zod.string().optional(),
@@ -2315,6 +2323,12 @@ export const CreatePurchaseBillBody = zod.object({
     .optional()
     .describe(
       "Default input-tax rate (%) applied to lines that don't override.",
+    ),
+  taxMode: zod
+    .enum(["exclusive", "inclusive"])
+    .default(createPurchaseBillBodyTaxModeDefault)
+    .describe(
+      'How entered unit costs are interpreted. \"exclusive\" (default): cost is net, tax added on top. \"inclusive\": cost already includes tax and the server back-computes the net cost.',
     ),
   items: zod.array(
     zod.object({
@@ -2345,6 +2359,12 @@ export const GetPurchaseBillResponse = zod.object({
   status: zod.enum(["draft", "confirmed"]),
   notes: zod.string().nullish(),
   defaultTaxRate: zod.number(),
+  taxMode: zod
+    .enum(["exclusive", "inclusive"])
+    .optional()
+    .describe(
+      "Whether entered unit costs are net (exclusive) or tax-inclusive.",
+    ),
   subtotal: zod.number(),
   taxTotal: zod.number(),
   totalCost: zod.number(),
@@ -2414,6 +2434,12 @@ export const ConfirmPurchaseBillResponse = zod.object({
   status: zod.enum(["draft", "confirmed"]),
   notes: zod.string().nullish(),
   defaultTaxRate: zod.number(),
+  taxMode: zod
+    .enum(["exclusive", "inclusive"])
+    .optional()
+    .describe(
+      "Whether entered unit costs are net (exclusive) or tax-inclusive.",
+    ),
   subtotal: zod.number(),
   taxTotal: zod.number(),
   totalCost: zod.number(),

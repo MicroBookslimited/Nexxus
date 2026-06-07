@@ -200,7 +200,7 @@ const emptyRestockForm = (): RestockForm => ({ quantity: "", unitCost: "", notes
 // taxRate is a string so an empty value means "inherit bill default".
 // Anything else parses as a percentage.
 type BillLineItem = { tempId: string; productId: string; quantity: string; unitCost: string; taxRate: string; batchNumber: string; expiryDate: string };
-type BillForm = { billNumber: string; supplier: string; notes: string; defaultTaxRate: string; items: BillLineItem[] };
+type BillForm = { billNumber: string; supplier: string; notes: string; defaultTaxRate: string; taxMode: "exclusive" | "inclusive"; items: BillLineItem[] };
 
 // One row in the post-confirm "review cost changes" dialog. The user can
 // edit `newPrice` before applying.
@@ -224,7 +224,7 @@ function emptyLineItem(): BillLineItem {
   return { tempId: makeId(), productId: "", quantity: "", unitCost: "", taxRate: "", batchNumber: "", expiryDate: "" };
 }
 function emptyBillForm(): BillForm {
-  return { billNumber: generateBillNumber(), supplier: "", notes: "", defaultTaxRate: "", items: [emptyLineItem()] };
+  return { billNumber: generateBillNumber(), supplier: "", notes: "", defaultTaxRate: "", taxMode: "exclusive", items: [emptyLineItem()] };
 }
 
 /* ─── Product form types ─── */
@@ -2854,12 +2854,23 @@ export function Products() {
   const billLineBreakdown = (item: BillLineItem) => {
     const qty = parseFloat(item.quantity) || 0;
     const cost = parseFloat(item.unitCost) || 0;
-    const subtotal = qty * cost;
     const lineRate = item.taxRate.trim() === "" ? null : parseFloat(item.taxRate);
     const defaultRate = parseFloat(billForm.defaultTaxRate) || 0;
     const rate = lineRate === null || Number.isNaN(lineRate) ? defaultRate : lineRate;
-    const tax = subtotal * rate / 100;
-    return { qty, cost, subtotal, rate, tax, total: subtotal + tax };
+    const cents = (n: number) => Math.round(n * 100) / 100;
+    if (billForm.taxMode === "inclusive") {
+      // Entered cost includes tax — the gross line total is authoritative.
+      // Mirror the server exactly: round gross, back out net, tax = gross - net.
+      // `cost` is returned net so margin math stays correct.
+      const total = cents(qty * cost);
+      const subtotal = rate > 0 ? cents(total / (1 + rate / 100)) : total;
+      const tax = cents(total - subtotal);
+      const netCost = qty > 0 ? subtotal / qty : cost;
+      return { qty, cost: netCost, subtotal, rate, tax, total };
+    }
+    const subtotal = cents(qty * cost);
+    const tax = cents((subtotal * rate) / 100);
+    return { qty, cost, subtotal, rate, tax, total: cents(subtotal + tax) };
   };
   const billLineTotal = (item: BillLineItem) => billLineBreakdown(item).total;
 
@@ -2869,7 +2880,8 @@ export function Products() {
   const billLineMargin = (item: BillLineItem) => {
     const product = products?.find((p) => String(p.id) === item.productId);
     if (!product) return null;
-    const cost = parseFloat(item.unitCost) || 0;
+    // Use the net (ex-tax) cost so margin is consistent in inclusive mode.
+    const cost = billLineBreakdown(item).cost;
     const price = product.price;
     if (!price || cost <= 0) return null;
     const amount = price - cost;
@@ -2916,6 +2928,7 @@ export function Products() {
           notes: billForm.notes || undefined,
           status,
           defaultTaxRate,
+          taxMode: billForm.taxMode,
           items: validItems.map((i) => ({
             productId: parseInt(i.productId),
             quantity: parseInt(i.quantity),
@@ -3871,6 +3884,27 @@ export function Products() {
                           className="pr-7 text-right font-mono"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">Tax Mode</Label>
+                      <div className="flex h-9 rounded-md border border-border overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setBillForm((f) => ({ ...f, taxMode: "exclusive" }))}
+                          className={`flex-1 text-xs font-medium transition ${billForm.taxMode === "exclusive" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-secondary/60"}`}
+                          title="Unit costs are net; tax is added on top"
+                        >
+                          Exclusive
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBillForm((f) => ({ ...f, taxMode: "inclusive" }))}
+                          className={`flex-1 text-xs font-medium transition border-l border-border ${billForm.taxMode === "inclusive" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-secondary/60"}`}
+                          title="Unit costs already include tax; net cost is back-computed"
+                        >
+                          Inclusive
+                        </button>
                       </div>
                     </div>
                     <div className="grid gap-1.5">

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PurchaseBillStatus } from "./purchaseBillStatus";
+import type { PurchaseBillTaxMode } from "./purchaseBillTaxMode";
 
 export interface PurchaseBill {
   id: number;
@@ -14,6 +15,8 @@ export interface PurchaseBill {
   status: PurchaseBillStatus;
   notes?: string | null;
   defaultTaxRate: number;
+  /** Whether entered unit costs are net (exclusive) or tax-inclusive. */
+  taxMode?: PurchaseBillTaxMode;
   subtotal: number;
   taxTotal: number;
   totalCost: number;

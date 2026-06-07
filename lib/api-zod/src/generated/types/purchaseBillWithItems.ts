@@ -8,6 +8,7 @@
 import type { PurchaseBillCostChange } from "./purchaseBillCostChange";
 import type { PurchaseBillItem } from "./purchaseBillItem";
 import type { PurchaseBillWithItemsStatus } from "./purchaseBillWithItemsStatus";
+import type { PurchaseBillWithItemsTaxMode } from "./purchaseBillWithItemsTaxMode";
 
 export interface PurchaseBillWithItems {
   id: number;
@@ -16,6 +17,8 @@ export interface PurchaseBillWithItems {
   status: PurchaseBillWithItemsStatus;
   notes?: string | null;
   defaultTaxRate: number;
+  /** Whether entered unit costs are net (exclusive) or tax-inclusive. */
+  taxMode?: PurchaseBillWithItemsTaxMode;
   subtotal: number;
   taxTotal: number;
   totalCost: number;

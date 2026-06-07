@@ -10,6 +10,7 @@
 - [Optimistic PATCH + scan race](optimistic-patch-scan-race.md) — counters that PATCH absolute values under barcode scanning need a sync ref + per-item write-seq guard or increments drop.
 - [Drizzle push applies ALL drift](drizzle-push-unrelated-drift.md) — `db push` diffs the whole schema; pre-existing drift can prompt to truncate an unrelated table. For one additive column use `ALTER TABLE … ADD COLUMN IF NOT EXISTS` instead.
 - [Partial refund integrity](refund-concurrency.md) — per-item refund endpoints must aggregate duplicate line ids and lock the order row (`.for("update")`) or they over-refund money + double-restore stock.
+- [Tax-inclusive line rounding](tax-inclusive-rounding.md) — for gross-entered prices, round gross first then tax = gross − net (not net-first); client preview must mirror server rounding exactly.
 - [Tenant-scoped snapshot joins](tenant-scoped-snapshot-joins.md) — embedding a related table's data on a tenant resource: scope the join by tenant AND validate the FK at write time, or leak cross-tenant PII.
 - [SaaS credential dual-store sync](saas-credential-dual-store.md) — tenant email/password lives in BOTH tenants + tenant_admin_users (login checks admin row first); any change must sync both, and legacy tokens may lack adminUserId.
 - [Loaded-quote state hygiene](loaded-quote-state-hygiene.md) — every POS cart-replacing action (recall bill, etc.) must `setLoadedQuoteId(null)`, or checkout converts the wrong quotation.

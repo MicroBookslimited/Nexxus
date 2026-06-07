@@ -51,6 +51,11 @@ export const purchaseBillsTable = pgTable("purchase_bills", {
   // Default input-tax rate (%) applied to lines that don't override.
   // Stored as a percentage, e.g. 15 = 15%. Zero = tax-free bill.
   defaultTaxRate: real("default_tax_rate").notNull().default(0),
+  // How the entered unit costs are interpreted: "exclusive" (cost is net,
+  // tax added on top) or "inclusive" (cost already includes tax; the server
+  // back-computes the net cost so `unitCost` is ALWAYS stored net). Audit-only
+  // — downstream cost/accounting always reads the stored net unitCost.
+  taxMode: text("tax_mode").notNull().default("exclusive"),
   // Sum of (qty * unitCost) across all lines, BEFORE tax. Used as the
   // inventory debit when posting to accounting.
   subtotal: real("subtotal").notNull().default(0),
