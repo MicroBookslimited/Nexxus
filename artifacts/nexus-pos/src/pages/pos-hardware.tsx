@@ -53,6 +53,9 @@ import {
   ArrowLeftRight,
   StickyNote,
   ChevronRight,
+  ChevronLeft,
+  Percent,
+  DollarSign,
   Wrench,
   Hammer,
   Lightbulb,
@@ -126,6 +129,14 @@ type CartLine = {
   unitLabel?: string;
   unitFactor?: number;
   unitId?: number;
+  /** Manager-overridden unit price (per BASE unit). When set, volume tiers are bypassed. */
+  priceOverrideValue?: number | null;
+  /** Name of the manager/admin who authorized the price override. */
+  priceOverrideBy?: string | null;
+  /** Per-line discount amount (in base currency, total for the line). */
+  itemDiscount?: number;
+  /** Name of the manager/admin who authorized the per-line discount. */
+  lineDiscountBy?: string | null;
   /** A custom / miscellaneous item entered via the calculator (not in the catalog).
    * Sent to the server with no productId; productId is the sentinel 0 locally. */
   isCustom?: boolean;
@@ -659,6 +670,110 @@ export function PosHardware() {
   const [discountOpen, setDiscountOpen] = useState(false);
   const [discountInput, setDiscountInput] = useState("");
 
+  /* ── Per-line override (discount + price edit) — manager PIN required when the
+        logged-in user is not a manager/admin/supervisor (mirrors the main POS). ── */
+  const MANAGEMENT_ROLES = ["admin", "manager", "supervisor"];
+  const isManagerUser = sessionStaff
+    ? MANAGEMENT_ROLES.some((r) => sessionStaff.role.toLowerCase().includes(r))
+    : false;
+  const [lineOverrideOpen, setLineOverrideOpen] = useState(false);
+  const [lineEntryOpen, setLineEntryOpen] = useState(false);
+  const [lineOverridePending, setLineOverridePending] = useState<{
+    cartKey: string;
+    mode: "discount" | "price";
+    productName: string;
+    currentPrice: number;
+    /** Max allowed override (tier-aware) for non-custom lines; null = no cap (custom). */
+    maxPrice: number | null;
+  } | null>(null);
+  const [lineOverrideAuthorizedBy, setLineOverrideAuthorizedBy] = useState<string | null>(null);
+  const [lineOverrideInput, setLineOverrideInput] = useState("");
+  const [lineOverrideDiscountType, setLineOverrideDiscountType] = useState<"percent" | "fixed">("percent");
+
+  /** Open the line-override flow for a cart line. Managers skip the PIN gate. */
+  const openLineOverride = (c: CartLine, mode: "discount" | "price") => {
+    const eff = getLinePrice(c);
+    setLineOverridePending({
+      cartKey: c.cartKey,
+      mode,
+      productName: c.productName,
+      currentPrice: eff,
+      // Catalog lines can only be marked DOWN (server lever is discountAmount);
+      // custom lines carry an arbitrary customPrice, so no cap.
+      maxPrice: c.isCustom ? null : getTierUnitPrice(c),
+    });
+    setLineOverrideInput(mode === "price" ? String(c.priceOverrideValue ?? fmtNum(eff)) : "");
+    setLineOverrideDiscountType("percent");
+    if (isManagerUser && sessionStaff) {
+      setLineOverrideAuthorizedBy(sessionStaff.name);
+      setLineOverrideOpen(false);
+      setLineEntryOpen(true);
+    } else {
+      setLineOverrideAuthorizedBy(null);
+      setLineOverrideOpen(true);
+    }
+  };
+
+  /** Apply a per-line discount (percent or fixed), clamped to the line max. */
+  const applyLineDiscount = (
+    cartKey: string,
+    type: "percent" | "fixed",
+    amount: number,
+    authorizedBy: string,
+  ) => {
+    setCart((prev) =>
+      prev.map((c) => {
+        if (c.cartKey !== cartKey) return c;
+        const unitP = c.priceOverrideValue ?? getTierUnitPrice(c);
+        const lineMax = unitP * c.quantity;
+        let d = type === "percent" ? (lineMax * amount) / 100 : amount;
+        d = Math.min(Math.max(0, d), lineMax);
+        return { ...c, itemDiscount: d, lineDiscountBy: authorizedBy };
+      }),
+    );
+  };
+
+  /** Apply a manager-overridden unit price; clears any separate line discount. */
+  const applyLinePrice = (cartKey: string, newPrice: number, authorizedBy: string) => {
+    setCart((prev) =>
+      prev.map((c) => {
+        if (c.cartKey !== cartKey) return c;
+        // Catalog lines can only be marked DOWN — the server's only lever is
+        // discountAmount (a reduction). Clamp to the tier-aware unit price so the
+        // UI total can never exceed what the server will persist. Custom lines
+        // carry an arbitrary customPrice server-side, so markups are allowed.
+        const maxP = c.isCustom ? Infinity : getTierUnitPrice(c);
+        const clamped = Math.min(Math.max(0, newPrice), maxP);
+        return { ...c, priceOverrideValue: clamped, priceOverrideBy: authorizedBy, itemDiscount: 0, lineDiscountBy: null };
+      }),
+    );
+  };
+
+  /** Remove a line override (discount or price). */
+  const removeLineOverride = (cartKey: string, mode: "discount" | "price") => {
+    setCart((prev) =>
+      prev.map((c) => {
+        if (c.cartKey !== cartKey) return c;
+        if (mode === "discount") return { ...c, itemDiscount: 0, lineDiscountBy: null };
+        return { ...c, priceOverrideValue: null, priceOverrideBy: null };
+      }),
+    );
+  };
+
+  /** Fully reset + close the line-override dialogs (cancel / escape / overlay). */
+  const closeLineOverride = () => {
+    setLineOverrideOpen(false);
+    setLineEntryOpen(false);
+    setLineOverridePending(null);
+    setLineOverrideAuthorizedBy(null);
+    setLineOverrideInput("");
+  };
+
+  /* ── Category cards horizontal scroll ──────────────────────────────────── */
+  const catScrollRef = useRef<HTMLDivElement>(null);
+  const scrollCats = (dir: -1 | 1) =>
+    catScrollRef.current?.scrollBy({ left: dir * 360, behavior: "smooth" });
+
   /* ── Filtered product list ─────────────────────────────────────────────── */
   const productList = products ?? [];
 
@@ -728,18 +843,47 @@ export function PosHardware() {
   cartProductIds.forEach((pid, i) => {
     pricingTiersByProduct.set(pid, (tierQueries[i]?.data as PricingTier[] | undefined) ?? []);
   });
-  /** Effective unit price for a cart line — applies active volume tier if any. */
-  const getLinePrice = (c: CartLine): number => {
+  /**
+   * Tier-aware unit price IGNORING any manager override. This mirrors what the
+   * server computes for a non-custom line (`applyVolumePricing(product.price …)`),
+   * so it is the correct baseline for translating a price override into the
+   * server's only lever — `discountAmount`. Using base `c.price` here would
+   * under-charge whenever a volume tier is active.
+   */
+  const getTierUnitPrice = (c: CartLine): number => {
     if (c.isCustom || !c.productId) return c.price;
     const tiers = pricingTiersByProduct.get(c.productId) ?? [];
     const { unitPrice } = previewTierPrice(c.price, c.quantity, tiers);
     return unitPrice;
   };
+  /**
+   * Effective unit price for a cart line. Override wins, but for catalog lines
+   * it is CLAMPED to the current tier price: a qty change can cross a tier
+   * boundary after the override was set, and the server can only mark a catalog
+   * line down (via discountAmount), so the UI must never show more than the tier.
+   * Custom lines carry an arbitrary customPrice server-side, so no clamp.
+   */
+  const getLinePrice = (c: CartLine): number => {
+    if (c.priceOverrideValue != null) {
+      return c.isCustom ? c.priceOverrideValue : Math.min(c.priceOverrideValue, getTierUnitPrice(c));
+    }
+    return getTierUnitPrice(c);
+  };
+  /**
+   * Effective per-line discount, CLAMPED to the current line max. itemDiscount is
+   * captured at apply time; a later qty decrease can push it above the line total,
+   * so deriving it here keeps UI totals and the checkout payload in lock-step with
+   * the server (which clamps lineTotal at 0).
+   */
+  const getLineDiscount = (c: CartLine): number => {
+    const lineMax = getLinePrice(c) * c.quantity;
+    return Math.min(Math.max(0, c.itemDiscount || 0), lineMax);
+  };
 
   /* ── Totals ────────────────────────────────────────────────────────────── */
-  const subtotal = cart.reduce((s, c) => s + getLinePrice(c) * c.quantity, 0);
+  const subtotal = cart.reduce((s, c) => s + getLinePrice(c) * c.quantity - getLineDiscount(c), 0);
   const discount = Math.min(discountAmount, subtotal);
-  const taxBase = cart.reduce((s, c) => (c.isTaxable ? s + getLinePrice(c) * c.quantity : s), 0);
+  const taxBase = cart.reduce((s, c) => (c.isTaxable ? s + getLinePrice(c) * c.quantity - getLineDiscount(c) : s), 0);
   // Proportionally apply the discount to the taxable portion only.
   // Default to 1 (whole cart is taxable) for an empty cart, matching pos.tsx.
   const taxableShare = subtotal > 0 ? taxBase / subtotal : 1;
@@ -830,11 +974,26 @@ export function PosHardware() {
         data: {
           paymentMethod,
           staffId: sessionStaff?.id ?? undefined,
-          items: cart.map((c) =>
-            c.isCustom
-              ? { customName: c.productName, customPrice: c.price, quantity: c.quantity }
-              : { productId: c.productId, quantity: c.quantity },
-          ),
+          items: cart.map((c) => {
+            // Derive everything from the same clamped helpers the UI uses, so the
+            // server's persisted lineTotal always equals the displayed line total
+            // — even if a qty change has since crossed a tier boundary.
+            const effUnit = getLinePrice(c); // override clamped to tier for catalog lines
+            const effDisc = getLineDiscount(c); // discount clamped to the line max
+            if (c.isCustom) {
+              return {
+                customName: c.productName,
+                customPrice: effUnit,
+                quantity: c.quantity,
+                discountAmount: effDisc > 0 ? effDisc : undefined,
+              };
+            }
+            // Catalog line: the server recomputes unit price from the tier, so fold
+            // the (capped) override markdown + line discount into discountAmount,
+            // its only lever. server lineTotal = tierUnit*qty - discountAmount = effUnit*qty - effDisc.
+            const d = (getTierUnitPrice(c) - effUnit) * c.quantity + effDisc;
+            return { productId: c.productId, quantity: c.quantity, discountAmount: d > 0 ? d : undefined };
+          }),
           cashTendered: paymentMethod === "split" ? undefined : cashTendered,
           splitCashAmount: paymentMethod === "split" ? splitCash : undefined,
           splitCardAmount: paymentMethod === "split" ? splitCard : undefined,
@@ -1132,31 +1291,50 @@ export function PosHardware() {
         </div>
       </div>
 
-      {/* ── Category cards row ───────────────────────────────────────── */}
+      {/* ── Category cards row (with edge scroll arrows) ─────────────── */}
       <div className="shrink-0 border-b border-white/5 bg-[#0d2238]/40">
-        <div className="flex gap-3 overflow-x-auto px-4 py-3 scrollbar-hide">
-          <CategoryCard
-            label="All"
-            sublabel={`${productList.length}`}
-            Icon={Boxes}
-            active={categoryFilter === null}
-            tint="from-teal-500 to-cyan-600"
-            onClick={() => setCategoryFilter(null)}
-          />
-          {categories.map((cat) => {
-            const meta = getCategoryIcon(cat);
-            return (
-              <CategoryCard
-                key={cat}
-                label={cat.toUpperCase()}
-                sublabel={`${categoryCounts[cat] ?? 0}`}
-                Icon={meta.Icon}
-                active={categoryFilter === cat}
-                tint={meta.tint}
-                onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
-              />
-            );
-          })}
+        <div className="relative flex items-center">
+          <button
+            onClick={() => scrollCats(-1)}
+            aria-label="Scroll categories left"
+            className="absolute left-0 top-0 bottom-0 z-10 flex items-center justify-center w-11 bg-gradient-to-r from-[#0d2238] via-[#0d2238]/90 to-transparent text-slate-300 hover:text-white transition"
+          >
+            <ChevronLeft className="h-7 w-7" />
+          </button>
+          <div
+            ref={catScrollRef}
+            className="flex gap-3 overflow-x-auto px-12 py-3 scrollbar-hide scroll-smooth"
+          >
+            <CategoryCard
+              label="All"
+              sublabel={`${productList.length}`}
+              Icon={Boxes}
+              active={categoryFilter === null}
+              tint="from-teal-500 to-cyan-600"
+              onClick={() => setCategoryFilter(null)}
+            />
+            {categories.map((cat) => {
+              const meta = getCategoryIcon(cat);
+              return (
+                <CategoryCard
+                  key={cat}
+                  label={cat.toUpperCase()}
+                  sublabel={`${categoryCounts[cat] ?? 0}`}
+                  Icon={meta.Icon}
+                  active={categoryFilter === cat}
+                  tint={meta.tint}
+                  onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
+                />
+              );
+            })}
+          </div>
+          <button
+            onClick={() => scrollCats(1)}
+            aria-label="Scroll categories right"
+            className="absolute right-0 top-0 bottom-0 z-10 flex items-center justify-center w-11 bg-gradient-to-l from-[#0d2238] via-[#0d2238]/90 to-transparent text-slate-300 hover:text-white transition"
+          >
+            <ChevronRight className="h-7 w-7" />
+          </button>
         </div>
       </div>
 
@@ -1363,6 +1541,28 @@ export function PosHardware() {
                         <Plus className="h-3 w-3" />
                       </button>
                       <button
+                        onClick={() => openLineOverride(c, "discount")}
+                        className={`h-6 w-6 rounded-md border transition flex items-center justify-center ${
+                          (c.itemDiscount || 0) > 0 && c.lineDiscountBy
+                            ? "bg-amber-500/15 border-amber-400/40 text-amber-300"
+                            : "bg-[#0a1a2a] border-white/10 text-slate-400 hover:text-amber-300 hover:bg-amber-500/10"
+                        }`}
+                        title="Line discount (manager)"
+                      >
+                        <Tag className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={() => openLineOverride(c, "price")}
+                        className={`h-6 w-6 rounded-md border transition flex items-center justify-center ${
+                          c.priceOverrideValue != null
+                            ? "bg-violet-500/15 border-violet-400/40 text-violet-300"
+                            : "bg-[#0a1a2a] border-white/10 text-slate-400 hover:text-violet-300 hover:bg-violet-500/10"
+                        }`}
+                        title="Override price (manager)"
+                      >
+                        <PenLine className="h-3 w-3" />
+                      </button>
+                      <button
                         onClick={() => removeLine(c.cartKey)}
                         className="ml-auto h-6 w-6 rounded-md text-slate-500 hover:text-rose-300 hover:bg-rose-500/10 transition flex items-center justify-center"
                         title="Remove"
@@ -1373,9 +1573,27 @@ export function PosHardware() {
                   </div>
                   <div className="text-right">
                     <div className="font-mono text-sm font-bold text-slate-100">
-                      {formatCurrency(linePrice * c.quantity, baseCurrency)}
+                      {formatCurrency(linePrice * c.quantity - getLineDiscount(c), baseCurrency)}
                     </div>
-                    {tier ? (
+                    {c.priceOverrideValue != null ? (
+                      <div className="text-[10px] font-mono flex flex-col items-end gap-0.5">
+                        <span className="text-slate-500 line-through">
+                          @ {formatCurrency(c.unitFactor ? c.price * c.unitFactor : c.price, baseCurrency)}
+                          {c.unitLabel ? ` / ${c.unitLabel}` : ""}
+                        </span>
+                        <span className="text-violet-300 inline-flex items-center justify-end gap-1">
+                          @ {formatCurrency(c.unitFactor ? linePrice * c.unitFactor : linePrice, baseCurrency)}
+                          {c.unitLabel ? ` / ${c.unitLabel}` : ""} · override
+                          <button
+                            onClick={() => removeLineOverride(c.cartKey, "price")}
+                            className="text-slate-500 hover:text-rose-300"
+                            title="Remove price override"
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </span>
+                      </div>
+                    ) : tier ? (
                       <div className="text-[10px] font-mono flex flex-col items-end gap-0.5">
                         <span className="text-slate-500 line-through">
                           @ {formatCurrency(c.unitFactor ? c.price * c.unitFactor : c.price, baseCurrency)}
@@ -1390,6 +1608,19 @@ export function PosHardware() {
                       <div className="text-[10px] text-slate-500">
                         @ {formatCurrency(c.unitFactor ? c.price * c.unitFactor : c.price, baseCurrency)}
                         {c.unitLabel ? ` / ${c.unitLabel}` : ""}
+                      </div>
+                    )}
+                    {getLineDiscount(c) > 0 && c.lineDiscountBy && (
+                      <div className="mt-0.5 inline-flex items-center justify-end gap-1 text-[10px] font-mono text-amber-300">
+                        <Tag className="h-2.5 w-2.5" />− {formatCurrency(getLineDiscount(c), baseCurrency)}
+                        <span className="text-amber-400/70">· {c.lineDiscountBy}</span>
+                        <button
+                          onClick={() => removeLineOverride(c.cartKey, "discount")}
+                          className="text-slate-500 hover:text-rose-300"
+                          title="Remove line discount"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
                       </div>
                     )}
                   </div>
@@ -2071,6 +2302,193 @@ export function PosHardware() {
               Apply
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Line override: manager PIN gate (non-managers only) ──────── */}
+      <Dialog
+        open={lineOverrideOpen}
+        onOpenChange={(o) => {
+          if (!o) closeLineOverride();
+        }}
+      >
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-violet-300">
+              {lineOverridePending?.mode === "price" ? (
+                <><PenLine className="h-4 w-4" />Manager Price Override</>
+              ) : (
+                <><Tag className="h-4 w-4" />Manager Line Discount</>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {lineOverridePending?.productName ? (
+                <span className="font-medium text-foreground">{lineOverridePending.productName}</span>
+              ) : null}
+              {lineOverridePending?.mode === "price"
+                ? " — enter manager PIN to override the unit price."
+                : " — enter manager PIN to apply a line discount."}
+            </DialogDescription>
+          </DialogHeader>
+          <PinPad
+            title=""
+            requiredRoles={MANAGEMENT_ROLES}
+            onSuccess={(staff) => {
+              setLineOverrideAuthorizedBy(staff.name);
+              setLineOverrideOpen(false);
+              setLineEntryOpen(true);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Line override: value entry (after PIN passes / manager) ───── */}
+      <Dialog
+        open={lineEntryOpen}
+        onOpenChange={(o) => {
+          if (!o) closeLineOverride();
+        }}
+      >
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-violet-300">
+              {lineOverridePending?.mode === "price" ? (
+                <><PenLine className="h-4 w-4" />Set Unit Price</>
+              ) : (
+                <><Tag className="h-4 w-4" />Line Discount</>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {lineOverrideAuthorizedBy && (
+            <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2.5 py-1.5 -mt-1 mb-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              <p className="text-xs text-emerald-400">
+                Authorized by <span className="font-semibold">{lineOverrideAuthorizedBy}</span>
+              </p>
+            </div>
+          )}
+          {lineOverridePending?.mode === "price" ? (
+            (() => {
+              const cap = lineOverridePending.maxPrice; // null = custom (no cap)
+              const parsed = parseFloat(lineOverrideInput);
+              const overCap = cap != null && !isNaN(parsed) && parsed > cap;
+              const invalid = isNaN(parsed) || parsed < 0 || overCap;
+              const commit = () => {
+                if (invalid || !lineOverridePending || !lineOverrideAuthorizedBy) return;
+                applyLinePrice(lineOverridePending.cartKey, parsed, lineOverrideAuthorizedBy);
+                closeLineOverride();
+              };
+              return (
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">
+                      New unit price (current: {formatCurrency(lineOverridePending.currentPrice, baseCurrency)})
+                    </label>
+                    <Input
+                      autoFocus
+                      type="number"
+                      min={0}
+                      max={cap ?? undefined}
+                      step={0.01}
+                      className="font-mono text-base h-10"
+                      placeholder="0.00"
+                      value={lineOverrideInput}
+                      onChange={(e) => setLineOverrideInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commit();
+                      }}
+                    />
+                    {cap != null && (
+                      <p className={`text-xs ${overCap ? "text-rose-400" : "text-muted-foreground"}`}>
+                        {overCap
+                          ? `Override can't exceed ${formatCurrency(cap, baseCurrency)} (use a markdown).`
+                          : `Max ${formatCurrency(cap, baseCurrency)} — catalog items can only be marked down.`}
+                      </p>
+                    )}
+                  </div>
+                  <DialogFooter className="gap-2">
+                    <Button variant="outline" className="flex-1" onClick={closeLineOverride}>
+                      Cancel
+                    </Button>
+                    <Button
+                      className="flex-1 bg-violet-600 hover:bg-violet-500"
+                      disabled={invalid}
+                      onClick={commit}
+                    >
+                      Set Price
+                    </Button>
+                  </DialogFooter>
+                </div>
+              );
+            })()
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant={lineOverrideDiscountType === "percent" ? "default" : "outline"}
+                  className="h-10 text-sm"
+                  onClick={() => setLineOverrideDiscountType("percent")}
+                >
+                  <Percent className="h-4 w-4 mr-1.5" />Percent
+                </Button>
+                <Button
+                  variant={lineOverrideDiscountType === "fixed" ? "default" : "outline"}
+                  className="h-10 text-sm"
+                  onClick={() => setLineOverrideDiscountType("fixed")}
+                >
+                  <DollarSign className="h-4 w-4 mr-1.5" />Fixed $
+                </Button>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">
+                  {lineOverrideDiscountType === "percent" ? "Discount %" : "Discount Amount ($)"}
+                </label>
+                <Input
+                  autoFocus
+                  type="number"
+                  min={0}
+                  max={lineOverrideDiscountType === "percent" ? 100 : undefined}
+                  step={lineOverrideDiscountType === "percent" ? 1 : 0.01}
+                  className="font-mono text-base h-10"
+                  placeholder={lineOverrideDiscountType === "percent" ? "e.g. 10" : "e.g. 5.00"}
+                  value={lineOverrideInput}
+                  onChange={(e) => setLineOverrideInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const val = parseFloat(lineOverrideInput);
+                      if (!isNaN(val) && val > 0 && lineOverridePending && lineOverrideAuthorizedBy) {
+                        applyLineDiscount(lineOverridePending.cartKey, lineOverrideDiscountType, val, lineOverrideAuthorizedBy);
+                        closeLineOverride();
+                      }
+                    }
+                  }}
+                />
+                {lineOverrideDiscountType === "percent" && parseFloat(lineOverrideInput) > 0 && lineOverridePending && (
+                  <p className="text-xs text-muted-foreground">
+                    ≈ {formatCurrency((lineOverridePending.currentPrice * parseFloat(lineOverrideInput)) / 100, baseCurrency)} per unit
+                  </p>
+                )}
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" className="flex-1" onClick={closeLineOverride}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 bg-amber-600 hover:bg-amber-500"
+                  disabled={isNaN(parseFloat(lineOverrideInput)) || parseFloat(lineOverrideInput) <= 0}
+                  onClick={() => {
+                    const val = parseFloat(lineOverrideInput);
+                    if (!isNaN(val) && val > 0 && lineOverridePending && lineOverrideAuthorizedBy) {
+                      applyLineDiscount(lineOverridePending.cartKey, lineOverrideDiscountType, val, lineOverrideAuthorizedBy);
+                      closeLineOverride();
+                    }
+                  }}
+                >
+                  Apply Discount
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
