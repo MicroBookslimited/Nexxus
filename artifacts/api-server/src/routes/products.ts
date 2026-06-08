@@ -340,7 +340,19 @@ router.post("/products", async (req, res): Promise<void> => {
  * NOTE: these routes are registered BEFORE GET /products/:id so the literal
  * paths are not captured by the :id param. */
 function normalizeName(s: string): string {
-  return s.toLowerCase().trim().replace(/\s+/g, " ");
+  return s
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "") // strip accent marks
+    .replace(/[^\p{L}\p{N}]+/gu, " ") // punctuation / symbols -> space (Unicode-safe, keeps CJK/Cyrillic)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Order-insensitive key: tokens sorted alphabetically so "coca cola" and
+// "cola coca" collapse to the same key.
+function tokenKey(normalized: string): string {
+  return normalized.split(" ").filter(Boolean).sort().join(" ");
 }
 
 function levenshtein(a: string, b: string): number {
@@ -416,28 +428,17 @@ router.get("/products/find-duplicates", async (req, res): Promise<void> => {
     };
   };
 
-  // Exact groups by normalized name.
-  const exactBuckets = new Map<string, Row[]>();
+  // Precompute the order-insensitive token key once per product.
+  const keyById = new Map<number, string>();
   for (const p of products) {
-    const key = normalizeName(p.name);
-    const arr = exactBuckets.get(key) ?? [];
-    arr.push(p);
-    exactBuckets.set(key, arr);
+    keyById.set(p.id, tokenKey(normalizeName(p.name)));
   }
 
-  const groups: Array<{ key: string; matchType: "exact" | "similar"; products: ReturnType<typeof toDup>[] }> = [];
-  const inExactGroup = new Set<number>();
-  for (const [key, bucket] of exactBuckets) {
-    if (bucket.length >= 2) {
-      for (const p of bucket) inExactGroup.add(p.id);
-      groups.push({ key, matchType: "exact", products: bucket.map(toDup) });
-    }
-  }
-
-  // Similar groups via union-find over the products not already in an exact group.
-  const remaining = products.filter((p) => !inExactGroup.has(p.id));
+  // Single union-find across ALL products. The previous implementation excluded
+  // members of an exact group from the fuzzy pass, which silently dropped any
+  // near-duplicate of an exact pair (e.g. a third "Sprite!" next to two "Sprite").
   const parent = new Map<number, number>();
-  for (const p of remaining) parent.set(p.id, p.id);
+  for (const p of products) parent.set(p.id, p.id);
   const find = (x: number): number => {
     let r = x;
     while (parent.get(r) !== r) r = parent.get(r)!;
@@ -446,24 +447,57 @@ router.get("/products/find-duplicates", async (req, res): Promise<void> => {
     return r;
   };
   const union = (a: number, b: number) => { parent.set(find(a), find(b)); };
-  const norms = new Map(remaining.map((p) => [p.id, normalizeName(p.name)]));
-  for (let i = 0; i < remaining.length; i++) {
-    for (let j = i + 1; j < remaining.length; j++) {
-      const a = remaining[i], b = remaining[j];
-      if (similarityRatio(norms.get(a.id)!, norms.get(b.id)!) >= SIMILARITY_THRESHOLD) union(a.id, b.id);
+
+  // 1. Exact: identical order-insensitive key (case / punctuation / word order
+  //    differences already collapsed by normalizeName + tokenKey).
+  const keyBuckets = new Map<string, number[]>();
+  for (const p of products) {
+    const k = keyById.get(p.id)!;
+    if (k === "") continue; // names with no alphanumerics never auto-group
+    const arr = keyBuckets.get(k) ?? [];
+    arr.push(p.id);
+    keyBuckets.set(k, arr);
+  }
+  for (const bucket of keyBuckets.values()) {
+    for (let i = 1; i < bucket.length; i++) union(bucket[0], bucket[i]);
+  }
+
+  // 2. Similar: fuzzy match on the order-insensitive key. A cheap length-delta
+  //    guard skips pairs that cannot possibly clear the threshold before paying
+  //    for Levenshtein (keeps this O(n^2) loop fast on large catalogs).
+  const maxLenDelta = 1 - SIMILARITY_THRESHOLD;
+  for (let i = 0; i < products.length; i++) {
+    for (let j = i + 1; j < products.length; j++) {
+      const a = products[i].id, b = products[j].id;
+      if (find(a) === find(b)) continue; // already grouped
+      const ka = keyById.get(a)!, kb = keyById.get(b)!;
+      const maxLen = Math.max(ka.length, kb.length);
+      if (maxLen === 0) continue;
+      if (Math.abs(ka.length - kb.length) / maxLen > maxLenDelta) continue;
+      if (similarityRatio(ka, kb) >= SIMILARITY_THRESHOLD) union(a, b);
     }
   }
-  const simClusters = new Map<number, Row[]>();
-  for (const p of remaining) {
+
+  // Assemble clusters of size >= 2. A group is "exact" only when every member
+  // shares the same key; otherwise it is surfaced as "similar" for review.
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const clusters = new Map<number, number[]>();
+  for (const p of products) {
     const root = find(p.id);
-    const arr = simClusters.get(root) ?? [];
-    arr.push(p);
-    simClusters.set(root, arr);
+    const arr = clusters.get(root) ?? [];
+    arr.push(p.id);
+    clusters.set(root, arr);
   }
-  for (const cluster of simClusters.values()) {
-    if (cluster.length >= 2) {
-      groups.push({ key: normalizeName(cluster[0].name), matchType: "similar", products: cluster.map(toDup) });
-    }
+  const groups: Array<{ key: string; matchType: "exact" | "similar"; products: ReturnType<typeof toDup>[] }> = [];
+  for (const memberIds of clusters.values()) {
+    if (memberIds.length < 2) continue;
+    const members = memberIds.map((id) => byId.get(id)!);
+    const distinctKeys = new Set(members.map((p) => keyById.get(p.id)!));
+    groups.push({
+      key: keyById.get(members[0].id)!,
+      matchType: distinctKeys.size === 1 ? "exact" : "similar",
+      products: members.map(toDup),
+    });
   }
 
   res.json(groups);

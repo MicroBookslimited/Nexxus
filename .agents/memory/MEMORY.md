@@ -19,3 +19,4 @@
 - [Two unit tables](two-unit-tables.md) — product_units (shared tenant catalog of presets) is distinct from per-product product_purchase_units (source of truth); never conflate or repoint one into the other.
 - [Product categories union](product-categories-union.md) — category pickers must union curated `product_categories` setting + in-use categories (GET /products/categories); imports set product.category but never sync the setting.
 - [Product selling unit (UOM)](product-selling-unit.md) — optional free-text label; order-item value is a LIVE tenant-scoped product join (not snapshotted); separate from weight-only unitOfMeasure enum.
+- [Duplicate product detection](duplicate-product-detection.md) — find-duplicates groups by order-insensitive token key + ONE union-find over all products; normalization regex MUST be Unicode-aware or non-Latin names false-group.
