@@ -322,10 +322,13 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
         ? escHtml(order.paymentMethod.charAt(0).toUpperCase() + order.paymentMethod.slice(1))
         : "Cash";
       restPaymentHtml = `<div class="r-row r-light"><span>${pmLabel}</span><span>${fmt(order.total)}</span></div>`;
-      if (order.paymentMethod === "cash" && changeAmt > 0) {
-        restPaymentHtml += `<div class="r-row r-light"><span>Change</span><span>${fmt(changeAmt)}</span></div>`;
-      }
     }
+    // Always render Total / Tendered / Change so every receipt carries the same
+    // breakdown. For non-cash payments Tendered = Total and Change = 0.
+    restPaymentHtml += `
+      <div class="r-row r-light"><span>Tendered</span><span>${fmt(tenderedAmt)}</span></div>
+      <div class="r-row r-light"><span>Total</span><span>-${fmt(order.total)}</span></div>
+      <div class="r-row r-light"><span>Change</span><span>${fmt(changeAmt)}</span></div>`;
 
     const secondaryHtml2 = secondaryCurrency && exchangeRate > 0
       ? `<div class="r-row r-light"><span>&asymp;&nbsp;${escHtml(secondaryCurrency)}</span><span>${fmt(order.total * exchangeRate, secondaryCurrency)}</span></div>` : "";
@@ -1839,13 +1842,18 @@ function buildHardwareReceiptHtml(
     ? ((order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total)
     : order.total;
   const changeDue = isCash ? Math.max(0, tenderedAmt - order.total) : 0;
+  // Tendered + Change Due are ALWAYS rendered (Change shows $0.00 when none) so
+  // every hardware receipt carries the same Total / Tendered / Change breakdown.
   const paymentBlockHtml = isSplit
     ? `
       <div class="hw-tot-row"><span class="hw-tot-label">Card</span><span class="hw-tot-val">$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
-      <div class="hw-tot-row"><span class="hw-tot-label">Cash</span><span class="hw-tot-val">$${fmtNum(order.splitCashAmount ?? 0)}</span></div>`
+      <div class="hw-tot-row"><span class="hw-tot-label">Cash</span><span class="hw-tot-val">$${fmtNum(order.splitCashAmount ?? 0)}</span></div>
+      <div class="hw-tot-row"><span class="hw-tot-label">Tendered</span><span class="hw-tot-val">$${fmtNum(tenderedAmt)}</span></div>
+      <div class="hw-tot-row"><span class="hw-tot-label">Change Due</span><span class="hw-tot-val">$${fmtNum(changeDue)}</span></div>`
     : `
       <div class="hw-tot-row"><span class="hw-tot-label">${escHtml(payLabel)}</span><span class="hw-tot-val">$${fmtNum(tenderedAmt)}</span></div>
-      ${changeDue > 0 ? `<div class="hw-tot-row"><span class="hw-tot-label">Change Due</span><span class="hw-tot-val">$${fmtNum(changeDue)}</span></div>` : ""}`;
+      <div class="hw-tot-row"><span class="hw-tot-label">Tendered</span><span class="hw-tot-val">$${fmtNum(tenderedAmt)}</span></div>
+      <div class="hw-tot-row"><span class="hw-tot-label">Change Due</span><span class="hw-tot-val">$${fmtNum(changeDue)}</span></div>`;
 
   const taxPct = parseFloat(taxRate) || 0;
   const refundedHtml = order.status === "refunded"
@@ -2103,13 +2111,14 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
     lines.push(`  Cash:    ${fmtNum(order.splitCashAmount ?? 0)}`);
   } else {
     lines.push(`Payment:   ${(order.paymentMethod ?? "—").toUpperCase()}`);
-    if (order.paymentMethod === "cash") {
-      const tendered = (order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total;
-      lines.push(`Tendered:  ${fmtNum(tendered)}`);
-      lines.push(`Total:    -${fmtNum(order.total)}`);
-      lines.push(`Change:    ${fmtNum(Math.max(0, tendered - order.total))}`);
-    }
   }
+  // Always show Total / Tendered / Change. For non-cash payments Tendered = Total
+  // and Change = 0, so every receipt carries the same breakdown.
+  const tendered = (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0)
+    ? order.cashTendered : order.total;
+  lines.push(`Tendered:  ${fmtNum(tendered)}`);
+  lines.push(`Total:    -${fmtNum(order.total)}`);
+  lines.push(`Change:    ${fmtNum(Math.max(0, tendered - order.total))}`);
 
   if (order.notes) {
     lines.push(`─────────────────────`);
