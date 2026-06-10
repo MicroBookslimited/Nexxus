@@ -14,6 +14,8 @@ export interface CreateOrderBody {
   paymentMethod?: string;
   splitCardAmount?: number;
   splitCashAmount?: number;
+  /** Cash amount tendered by the customer for cash payments. */
+  cashTendered?: number;
   discountType?: CreateOrderBodyDiscountType;
   discountAmount?: number;
   notes?: string;

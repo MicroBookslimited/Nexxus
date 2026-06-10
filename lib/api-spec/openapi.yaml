@@ -2501,6 +2501,10 @@ components:
         splitCashAmount:
           type: number
           format: float
+        cashTendered:
+          type: number
+          format: float
+          description: Cash amount tendered by the customer for cash payments.
         discountType:
           type: string
           enum: [percent, fixed]
