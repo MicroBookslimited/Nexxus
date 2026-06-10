@@ -2369,6 +2369,11 @@ components:
           type: number
           format: float
           nullable: true
+        cashTendered:
+          type: number
+          format: float
+          nullable: true
+          description: Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.
         notes:
           type: string
           nullable: true

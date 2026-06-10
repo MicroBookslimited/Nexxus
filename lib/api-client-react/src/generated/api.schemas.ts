@@ -328,6 +328,8 @@ export interface Order {
   paymentMethod?: string | null;
   splitCardAmount?: number | null;
   splitCashAmount?: number | null;
+  /** Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded. */
+  cashTendered?: number | null;
   notes?: string | null;
   voidReason?: string | null;
   customerId?: number | null;

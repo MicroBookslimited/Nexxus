@@ -894,6 +894,12 @@ export const ListOrdersResponseItem = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  cashTendered: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1056,6 +1062,12 @@ export const GetOrderResponse = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  cashTendered: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1162,6 +1174,12 @@ export const UpdateOrderStatusResponse = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  cashTendered: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1270,6 +1288,12 @@ export const RefundOrderItemsResponse = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  cashTendered: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1370,6 +1394,12 @@ export const ChargeOrderResponse = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  cashTendered: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1704,6 +1734,12 @@ export const GetRecentOrdersResponseItem = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  cashTendered: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1959,6 +1995,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  cashTendered: zod
+    .number()
+    .nullish()
+    .describe(
+      "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),

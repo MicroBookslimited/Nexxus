@@ -21,3 +21,4 @@
 - [Product selling unit (UOM)](product-selling-unit.md) — optional free-text label; order-item value is a LIVE tenant-scoped product join (not snapshotted); separate from weight-only unitOfMeasure enum.
 - [POS line override/discount payload](pos-line-override-payload.md) — catalog-line price override is markdown-only (discountAmount, tier-aware baseline); derive UI totals + payload from shared clamped helpers so qty crossing a tier never diverges.
 - [Duplicate product detection](duplicate-product-detection.md) — find-duplicates groups by order-insensitive token key + ONE union-find over all products; normalization regex MUST be Unicode-aware or non-Latin names false-group.
+- [OpenAPI request/response field parity](openapi-request-response-parity.md) — a round-tripping field must be in BOTH the request body AND the resource/response schema, or codegen strips it on one leg (Zod drops unknown req keys; response field never reaches frontend).
