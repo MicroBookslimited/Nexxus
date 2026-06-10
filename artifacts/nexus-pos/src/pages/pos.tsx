@@ -3911,22 +3911,30 @@ export function POS() {
                     <span className="capitalize">{receiptOrder.paymentMethod ?? "—"}</span>
                   </div>
                 )}
-                {receiptOrder.paymentMethod === "cash" && receiptOrder.cashTendered != null && receiptOrder.cashTendered > 0 && (
-                  <>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Cash Tendered</span>
-                      <span className="font-mono">{fmtNum(receiptOrder.cashTendered)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Total</span>
-                      <span className="font-mono">-{fmtNum(receiptOrder.total)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs font-semibold text-emerald-400">
-                      <span>Change Due</span>
-                      <span className="font-mono">{fmtNum(Math.max(0, receiptOrder.cashTendered - receiptOrder.total))}</span>
-                    </div>
-                  </>
-                )}
+                {receiptOrder.paymentMethod === "cash" && (() => {
+                  // Always show Tendered / Total / Change on cash sales. When no
+                  // amount was entered at checkout, assume exact payment
+                  // (tendered = total, change = 0).
+                  const tendered = receiptOrder.cashTendered != null && receiptOrder.cashTendered > 0
+                    ? receiptOrder.cashTendered
+                    : receiptOrder.total;
+                  return (
+                    <>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Cash Tendered</span>
+                        <span className="font-mono">{fmtNum(tendered)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Total</span>
+                        <span className="font-mono">-{fmtNum(receiptOrder.total)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs font-semibold text-emerald-400">
+                        <span>Change Due</span>
+                        <span className="font-mono">{fmtNum(Math.max(0, tendered - receiptOrder.total))}</span>
+                      </div>
+                    </>
+                  );
+                })()}
                 {receiptOrder.notes && (
                   <div className="text-xs text-muted-foreground mt-1">
                     <span className="font-medium">Note:</span> {receiptOrder.notes}

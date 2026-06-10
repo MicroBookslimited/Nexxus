@@ -1151,14 +1151,30 @@ export function PosSupermarket() {
                 <span>Total</span>
                 <span className="font-mono">{fmtNum(receiptOrder.total)}</span>
               </div>
-              {receiptOrder.paymentMethod === "cash" &&
-                receiptOrder.cashTendered != null &&
-                receiptOrder.cashTendered > 0 && (
-                  <div className="flex justify-between text-xs font-semibold text-emerald-500">
-                    <span>Change Due</span>
-                    <span className="font-mono">{fmtNum(Math.max(0, receiptOrder.cashTendered - receiptOrder.total))}</span>
-                  </div>
-                )}
+              {receiptOrder.paymentMethod === "cash" && (() => {
+                // Always show Tendered / Change on cash sales. When no amount was
+                // entered at checkout, assume exact payment (tendered = total,
+                // change = 0).
+                const tendered = receiptOrder.cashTendered != null && receiptOrder.cashTendered > 0
+                  ? receiptOrder.cashTendered
+                  : receiptOrder.total;
+                return (
+                  <>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Cash Tendered</span>
+                      <span className="font-mono">{fmtNum(tendered)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Total</span>
+                      <span className="font-mono">-{fmtNum(receiptOrder.total)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs font-semibold text-emerald-500">
+                      <span>Change Due</span>
+                      <span className="font-mono">{fmtNum(Math.max(0, tendered - receiptOrder.total))}</span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
           <DialogFooter className="flex-col sm:flex-row gap-2">

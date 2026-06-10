@@ -2522,13 +2522,18 @@ export function PosHardware() {
                 <span>Total</span>
                 <span className="font-mono">{fmtNum(receiptOrder.total)}</span>
               </div>
-              {receiptOrder.paymentMethod === "cash" &&
-                receiptOrder.cashTendered != null &&
-                receiptOrder.cashTendered > 0 && (
+              {receiptOrder.paymentMethod === "cash" && (() => {
+                // Always show Tendered / Total / Change on cash sales. When no
+                // amount was entered at checkout, assume exact payment
+                // (tendered = total, change = 0).
+                const tendered = receiptOrder.cashTendered != null && receiptOrder.cashTendered > 0
+                  ? receiptOrder.cashTendered
+                  : receiptOrder.total;
+                return (
                   <>
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Cash Tendered</span>
-                      <span className="font-mono">{fmtNum(receiptOrder.cashTendered)}</span>
+                      <span className="font-mono">{fmtNum(tendered)}</span>
                     </div>
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Total</span>
@@ -2537,11 +2542,12 @@ export function PosHardware() {
                     <div className="flex justify-between text-xs font-semibold text-emerald-500">
                       <span>Change Due</span>
                       <span className="font-mono">
-                        {fmtNum(Math.max(0, receiptOrder.cashTendered - receiptOrder.total))}
+                        {fmtNum(Math.max(0, tendered - receiptOrder.total))}
                       </span>
                     </div>
                   </>
-                )}
+                );
+              })()}
               {receiptOrder.paymentMethod === "credit" && (
                 <div className="flex justify-between text-xs font-semibold text-amber-500 pt-1.5 border-t border-border">
                   <span>Charged to account</span>
