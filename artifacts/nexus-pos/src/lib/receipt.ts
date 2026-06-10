@@ -309,9 +309,6 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       <div class="r-sep"></div>` : "";
 
     // Payment block
-    const tenderedAmt = order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0
-      ? order.cashTendered : order.total;
-    const changeAmt = Math.max(0, tenderedAmt - order.total);
     let restPaymentHtml = "";
     if (order.paymentMethod === "split") {
       restPaymentHtml = `
@@ -323,12 +320,14 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
         : "Cash";
       restPaymentHtml = `<div class="r-row r-light"><span>${pmLabel}</span><span>${fmt(order.total)}</span></div>`;
     }
-    // Always render Total / Tendered / Change so every receipt carries the same
-    // breakdown. For non-cash payments Tendered = Total and Change = 0.
-    restPaymentHtml += `
-      <div class="r-row r-light"><span>Tendered</span><span>${fmt(tenderedAmt)}</span></div>
-      <div class="r-row r-light"><span>Total</span><span>-${fmt(order.total)}</span></div>
-      <div class="r-row r-light"><span>Change</span><span>${fmt(changeAmt)}</span></div>`;
+    // Only render Tendered / Total / Change when the cashier entered the cash received.
+    if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
+      const changeAmt = Math.max(0, order.cashTendered - order.total);
+      restPaymentHtml += `
+        <div class="r-row r-light"><span>Tendered</span><span>${fmt(order.cashTendered)}</span></div>
+        <div class="r-row r-light"><span>Total</span><span>-${fmt(order.total)}</span></div>
+        <div class="r-row r-light"><span>Change</span><span>${fmt(changeAmt)}</span></div>`;
+    }
 
     const secondaryHtml2 = secondaryCurrency && exchangeRate > 0
       ? `<div class="r-row r-light"><span>&asymp;&nbsp;${escHtml(secondaryCurrency)}</span><span>${fmt(order.total * exchangeRate, secondaryCurrency)}</span></div>` : "";
@@ -460,13 +459,6 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   }).join("");
 
   // ── Payment ───────────────────────────────────────────────────────────────
-  // Tendered / Change are always rendered. For cash sales with a captured
-  // tender amount we show the real numbers; for any other method we show
-  // Tendered = Total and Change = 0 so every receipt reads the same way.
-  const tenderedAmt = order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0
-    ? order.cashTendered
-    : order.total;
-  const changeAmt = Math.max(0, tenderedAmt - order.total);
   let paymentHtml = "";
   if (order.paymentMethod === "split") {
     paymentHtml = `
@@ -476,10 +468,14 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   } else {
     paymentHtml = `<div class="row sub-row"><span>Payment</span><span class="nowrap">${escHtml((order.paymentMethod ?? "—").toUpperCase())}</span></div>`;
   }
-  paymentHtml += `
-    <div class="row sub-row"><span>Tendered</span><span class="nowrap">${fmtNum(tenderedAmt)}</span></div>
-    <div class="row sub-row"><span>Total</span><span class="nowrap">-${fmtNum(order.total)}</span></div>
-    <div class="row sub-row"><span>Change</span><span class="nowrap">${fmtNum(changeAmt)}</span></div>`;
+  // Only render Tendered / Total / Change when the cashier entered the cash received.
+  if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
+    const changeAmt = Math.max(0, order.cashTendered - order.total);
+    paymentHtml += `
+      <div class="row sub-row"><span>Tendered</span><span class="nowrap">${fmtNum(order.cashTendered)}</span></div>
+      <div class="row sub-row"><span>Total</span><span class="nowrap">-${fmtNum(order.total)}</span></div>
+      <div class="row sub-row"><span>Change</span><span class="nowrap">${fmtNum(changeAmt)}</span></div>`;
+  }
 
   // ── Optional blocks ───────────────────────────────────────────────────────
   const refundedHtml  = order.status === "refunded"
@@ -793,16 +789,6 @@ function buildSupermarketReceiptHtml(
   };
 
   // Map our internal payment method onto a supermarket-style TEND label.
-  const tendLabel = (() => {
-    const m = (order.paymentMethod ?? "").toLowerCase();
-    if (m === "cash")   return "CASH TEND";
-    if (m === "card")   return "CREDIT TEND";
-    if (m === "split")  return "SPLIT TEND";
-    if (m === "credit") return "ACCOUNT CHARGE";
-    if (m === "topup")  return "TOPUP TEND";
-    if (m === "loyalty") return "LOYALTY TEND";
-    return (order.paymentMethod ?? "TEND").toUpperCase();
-  })();
 
   const totalQty = order.items.reduce((s, i) => s + (i.quantity || 0), 0);
   const itemsSold = Number.isInteger(totalQty) ? totalQty : Math.round(totalQty * 100) / 100;
@@ -813,13 +799,6 @@ function buildSupermarketReceiptHtml(
     ? Math.max(0, order.cashTendered - order.total)
     : 0;
 
-  const tenderedAmount = (() => {
-    if (order.paymentMethod === "cash" && order.cashTendered) return order.cashTendered;
-    if (order.paymentMethod === "split") {
-      return (order.splitCardAmount ?? 0) + (order.splitCashAmount ?? 0);
-    }
-    return order.total;
-  })();
 
   // ── Items table ──────────────────────────────────────────────────────────
   // Three columns: name (left), barcode (center, monospace), price + " X"
@@ -1090,9 +1069,10 @@ function buildSupermarketReceiptHtml(
     ${taxLineHtml}
     <div class="sm-tot-row total"><span class="sm-tot-label">TOTAL</span><span class="sm-tot-val">${fmtNum(order.total)}</span></div>
     ${secondaryLineHtml}
-    <div class="sm-tot-row"><span class="sm-tot-label">${escHtml(tendLabel)}</span><span class="sm-tot-val">${fmtNum(tenderedAmount)}</span></div>
+    ${(order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) ? `
+    <div class="sm-tot-row"><span class="sm-tot-label">CASH TEND</span><span class="sm-tot-val">${fmtNum(order.cashTendered)}</span></div>
     <div class="sm-tot-row"><span class="sm-tot-label">TOTAL</span><span class="sm-tot-val">-${fmtNum(order.total)}</span></div>
-    <div class="sm-tot-row"><span class="sm-tot-label">CHANGE DUE</span><span class="sm-tot-val">${fmtNum(changeDue)}</span></div>
+    <div class="sm-tot-row"><span class="sm-tot-label">CHANGE DUE</span><span class="sm-tot-val">${fmtNum(changeDue)}</span></div>` : ""}
   </div>
 
   ${accountBlockHtml}
@@ -1243,23 +1223,17 @@ function buildConvenienceReceiptHtml(
     if (order.paymentMethod === "loyalty") return "LOYALTY";
     return (order.paymentMethod ?? "TENDER").toUpperCase();
   })();
-  const tenderedAmt = isCash ? ((order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total) : order.total;
-  const changeDue   = isCash ? Math.max(0, tenderedAmt - order.total) : 0;
-
   const paymentHeaderHtml = `
     <div class="cv-payment-row">
       <span class="cv-payment-method">${escHtml(methodLabel)}</span>
       <span class="cv-payment-amount">${fmtNum(order.total)}</span>
     </div>`;
 
-  // Always show Tendered / Change. For non-cash payments Tendered = Total
-  // and Change = 0, so every receipt carries the same breakdown.
-  const tenderedDisplay = isCash ? tenderedAmt : order.total;
-  const changeDisplay   = isCash ? changeDue   : 0;
-  const cashChangeHtml = `
-    <div class="cv-card-row"><span>${isCash ? "CASH TENDERED" : "TENDERED"}</span><span>${fmtNum(tenderedDisplay)}</span></div>
+  // Only show Tendered / Total / Change when the cashier entered the cash received.
+  const cashChangeHtml = (isCash && order.cashTendered && order.cashTendered > 0) ? `
+    <div class="cv-card-row"><span>CASH TENDERED</span><span>${fmtNum(order.cashTendered)}</span></div>
     <div class="cv-card-row"><span>TOTAL</span><span>-${fmtNum(order.total)}</span></div>
-    <div class="cv-card-row"><span>CHANGE DUE</span><span>${fmtNum(changeDisplay)}</span></div>`;
+    <div class="cv-card-row"><span>CHANGE DUE</span><span>${fmtNum(Math.max(0, order.cashTendered - order.total))}</span></div>` : "";
 
   const splitHtml = isSplit ? `
     <div class="cv-card-row"><span>CARD</span><span>${fmtNum(order.splitCardAmount ?? 0)}</span></div>
@@ -1553,8 +1527,6 @@ function buildStapleReceiptHtml(
     if (order.paymentMethod === "loyalty") return "LOYALTY";
     return (order.paymentMethod ?? "PAYMENT").toUpperCase();
   })();
-  const tenderedAmt = isCash ? ((order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total) : order.total;
-  const changeDue   = isCash ? Math.max(0, tenderedAmt - order.total) : 0;
   const authNo  = hashStr(orderNum + "auth", 6).toUpperCase();
   const aidCode = `${hashStr(orderNum+"aid1",4).toUpperCase()}${hashStr(orderNum+"aid2",2).toUpperCase()}${hashStr(orderNum+"aid3",4).toUpperCase()}${hashStr(orderNum+"aid4",4)}`;
 
@@ -1569,9 +1541,10 @@ function buildStapleReceiptHtml(
     ${isSplit ? `
     <div class="st-pay-row"><span>CARD</span><span>$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
     <div class="st-pay-row"><span>CASH</span><span>$${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}
-    <div class="st-pay-row"><span>${isCash ? "CASH TENDERED" : "TENDERED"}</span><span>$${fmtNum(isCash ? tenderedAmt : order.total)}</span></div>
+    ${(isCash && order.cashTendered && order.cashTendered > 0) ? `
+    <div class="st-pay-row"><span>CASH TENDERED</span><span>$${fmtNum(order.cashTendered)}</span></div>
     <div class="st-pay-row"><span>TOTAL</span><span>-$${fmtNum(order.total)}</span></div>
-    <div class="st-pay-row"><span>CHANGE DUE</span><span>$${fmtNum(isCash ? changeDue : 0)}</span></div>`;
+    <div class="st-pay-row"><span>CHANGE DUE</span><span>$${fmtNum(Math.max(0, order.cashTendered - order.total))}</span></div>` : ""}` ;
 
   // Total items count
   const totalQty  = order.items.reduce((s, i) => s + (i.quantity || 0), 0);
@@ -1838,22 +1811,16 @@ function buildHardwareReceiptHtml(
       ? order.paymentMethod.charAt(0).toUpperCase() + order.paymentMethod.slice(1)
       : "Payment";
   })();
-  const tenderedAmt = isCash
-    ? ((order.cashTendered && order.cashTendered > 0) ? order.cashTendered : order.total)
-    : order.total;
-  const changeDue = isCash ? Math.max(0, tenderedAmt - order.total) : 0;
-  // Tendered + Change Due are ALWAYS rendered (Change shows $0.00 when none) so
-  // every hardware receipt carries the same Total / Tendered / Change breakdown.
+  // Tendered + Change Due only rendered when cashier entered the cash received.
   const paymentBlockHtml = isSplit
     ? `
       <div class="hw-tot-row"><span class="hw-tot-label">Card</span><span class="hw-tot-val">$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
-      <div class="hw-tot-row"><span class="hw-tot-label">Cash</span><span class="hw-tot-val">$${fmtNum(order.splitCashAmount ?? 0)}</span></div>
-      <div class="hw-tot-row"><span class="hw-tot-label">Tendered</span><span class="hw-tot-val">$${fmtNum(tenderedAmt)}</span></div>
-      <div class="hw-tot-row"><span class="hw-tot-label">Change Due</span><span class="hw-tot-val">$${fmtNum(changeDue)}</span></div>`
+      <div class="hw-tot-row"><span class="hw-tot-label">Cash</span><span class="hw-tot-val">$${fmtNum(order.splitCashAmount ?? 0)}</span></div>`
     : `
-      <div class="hw-tot-row"><span class="hw-tot-label">${escHtml(payLabel)}</span><span class="hw-tot-val">$${fmtNum(tenderedAmt)}</span></div>
-      <div class="hw-tot-row"><span class="hw-tot-label">Tendered</span><span class="hw-tot-val">$${fmtNum(tenderedAmt)}</span></div>
-      <div class="hw-tot-row"><span class="hw-tot-label">Change Due</span><span class="hw-tot-val">$${fmtNum(changeDue)}</span></div>`;
+      <div class="hw-tot-row"><span class="hw-tot-label">${escHtml(payLabel)}</span><span class="hw-tot-val">$${fmtNum(order.total)}</span></div>
+      ${(isCash && order.cashTendered && order.cashTendered > 0) ? `
+      <div class="hw-tot-row"><span class="hw-tot-label">Tendered</span><span class="hw-tot-val">$${fmtNum(order.cashTendered)}</span></div>
+      <div class="hw-tot-row"><span class="hw-tot-label">Change Due</span><span class="hw-tot-val">$${fmtNum(Math.max(0, order.cashTendered - order.total))}</span></div>` : ""}`;
 
   const taxPct = parseFloat(taxRate) || 0;
   const refundedHtml = order.status === "refunded"
@@ -2112,13 +2079,12 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   } else {
     lines.push(`Payment:   ${(order.paymentMethod ?? "—").toUpperCase()}`);
   }
-  // Always show Total / Tendered / Change. For non-cash payments Tendered = Total
-  // and Change = 0, so every receipt carries the same breakdown.
-  const tendered = (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0)
-    ? order.cashTendered : order.total;
-  lines.push(`Tendered:  ${fmtNum(tendered)}`);
-  lines.push(`Total:    -${fmtNum(order.total)}`);
-  lines.push(`Change:    ${fmtNum(Math.max(0, tendered - order.total))}`);
+  // Only show Tendered / Total / Change when the cashier entered the cash received.
+  if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
+    lines.push(`Tendered:  ${fmtNum(order.cashTendered)}`);
+    lines.push(`Total:    -${fmtNum(order.total)}`);
+    lines.push(`Change:    ${fmtNum(Math.max(0, order.cashTendered - order.total))}`);
+  }
 
   if (order.notes) {
     lines.push(`─────────────────────`);
@@ -2209,9 +2175,6 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
   }).join("");
 
   // ── Payment ──────────────────────────────────────────────────────────────
-  const tenderedAmt = order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0
-    ? order.cashTendered : order.total;
-  const changeAmt = Math.max(0, tenderedAmt - order.total);
   let paymentHtml = "";
   if (order.paymentMethod === "split") {
     paymentHtml =
@@ -2221,10 +2184,14 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
   } else {
     paymentHtml = row("Payment", escHtml((order.paymentMethod ?? "—").toUpperCase()), "sub");
   }
-  paymentHtml +=
-    row("Tendered", fmtNum(tenderedAmt), "sub") +
-    row("Total", `-${fmtNum(order.total)}`, "sub") +
-    row("Change", fmtNum(changeAmt), "sub");
+  // Only show Tendered / Total / Change when the cashier entered the cash received.
+  if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
+    const changeAmt = Math.max(0, order.cashTendered - order.total);
+    paymentHtml +=
+      row("Tendered", fmtNum(order.cashTendered), "sub") +
+      row("Total", `-${fmtNum(order.total)}`, "sub") +
+      row("Change", fmtNum(changeAmt), "sub");
+  }
 
   // ── Optional blocks ──────────────────────────────────────────────────────
   const discountHtml = (order.discountValue ?? 0) > 0
