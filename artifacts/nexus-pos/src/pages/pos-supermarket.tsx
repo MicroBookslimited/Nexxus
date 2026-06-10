@@ -1178,7 +1178,7 @@ export function PosSupermarket() {
             </div>
           )}
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => setReceiptOrder(null)}>Done</Button>
+            <Button variant="outline" onClick={() => { setReceiptOrder(null); focusScanInput(); }}>Done</Button>
             <Button onClick={printReceipt} className="bg-gradient-to-r from-cyan-500 to-blue-500">
               <Printer className="h-4 w-4 mr-1.5" />
               Print Receipt
