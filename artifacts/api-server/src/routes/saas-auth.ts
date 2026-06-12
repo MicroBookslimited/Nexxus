@@ -657,13 +657,15 @@ router.post("/saas/reset-password", async (req, res): Promise<void> => {
 
   const passwordHash = await bcryptjs.hash(parsed.data.newPassword, 12);
   const now = new Date();
-  await db.update(tenantsTable).set({ passwordHash, updatedAt: now }).where(eq(tenantsTable.id, tenant.id));
-  // Login checks tenant_admin_users before the tenants fallback, so the matching
-  // admin record MUST be synced here or the reset password silently won't work.
-  await db
-    .update(tenantAdminUsersTable)
-    .set({ passwordHash, updatedAt: now })
-    .where(and(eq(tenantAdminUsersTable.tenantId, tenant.id), sql`lower(${tenantAdminUsersTable.email}) = ${payload.email.toLowerCase()}`));
+  // Login checks tenant_admin_users before the tenants fallback, so both stores
+  // MUST be synced atomically or a partial failure silently breaks reset login.
+  await db.transaction(async (tx) => {
+    await tx.update(tenantsTable).set({ passwordHash, updatedAt: now }).where(eq(tenantsTable.id, tenant.id));
+    await tx
+      .update(tenantAdminUsersTable)
+      .set({ passwordHash, updatedAt: now })
+      .where(and(eq(tenantAdminUsersTable.tenantId, tenant.id), sql`lower(${tenantAdminUsersTable.email}) = ${payload.email.toLowerCase()}`));
+  });
 
   res.json({ success: true });
 });
