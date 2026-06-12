@@ -25,6 +25,7 @@ import {
   ArrowDownLeft, UserCheck, ArrowLeft, Mail, BookOpen, ShoppingBag, MapPin,
   ListChecks, ChevronRight, ChevronDown, SkipForward, AlertTriangle, ShoppingCart,
 } from "lucide-react";
+import { useGetSettings } from "@workspace/api-client-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
@@ -707,6 +708,15 @@ function CloseShiftDialog({
 }
 
 /* ─── Print helpers ─── */
+function escHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 type ItemSummaryRow = { productName: string; sku?: string | null; totalQty: number; totalRevenue: number; totalTax?: number | null };
 
 type CreditOrderRow = { orderNumber: string; total: number; customerName: string | null; customerPhone: string | null; arId: number | null; amountPaid: number | null; arStatus: string | null; createdAt: string };
@@ -722,7 +732,7 @@ type SessionDetail = {
   creditOrders?: CreditOrderRow[];
 };
 
-function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
+function buildReportHtml(d: SessionDetail, withDetail: boolean, businessName: string): string {
   const fmt = (n: number) => `$${Math.abs(n).toFixed(2)}`;
   const variance = (d.session.actualCash ?? 0) - d.expectedCash;
   const fmtJM = (dt: string | Date) => new Date(dt).toLocaleString("en-JM", { day: "2-digit", month: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
@@ -741,7 +751,7 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
 
   return `
     <div style="max-width:340px;margin:0 auto;font-family:monospace;font-size:12px;line-height:1.6">
-      <h2 style="text-align:center;font-size:15px;margin:0 0 2px">NEXXUS POS</h2>
+      <h2 style="text-align:center;font-size:15px;margin:0 0 2px">${escHtml(businessName)}</h2>
       <p style="text-align:center;font-size:11px;margin:0 0 10px;color:#555">End of Day Report</p>
       <div style="border-top:1px dashed #000;margin:6px 0"></div>
       <div style="display:flex;justify-content:space-between"><span>Cashier:</span><span>${d.session.staffName}</span></div>
@@ -852,7 +862,7 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean): string {
   `;
 }
 
-function printEodReport(d: SessionDetail, withDetail: boolean) {
+function printEodReport(d: SessionDetail, withDetail: boolean, businessName: string) {
   const w = window.open("", "_blank", "width=420,height=760");
   if (!w) return;
   w.document.write(`<!DOCTYPE html><html><head><title>End of Day Report</title>
@@ -862,7 +872,7 @@ function printEodReport(d: SessionDetail, withDetail: boolean) {
       table { width: 100%; border-collapse: collapse; font-size: 10px; }
       th, td { padding: 1px 2px; }
     </style>
-  </head><body>${buildReportHtml(d, withDetail)}
+  </head><body>${buildReportHtml(d, withDetail, businessName)}
     <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script>
   </body></html>`);
   w.document.close();
@@ -880,6 +890,8 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
   const [eodFetching, setEodFetching] = useState(false);
   const [eodSending, setEodSending] = useState(false);
   const sendEodEmail = useSendEodReportEmail();
+  const { data: settings } = useGetSettings();
+  const businessName = settings?.business_name || "NEXXUS POS";
   const { toast } = useToast();
 
   useEffect(() => {
@@ -1226,11 +1238,11 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
         )}
 
         <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-border mt-2">
-          <Button variant="outline" size="sm" onClick={() => printEodReport(detail, false)} className="flex-1 sm:flex-none">
+          <Button variant="outline" size="sm" onClick={() => printEodReport(detail, false, businessName)} className="flex-1 sm:flex-none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5 mr-1.5"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z"/></svg>
             Print Summary
           </Button>
-          <Button variant="outline" size="sm" onClick={() => printEodReport(detail, true)} className="flex-1 sm:flex-none">
+          <Button variant="outline" size="sm" onClick={() => printEodReport(detail, true, businessName)} className="flex-1 sm:flex-none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5 mr-1.5"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z"/></svg>
             Print with Sales Detail
           </Button>

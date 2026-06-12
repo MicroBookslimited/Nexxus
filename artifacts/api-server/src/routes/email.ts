@@ -84,6 +84,15 @@ function fmt(n: number) {
   return `$${Math.abs(n).toFixed(2)}`;
 }
 
+function escHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function formatDate(d: string | Date) {
   return new Date(d).toLocaleString("en-JM", {
     day: "2-digit", month: "2-digit", year: "numeric",
@@ -206,8 +215,9 @@ function buildEodEmailHtml(data: {
   salesSummary: { cashSales: number; cardSales: number; splitSales: number; totalSales: number };
   expectedCash: number;
   totalPayouts: number;
+  businessName: string;
 }) {
-  const { session, payouts, orders, salesSummary, expectedCash, totalPayouts } = data;
+  const { session, payouts, orders, salesSummary, expectedCash, totalPayouts, businessName } = data;
   const cashVariance = (session.actualCash ?? 0) - expectedCash;
   const cardVariance = (session.actualCard ?? 0) - salesSummary.cardSales;
 
@@ -233,7 +243,7 @@ function buildEodEmailHtml(data: {
 
   <!-- Header -->
   <div style="background:#0f1729;color:#fff;text-align:center;padding:20px 16px 16px;">
-    <div style="font-size:22px;font-weight:bold;letter-spacing:2px;">NEXXUS POS</div>
+    <div style="font-size:22px;font-weight:bold;letter-spacing:2px;">${escHtml(businessName)}</div>
     <div style="font-size:13px;font-weight:bold;color:#94a3b8;margin-top:4px;">END OF DAY REPORT</div>
     <div style="font-size:11px;color:#64748b;margin-top:4px;">${formatDate(session.openedAt)}</div>
   </div>
@@ -711,6 +721,8 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
   const expectedCash = session.openingCash + salesSummary.cashSales - totalPayouts;
 
+  const businessName = (await getSetting("business_name", tenantId)) || "NEXXUS POS";
+
   const html = buildEodEmailHtml({
     session,
     payouts,
@@ -718,6 +730,7 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
     salesSummary,
     expectedCash,
     totalPayouts,
+    businessName,
   });
 
   const dateLabel = new Date(session.openedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
