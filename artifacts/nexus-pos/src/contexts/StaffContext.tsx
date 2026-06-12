@@ -46,6 +46,7 @@ export function StaffProvider({ children }: { children: ReactNode }) {
 
   const can = (permission: string): boolean => {
     if (!staff) return true;
+    if (staff.role === "Owner" || staff.role === "Admin") return true;
     return staff.permissions.includes(permission);
   };
 
