@@ -84,6 +84,10 @@ export interface ReceiptOrder {
   customerOutstandingBalance?: number | null;
   loyaltyPointsEarned?: number | null;
   loyaltyPointsRedeemed?: number | null;
+  /** Code of the gift voucher applied as a tender on this sale, if any. */
+  giftVoucherCode?: string | null;
+  /** Amount of the sale total paid by a gift voucher (a tender, not a discount). */
+  giftVoucherAmount?: number | null;
 }
 
 /**
@@ -130,6 +134,8 @@ export function receiptOrderFrom(
     customerName?: string | null;
     loyaltyPointsEarned?: number | null;
     loyaltyPointsRedeemed?: number | null;
+    giftVoucherCode?: string | null;
+    giftVoucherAmount?: number | null;
   },
   customer?: ReceiptCustomerLike | null,
 ): ReceiptOrder {
@@ -157,6 +163,8 @@ export function receiptOrderFrom(
     customerOutstandingBalance: customer?.outstandingBalance ?? null,
     loyaltyPointsEarned: order.loyaltyPointsEarned ?? null,
     loyaltyPointsRedeemed: order.loyaltyPointsRedeemed ?? null,
+    giftVoucherCode: order.giftVoucherCode ?? null,
+    giftVoucherAmount: order.giftVoucherAmount ?? null,
   };
 }
 
@@ -308,24 +316,31 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       ${(order.tax ?? 0) > 0 ? `<div class="r-row r-light"><span>${escHtml(taxName)} (${taxRate}%)</span><span>${fmt(order.tax)}</span></div>` : ""}
       <div class="r-sep"></div>` : "";
 
-    // Payment block
+    // Payment block. A gift voucher is a TENDER: it pays down `giftAmt` of the
+    // total and the remaining `amountDue` is settled by `paymentMethod`.
+    const giftAmt = order.giftVoucherAmount ?? 0;
+    const amountDue = Math.max(0, Math.round((order.total - giftAmt) * 100) / 100);
     let restPaymentHtml = "";
+    if (giftAmt > 0) {
+      restPaymentHtml += `<div class="r-row r-light"><span>Gift Voucher${order.giftVoucherCode ? ` (${escHtml(order.giftVoucherCode)})` : ""}</span><span>-${fmt(giftAmt)}</span></div>`;
+      restPaymentHtml += `<div class="r-row r-light"><span>Amount Due</span><span>${fmt(amountDue)}</span></div>`;
+    }
     if (order.paymentMethod === "split") {
-      restPaymentHtml = `
+      restPaymentHtml += `
         <div class="r-row r-light"><span>Card</span><span>${fmt(order.splitCardAmount ?? 0)}</span></div>
         <div class="r-row r-light"><span>Cash</span><span>${fmt(order.splitCashAmount ?? 0)}</span></div>`;
-    } else {
+    } else if (order.paymentMethod !== "gift_voucher") {
       const pmLabel = order.paymentMethod
         ? escHtml(order.paymentMethod.charAt(0).toUpperCase() + order.paymentMethod.slice(1))
         : "Cash";
-      restPaymentHtml = `<div class="r-row r-light"><span>${pmLabel}</span><span>${fmt(order.total)}</span></div>`;
+      restPaymentHtml += `<div class="r-row r-light"><span>${pmLabel}</span><span>${fmt(amountDue)}</span></div>`;
     }
     // Only render Tendered / Total / Change when the cashier entered the cash received.
     if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
-      const changeAmt = Math.max(0, order.cashTendered - order.total);
+      const changeAmt = Math.max(0, order.cashTendered - amountDue);
       restPaymentHtml += `
         <div class="r-row r-light"><span>Tendered</span><span>${fmt(order.cashTendered)}</span></div>
-        <div class="r-row r-light"><span>Total</span><span>-${fmt(order.total)}</span></div>
+        <div class="r-row r-light"><span>Total</span><span>-${fmt(amountDue)}</span></div>
         <div class="r-row r-light"><span>Change</span><span>${fmt(changeAmt)}</span></div>`;
     }
 
@@ -459,21 +474,28 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   }).join("");
 
   // ── Payment ───────────────────────────────────────────────────────────────
+  // A gift voucher is a TENDER: it pays down `giftAmt`; `amountDue` is the rest.
+  const giftAmt = order.giftVoucherAmount ?? 0;
+  const amountDue = Math.max(0, Math.round((order.total - giftAmt) * 100) / 100);
   let paymentHtml = "";
+  if (giftAmt > 0) {
+    paymentHtml += `<div class="row sub-row"><span>Gift Voucher${order.giftVoucherCode ? ` (${escHtml(order.giftVoucherCode)})` : ""}</span><span class="nowrap">-${fmtNum(giftAmt)}</span></div>`;
+    paymentHtml += `<div class="row sub-row"><span>Amount Due</span><span class="nowrap">${fmtNum(amountDue)}</span></div>`;
+  }
   if (order.paymentMethod === "split") {
-    paymentHtml = `
+    paymentHtml += `
       <div class="row sub-row"><span>Payment</span><span class="nowrap">SPLIT</span></div>
       <div class="row sub-row"><span>&nbsp;&nbsp;Card</span><span class="nowrap">${fmtNum(order.splitCardAmount ?? 0)}</span></div>
       <div class="row sub-row"><span>&nbsp;&nbsp;Cash</span><span class="nowrap">${fmtNum(order.splitCashAmount ?? 0)}</span></div>`;
-  } else {
-    paymentHtml = `<div class="row sub-row"><span>Payment</span><span class="nowrap">${escHtml((order.paymentMethod ?? "—").toUpperCase())}</span></div>`;
+  } else if (order.paymentMethod !== "gift_voucher") {
+    paymentHtml += `<div class="row sub-row"><span>Payment</span><span class="nowrap">${escHtml((order.paymentMethod ?? "—").toUpperCase())}</span></div>`;
   }
   // Only render Tendered / Total / Change when the cashier entered the cash received.
   if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
-    const changeAmt = Math.max(0, order.cashTendered - order.total);
+    const changeAmt = Math.max(0, order.cashTendered - amountDue);
     paymentHtml += `
       <div class="row sub-row"><span>Tendered</span><span class="nowrap">${fmtNum(order.cashTendered)}</span></div>
-      <div class="row sub-row"><span>Total</span><span class="nowrap">-${fmtNum(order.total)}</span></div>
+      <div class="row sub-row"><span>Total</span><span class="nowrap">-${fmtNum(amountDue)}</span></div>
       <div class="row sub-row"><span>Change</span><span class="nowrap">${fmtNum(changeAmt)}</span></div>`;
   }
 
@@ -2175,21 +2197,29 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
   }).join("");
 
   // ── Payment ──────────────────────────────────────────────────────────────
+  // A gift voucher is a TENDER: it pays down `giftAmt`; `amountDue` is the rest.
+  const giftAmt = order.giftVoucherAmount ?? 0;
+  const amountDue = Math.max(0, Math.round((order.total - giftAmt) * 100) / 100);
   let paymentHtml = "";
+  if (giftAmt > 0) {
+    paymentHtml +=
+      row(`Gift Voucher${order.giftVoucherCode ? ` (${escHtml(order.giftVoucherCode)})` : ""}`, `-${fmtNum(giftAmt)}`, "sub") +
+      row("Amount Due", fmtNum(amountDue), "sub");
+  }
   if (order.paymentMethod === "split") {
-    paymentHtml =
+    paymentHtml +=
       row("Payment", "SPLIT", "sub") +
       row("&nbsp;&nbsp;Card", fmtNum(order.splitCardAmount ?? 0), "sub") +
       row("&nbsp;&nbsp;Cash", fmtNum(order.splitCashAmount ?? 0), "sub");
-  } else {
-    paymentHtml = row("Payment", escHtml((order.paymentMethod ?? "—").toUpperCase()), "sub");
+  } else if (order.paymentMethod !== "gift_voucher") {
+    paymentHtml += row("Payment", escHtml((order.paymentMethod ?? "—").toUpperCase()), "sub");
   }
   // Only show Tendered / Total / Change when the cashier entered the cash received.
   if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
-    const changeAmt = Math.max(0, order.cashTendered - order.total);
+    const changeAmt = Math.max(0, order.cashTendered - amountDue);
     paymentHtml +=
       row("Tendered", fmtNum(order.cashTendered), "sub") +
-      row("Total", `-${fmtNum(order.total)}`, "sub") +
+      row("Total", `-${fmtNum(amountDue)}`, "sub") +
       row("Change", fmtNum(changeAmt), "sub");
   }
 

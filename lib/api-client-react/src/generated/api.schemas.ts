@@ -330,6 +330,12 @@ export interface Order {
   splitCashAmount?: number | null;
   /** Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded. */
   cashTendered?: number | null;
+  /** Id of the gift voucher redeemed as a tender on this sale, if any. */
+  giftVoucherId?: number | null;
+  /** Code of the gift voucher redeemed on this sale (snapshot for receipts/reports). */
+  giftVoucherCode?: string | null;
+  /** Portion of `total` paid by a redeemed gift voucher. The remainder (total - giftVoucherAmount) is collected via paymentMethod. */
+  giftVoucherAmount?: number | null;
   notes?: string | null;
   voidReason?: string | null;
   customerId?: number | null;
@@ -384,6 +390,8 @@ export interface CreateOrderBody {
   staffId?: number;
   orderType?: CreateOrderBodyOrderType;
   loyaltyPointsToRedeem?: number;
+  /** Gift voucher code to redeem as a tender against this sale. The server locks the voucher, applies min(balance, total), and records a redeem ledger entry. Does not change subtotal/tax/total. */
+  giftVoucherCode?: string;
 }
 
 export interface CompleteOrderBody {

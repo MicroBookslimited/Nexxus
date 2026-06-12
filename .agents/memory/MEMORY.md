@@ -21,6 +21,7 @@
 - [Product selling unit (UOM)](product-selling-unit.md) — optional free-text label; order-item value is a LIVE tenant-scoped product join (not snapshotted); separate from weight-only unitOfMeasure enum.
 - [POS line override/discount payload](pos-line-override-payload.md) — catalog-line price override is markdown-only (discountAmount, tier-aware baseline); derive UI totals + payload from shared clamped helpers so qty crossing a tier never diverges.
 - [Duplicate product detection](duplicate-product-detection.md) — find-duplicates groups by order-insensitive token key + ONE union-find over all products; normalization regex MUST be Unicode-aware or non-Latin names false-group.
+- [Gift voucher = tender](gift-voucher-tender.md) — voucher pays amountDue, leaves subtotal/tax/total unchanged; split/AR settle remainder; server must verify sentinel + reject open-order redeem; row-lock on redeem.
 - [api-server new-route reload](api-server-route-reload.md) — newly-created+registered route files return 404 until you restart the api-server workflow; don't chase path bugs first.
 - [Generated query-hook queryKey](generated-query-hooks-querykey.md) — passing {query:{enabled}} to a generated get-by-id hook needs explicit queryKey to typecheck; existing omissions are pre-existing errors.
 - [Stock/quantity REAL drift](stock-quantity-real-drift.md) — by-weight checkout 500s with PG 22P02; DBs had products.stock_count/order_items.quantity/location_inventory.stock_count as integer though code declares real. Fix = ALTER ... TYPE real on prod+local.

@@ -24,4 +24,6 @@ export interface CreateOrderBody {
   staffId?: number;
   orderType?: CreateOrderBodyOrderType;
   loyaltyPointsToRedeem?: number;
+  /** Gift voucher code to redeem as a tender against this sale. The server locks the voucher, applies min(balance, total), and records a redeem ledger entry. Does not change subtotal/tax/total. */
+  giftVoucherCode?: string;
 }

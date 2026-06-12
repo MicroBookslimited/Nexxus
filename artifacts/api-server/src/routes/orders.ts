@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { logAudit } from "./audit";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable, variantCombinationsTable, productBatchesTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable, variantCombinationsTable, productBatchesTable, giftVouchersTable, giftVoucherTransactionsTable } from "@workspace/db";
 import { applyVolumePricing } from "../lib/pricing";
 import { getSetting } from "./settings";
 import { logger } from "../lib/logger";
@@ -51,6 +51,19 @@ class PaymentMethodDisabledError extends Error {
   }
 }
 
+/**
+ * Thrown inside the order transaction when a gift voucher cannot be redeemed
+ * (not found, wrong tenant, cancelled/expired/zero balance). Rolls the whole
+ * sale back so stock is never deducted against a failed redemption. `reason`
+ * is a stable machine code the POS can switch on; `message` is user-facing.
+ */
+class VoucherRedemptionError extends Error {
+  constructor(public reason: string, message: string) {
+    super(message);
+    this.name = "VoucherRedemptionError";
+  }
+}
+
 import {
   CreateOrderBody,
   GetOrderParams,
@@ -91,6 +104,9 @@ function normalizeOrder(order: typeof ordersTable.$inferSelect) {
     splitCardAmount: order.splitCardAmount ?? undefined,
     splitCashAmount: order.splitCashAmount ?? undefined,
     cashTendered: order.cashTendered ?? undefined,
+    giftVoucherId: order.giftVoucherId ?? undefined,
+    giftVoucherCode: order.giftVoucherCode ?? undefined,
+    giftVoucherAmount: order.giftVoucherAmount ?? undefined,
     notes: order.notes ?? undefined,
     voidReason: order.voidReason ?? undefined,
     customerId: order.customerId ?? undefined,
@@ -258,7 +274,9 @@ router.post("/orders", async (req, res): Promise<void> => {
   // Validate payment method is enabled for this tenant (when one is given).
   // Built-in types (cash, card, split, credit) are always permitted if no
   // payment_methods rows exist at all (back-compat for tenants pre-config).
-  if (parsed.data.paymentMethod) {
+  // "gift_voucher" is a system tender (used when a voucher covers the whole
+  // sale) — never a configurable method, so it bypasses this check.
+  if (parsed.data.paymentMethod && parsed.data.paymentMethod !== "gift_voucher") {
     const enabled = await db
       .select({ id: paymentMethodsTable.id })
       .from(paymentMethodsTable)
@@ -918,6 +936,64 @@ router.post("/orders", async (req, res): Promise<void> => {
         `);
       }
 
+      // ── Gift voucher redemption (a TENDER, not a discount) ─────────────
+      // Lock the voucher row FOR UPDATE so two concurrent sales can never
+      // both spend the same balance. The sale total is UNCHANGED; the voucher
+      // pays down `giftVoucherAmount` and the remainder (total - applied) is
+      // collected via paymentMethod. Any failure throws and rolls the whole
+      // sale back so stock is never deducted against a bad redemption.
+      let voucherApplied = 0;
+      let voucherRow: typeof giftVouchersTable.$inferSelect | null = null;
+      const redeemCode = parsed.data.giftVoucherCode
+        ? parsed.data.giftVoucherCode.trim().toUpperCase().replace(/\s+/g, "")
+        : "";
+      if (redeemCode) {
+        const [v] = await tx
+          .select()
+          .from(giftVouchersTable)
+          .where(and(
+            eq(giftVouchersTable.tenantId, tenantId),
+            eq(giftVouchersTable.code, redeemCode),
+          ))
+          .for("update");
+        if (!v) {
+          throw new VoucherRedemptionError("VOUCHER_NOT_FOUND", `Gift voucher "${redeemCode}" was not found`);
+        }
+        if (v.status === "cancelled") {
+          throw new VoucherRedemptionError("VOUCHER_CANCELLED", "This gift voucher has been cancelled");
+        }
+        if (v.expiryDate && v.expiryDate.getTime() < Date.now()) {
+          throw new VoucherRedemptionError("VOUCHER_EXPIRED", "This gift voucher has expired");
+        }
+        if (v.status === "redeemed" || v.balance <= 0) {
+          throw new VoucherRedemptionError("VOUCHER_EMPTY", "This gift voucher has no remaining balance");
+        }
+        voucherApplied = Math.round(Math.min(Math.round(v.balance * 100) / 100, total) * 100) / 100;
+        if (voucherApplied <= 0) {
+          throw new VoucherRedemptionError("VOUCHER_EMPTY", "This gift voucher has no remaining balance");
+        }
+        voucherRow = v;
+      }
+
+      // Server-side payment invariants (defence-in-depth — never trust client):
+      // (a) The "gift_voucher" sentinel claims the voucher pays the WHOLE sale.
+      //     Reject it unless a redeemable voucher actually covers the total, or
+      //     a crafted request could create a free completed order.
+      if (parsed.data.paymentMethod === "gift_voucher" && voucherApplied + 0.005 < total) {
+        throw new VoucherRedemptionError(
+          "VOUCHER_INSUFFICIENT",
+          "Gift voucher does not cover the full sale total",
+        );
+      }
+      // (b) A voucher may only be spent on a finalized (paid) sale — never on an
+      //     open/unpaid order — so balance can't be burned before payment.
+      if (voucherRow && isOpenOrder) {
+        throw new VoucherRedemptionError(
+          "VOUCHER_OPEN_ORDER",
+          "Gift vouchers can only be redeemed when the sale is paid",
+        );
+      }
+
       // 2. Create the order header now that all stock is reserved.
       const [created] = await tx
         .insert(ordersTable)
@@ -936,6 +1012,9 @@ router.post("/orders", async (req, res): Promise<void> => {
           splitCardAmount: parsed.data.splitCardAmount,
           splitCashAmount: parsed.data.splitCashAmount,
           cashTendered: parsed.data.cashTendered,
+          giftVoucherId: voucherRow ? voucherRow.id : undefined,
+          giftVoucherCode: voucherRow ? voucherRow.code : undefined,
+          giftVoucherAmount: voucherApplied > 0 ? voucherApplied : undefined,
           notes: parsed.data.notes,
           customerId: parsed.data.customerId,
           tableId: parsed.data.tableId,
@@ -947,6 +1026,33 @@ router.post("/orders", async (req, res): Promise<void> => {
           completedAt: isPaid ? new Date() : undefined,
         })
         .returning();
+
+      // 2b. Apply the locked voucher now that the order id exists: decrement
+      // the balance, flip status, and write an immutable "redeem" ledger row
+      // pointing back at this sale.
+      if (voucherRow && voucherApplied > 0) {
+        const balanceBefore = Math.round(voucherRow.balance * 100) / 100;
+        const balanceAfter = Math.round((balanceBefore - voucherApplied) * 100) / 100;
+        await tx
+          .update(giftVouchersTable)
+          .set({
+            balance: balanceAfter,
+            status: balanceAfter <= 0 ? "redeemed" : "partially_redeemed",
+            updatedAt: new Date(),
+          })
+          .where(eq(giftVouchersTable.id, voucherRow.id));
+        await tx.insert(giftVoucherTransactionsTable).values({
+          tenantId,
+          voucherId: voucherRow.id,
+          action: "redeem",
+          amount: voucherApplied,
+          balanceBefore,
+          balanceAfter,
+          relatedOrderId: created.id,
+          staffId: parsed.data.staffId,
+          notes: `Redeemed on ${created.orderNumber}`,
+        });
+      }
 
       // 3. Insert order_items.
       await tx.insert(orderItemsTable).values(
@@ -1103,6 +1209,10 @@ router.post("/orders", async (req, res): Promise<void> => {
       });
       return;
     }
+    if (e instanceof VoucherRedemptionError) {
+      res.status(400).json({ error: e.reason, message: e.message });
+      return;
+    }
     if (e instanceof InsufficientComponentStockError) {
       res.status(409).json({
         error: "INSUFFICIENT_COMPONENT_STOCK",
@@ -1181,7 +1291,9 @@ router.post("/orders", async (req, res): Promise<void> => {
         customerName: cust.name,
         orderId: order.id,
         orderNumber: order.orderNumber,
-        amount: order.total,
+        // A gift voucher is a tender, so the receivable is only the UNPAID
+        // remainder (total minus the amount the voucher covered).
+        amount: Math.max(0, Math.round((order.total - (order.giftVoucherAmount ?? 0)) * 100) / 100),
         amountPaid: 0,
         status: "open",
       });

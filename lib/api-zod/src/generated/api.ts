@@ -900,6 +900,24 @@ export const ListOrdersResponseItem = zod.object({
     .describe(
       "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
     ),
+  giftVoucherId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Id of the gift voucher redeemed as a tender on this sale, if any.",
+    ),
+  giftVoucherCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Code of the gift voucher redeemed on this sale (snapshot for receipts\/reports).",
+    ),
+  giftVoucherAmount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Portion of `total` paid by a redeemed gift voucher. The remainder (total - giftVoucherAmount) is collected via paymentMethod.",
+    ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1026,6 +1044,12 @@ export const CreateOrderBody = zod.object({
   staffId: zod.number().optional(),
   orderType: zod.enum(["counter", "dine-in", "takeout", "delivery"]).optional(),
   loyaltyPointsToRedeem: zod.number().optional(),
+  giftVoucherCode: zod
+    .string()
+    .optional()
+    .describe(
+      "Gift voucher code to redeem as a tender against this sale. The server locks the voucher, applies min(balance, total), and records a redeem ledger entry. Does not change subtotal\/tax\/total.",
+    ),
 });
 
 /**
@@ -1067,6 +1091,24 @@ export const GetOrderResponse = zod.object({
     .nullish()
     .describe(
       "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
+  giftVoucherId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Id of the gift voucher redeemed as a tender on this sale, if any.",
+    ),
+  giftVoucherCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Code of the gift voucher redeemed on this sale (snapshot for receipts\/reports).",
+    ),
+  giftVoucherAmount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Portion of `total` paid by a redeemed gift voucher. The remainder (total - giftVoucherAmount) is collected via paymentMethod.",
     ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
@@ -1179,6 +1221,24 @@ export const UpdateOrderStatusResponse = zod.object({
     .nullish()
     .describe(
       "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
+  giftVoucherId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Id of the gift voucher redeemed as a tender on this sale, if any.",
+    ),
+  giftVoucherCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Code of the gift voucher redeemed on this sale (snapshot for receipts\/reports).",
+    ),
+  giftVoucherAmount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Portion of `total` paid by a redeemed gift voucher. The remainder (total - giftVoucherAmount) is collected via paymentMethod.",
     ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
@@ -1294,6 +1354,24 @@ export const RefundOrderItemsResponse = zod.object({
     .describe(
       "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
     ),
+  giftVoucherId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Id of the gift voucher redeemed as a tender on this sale, if any.",
+    ),
+  giftVoucherCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Code of the gift voucher redeemed on this sale (snapshot for receipts\/reports).",
+    ),
+  giftVoucherAmount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Portion of `total` paid by a redeemed gift voucher. The remainder (total - giftVoucherAmount) is collected via paymentMethod.",
+    ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -1399,6 +1477,24 @@ export const ChargeOrderResponse = zod.object({
     .nullish()
     .describe(
       "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
+  giftVoucherId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Id of the gift voucher redeemed as a tender on this sale, if any.",
+    ),
+  giftVoucherCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Code of the gift voucher redeemed on this sale (snapshot for receipts\/reports).",
+    ),
+  giftVoucherAmount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Portion of `total` paid by a redeemed gift voucher. The remainder (total - giftVoucherAmount) is collected via paymentMethod.",
     ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
@@ -1934,6 +2030,24 @@ export const GetRecentOrdersResponseItem = zod.object({
     .describe(
       "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
     ),
+  giftVoucherId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Id of the gift voucher redeemed as a tender on this sale, if any.",
+    ),
+  giftVoucherCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Code of the gift voucher redeemed on this sale (snapshot for receipts\/reports).",
+    ),
+  giftVoucherAmount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Portion of `total` paid by a redeemed gift voucher. The remainder (total - giftVoucherAmount) is collected via paymentMethod.",
+    ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
@@ -2194,6 +2308,24 @@ export const GetCustomerOrdersResponseItem = zod.object({
     .nullish()
     .describe(
       "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+    ),
+  giftVoucherId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Id of the gift voucher redeemed as a tender on this sale, if any.",
+    ),
+  giftVoucherCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Code of the gift voucher redeemed on this sale (snapshot for receipts\/reports).",
+    ),
+  giftVoucherAmount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Portion of `total` paid by a redeemed gift voucher. The remainder (total - giftVoucherAmount) is collected via paymentMethod.",
     ),
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),

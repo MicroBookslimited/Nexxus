@@ -275,6 +275,24 @@ export interface CustomerReceiptInfo {
 export const fetchCustomerReceiptInfo = (id: number) =>
   api<CustomerReceiptInfo>(`/customers/${id}/receipt-info`, { headers: tenantAuthHeaders() });
 
+export interface VoucherLookupResult {
+  id: number;
+  code: string;
+  originalValue: number;
+  balance: number;
+  status: string;
+  expiryDate?: string | null;
+  customerName?: string | null;
+}
+
+/** Look up a gift voucher by its code for redemption at the POS. Throws an
+ * ApiError (404) when no voucher matches the code for this tenant. */
+export const lookupGiftVoucher = (code: string) =>
+  api<VoucherLookupResult>(`/gift-vouchers/lookup/${encodeURIComponent(code.trim().toUpperCase())}`, {
+    headers: tenantAuthHeaders(),
+    cache: "no-store",
+  });
+
 export const fetchAuditLogs = async (params?: { action?: string; staffId?: number; entityType?: string; from?: string; to?: string; q?: string }): Promise<AuditLog[]> => {
   const headers = tenantAuthHeaders();
   const qs = params

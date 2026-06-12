@@ -19,6 +19,13 @@ export const ordersTable = pgTable("orders", {
   splitCardAmount: real("split_card_amount"),
   splitCashAmount: real("split_cash_amount"),
   cashTendered: real("cash_tendered"),
+  // Gift voucher applied as a TENDER on this sale (not a discount): the
+  // sale's subtotal/tax/total are unchanged; giftVoucherAmount is the portion
+  // of `total` paid by the voucher, and the remainder is collected via
+  // paymentMethod. Code is snapshotted for receipts/reports.
+  giftVoucherId: integer("gift_voucher_id"),
+  giftVoucherCode: text("gift_voucher_code"),
+  giftVoucherAmount: real("gift_voucher_amount").default(0),
   notes: text("notes"),
   voidReason: text("void_reason"),
   customerId: integer("customer_id").references(() => customersTable.id),
