@@ -41,3 +41,35 @@ discoverable from a single file. Several were live bugs caught in review.
    (`expiryDate < now`), and zero-balance. A `status !== "active"` shortcut is a
    bug — it wrongly blocks partially-redeemed vouchers and skips the expiry
    check. `pos.tsx` is the reference; mirror its `handleApplyVoucher` exactly.
+
+# Lifecycle (refund-to-voucher, cancel, expiry)
+
+- **Refund-to-voucher issues a NEW voucher**, it never restores an original one.
+  `POST /orders/{id}/refund-items` takes `refundToVoucher` + `staffId`; when set
+  it creates a fresh store-credit voucher for the computed `refundAmount` and
+  returns `{ order, refundVoucher }` (response shape changed from bare `Order` —
+  any caller must read `updated.order`). Works for ANY order regardless of how it
+  was paid (cash/card/voucher), because it's new credit, not a reversal.
+- **Voucher value is server-derived** (`round2(refundAmount)` from the locked
+  order), never client-supplied — same money-integrity rule as redemption.
+- **Code-collision retry must use a nested `tx.transaction()` savepoint** inside
+  the outer refund txn. A raw 23505 poisons the whole Postgres transaction, so
+  retrying the insert without a savepoint would also roll back the refund.
+- **Cancel** (`POST /gift-vouchers/{id}/cancel`): row-lock, reject already
+  `cancelled` / `redeemed` / effectively-expired (`effectiveVoucherStatus`),
+  then set status=cancelled + balance=0 + `cancelledAt`, write a "cancel" ledger
+  row (amount=prev balance, balanceAfter=0). Zeroing balance drops it from the
+  outstanding-liability total.
+- **`effectiveVoucherStatus` is computed, not stored** — `active`/`partial` with
+  `expiryDate < now` reads as "expired". Reports' outstanding filter and the
+  cancel/redeem guards all go through it; never trust the raw `status` column for
+  expiry.
+- **Staff attribution must be tenant-validated** — refund-voucher and cancel
+  look the supplied `staffId` up scoped to the tenant and only persist it if it
+  resolves; an unresolved id is stored as null, never written raw.
+
+**Known limitation (app-wide, dedicated future task):** voucher manage/cancel/
+issue gate on a client-supplied `staffId` via `resolveVoucherManager`; omitting
+it falls through to "owner tenant session = allowed" (mirrors app-wide `can()`
+semantics). Spoofable, but kept consistent across all voucher endpoints rather
+than hardening only one. See `staff-auth-pattern.md`.

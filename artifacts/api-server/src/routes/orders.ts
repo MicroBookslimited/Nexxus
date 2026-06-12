@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { logAudit } from "./audit";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable, variantCombinationsTable, productBatchesTable, giftVouchersTable, giftVoucherTransactionsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable, variantCombinationsTable, productBatchesTable, giftVouchersTable, giftVoucherTransactionsTable, staffTable } from "@workspace/db";
+import { generateVoucherCode, isUniqueViolation, normalizeVoucher } from "../lib/vouchers";
 import { applyVolumePricing } from "../lib/pricing";
 import { getSetting } from "./settings";
 import { logger } from "../lib/logger";
@@ -1777,6 +1778,7 @@ router.post("/orders/:id/refund-items", async (req, res): Promise<void> => {
   let fullyRefunded = false;
   let auditItems: Array<{ orderItemId: number; productName: string; quantity: number }> = [];
   let auditStaffId: number | null = null;
+  let refundVoucher: typeof giftVouchersTable.$inferSelect | null = null;
 
   try {
     await db.transaction(async (tx) => {
@@ -1890,6 +1892,75 @@ router.post("/orders/:id/refund-items", async (req, res): Promise<void> => {
         .where(and(eq(ordersTable.id, existing.id), eq(ordersTable.tenantId, tenantId)));
 
       auditItems = refundReqs.map(r => ({ orderItemId: r.item.id, productName: r.item.productName, quantity: r.refundQty }));
+
+      // Refund-to-voucher: issue a NEW store-credit voucher for the refunded
+      // amount instead of cash (works regardless of how the order was paid).
+      // Created inside the same transaction so a failure can't leave a refund
+      // without its store credit (or vice-versa). Each insert attempt runs in a
+      // savepoint so a (vanishingly rare) code collision rolls back only the
+      // attempt, not the whole refund.
+      if (parsed.data.refundToVoucher && refundAmount > 0) {
+        // Validate the staff attribution against THIS tenant — never persist a
+        // caller-supplied id that doesn't resolve to a tenant staff row (avoids
+        // cross-tenant / spoofed attribution on the issued voucher).
+        const requestedStaffId = parsed.data.staffId ?? existing.staffId ?? null;
+        let actingStaffId: number | null = null;
+        let actingStaffName: string | null = null;
+        if (requestedStaffId != null) {
+          const [s] = await tx
+            .select({ id: staffTable.id, name: staffTable.name })
+            .from(staffTable)
+            .where(and(eq(staffTable.id, requestedStaffId), eq(staffTable.tenantId, tenantId)));
+          if (s) {
+            actingStaffId = s.id;
+            actingStaffName = s.name ?? null;
+          }
+        }
+        const voucherValue = round2(refundAmount);
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const code = generateVoucherCode();
+          try {
+            refundVoucher = await tx.transaction(async (sp) => {
+              const [v] = await sp
+                .insert(giftVouchersTable)
+                .values({
+                  tenantId,
+                  code,
+                  originalValue: voucherValue,
+                  balance: voucherValue,
+                  status: "active",
+                  customerId: existing.customerId ?? null,
+                  paymentMethod: null,
+                  amountPaid: null,
+                  notes: `Store credit for refund on order #${existing.id}`,
+                  issuedByStaffId: actingStaffId,
+                  issuedByName: actingStaffName,
+                })
+                .returning();
+              await sp.insert(giftVoucherTransactionsTable).values({
+                tenantId,
+                voucherId: v!.id,
+                action: "issue",
+                amount: voucherValue,
+                balanceBefore: 0,
+                balanceAfter: voucherValue,
+                relatedOrderId: existing.id,
+                staffId: actingStaffId,
+                staffName: actingStaffName,
+                notes: `Store credit issued for refund on order #${existing.id}`,
+              });
+              return v!;
+            });
+            break;
+          } catch (e) {
+            if (isUniqueViolation(e)) continue; // code collided — retry
+            throw e;
+          }
+        }
+        if (!refundVoucher) {
+          throw { httpStatus: 500, httpMessage: "Could not generate a unique voucher code, please try again" } satisfies RefundErr;
+        }
+      }
     });
   } catch (e) {
     if (isRefundErr(e)) {
@@ -1911,9 +1982,13 @@ router.post("/orders/:id/refund-items", async (req, res): Promise<void> => {
       refundAmount,
       fullyRefunded,
       items: auditItems,
+      refundVoucherId: refundVoucher ? (refundVoucher as typeof giftVouchersTable.$inferSelect).id : undefined,
     },
   });
-  res.json(RefundOrderItemsResponse.parse(fullOrder));
+  res.json(RefundOrderItemsResponse.parse({
+    order: fullOrder,
+    refundVoucher: refundVoucher ? normalizeVoucher(refundVoucher) : null,
+  }));
 });
 
 export default router;

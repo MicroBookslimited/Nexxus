@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 
 function formatCurrency(val: number) {
@@ -91,6 +92,9 @@ export function Orders() {
   // Per-line refund quantities, keyed by order_item id. Capped at each line's
   // current (remaining) quantity. A value of 0 means "don't refund this line".
   const [refundQuantities, setRefundQuantities] = useState<Record<number, number>>({});
+  // When true, the refund is issued as a NEW store-credit gift voucher for the
+  // refunded amount instead of cash (works for any order, however it was paid).
+  const [refundToVoucher, setRefundToVoucher] = useState(false);
   const [reprintOrder, setReprintOrder] = useState<NonNullable<typeof orders>[0] | null>(null);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [whatsappOrder, setWhatsappOrder] = useState<NonNullable<typeof orders>[0] | null>(null);
@@ -179,19 +183,31 @@ export function Orders() {
       .filter((l) => l.quantity > 0);
     if (lines.length === 0) return;
     refundItems.mutate(
-      { id: orderToRefund, data: { items: lines, reason: refundReason } },
+      {
+        id: orderToRefund,
+        data: {
+          items: lines,
+          reason: refundReason,
+          refundToVoucher,
+          ...(sessionStaff?.id ? { staffId: sessionStaff.id } : {}),
+        },
+      },
       {
         onSuccess: (updated) => {
-          const fully = updated.status === "refunded";
+          const fully = updated.order.status === "refunded";
+          const voucher = updated.refundVoucher;
           toast({
             title: fully ? "Order Fully Refunded" : "Items Refunded",
-            description: "Stock has been restored and the sale total adjusted.",
+            description: voucher
+              ? `Store credit voucher ${voucher.code} issued for ${formatCurrency(voucher.balance)}.`
+              : "Stock has been restored and the sale total adjusted.",
           });
           queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
           setRefundDialogOpen(false);
           setOrderToRefund(null);
           setRefundReason("");
           setRefundQuantities({});
+          setRefundToVoucher(false);
         },
         onError: (err: unknown) => {
           toast({
@@ -1145,6 +1161,19 @@ export function Orders() {
                   <span className="text-muted-foreground">Estimated refund</span>
                   <span className="font-mono font-semibold text-amber-500">{formatCurrency(estRefund)}</span>
                 </div>
+                <label className="mt-3 flex items-start gap-2 rounded-md border p-3 cursor-pointer">
+                  <Checkbox
+                    checked={refundToVoucher}
+                    onCheckedChange={(c) => setRefundToVoucher(c === true)}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm">
+                    <span className="font-medium">Refund as store credit</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Issues a new gift voucher for {formatCurrency(estRefund)} instead of returning cash.
+                    </span>
+                  </span>
+                </label>
                 <div className="mt-3 space-y-2">
                   <Label htmlFor="refundReason">Reason for refund <span className="text-destructive">*</span></Label>
                   <Input

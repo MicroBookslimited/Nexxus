@@ -1319,117 +1319,186 @@ export const RefundOrderItemsBody = zod.object({
     }),
   ),
   reason: zod.string(),
+  refundToVoucher: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, issue the refund as a new store-credit gift voucher (for the refunded amount) instead of cash.",
+    ),
+  staffId: zod
+    .number()
+    .optional()
+    .describe(
+      "Acting staff id, used to attribute and authorise the issued store-credit voucher.",
+    ),
 });
 
 export const RefundOrderItemsResponse = zod.object({
-  id: zod.number(),
-  orderNumber: zod.string(),
-  status: zod.enum([
-    "open",
-    "pending",
-    "ready",
-    "completed",
-    "cancelled",
-    "refunded",
-    "voided",
-  ]),
-  subtotal: zod.number(),
-  discountType: zod.enum(["percent", "fixed"]).nullish(),
-  discountAmount: zod.number().nullish(),
-  discountValue: zod.number().nullish(),
-  tax: zod.number(),
-  total: zod.number(),
-  refundedTotal: zod
-    .number()
-    .nullish()
-    .describe(
-      "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+  order: zod.object({
+    id: zod.number(),
+    orderNumber: zod.string(),
+    status: zod.enum([
+      "open",
+      "pending",
+      "ready",
+      "completed",
+      "cancelled",
+      "refunded",
+      "voided",
+    ]),
+    subtotal: zod.number(),
+    discountType: zod.enum(["percent", "fixed"]).nullish(),
+    discountAmount: zod.number().nullish(),
+    discountValue: zod.number().nullish(),
+    tax: zod.number(),
+    total: zod.number(),
+    refundedTotal: zod
+      .number()
+      .nullish()
+      .describe(
+        "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+      ),
+    paymentMethod: zod.string().nullish(),
+    splitCardAmount: zod.number().nullish(),
+    splitCashAmount: zod.number().nullish(),
+    cashTendered: zod
+      .number()
+      .nullish()
+      .describe(
+        "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
+      ),
+    giftVoucherId: zod
+      .number()
+      .nullish()
+      .describe(
+        "Id of the gift voucher redeemed as a tender on this sale, if any.",
+      ),
+    giftVoucherCode: zod
+      .string()
+      .nullish()
+      .describe(
+        "Code of the gift voucher redeemed on this sale (snapshot for receipts\/reports).",
+      ),
+    giftVoucherAmount: zod
+      .number()
+      .nullish()
+      .describe(
+        "Portion of `total` paid by a redeemed gift voucher. The remainder (total - giftVoucherAmount) is collected via paymentMethod.",
+      ),
+    notes: zod.string().nullish(),
+    voidReason: zod.string().nullish(),
+    customerId: zod.number().nullish(),
+    items: zod.array(
+      zod.object({
+        id: zod.number(),
+        productId: zod.number(),
+        productName: zod.string(),
+        quantity: zod.number(),
+        refundedQuantity: zod
+          .number()
+          .nullish()
+          .describe(
+            "Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity.",
+          ),
+        unitPrice: zod.number(),
+        originalUnitPrice: zod
+          .number()
+          .nullish()
+          .describe(
+            "Original (pre-tier) unit price; used to compute volume-pricing savings on receipts.",
+          ),
+        discountAmount: zod.number().nullish(),
+        variantAdjustment: zod.number().nullish(),
+        modifierAdjustment: zod.number().nullish(),
+        variantChoices: zod
+          .array(
+            zod.object({
+              groupId: zod.number(),
+              groupName: zod.string(),
+              optionId: zod.number(),
+              optionName: zod.string(),
+              priceAdjustment: zod.number(),
+            }),
+          )
+          .nullish(),
+        modifierChoices: zod
+          .array(
+            zod.object({
+              groupId: zod.number(),
+              groupName: zod.string(),
+              optionId: zod.number(),
+              optionName: zod.string(),
+              priceAdjustment: zod.number(),
+            }),
+          )
+          .nullish(),
+        lineTotal: zod.number(),
+        sellingUnit: zod
+          .string()
+          .nullish()
+          .describe(
+            'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+          ),
+      }),
     ),
-  paymentMethod: zod.string().nullish(),
-  splitCardAmount: zod.number().nullish(),
-  splitCashAmount: zod.number().nullish(),
-  cashTendered: zod
-    .number()
-    .nullish()
-    .describe(
-      "Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded.",
-    ),
-  giftVoucherId: zod
-    .number()
-    .nullish()
-    .describe(
-      "Id of the gift voucher redeemed as a tender on this sale, if any.",
-    ),
-  giftVoucherCode: zod
-    .string()
-    .nullish()
-    .describe(
-      "Code of the gift voucher redeemed on this sale (snapshot for receipts\/reports).",
-    ),
-  giftVoucherAmount: zod
-    .number()
-    .nullish()
-    .describe(
-      "Portion of `total` paid by a redeemed gift voucher. The remainder (total - giftVoucherAmount) is collected via paymentMethod.",
-    ),
-  notes: zod.string().nullish(),
-  voidReason: zod.string().nullish(),
-  customerId: zod.number().nullish(),
-  items: zod.array(
-    zod.object({
+    createdAt: zod.coerce.date(),
+    completedAt: zod.coerce.date().nullish(),
+  }),
+  refundVoucher: zod
+    .object({
       id: zod.number(),
-      productId: zod.number(),
-      productName: zod.string(),
-      quantity: zod.number(),
-      refundedQuantity: zod
-        .number()
-        .nullish()
-        .describe(
-          "Cumulative quantity refunded for this line. Originally-sold quantity = quantity + refundedQuantity.",
-        ),
-      unitPrice: zod.number(),
-      originalUnitPrice: zod
-        .number()
-        .nullish()
-        .describe(
-          "Original (pre-tier) unit price; used to compute volume-pricing savings on receipts.",
-        ),
-      discountAmount: zod.number().nullish(),
-      variantAdjustment: zod.number().nullish(),
-      modifierAdjustment: zod.number().nullish(),
-      variantChoices: zod
+      code: zod.string(),
+      originalValue: zod.number(),
+      balance: zod.number(),
+      status: zod.enum([
+        "active",
+        "partially_redeemed",
+        "redeemed",
+        "expired",
+        "cancelled",
+      ]),
+      customerId: zod.number().nullish(),
+      customerName: zod.string().nullish(),
+      customerPhone: zod.string().nullish(),
+      customerEmail: zod.string().nullish(),
+      paymentMethod: zod.string().nullish(),
+      amountPaid: zod.number().nullish(),
+      notes: zod.string().nullish(),
+      expiryDate: zod.coerce.date().nullish(),
+      issuedByStaffId: zod.number().nullish(),
+      issuedByName: zod.string().nullish(),
+      cancelledAt: zod.coerce.date().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+      transactions: zod
         .array(
           zod.object({
-            groupId: zod.number(),
-            groupName: zod.string(),
-            optionId: zod.number(),
-            optionName: zod.string(),
-            priceAdjustment: zod.number(),
+            id: zod.number(),
+            voucherId: zod.number(),
+            action: zod.enum([
+              "issue",
+              "redeem",
+              "cancel",
+              "expire",
+              "adjust",
+              "refund",
+            ]),
+            amount: zod.number(),
+            balanceBefore: zod.number(),
+            balanceAfter: zod.number(),
+            relatedOrderId: zod.number().nullish(),
+            staffId: zod.number().nullish(),
+            staffName: zod.string().nullish(),
+            notes: zod.string().nullish(),
+            createdAt: zod.coerce.date(),
           }),
         )
-        .nullish(),
-      modifierChoices: zod
-        .array(
-          zod.object({
-            groupId: zod.number(),
-            groupName: zod.string(),
-            optionId: zod.number(),
-            optionName: zod.string(),
-            priceAdjustment: zod.number(),
-          }),
-        )
-        .nullish(),
-      lineTotal: zod.number(),
-      sellingUnit: zod
-        .string()
-        .nullish()
-        .describe(
-          'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
-        ),
-    }),
-  ),
-  createdAt: zod.coerce.date(),
-  completedAt: zod.coerce.date().nullish(),
+        .optional(),
+    })
+    .nullish()
+    .describe(
+      "The store-credit voucher issued for this refund, when refundToVoucher was requested.",
+    ),
 });
 
 /**
@@ -1881,6 +1950,74 @@ export const GetGiftVoucherReportsResponse = zod.object({
       redeemedTotal: zod.number(),
     }),
   ),
+});
+
+/**
+ * @summary Cancel (void) a gift voucher, zeroing its remaining balance
+ */
+export const CancelGiftVoucherParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CancelGiftVoucherBody = zod.object({
+  reason: zod.string().optional(),
+  staffId: zod
+    .number()
+    .optional()
+    .describe(
+      "Acting staff id, used to authorise and attribute the cancellation.",
+    ),
+});
+
+export const CancelGiftVoucherResponse = zod.object({
+  id: zod.number(),
+  code: zod.string(),
+  originalValue: zod.number(),
+  balance: zod.number(),
+  status: zod.enum([
+    "active",
+    "partially_redeemed",
+    "redeemed",
+    "expired",
+    "cancelled",
+  ]),
+  customerId: zod.number().nullish(),
+  customerName: zod.string().nullish(),
+  customerPhone: zod.string().nullish(),
+  customerEmail: zod.string().nullish(),
+  paymentMethod: zod.string().nullish(),
+  amountPaid: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  expiryDate: zod.coerce.date().nullish(),
+  issuedByStaffId: zod.number().nullish(),
+  issuedByName: zod.string().nullish(),
+  cancelledAt: zod.coerce.date().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+  transactions: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        voucherId: zod.number(),
+        action: zod.enum([
+          "issue",
+          "redeem",
+          "cancel",
+          "expire",
+          "adjust",
+          "refund",
+        ]),
+        amount: zod.number(),
+        balanceBefore: zod.number(),
+        balanceAfter: zod.number(),
+        relatedOrderId: zod.number().nullish(),
+        staffId: zod.number().nullish(),
+        staffName: zod.string().nullish(),
+        notes: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+      }),
+    )
+    .optional(),
 });
 
 /**

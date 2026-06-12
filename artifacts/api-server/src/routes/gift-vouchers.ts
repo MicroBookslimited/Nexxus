@@ -1,5 +1,4 @@
 import { Router, type IRouter } from "express";
-import { randomBytes } from "node:crypto";
 import { and, eq, desc } from "drizzle-orm";
 import {
   db,
@@ -15,8 +14,16 @@ import {
   CreateGiftVoucherBody,
   LookupGiftVoucherResponse,
   GetGiftVoucherResponse,
+  CancelGiftVoucherBody,
 } from "@workspace/api-zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
+import {
+  generateVoucherCode,
+  normalizeCode,
+  isUniqueViolation,
+  normalizeVoucher,
+  effectiveVoucherStatus,
+} from "../lib/vouchers";
 
 const router: IRouter = Router();
 
@@ -30,59 +37,46 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/* ─── Voucher code generation ─────────────────────────────────────────────
- * Cryptographically random, NOT sequential — a guessable code is guessable
- * money. Unambiguous alphabet (no 0/O/1/I/L) so codes are easy to read aloud
- * and re-key. 16 chars over a 31-symbol alphabet ≈ 79 bits of entropy, so
- * collisions are astronomically unlikely; the unique index is the backstop and
- * we retry on the off chance.                                                */
-const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-function generateVoucherCode(len = 16): string {
-  const bytes = randomBytes(len);
-  let out = "";
-  for (let i = 0; i < len; i++) out += CODE_ALPHABET[bytes[i]! % CODE_ALPHABET.length];
-  return out;
-}
-function normalizeCode(raw: string): string {
-  return raw.trim().toUpperCase().replace(/\s+/g, "");
-}
 const MANUAL_CODE_RE = /^[A-Z0-9-]{4,32}$/;
 
-function isUniqueViolation(e: unknown): boolean {
-  const err = e as { code?: string; cause?: { code?: string } };
-  return err?.code === "23505" || err?.cause?.code === "23505";
-}
-
-/* ─── Response normalisation ─── */
-function normalizeTxn(t: typeof giftVoucherTransactionsTable.$inferSelect) {
-  return {
-    ...t,
-    relatedOrderId: t.relatedOrderId ?? undefined,
-    staffId: t.staffId ?? undefined,
-    staffName: t.staffName ?? undefined,
-    notes: t.notes ?? undefined,
-  };
-}
-
-function normalizeVoucher(
-  v: typeof giftVouchersTable.$inferSelect,
-  transactions?: (typeof giftVoucherTransactionsTable.$inferSelect)[],
-) {
-  return {
-    ...v,
-    customerId: v.customerId ?? undefined,
-    customerName: v.customerName ?? undefined,
-    customerPhone: v.customerPhone ?? undefined,
-    customerEmail: v.customerEmail ?? undefined,
-    paymentMethod: v.paymentMethod ?? undefined,
-    amountPaid: v.amountPaid ?? undefined,
-    notes: v.notes ?? undefined,
-    expiryDate: v.expiryDate ?? undefined,
-    issuedByStaffId: v.issuedByStaffId ?? undefined,
-    issuedByName: v.issuedByName ?? undefined,
-    cancelledAt: v.cancelledAt ?? undefined,
-    ...(transactions ? { transactions: transactions.map(normalizeTxn) } : {}),
-  };
+/* ─── Staff permission gate for voucher management ─────────────────────────
+ * An owner tenant session with no staff identity is allowed (mirrors app-wide
+ * can() semantics). When a staffId is supplied it must be Owner/Admin or hold
+ * the vouchers.manage permission, otherwise a plain cashier is blocked. Returns
+ * the resolved staff {id,name} (or nulls for an owner session) on success, or
+ * null after writing the appropriate 403/error response.                       */
+async function resolveVoucherManager(
+  tenantId: number,
+  staffId: number | null | undefined,
+  res: { status: (n: number) => { json: (b: unknown) => void } },
+): Promise<{ id: number | null; name: string | null } | null> {
+  if (staffId == null) return { id: null, name: null };
+  const [staff] = await db
+    .select()
+    .from(staffTable)
+    .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)));
+  if (!staff) {
+    res.status(403).json({ error: "Staff not found for this tenant" });
+    return null;
+  }
+  const role = (staff as { role?: string }).role ?? "";
+  let allowed = ["Owner", "Admin"].includes(role);
+  if (!allowed) {
+    const [roleRow] = await db
+      .select()
+      .from(rolesTable)
+      .where(and(eq(rolesTable.tenantId, tenantId), eq(rolesTable.name, role)));
+    allowed = !!(
+      roleRow &&
+      Array.isArray(roleRow.permissions) &&
+      roleRow.permissions.includes("vouchers.manage")
+    );
+  }
+  if (!allowed) {
+    res.status(403).json({ error: "You do not have permission to manage gift vouchers" });
+    return null;
+  }
+  return { id: staff.id, name: (staff as { name?: string }).name ?? null };
 }
 
 /* ─── GET /gift-vouchers — list (open to any tenant session, like quotations) ─── */
@@ -138,34 +132,10 @@ router.post("/gift-vouchers", async (req, res): Promise<void> => {
     return;
   }
 
-  let issuedByStaffId: number | null = null;
-  let issuedByName: string | null = null;
-  if (parsed.data.staffId != null) {
-    const [staff] = await db
-      .select()
-      .from(staffTable)
-      .where(and(eq(staffTable.id, parsed.data.staffId), eq(staffTable.tenantId, tenantId)));
-    if (!staff) { res.status(403).json({ error: "Staff not found for this tenant" }); return; }
-    const role = (staff as { role?: string }).role ?? "";
-    let allowed = ["Owner", "Admin"].includes(role);
-    if (!allowed) {
-      const [roleRow] = await db
-        .select()
-        .from(rolesTable)
-        .where(and(eq(rolesTable.tenantId, tenantId), eq(rolesTable.name, role)));
-      allowed = !!(
-        roleRow &&
-        Array.isArray(roleRow.permissions) &&
-        roleRow.permissions.includes("vouchers.manage")
-      );
-    }
-    if (!allowed) {
-      res.status(403).json({ error: "You do not have permission to issue gift vouchers" });
-      return;
-    }
-    issuedByStaffId = staff.id;
-    issuedByName = (staff as { name?: string }).name ?? null;
-  }
+  const manager = await resolveVoucherManager(tenantId, parsed.data.staffId, res as never);
+  if (!manager) return;
+  const issuedByStaffId: number | null = manager.id;
+  const issuedByName: string | null = manager.name;
 
   // Reject a customerId that doesn't belong to this tenant — otherwise the
   // voucher could later embed and leak another tenant's customer PII on read.
@@ -246,6 +216,77 @@ router.post("/gift-vouchers", async (req, res): Promise<void> => {
   res.status(201).json(GetGiftVoucherResponse.parse(normalizeVoucher(created)));
 });
 
+/* ─── POST /gift-vouchers/:id/cancel — void a voucher ─────────────────────
+ * Admin/void action: permanently cancels a still-redeemable voucher, zeroing
+ * its balance so it drops out of the outstanding-liability total, and writes a
+ * "cancel" ledger row capturing the voided amount. Only active / partially
+ * redeemed vouchers can be cancelled; already redeemed / cancelled / expired
+ * vouchers are rejected. Gated by requireFullTenant + voucher-manage staff. */
+router.post("/gift-vouchers/:id/cancel", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(raw ?? "", 10);
+  if (Number.isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = CancelGiftVoucherBody.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const manager = await resolveVoucherManager(tenantId, parsed.data.staffId, res as never);
+  if (!manager) return;
+
+  type CancelErr = { httpStatus: number; httpMessage: string };
+  const isCancelErr = (e: unknown): e is CancelErr =>
+    typeof e === "object" && e !== null && typeof (e as CancelErr).httpStatus === "number";
+
+  let cancelled: typeof giftVouchersTable.$inferSelect | null = null;
+  try {
+    cancelled = await db.transaction(async (tx) => {
+      // Lock the voucher row so a concurrent redemption can't spend the balance
+      // we are about to void (and vice-versa).
+      const [v] = await tx
+        .select()
+        .from(giftVouchersTable)
+        .where(and(eq(giftVouchersTable.id, id), eq(giftVouchersTable.tenantId, tenantId)))
+        .for("update");
+      if (!v) throw { httpStatus: 404, httpMessage: "Voucher not found" } satisfies CancelErr;
+      if (v.status === "cancelled") throw { httpStatus: 400, httpMessage: "This voucher is already cancelled" } satisfies CancelErr;
+      if (v.status === "redeemed") throw { httpStatus: 400, httpMessage: "A fully redeemed voucher cannot be cancelled" } satisfies CancelErr;
+      // An expired voucher is already dead (excluded from liability and rejected
+      // at redemption); cancelling it would be a meaningless state change.
+      if (effectiveVoucherStatus(v) === "expired") throw { httpStatus: 400, httpMessage: "This voucher has expired and cannot be cancelled" } satisfies CancelErr;
+
+      const balanceBefore = r2(v.balance ?? 0);
+      const now = new Date();
+      const [updated] = await tx
+        .update(giftVouchersTable)
+        .set({ status: "cancelled", balance: 0, cancelledAt: now, updatedAt: now })
+        .where(and(eq(giftVouchersTable.id, id), eq(giftVouchersTable.tenantId, tenantId)))
+        .returning();
+
+      await tx.insert(giftVoucherTransactionsTable).values({
+        tenantId,
+        voucherId: id,
+        action: "cancel",
+        amount: balanceBefore,
+        balanceBefore,
+        balanceAfter: 0,
+        staffId: manager.id,
+        staffName: manager.name,
+        notes: parsed.data.reason?.trim() ? `Cancelled: ${parsed.data.reason.trim()}` : "Voucher cancelled",
+      });
+      return updated!;
+    });
+  } catch (e) {
+    if (isCancelErr(e)) { res.status(e.httpStatus).json({ error: e.httpMessage }); return; }
+    throw e;
+  }
+
+  res.json(GetGiftVoucherResponse.parse(normalizeVoucher(cancelled)));
+});
+
 /* ─── GET /gift-vouchers/reports — liability & per-cashier summary ─────────
  * Registered BEFORE /:id so "reports" is never parsed as a numeric id.
  *  - liability: outstanding balance + count of still-redeemable vouchers, plus
@@ -267,10 +308,13 @@ router.get("/gift-vouchers/reports", async (req, res): Promise<void> => {
     .where(eq(giftVoucherTransactionsTable.tenantId, tenantId));
 
   // Outstanding = vouchers that can still be redeemed (active or partially
-  // redeemed). Cancelled / expired / fully redeemed carry no liability.
-  const outstanding = vouchers.filter(
-    (v) => v.status === "active" || v.status === "partially_redeemed",
-  );
+  // redeemed). Cancelled / expired / fully redeemed carry no liability. Use the
+  // effective status so a voucher past its expiry date stops counting as a
+  // liability even though no background job has flipped its stored status yet.
+  const outstanding = vouchers.filter((v) => {
+    const s = effectiveVoucherStatus(v);
+    return s === "active" || s === "partially_redeemed";
+  });
   const outstandingBalance = r2(outstanding.reduce((s, v) => s + Number(v.balance ?? 0), 0));
   const outstandingCount = outstanding.length;
 

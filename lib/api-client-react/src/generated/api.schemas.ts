@@ -426,6 +426,81 @@ export type RefundOrderItemsBodyItemsItem = {
 export interface RefundOrderItemsBody {
   items: RefundOrderItemsBodyItemsItem[];
   reason: string;
+  /** When true, issue the refund as a new store-credit gift voucher (for the refunded amount) instead of cash. */
+  refundToVoucher?: boolean;
+  /** Acting staff id, used to attribute and authorise the issued store-credit voucher. */
+  staffId?: number;
+}
+
+export type GiftVoucherStatus =
+  (typeof GiftVoucherStatus)[keyof typeof GiftVoucherStatus];
+
+export const GiftVoucherStatus = {
+  active: "active",
+  partially_redeemed: "partially_redeemed",
+  redeemed: "redeemed",
+  expired: "expired",
+  cancelled: "cancelled",
+} as const;
+
+export type GiftVoucherTransactionAction =
+  (typeof GiftVoucherTransactionAction)[keyof typeof GiftVoucherTransactionAction];
+
+export const GiftVoucherTransactionAction = {
+  issue: "issue",
+  redeem: "redeem",
+  cancel: "cancel",
+  expire: "expire",
+  adjust: "adjust",
+  refund: "refund",
+} as const;
+
+export interface GiftVoucherTransaction {
+  id: number;
+  voucherId: number;
+  action: GiftVoucherTransactionAction;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  relatedOrderId?: number | null;
+  staffId?: number | null;
+  staffName?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface GiftVoucher {
+  id: number;
+  code: string;
+  originalValue: number;
+  balance: number;
+  status: GiftVoucherStatus;
+  customerId?: number | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  paymentMethod?: string | null;
+  amountPaid?: number | null;
+  notes?: string | null;
+  expiryDate?: string | null;
+  issuedByStaffId?: number | null;
+  issuedByName?: string | null;
+  cancelledAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  transactions?: GiftVoucherTransaction[];
+}
+
+export interface RefundOrderItemsResult {
+  order: Order;
+  /** The store-credit voucher issued for this refund, when refundToVoucher was requested. */
+  refundVoucher?: GiftVoucher | null;
+}
+
+export interface CancelGiftVoucherBody {
+  reason?: string;
+  /** Acting staff id, used to authorise and attribute the cancellation. */
+  staffId?: number;
 }
 
 export type HeldOrderDiscountType =
@@ -555,65 +630,6 @@ export interface UpdateQuotationBody {
   convertedOrderId?: number | null;
   notes?: string | null;
   expiryDate?: string | null;
-}
-
-export type GiftVoucherTransactionAction =
-  (typeof GiftVoucherTransactionAction)[keyof typeof GiftVoucherTransactionAction];
-
-export const GiftVoucherTransactionAction = {
-  issue: "issue",
-  redeem: "redeem",
-  cancel: "cancel",
-  expire: "expire",
-  adjust: "adjust",
-  refund: "refund",
-} as const;
-
-export interface GiftVoucherTransaction {
-  id: number;
-  voucherId: number;
-  action: GiftVoucherTransactionAction;
-  amount: number;
-  balanceBefore: number;
-  balanceAfter: number;
-  relatedOrderId?: number | null;
-  staffId?: number | null;
-  staffName?: string | null;
-  notes?: string | null;
-  createdAt: string;
-}
-
-export type GiftVoucherStatus =
-  (typeof GiftVoucherStatus)[keyof typeof GiftVoucherStatus];
-
-export const GiftVoucherStatus = {
-  active: "active",
-  partially_redeemed: "partially_redeemed",
-  redeemed: "redeemed",
-  expired: "expired",
-  cancelled: "cancelled",
-} as const;
-
-export interface GiftVoucher {
-  id: number;
-  code: string;
-  originalValue: number;
-  balance: number;
-  status: GiftVoucherStatus;
-  customerId?: number | null;
-  customerName?: string | null;
-  customerPhone?: string | null;
-  customerEmail?: string | null;
-  paymentMethod?: string | null;
-  amountPaid?: number | null;
-  notes?: string | null;
-  expiryDate?: string | null;
-  issuedByStaffId?: number | null;
-  issuedByName?: string | null;
-  cancelledAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
-  transactions?: GiftVoucherTransaction[];
 }
 
 export type CreateGiftVoucherBodyPaymentMethod =

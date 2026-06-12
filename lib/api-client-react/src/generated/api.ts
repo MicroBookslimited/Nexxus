@@ -23,6 +23,7 @@ import type {
   AvailableComposite,
   BulkProductIdsBody,
   BulkProductsResult,
+  CancelGiftVoucherBody,
   CashPayout,
   CashSession,
   CashSessionDetail,
@@ -89,6 +90,7 @@ import type {
   PurchaseOrderWithItems,
   Quotation,
   RefundOrderItemsBody,
+  RefundOrderItemsResult,
   ReportSummary,
   SaveCompositeComponentsBody,
   SaveModifiersBody,
@@ -2253,8 +2255,8 @@ export const refundOrderItems = async (
   id: number,
   refundOrderItemsBody: RefundOrderItemsBody,
   options?: RequestInit,
-): Promise<Order> => {
-  return customFetch<Order>(getRefundOrderItemsUrl(id), {
+): Promise<RefundOrderItemsResult> => {
+  return customFetch<RefundOrderItemsResult>(getRefundOrderItemsUrl(id), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -3424,6 +3426,93 @@ export function useGetGiftVoucherReports<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Cancel (void) a gift voucher, zeroing its remaining balance
+ */
+export const getCancelGiftVoucherUrl = (id: number) => {
+  return `/api/gift-vouchers/${id}/cancel`;
+};
+
+export const cancelGiftVoucher = async (
+  id: number,
+  cancelGiftVoucherBody?: CancelGiftVoucherBody,
+  options?: RequestInit,
+): Promise<GiftVoucher> => {
+  return customFetch<GiftVoucher>(getCancelGiftVoucherUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(cancelGiftVoucherBody),
+  });
+};
+
+export const getCancelGiftVoucherMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelGiftVoucher>>,
+    TError,
+    { id: number; data: BodyType<CancelGiftVoucherBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelGiftVoucher>>,
+  TError,
+  { id: number; data: BodyType<CancelGiftVoucherBody> },
+  TContext
+> => {
+  const mutationKey = ["cancelGiftVoucher"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelGiftVoucher>>,
+    { id: number; data: BodyType<CancelGiftVoucherBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return cancelGiftVoucher(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelGiftVoucherMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelGiftVoucher>>
+>;
+export type CancelGiftVoucherMutationBody = BodyType<CancelGiftVoucherBody>;
+export type CancelGiftVoucherMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Cancel (void) a gift voucher, zeroing its remaining balance
+ */
+export const useCancelGiftVoucher = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelGiftVoucher>>,
+    TError,
+    { id: number; data: BodyType<CancelGiftVoucherBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelGiftVoucher>>,
+  TError,
+  { id: number; data: BodyType<CancelGiftVoucherBody> },
+  TContext
+> => {
+  return useMutation(getCancelGiftVoucherMutationOptions(options));
+};
 
 /**
  * @summary Look up a gift voucher by its code (for redemption)

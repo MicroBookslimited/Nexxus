@@ -3,12 +3,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListGiftVouchers,
   useCreateGiftVoucher,
+  useCancelGiftVoucher,
   useGetGiftVoucher,
   useGetGiftVoucherReports,
   useListCustomers,
   useGetSettings,
   getListGiftVouchersQueryKey,
   getGetGiftVoucherQueryKey,
+  getGetGiftVoucherReportsQueryKey,
 } from "@workspace/api-client-react";
 import type {
   GiftVoucher,
@@ -30,7 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { printVoucher } from "@/lib/voucher-doc";
-import { Ticket, Search, Printer, Plus, Eye, Copy, Gift } from "lucide-react";
+import { Ticket, Search, Printer, Plus, Eye, Copy, Gift, Ban, Download } from "lucide-react";
 
 function formatCurrency(n: number, currency = "JMD") {
   try {
@@ -118,6 +120,10 @@ export default function GiftVouchersPage() {
   const { data: settings } = useGetSettings();
   const { data: reports } = useGetGiftVoucherReports();
   const createVoucher = useCreateGiftVoucher();
+  const cancelVoucher = useCancelGiftVoucher();
+
+  const [cancelTarget, setCancelTarget] = useState<GiftVoucher | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | DisplayStatus>("all");
@@ -179,6 +185,69 @@ export default function GiftVouchersPage() {
     }
   };
 
+  const confirmCancel = () => {
+    if (!cancelTarget) return;
+    cancelVoucher.mutate(
+      {
+        id: cancelTarget.id,
+        data: {
+          ...(cancelReason.trim() ? { reason: cancelReason.trim() } : {}),
+          ...(staff?.id ? { staffId: staff.id } : {}),
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Voucher cancelled", description: cancelTarget.code });
+          invalidate();
+          queryClient.invalidateQueries({ queryKey: getGetGiftVoucherReportsQueryKey() });
+          setCancelTarget(null);
+          setCancelReason("");
+        },
+        onError: (err: unknown) => {
+          toast({
+            variant: "destructive",
+            title: "Cancel failed",
+            description: err instanceof Error ? err.message : "Could not cancel the voucher.",
+          });
+        },
+      },
+    );
+  };
+
+  // Client-side CSV export of the currently-filtered voucher list.
+  const exportCsv = () => {
+    const rows = filtered;
+    if (rows.length === 0) {
+      toast({ title: "Nothing to export", description: "No vouchers match the current filters." });
+      return;
+    }
+    const esc = (val: unknown) => {
+      const s = val == null ? "" : String(val);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ["Code", "Status", "Original Value", "Balance", "Customer", "Issued By", "Created", "Expiry"];
+    const lines = rows.map((v) => [
+      v.code,
+      displayStatus(v),
+      v.originalValue,
+      v.balance,
+      v.customerName ?? "",
+      v.issuedByName ?? "",
+      v.createdAt ?? "",
+      v.expiryDate ?? "",
+    ].map(esc).join(","));
+    const csv = [header.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `gift-vouchers-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const submit = () => {
     const value = parseFloat(form.value);
     if (!(value > 0)) {
@@ -235,6 +304,10 @@ export default function GiftVouchersPage() {
             redeemed.
           </p>
         </div>
+        <Button variant="outline" onClick={exportCsv} className="gap-1.5" data-testid="button-export-vouchers">
+          <Download className="h-4 w-4" />
+          Export CSV
+        </Button>
         <Button onClick={() => setIssueOpen(true)} className="gap-1.5" data-testid="button-issue-voucher">
           <Plus className="h-4 w-4" />
           Issue Voucher
@@ -421,6 +494,18 @@ export default function GiftVouchersPage() {
                     >
                       <Printer className="h-4 w-4" />
                     </Button>
+                    {(st === "active" || st === "partially_redeemed") && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => { setCancelTarget(v); setCancelReason(""); }}
+                        title="Cancel voucher"
+                        className="text-destructive hover:text-destructive"
+                        data-testid={`button-cancel-voucher-${v.id}`}
+                      >
+                        <Ban className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -638,6 +723,47 @@ export default function GiftVouchersPage() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel (void) voucher dialog */}
+      <Dialog open={!!cancelTarget} onOpenChange={(open) => { if (!open) { setCancelTarget(null); setCancelReason(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ban className="h-5 w-5 text-destructive" />
+              Cancel Voucher
+            </DialogTitle>
+            <DialogDescription>
+              {cancelTarget && (
+                <>
+                  This permanently voids voucher <span className="font-mono font-semibold">{cancelTarget.code}</span> and
+                  zeroes its remaining balance of {formatCurrency(cancelTarget.balance, currency)}. This cannot be undone.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Reason (optional)</label>
+            <Input
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="e.g. Issued in error, Customer request…"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setCancelTarget(null); setCancelReason(""); }}>
+              Keep voucher
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmCancel}
+              disabled={cancelVoucher.isPending}
+              data-testid="button-confirm-cancel-voucher"
+            >
+              {cancelVoucher.isPending ? "Cancelling…" : "Cancel voucher"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

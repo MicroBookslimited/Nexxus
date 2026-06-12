@@ -10,4 +10,8 @@ import type { RefundOrderItemsBodyItemsItem } from "./refundOrderItemsBodyItemsI
 export interface RefundOrderItemsBody {
   items: RefundOrderItemsBodyItemsItem[];
   reason: string;
+  /** When true, issue the refund as a new store-credit gift voucher (for the refunded amount) instead of cash. */
+  refundToVoucher?: boolean;
+  /** Acting staff id, used to attribute and authorise the issued store-credit voucher. */
+  staffId?: number;
 }

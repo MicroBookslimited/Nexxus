@@ -581,11 +581,11 @@ paths:
               $ref: "#/components/schemas/RefundOrderItemsBody"
       responses:
         "200":
-          description: Updated order (status stays completed while partial, flips to refunded when fully refunded)
+          description: Updated order (status stays completed while partial, flips to refunded when fully refunded), plus the store-credit voucher issued when refundToVoucher is set.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Order"
+                $ref: "#/components/schemas/RefundOrderItemsResult"
 
   /orders/{id}/charge:
     post:
@@ -819,6 +819,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GiftVoucherReports"
+
+  /gift-vouchers/{id}/cancel:
+    post:
+      operationId: cancelGiftVoucher
+      tags: [gift-vouchers]
+      summary: Cancel (void) a gift voucher, zeroing its remaining balance
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelGiftVoucherBody"
+      responses:
+        "200":
+          description: Cancelled gift voucher
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GiftVoucher"
 
   /gift-vouchers/lookup/{code}:
     get:
@@ -2689,9 +2714,37 @@ components:
               - quantity
         reason:
           type: string
+        refundToVoucher:
+          type: boolean
+          description: When true, issue the refund as a new store-credit gift voucher (for the refunded amount) instead of cash.
+        staffId:
+          type: integer
+          description: Acting staff id, used to attribute and authorise the issued store-credit voucher.
       required:
         - items
         - reason
+
+    RefundOrderItemsResult:
+      type: object
+      properties:
+        order:
+          $ref: "#/components/schemas/Order"
+        refundVoucher:
+          allOf:
+            - $ref: "#/components/schemas/GiftVoucher"
+          nullable: true
+          description: The store-credit voucher issued for this refund, when refundToVoucher was requested.
+      required:
+        - order
+
+    CancelGiftVoucherBody:
+      type: object
+      properties:
+        reason:
+          type: string
+        staffId:
+          type: integer
+          description: Acting staff id, used to authorise and attribute the cancellation.
 
     HeldOrder:
       type: object
