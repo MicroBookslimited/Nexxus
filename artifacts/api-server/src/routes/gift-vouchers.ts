@@ -246,6 +246,83 @@ router.post("/gift-vouchers", async (req, res): Promise<void> => {
   res.status(201).json(GetGiftVoucherResponse.parse(normalizeVoucher(created)));
 });
 
+/* ─── GET /gift-vouchers/reports — liability & per-cashier summary ─────────
+ * Registered BEFORE /:id so "reports" is never parsed as a numeric id.
+ *  - liability: outstanding balance + count of still-redeemable vouchers, plus
+ *    lifetime issued/redeemed totals (face value issued vs. value redeemed).
+ *  - byCashier: per-staff issuance and redemption counts/totals, merged across
+ *    the voucher table (issuance) and the ledger (redemption).               */
+router.get("/gift-vouchers/reports", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const vouchers = await db
+    .select()
+    .from(giftVouchersTable)
+    .where(eq(giftVouchersTable.tenantId, tenantId));
+
+  const txns = await db
+    .select()
+    .from(giftVoucherTransactionsTable)
+    .where(eq(giftVoucherTransactionsTable.tenantId, tenantId));
+
+  // Outstanding = vouchers that can still be redeemed (active or partially
+  // redeemed). Cancelled / expired / fully redeemed carry no liability.
+  const outstanding = vouchers.filter(
+    (v) => v.status === "active" || v.status === "partially_redeemed",
+  );
+  const outstandingBalance = r2(outstanding.reduce((s, v) => s + Number(v.balance ?? 0), 0));
+  const outstandingCount = outstanding.length;
+
+  // Lifetime issued (face value of all non-cancelled vouchers) and redeemed
+  // (value drawn down via redemption ledger rows).
+  const issuedTotal = r2(
+    vouchers
+      .filter((v) => v.status !== "cancelled")
+      .reduce((s, v) => s + Number(v.originalValue ?? 0), 0),
+  );
+  const redeemedTotal = r2(
+    txns.filter((t) => t.action === "redeem").reduce((s, t) => s + Number(t.amount ?? 0), 0),
+  );
+
+  // Per-cashier breakdown. Issuance is attributed to the voucher's issuer;
+  // redemption to the ledger row's staff. Merge both into one keyed map.
+  type Row = {
+    staffName: string;
+    issuedCount: number;
+    issuedTotal: number;
+    redeemedCount: number;
+    redeemedTotal: number;
+  };
+  const byCashier = new Map<string, Row>();
+  const row = (name: string): Row => {
+    let r = byCashier.get(name);
+    if (!r) {
+      r = { staffName: name, issuedCount: 0, issuedTotal: 0, redeemedCount: 0, redeemedTotal: 0 };
+      byCashier.set(name, r);
+    }
+    return r;
+  };
+
+  for (const v of vouchers) {
+    if (v.status === "cancelled") continue;
+    const r = row(v.issuedByName?.trim() || "Unknown");
+    r.issuedCount += 1;
+    r.issuedTotal = r2(r.issuedTotal + Number(v.originalValue ?? 0));
+  }
+  for (const t of txns) {
+    if (t.action !== "redeem") continue;
+    const r = row(t.staffName?.trim() || "Unknown");
+    r.redeemedCount += 1;
+    r.redeemedTotal = r2(r.redeemedTotal + Number(t.amount ?? 0));
+  }
+
+  res.json({
+    liability: { outstandingBalance, outstandingCount, issuedTotal, redeemedTotal },
+    byCashier: Array.from(byCashier.values()).sort((a, b) => b.issuedTotal - a.issuedTotal),
+  });
+});
+
 /* ─── GET /gift-vouchers/lookup/:code — redemption lookup ──────────────────
  * Registered BEFORE /:id so "lookup" is never parsed as a numeric id.        */
 router.get("/gift-vouchers/lookup/:code", async (req, res): Promise<void> => {

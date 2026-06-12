@@ -143,23 +143,52 @@ router.get("/reports/payment-breakdown", async (req, res): Promise<void> => {
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
   const { from, to } = rangeParams(req.query as Record<string, string>);
-  const rows = await db.select({
-    method: ordersTable.paymentMethod,
-    count:  sql<number>`COUNT(*)`,
-    total:  sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
-    tax:    sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
+  // A gift voucher is a TENDER, not a sale method: the order's `total` is paid
+  // partly by the voucher (`giftVoucherAmount`) and the remainder by the order's
+  // `paymentMethod`. Attribute the voucher portion to its own "gift_voucher"
+  // bucket and only the remainder (total − voucher) to the method, or cash/card
+  // would be over-stated by the voucher amount. For a fully-covered sale the
+  // stored method is already "gift_voucher" and the remainder is 0.
+  const orderRows = await db.select({
+    method:   ordersTable.paymentMethod,
+    total:    ordersTable.total,
+    tax:      ordersTable.tax,
+    voucher:  ordersTable.giftVoucherAmount,
   }).from(ordersTable)
-    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
-    .groupBy(ordersTable.paymentMethod)
-    .orderBy(desc(sql`SUM(${ordersTable.total})`));
+    .where(and(eq(ordersTable.tenantId, tenantId), eq(ordersTable.status, "completed"), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)));
 
-  const grandTotal = rows.reduce((s, r) => s + Number(r.total), 0);
-  res.json(rows.map(r => ({
-    method:     r.method ?? "other",
-    count:      Number(r.count),
-    total:      Math.round(Number(r.total) * 100) / 100,
-    tax:        Math.round(Number(r.tax)   * 100) / 100,
-    percentage: grandTotal > 0 ? Math.round((Number(r.total) / grandTotal) * 1000) / 10 : 0,
+  const buckets = new Map<string, { count: number; total: number; tax: number }>();
+  const bump = (method: string, total: number, tax: number) => {
+    const b = buckets.get(method) ?? { count: 0, total: 0, tax: 0 };
+    b.count += 1; b.total += total; b.tax += tax;
+    buckets.set(method, b);
+  };
+  for (const r of orderRows) {
+    const total = Number(r.total ?? 0);
+    const tax = Number(r.tax ?? 0);
+    const voucher = Math.min(Number(r.voucher ?? 0), total);
+    const remainder = Math.round((total - voucher) * 100) / 100;
+    if (voucher > 0) {
+      // The voucher tender carries no tax of its own; tax follows the goods and
+      // stays with the remainder method (or, if fully covered, with the voucher).
+      bump("gift_voucher", voucher, remainder > 0 ? 0 : tax);
+    }
+    if (remainder > 0 || voucher <= 0) {
+      bump(r.method ?? "other", remainder, tax);
+    }
+  }
+
+  const out = [...buckets.entries()].map(([method, b]) => ({
+    method,
+    count: b.count,
+    total: Math.round(b.total * 100) / 100,
+    tax:   Math.round(b.tax * 100) / 100,
+  })).sort((a, b) => b.total - a.total);
+
+  const grandTotal = out.reduce((s, r) => s + r.total, 0);
+  res.json(out.map(r => ({
+    ...r,
+    percentage: grandTotal > 0 ? Math.round((r.total / grandTotal) * 1000) / 10 : 0,
   })));
 });
 

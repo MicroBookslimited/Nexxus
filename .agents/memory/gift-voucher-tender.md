@@ -35,3 +35,9 @@ discoverable from a single file. Several were live bugs caught in review.
    balance-decrement + status flip + ledger "redeem" row inside the same
    transaction as the order header insert.
 6. Redemption is **blocked offline** (server-authoritative row lock).
+7. **All three POS layouts (`pos.tsx`, `pos-hardware.tsx`, `pos-supermarket.tsx`)
+   must validate a looked-up voucher identically.** Accept `active` AND
+   `partially_redeemed` (balance > 0); reject `cancelled`, `redeemed`, expired
+   (`expiryDate < now`), and zero-balance. A `status !== "active"` shortcut is a
+   bug — it wrongly blocks partially-redeemed vouchers and skips the expiry
+   check. `pos.tsx` is the reference; mirror its `handleApplyVoucher` exactly.

@@ -87,7 +87,8 @@ import {
 import { buildReceiptHtml, openReceiptWindow, receiptOrderFrom } from "@/lib/receipt";
 import { printQuotation } from "@/lib/quotation-doc";
 import { printOrderReceipt } from "@/lib/print-receipt";
-import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, getPurchaseUnits, type PurchaseUnit, getPricingTiers, previewTierPrice, type PricingTier } from "@/lib/saas-api";
+import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, getPurchaseUnits, type PurchaseUnit, getPricingTiers, previewTierPrice, type PricingTier, lookupGiftVoucher, type VoucherLookupResult, ApiError } from "@/lib/saas-api";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Helpers                                                                    */
@@ -223,6 +224,7 @@ export function PosHardware() {
   const [quoteExpiry, setQuoteExpiry] = useState("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const isOnline = useOnlineStatus();
 
   const {
     data: cashSession,
@@ -265,6 +267,10 @@ export function PosHardware() {
   const [splitCardInput, setSplitCardInput] = useState("");
   const [cashTenderedInput, setCashTenderedInput] = useState("");
   const [cashDialogOpen, setCashDialogOpen] = useState(false);
+  // Gift voucher (a TENDER, not a discount).
+  const [voucherCodeInput, setVoucherCodeInput] = useState("");
+  const [appliedVoucher, setAppliedVoucher] = useState<VoucherLookupResult | null>(null);
+  const [voucherLookupBusy, setVoucherLookupBusy] = useState(false);
   // Misc/custom-item calculator: sell something not in the catalog.
   const [miscOpen, setMiscOpen] = useState(false);
   const [miscPrice, setMiscPrice] = useState("");
@@ -478,6 +484,9 @@ export function PosHardware() {
     setDiscountAmount(0);
     setSelectedCustomerId(null);
     setLoadedQuoteId(null);
+    setVoucherCodeInput("");
+    setAppliedVoucher(null);
+    setVoucherLookupBusy(false);
   };
 
   /* ── Load a pending quote (handed over from the Quotations page) ───────── */
@@ -904,27 +913,68 @@ export function PosHardware() {
   const [receiptOrder, setReceiptOrder] = useState<any>(null);
   const [receiptCustomerInfo, setReceiptCustomerInfo] = useState<CustomerReceiptInfo | null>(null);
 
+  // A gift voucher is a TENDER: it pays down `voucherApplied` of the total and
+  // the customer settles the remaining `amountDue` with a normal method. The
+  // sale subtotal/tax/total are unchanged.
+  const voucherApplied = appliedVoucher
+    ? Math.round(Math.min(appliedVoucher.balance, total) * 100) / 100
+    : 0;
+  const amountDue = Math.max(0, Math.round((total - voucherApplied) * 100) / 100);
+  const voucherCoversAll = appliedVoucher != null && amountDue <= 0;
+
   /* ── Split payment ─────────────────────────────────────────────────────── */
   const splitCash = parseFloat(splitCashInput) || 0;
   const splitCard = parseFloat(splitCardInput) || 0;
-  const splitRemaining = total - (splitCash + splitCard);
+  const splitRemaining = amountDue - (splitCash + splitCard);
   const isSplitValid =
     paymentMethod === "split" &&
     splitCash >= 0 &&
     splitCard >= 0 &&
     Math.abs(splitRemaining) < 0.01 &&
-    total > 0;
+    amountDue > 0;
 
   // Pick a payment method; pre-fill a balanced 50/50 split for convenience.
   const selectPayment = (m: "cash" | "card" | "split" | "credit") => {
     setPaymentMethod(m);
     if (m === "split") {
-      const half = Number((total / 2).toFixed(2));
+      const half = Number((amountDue / 2).toFixed(2));
       setSplitCashInput(half > 0 ? String(half) : "");
-      setSplitCardInput(total - half > 0 ? String(Number((total - half).toFixed(2))) : "");
+      setSplitCardInput(amountDue - half > 0 ? String(Number((amountDue - half).toFixed(2))) : "");
     }
     if (m === "cash") {
       setCashDialogOpen(true);
+    }
+  };
+
+  const handleApplyVoucher = async () => {
+    const code = voucherCodeInput.trim().toUpperCase();
+    if (!code) return;
+    if (!isOnline) {
+      toast({ title: "Vouchers require a connection", description: "Reconnect to redeem a gift voucher.", variant: "destructive" });
+      return;
+    }
+    setVoucherLookupBusy(true);
+    try {
+      const v = await lookupGiftVoucher(code);
+      if (v.status === "cancelled") {
+        toast({ title: "Voucher cancelled", description: "This gift voucher has been cancelled.", variant: "destructive" });
+        return;
+      }
+      if (v.expiryDate && new Date(v.expiryDate).getTime() < Date.now()) {
+        toast({ title: "Voucher expired", description: "This gift voucher has expired.", variant: "destructive" });
+        return;
+      }
+      if (v.status === "redeemed" || v.balance <= 0) {
+        toast({ title: "No balance", description: "This gift voucher has no remaining balance.", variant: "destructive" });
+        return;
+      }
+      setAppliedVoucher(v);
+      toast({ title: "Voucher applied", description: `${v.code} · balance ${formatCurrency(v.balance, baseCurrency)}` });
+    } catch (e) {
+      const msg = e instanceof ApiError && e.status === 404 ? `No voucher found for "${code}".` : "Could not look up that voucher. Please try again.";
+      toast({ title: "Voucher not found", description: msg, variant: "destructive" });
+    } finally {
+      setVoucherLookupBusy(false);
     }
   };
 
@@ -938,22 +988,31 @@ export function PosHardware() {
     });
   };
   const cashTenderedValue = parseFloat(cashTenderedInput) || 0;
-  const cashChangeDue = Math.max(0, cashTenderedValue - total);
+  const cashChangeDue = Math.max(0, cashTenderedValue - amountDue);
 
   const handleCheckout = () => {
     if (cart.length === 0) {
       toast({ title: "Cart is empty", variant: "destructive" });
       return;
     }
-    if (paymentMethod === "split" && !isSplitValid) {
+    // Gift voucher redemption is server-authoritative (row-locked balance) and
+    // cannot be safely queued offline, so block it when disconnected.
+    if (appliedVoucher && !isOnline) {
+      toast({ title: "Voucher needs a connection", description: "Gift vouchers can only be redeemed while online. Remove the voucher to continue.", variant: "destructive" });
+      return;
+    }
+    // When a voucher fully covers the sale, the remainder method is irrelevant —
+    // send the "gift_voucher" sentinel and skip remainder-method validation.
+    const effectivePaymentMethod = voucherCoversAll ? "gift_voucher" : paymentMethod;
+    if (!voucherCoversAll && paymentMethod === "split" && !isSplitValid) {
       toast({
         title: "Invalid split",
-        description: "Cash + card portions must add up to the total.",
+        description: "Cash + card portions must add up to the amount due.",
         variant: "destructive",
       });
       return;
     }
-    if (paymentMethod === "credit" && !selectedCustomerId) {
+    if (!voucherCoversAll && paymentMethod === "credit" && !selectedCustomerId) {
       toast({
         title: "Customer required",
         description: "Select a customer to process a credit sale.",
@@ -962,7 +1021,7 @@ export function PosHardware() {
       return;
     }
     const cashTendered =
-      paymentMethod === "cash" && cashTenderedInput && parseFloat(cashTenderedInput) > 0
+      !voucherCoversAll && paymentMethod === "cash" && cashTenderedInput && parseFloat(cashTenderedInput) > 0
         ? parseFloat(cashTenderedInput)
         : undefined;
 
@@ -972,7 +1031,7 @@ export function PosHardware() {
         // from the generated CreateOrderBody type, so the body is cast to
         // bypass that staleness (same pattern as the standard POS).
         data: {
-          paymentMethod,
+          paymentMethod: effectivePaymentMethod,
           staffId: sessionStaff?.id ?? undefined,
           items: cart.map((c) => {
             // Derive everything from the same clamped helpers the UI uses, so the
@@ -994,9 +1053,10 @@ export function PosHardware() {
             const d = (getTierUnitPrice(c) - effUnit) * c.quantity + effDisc;
             return { productId: c.productId, quantity: c.quantity, discountAmount: d > 0 ? d : undefined };
           }),
-          cashTendered: paymentMethod === "split" ? undefined : cashTendered,
-          splitCashAmount: paymentMethod === "split" ? splitCash : undefined,
-          splitCardAmount: paymentMethod === "split" ? splitCard : undefined,
+          cashTendered: !voucherCoversAll && paymentMethod === "cash" ? cashTendered : undefined,
+          splitCashAmount: !voucherCoversAll && paymentMethod === "split" ? splitCash : undefined,
+          splitCardAmount: !voucherCoversAll && paymentMethod === "split" ? splitCard : undefined,
+          giftVoucherCode: appliedVoucher ? appliedVoucher.code : undefined,
           discountType: discount > 0 ? "fixed" : undefined,
           discountAmount: discount > 0 ? discount : undefined,
           notes: notes.trim() || undefined,
@@ -1688,8 +1748,57 @@ export function PosHardware() {
               </span>
             </div>
 
+            {/* Gift voucher (a tender) */}
+            <div className="mt-1.5 rounded-lg border border-violet-400/30 bg-violet-500/10 p-2.5 space-y-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-violet-300">Gift Voucher</p>
+              {appliedVoucher ? (
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-mono font-bold truncate text-violet-100">{appliedVoucher.code}</p>
+                    <p className="text-[10px] text-slate-400">
+                      Bal {formatCurrency(appliedVoucher.balance, baseCurrency)} · Applied {formatCurrency(voucherApplied, baseCurrency)}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 shrink-0 border-white/20 bg-transparent text-slate-200 hover:bg-white/10"
+                    onClick={() => { setAppliedVoucher(null); setVoucherCodeInput(""); }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-1.5">
+                  <Input
+                    placeholder="Voucher code"
+                    value={voucherCodeInput}
+                    onChange={(e) => setVoucherCodeInput(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleApplyVoucher(); } }}
+                    className="h-9 bg-[#0a1a2a] border-white/10 text-slate-100 font-mono text-xs"
+                  />
+                  <Button
+                    className="h-9 shrink-0 bg-violet-600 hover:bg-violet-500 text-white text-xs"
+                    disabled={!voucherCodeInput.trim() || voucherLookupBusy || !isOnline}
+                    onClick={handleApplyVoucher}
+                  >
+                    {voucherLookupBusy ? "…" : "Apply"}
+                  </Button>
+                </div>
+              )}
+              {!isOnline && !appliedVoucher && (
+                <p className="text-[9px] text-slate-400">Vouchers require a connection.</p>
+              )}
+              {appliedVoucher && (
+                <div className="flex items-center justify-between text-[11px] font-bold pt-1 border-t border-violet-400/20">
+                  <span className="text-slate-400">Amount due</span>
+                  <span className="font-mono text-violet-100">{formatCurrency(amountDue, baseCurrency)}</span>
+                </div>
+              )}
+            </div>
+
             {/* Payment method */}
-            <div className="grid grid-cols-2 gap-1.5 pt-1.5">
+            <div className={`grid grid-cols-2 gap-1.5 pt-1.5 ${voucherCoversAll ? "opacity-40 pointer-events-none" : ""}`}>
               <button
                 onClick={() => selectPayment("cash")}
                 className={`h-11 rounded-lg text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
@@ -1764,12 +1873,12 @@ export function PosHardware() {
                       </span>
                     </div>
                     <div className="flex flex-col leading-tight text-right">
-                      <span className={`text-[10px] ${cashTenderedValue >= total ? "text-emerald-400" : "text-amber-400"}`}>
-                        {cashTenderedValue >= total ? "Change due" : "Still owed"}
+                      <span className={`text-[10px] ${cashTenderedValue >= amountDue ? "text-emerald-400" : "text-amber-400"}`}>
+                        {cashTenderedValue >= amountDue ? "Change due" : "Still owed"}
                       </span>
-                      <span className={`text-sm font-mono font-bold ${cashTenderedValue >= total ? "text-emerald-300" : "text-amber-300"}`}>
+                      <span className={`text-sm font-mono font-bold ${cashTenderedValue >= amountDue ? "text-emerald-300" : "text-amber-300"}`}>
                         {formatCurrency(
-                          cashTenderedValue >= total ? cashChangeDue : total - cashTenderedValue,
+                          cashTenderedValue >= amountDue ? cashChangeDue : amountDue - cashTenderedValue,
                           baseCurrency,
                         )}
                       </span>
@@ -1798,7 +1907,7 @@ export function PosHardware() {
                       const v = e.target.value;
                       setSplitCashInput(v);
                       const cash = parseFloat(v) || 0;
-                      setSplitCardInput(total - cash > 0 ? String(Number((total - cash).toFixed(2))) : "0");
+                      setSplitCardInput(amountDue - cash > 0 ? String(Number((amountDue - cash).toFixed(2))) : "0");
                     }}
                     className="h-9 bg-[#0a1a2a] border-white/10 text-slate-100 text-xs"
                   />
@@ -1816,7 +1925,7 @@ export function PosHardware() {
                       const v = e.target.value;
                       setSplitCardInput(v);
                       const card = parseFloat(v) || 0;
-                      setSplitCashInput(total - card > 0 ? String(Number((total - card).toFixed(2))) : "0");
+                      setSplitCashInput(amountDue - card > 0 ? String(Number((amountDue - card).toFixed(2))) : "0");
                     }}
                     className="h-9 bg-[#0a1a2a] border-white/10 text-slate-100 text-xs"
                   />
@@ -1843,13 +1952,19 @@ export function PosHardware() {
               disabled={
                 cart.length === 0 ||
                 createOrder.isPending ||
-                (paymentMethod === "split" && !isSplitValid) ||
-                (paymentMethod === "credit" && !selectedCustomerId)
+                (!voucherCoversAll && paymentMethod === "split" && !isSplitValid) ||
+                (!voucherCoversAll && paymentMethod === "credit" && !selectedCustomerId)
               }
               className="mt-2 w-full h-12 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-bold shadow-lg shadow-teal-500/20 hover:brightness-110 active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
             >
               <ShoppingCart className="h-5 w-5" />
-              {createOrder.isPending ? "PROCESSING…" : "CHECKOUT"}
+              {createOrder.isPending
+                ? "PROCESSING…"
+                : voucherCoversAll
+                  ? `CHECKOUT · Voucher ${formatCurrency(total, baseCurrency)}`
+                  : appliedVoucher
+                    ? `CHECKOUT · ${formatCurrency(amountDue, baseCurrency)}`
+                    : "CHECKOUT"}
             </button>
           </div>
         </div>

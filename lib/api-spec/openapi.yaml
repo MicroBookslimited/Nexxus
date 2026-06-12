@@ -807,6 +807,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/GiftVoucher"
 
+  /gift-vouchers/reports:
+    get:
+      operationId: getGiftVoucherReports
+      tags: [gift-vouchers]
+      summary: Gift voucher liability and per-cashier summary
+      responses:
+        "200":
+          description: Voucher reports
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GiftVoucherReports"
+
   /gift-vouchers/lookup/{code}:
     get:
       operationId: lookupGiftVoucher
@@ -3039,6 +3052,55 @@ components:
       required:
         - originalValue
         - paymentMethod
+
+    GiftVoucherReports:
+      type: object
+      properties:
+        liability:
+          type: object
+          properties:
+            outstandingBalance:
+              type: number
+              format: float
+            outstandingCount:
+              type: integer
+            issuedTotal:
+              type: number
+              format: float
+            redeemedTotal:
+              type: number
+              format: float
+          required:
+            - outstandingBalance
+            - outstandingCount
+            - issuedTotal
+            - redeemedTotal
+        byCashier:
+          type: array
+          items:
+            type: object
+            properties:
+              staffName:
+                type: string
+              issuedCount:
+                type: integer
+              issuedTotal:
+                type: number
+                format: float
+              redeemedCount:
+                type: integer
+              redeemedTotal:
+                type: number
+                format: float
+            required:
+              - staffName
+              - issuedCount
+              - issuedTotal
+              - redeemedCount
+              - redeemedTotal
+      required:
+        - liability
+        - byCashier
 
     DashboardSummary:
       type: object

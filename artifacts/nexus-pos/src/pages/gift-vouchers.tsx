@@ -4,6 +4,7 @@ import {
   useListGiftVouchers,
   useCreateGiftVoucher,
   useGetGiftVoucher,
+  useGetGiftVoucherReports,
   useListCustomers,
   useGetSettings,
   getListGiftVouchersQueryKey,
@@ -115,6 +116,7 @@ export default function GiftVouchersPage() {
   const { data: vouchers, isLoading } = useListGiftVouchers();
   const { data: customers } = useListCustomers();
   const { data: settings } = useGetSettings();
+  const { data: reports } = useGetGiftVoucherReports();
   const createVoucher = useCreateGiftVoucher();
 
   const [search, setSearch] = useState("");
@@ -238,6 +240,91 @@ export default function GiftVouchersPage() {
           Issue Voucher
         </Button>
       </div>
+
+      {/* Liability snapshot — outstanding voucher balances are a store liability
+          (money owed in future goods), tracked here instead of via auto journal
+          entries. */}
+      {reports && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">Outstanding liability</p>
+              <p className="text-2xl font-bold tabular-nums mt-1">
+                {formatCurrency(reports.liability.outstandingBalance, currency)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {reports.liability.outstandingCount} active voucher
+                {reports.liability.outstandingCount === 1 ? "" : "s"}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">Total issued</p>
+              <p className="text-2xl font-bold tabular-nums mt-1">
+                {formatCurrency(reports.liability.issuedTotal, currency)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">Total redeemed</p>
+              <p className="text-2xl font-bold tabular-nums mt-1">
+                {formatCurrency(reports.liability.redeemedTotal, currency)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">Redemption rate</p>
+              <p className="text-2xl font-bold tabular-nums mt-1">
+                {reports.liability.issuedTotal > 0
+                  ? `${Math.round((reports.liability.redeemedTotal / reports.liability.issuedTotal) * 100)}%`
+                  : "—"}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {reports && reports.byCashier.length > 0 && (
+        <Card>
+          <CardContent className="p-0">
+            <div className="px-4 py-3 border-b">
+              <h2 className="text-sm font-semibold">By cashier</h2>
+              <p className="text-xs text-muted-foreground">Vouchers issued and redeemed per staff member.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground border-b">
+                    <th className="px-4 py-2 font-medium">Cashier</th>
+                    <th className="px-4 py-2 font-medium text-right">Issued</th>
+                    <th className="px-4 py-2 font-medium text-right">Issued value</th>
+                    <th className="px-4 py-2 font-medium text-right">Redeemed</th>
+                    <th className="px-4 py-2 font-medium text-right">Redeemed value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reports.byCashier.map((row, i) => (
+                    <tr key={`${row.staffName}-${i}`} className="border-b last:border-0">
+                      <td className="px-4 py-2 font-medium">{row.staffName}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{row.issuedCount}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {formatCurrency(row.issuedTotal, currency)}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">{row.redeemedCount}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {formatCurrency(row.redeemedTotal, currency)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">

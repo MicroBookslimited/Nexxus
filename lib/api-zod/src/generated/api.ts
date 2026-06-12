@@ -1863,6 +1863,27 @@ export const CreateGiftVoucherBody = zod.object({
 });
 
 /**
+ * @summary Gift voucher liability and per-cashier summary
+ */
+export const GetGiftVoucherReportsResponse = zod.object({
+  liability: zod.object({
+    outstandingBalance: zod.number(),
+    outstandingCount: zod.number(),
+    issuedTotal: zod.number(),
+    redeemedTotal: zod.number(),
+  }),
+  byCashier: zod.array(
+    zod.object({
+      staffName: zod.string(),
+      issuedCount: zod.number(),
+      issuedTotal: zod.number(),
+      redeemedCount: zod.number(),
+      redeemedTotal: zod.number(),
+    }),
+  ),
+});
+
+/**
  * @summary Look up a gift voucher by its code (for redemption)
  */
 export const LookupGiftVoucherParams = zod.object({

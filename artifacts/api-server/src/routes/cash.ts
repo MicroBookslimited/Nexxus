@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, gte, lte, isNotNull, isNull, or, sql, desc } from "drizzle-orm";
-import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable } from "@workspace/db";
+import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable, giftVouchersTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { logAudit } from "./audit";
@@ -37,23 +37,29 @@ const CloseSessionBody = z.object({
   denominationBreakdown: z.string().optional(),
 });
 
-function computeSales(orders: { paymentMethod: string | null; total: number | null; status: string | null }[]) {
+function computeSales(orders: { paymentMethod: string | null; total: number | null; status: string | null; giftVoucherAmount?: number | null }[]) {
   // Voided orders never completed — exclude from all sales.
   // Refunded orders DID complete as sales first, so include them in gross sales
   // and also track them separately as refunds (net = 0 for that order).
   const notVoided = orders.filter((r) => r.status !== "voided");
   const refunded  = orders.filter((r) => r.status === "refunded");
 
-  const cashSales   = notVoided.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const cardSales   = notVoided.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const splitSales  = notVoided.filter((r) => r.paymentMethod === "split").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const creditSales = notVoided.filter((r) => r.paymentMethod === "credit").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  // A gift voucher is a tender: the cash/card/credit a drawer actually receives
+  // for an order is total − giftVoucherAmount (the voucher pays the rest). Split
+  // tenders already store only the non-voucher cash/card portions separately.
+  const received = (r: { total: number | null; giftVoucherAmount?: number | null }) =>
+    Math.max(0, Number(r.total ?? 0) - Number(r.giftVoucherAmount ?? 0));
+
+  const cashSales   = notVoided.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + received(r), 0);
+  const cardSales   = notVoided.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + received(r), 0);
+  const splitSales  = notVoided.filter((r) => r.paymentMethod === "split").reduce((s, r) => s + received(r), 0);
+  const creditSales = notVoided.filter((r) => r.paymentMethod === "credit").reduce((s, r) => s + received(r), 0);
 
   const voided = orders.filter((r) => r.status === "voided");
 
-  const refundedCash  = refunded.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const refundedCard  = refunded.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
-  const refundedOther = refunded.filter((r) => r.paymentMethod !== "cash" && r.paymentMethod !== "card").reduce((s, r) => s + Number(r.total ?? 0), 0);
+  const refundedCash  = refunded.filter((r) => r.paymentMethod === "cash").reduce((s, r) => s + received(r), 0);
+  const refundedCard  = refunded.filter((r) => r.paymentMethod === "card").reduce((s, r) => s + received(r), 0);
+  const refundedOther = refunded.filter((r) => r.paymentMethod !== "cash" && r.paymentMethod !== "card").reduce((s, r) => s + received(r), 0);
   const totalRefunds  = refundedCash + refundedCard + refundedOther;
 
   const voidedCount = voided.length;
@@ -195,11 +201,30 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
         status: ordersTable.status,
         splitCashAmount: ordersTable.splitCashAmount,
         splitCardAmount: ordersTable.splitCardAmount,
+        giftVoucherAmount: ordersTable.giftVoucherAmount,
       })
       .from(ordersTable)
       .where(and(...sessionConditions));
 
     const sales = computeSales(orderRows);
+
+    // Cash physically collected when SELLING gift vouchers in this window also
+    // enters the drawer, even though issuance creates no order row.
+    const voucherIssueConds = [
+      eq(giftVouchersTable.tenantId, tenantId),
+      eq(giftVouchersTable.paymentMethod, "cash"),
+      gte(giftVouchersTable.createdAt, windowStart),
+      lte(giftVouchersTable.createdAt, windowEnd),
+      ...(s.staffId ? [eq(giftVouchersTable.issuedByStaffId, s.staffId)] : []),
+    ];
+    const issuedVouchers = await db
+      .select({ amountPaid: giftVouchersTable.amountPaid, originalValue: giftVouchersTable.originalValue })
+      .from(giftVouchersTable)
+      .where(and(...voucherIssueConds));
+    const voucherCashIn = issuedVouchers.reduce(
+      (acc, v) => acc + Number(v.amountPaid ?? v.originalValue ?? 0),
+      0,
+    );
 
     // For split payments, attribute each portion to its correct column so
     // Cash and Card Slips totals reflect exactly what each tender received.
@@ -225,6 +250,7 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
     const expectedCash = openingCash
       + (sales.cashSales - sales.refundedCash)
       + splitCash
+      + voucherCashIn
       - totalPayouts;
 
     return {
@@ -238,8 +264,10 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       openingCash,
       actualCash,
       actualCard,
-      // Cash = pure cash orders + cash portion of split payments
-      cashSales:    sales.cashSales - sales.refundedCash + splitCash,
+      // Cash from selling gift vouchers (issuance) also lands in the drawer.
+      voucherCashIn,
+      // Cash = pure cash orders + cash portion of split payments + voucher sales
+      cashSales:    sales.cashSales - sales.refundedCash + splitCash + voucherCashIn,
       // Card = pure card orders + card portion of split payments
       cardSales:    sales.cardSales - sales.refundedCard + splitCard,
       creditSales:  sales.creditSales,
@@ -297,6 +325,7 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
       status: ordersTable.status,
       createdAt: ordersTable.createdAt,
       splitCashAmount: ordersTable.splitCashAmount,
+      giftVoucherAmount: ordersTable.giftVoucherAmount,
     })
     .from(ordersTable)
     .where(
@@ -315,12 +344,23 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
   const splitCashSales = orderRows
     .filter(r => r.status !== "voided" && r.paymentMethod === "split")
     .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
-  // Expected = opening float + net cash sales (pure cash, net of refunds) + split cash portions − payouts
-  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales - totalPayouts;
+  // Cash collected from selling gift vouchers (issuance) also lands in the drawer.
+  const issuedVouchers = await db
+    .select({ amountPaid: giftVouchersTable.amountPaid, originalValue: giftVouchersTable.originalValue })
+    .from(giftVouchersTable)
+    .where(and(
+      eq(giftVouchersTable.tenantId, tenantId),
+      eq(giftVouchersTable.paymentMethod, "cash"),
+      gte(giftVouchersTable.createdAt, session.openedAt),
+      ...(session.staffId ? [eq(giftVouchersTable.issuedByStaffId, session.staffId)] : []),
+    ));
+  const voucherCashIn = issuedVouchers.reduce((s, v) => s + Number(v.amountPaid ?? v.originalValue ?? 0), 0);
+  // Expected = opening float + net cash sales (pure cash, net of refunds) + split cash portions + voucher cash − payouts
+  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, new Date());
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, new Date());
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, itemSummary, creditOrders });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, itemSummary, creditOrders });
 });
 
 router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
@@ -354,6 +394,7 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
       status: ordersTable.status,
       createdAt: ordersTable.createdAt,
       splitCashAmount: ordersTable.splitCashAmount,
+      giftVoucherAmount: ordersTable.giftVoucherAmount,
     })
     .from(ordersTable)
     .where(
@@ -372,11 +413,23 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
   const splitCashSales = orderRows
     .filter(r => r.status !== "voided" && r.paymentMethod === "split")
     .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
-  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales - totalPayouts;
+  // Cash collected from selling gift vouchers (issuance) also lands in the drawer.
+  const issuedVouchers = await db
+    .select({ amountPaid: giftVouchersTable.amountPaid, originalValue: giftVouchersTable.originalValue })
+    .from(giftVouchersTable)
+    .where(and(
+      eq(giftVouchersTable.tenantId, tenantId),
+      eq(giftVouchersTable.paymentMethod, "cash"),
+      gte(giftVouchersTable.createdAt, session.openedAt),
+      lte(giftVouchersTable.createdAt, closedAt),
+      ...(session.staffId ? [eq(giftVouchersTable.issuedByStaffId, session.staffId)] : []),
+    ));
+  const voucherCashIn = issuedVouchers.reduce((s, v) => s + Number(v.amountPaid ?? v.originalValue ?? 0), 0);
+  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, closedAt);
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, closedAt);
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, itemSummary, creditOrders });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, itemSummary, creditOrders });
 });
 
 router.post("/cash/sessions", async (req, res): Promise<void> => {

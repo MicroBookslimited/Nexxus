@@ -639,6 +639,26 @@ export interface CreateGiftVoucherBody {
   staffId?: number;
 }
 
+export type GiftVoucherReportsLiability = {
+  outstandingBalance: number;
+  outstandingCount: number;
+  issuedTotal: number;
+  redeemedTotal: number;
+};
+
+export type GiftVoucherReportsByCashierItem = {
+  staffName: string;
+  issuedCount: number;
+  issuedTotal: number;
+  redeemedCount: number;
+  redeemedTotal: number;
+};
+
+export interface GiftVoucherReports {
+  liability: GiftVoucherReportsLiability;
+  byCashier: GiftVoucherReportsByCashierItem[];
+}
+
 export interface DashboardSummary {
   todaySales: number;
   todayOrders: number;

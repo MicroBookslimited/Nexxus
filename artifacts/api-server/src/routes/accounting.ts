@@ -267,11 +267,15 @@ router.get("/accounting/reports/profit-loss", async (req, res): Promise<void> =>
   const salesRevenue  = ordersRevenue[0]?.subtotal ?? 0;
   const taxCollected  = ordersRevenue[0]?.tax ?? 0;
 
-  const revenueByMethod = await db
+  // A gift voucher is a tender, not a sale method, so split each order's total
+  // into the voucher portion (giftVoucherAmount → "gift_voucher" bucket) and the
+  // remainder paid by its actual paymentMethod. Otherwise cash/card revenue is
+  // over-stated by the voucher amount.
+  const methodRows = await db
     .select({
-      method: ordersTable.paymentMethod,
-      total:  sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
-      count:  sql<number>`COUNT(*)`,
+      method:  ordersTable.paymentMethod,
+      total:   ordersTable.total,
+      voucher: ordersTable.giftVoucherAmount,
     })
     .from(ordersTable)
     .where(and(
@@ -281,8 +285,25 @@ router.get("/accounting/reports/profit-loss", async (req, res): Promise<void> =>
       ne(ordersTable.status, "open"),
       gte(ordersTable.createdAt, fromDate),
       lte(ordersTable.createdAt, toDate),
-    ))
-    .groupBy(ordersTable.paymentMethod);
+    ));
+  const methodBuckets = new Map<string, { total: number; count: number }>();
+  const bumpMethod = (m: string, amt: number) => {
+    const b = methodBuckets.get(m) ?? { total: 0, count: 0 };
+    b.total += amt; b.count += 1;
+    methodBuckets.set(m, b);
+  };
+  for (const r of methodRows) {
+    const total = Number(r.total ?? 0);
+    const voucher = Math.min(Number(r.voucher ?? 0), total);
+    const remainder = Math.round((total - voucher) * 100) / 100;
+    if (voucher > 0) bumpMethod("gift_voucher", voucher);
+    if (remainder > 0 || voucher <= 0) bumpMethod(r.method ?? "other", remainder);
+  }
+  const revenueByMethod = [...methodBuckets.entries()].map(([method, b]) => ({
+    method,
+    total: Math.round(b.total * 100) / 100,
+    count: b.count,
+  }));
 
   await ensureDefaultAccounts(tenantId);
 
