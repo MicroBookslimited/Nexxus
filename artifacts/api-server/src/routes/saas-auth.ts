@@ -656,7 +656,14 @@ router.post("/saas/reset-password", async (req, res): Promise<void> => {
   if (!tenant) { res.status(404).json({ error: "Account not found" }); return; }
 
   const passwordHash = await bcryptjs.hash(parsed.data.newPassword, 12);
-  await db.update(tenantsTable).set({ passwordHash, updatedAt: new Date() }).where(eq(tenantsTable.id, tenant.id));
+  const now = new Date();
+  await db.update(tenantsTable).set({ passwordHash, updatedAt: now }).where(eq(tenantsTable.id, tenant.id));
+  // Login checks tenant_admin_users before the tenants fallback, so the matching
+  // admin record MUST be synced here or the reset password silently won't work.
+  await db
+    .update(tenantAdminUsersTable)
+    .set({ passwordHash, updatedAt: now })
+    .where(and(eq(tenantAdminUsersTable.tenantId, tenant.id), sql`lower(${tenantAdminUsersTable.email}) = ${payload.email.toLowerCase()}`));
 
   res.json({ success: true });
 });
