@@ -1,0 +1,231 @@
+Build a Gift Voucher system for NEXXUS POS with two main workflows: Voucher Issuance and Voucher Redemption.
+
+Feature Name:
+Gift Vouchers
+
+Access:
+- Admin, Owner, and Manager can issue vouchers.
+- Cashiers can redeem vouchers at POS.
+- Admin and Owner can void/cancel vouchers.
+
+Core Requirements:
+
+1. Gift Voucher Issuance
+Create a screen/menu option:
+Sales / Payments → Gift Vouchers
+
+Allow authorized users to create a voucher with:
+- Voucher number/code
+- Voucher value
+- Customer name optional
+- Customer phone optional
+- Customer email optional
+- Issue date
+- Expiry date optional
+- Status: Active, Redeemed, Partially Redeemed, Expired, Cancelled
+- Notes optional
+
+Voucher code rules:
+- Auto-generate unique voucher code
+- Allow manual code entry if permission is enabled
+- Prevent duplicate voucher codes
+- Support barcode/QR code generation for voucher lookup
+
+2. Voucher Payment Collection
+When issuing a voucher:
+- User must select payment method:
+  - Cash
+  - Card
+  - Bank Transfer
+  - Other existing payment methods
+- Record voucher sale as income/payment received
+- Do not deduct inventory because no product is being sold
+- Include voucher issuance in daily sales/payment summary reports
+
+3. Voucher Receipt
+Print or generate receipt showing:
+- Business name
+- Voucher code
+- Voucher value
+- Amount paid
+- Issue date
+- Expiry date if applicable
+- Terms: “This voucher may be redeemed toward eligible purchases. Lost vouchers may not be replaced.”
+
+4. Voucher Redemption at POS
+Add payment option at checkout:
+Gift Voucher
+
+Cashier enters or scans voucher code.
+
+System should:
+- Validate voucher exists
+- Check voucher is Active or Partially Redeemed
+- Check voucher is not expired
+- Check available balance
+- Apply voucher amount to sale total
+
+Redemption rules:
+- If voucher balance is greater than sale total:
+  - Apply sale total
+  - Leave remaining balance on voucher
+  - Status becomes Partially Redeemed
+- If voucher balance equals sale total:
+  - Mark voucher as Redeemed
+- If voucher balance is less than sale total:
+  - Apply available voucher balance
+  - Allow customer to pay balance with cash/card/other payment method
+  - Mark voucher as Redeemed
+
+5. Receipt on Redemption
+Sales receipt must show:
+- Original sale total
+- Voucher code used
+- Voucher amount applied
+- Remaining voucher balance if any
+- Balance paid by other payment method if applicable
+
+Example:
+Subtotal: $8,000
+Gift Voucher: -$5,000
+Balance Paid Cash: $3,000
+Voucher Balance Remaining: $0
+
+6. Voucher Ledger / Audit Trail
+Create a voucher transaction history table.
+
+Track:
+- Voucher issued
+- Voucher redeemed
+- Partial redemption
+- Cancellation/void
+- Expiry
+- Manual adjustment if allowed
+
+Each log should include:
+- Voucher ID
+- Action type
+- Amount
+- Previous balance
+- New balance
+- Related sale ID if applicable
+- User ID
+- Timestamp
+- Notes
+
+7. Voucher Management Screen
+Create a list page showing:
+- Voucher code
+- Customer
+- Original value
+- Current balance
+- Status
+- Issue date
+- Expiry date
+- Created by
+
+Filters:
+- Active
+- Redeemed
+- Partially Redeemed
+- Expired
+- Cancelled
+- Date range
+- Customer
+- Voucher code
+
+Actions:
+- View voucher history
+- Reprint voucher
+- Cancel voucher, admin/owner only
+- Export report
+
+8. Database Tables
+
+Create table: gift_vouchers
+Fields:
+- id
+- business_id
+- voucher_code
+- customer_id nullable
+- customer_name nullable
+- customer_phone nullable
+- customer_email nullable
+- original_value
+- current_balance
+- issue_date
+- expiry_date nullable
+- status
+- created_by
+- cancelled_by nullable
+- cancelled_at nullable
+- notes nullable
+- created_at
+- updated_at
+
+Create table: gift_voucher_transactions
+Fields:
+- id
+- business_id
+- voucher_id
+- action_type
+- amount
+- previous_balance
+- new_balance
+- sale_id nullable
+- payment_id nullable
+- user_id
+- notes nullable
+- created_at
+
+9. POS Payment Integration
+Gift Voucher should behave like a payment method, not a discount.
+
+Important:
+- Voucher redemption reduces amount due.
+- Voucher redemption should be tracked separately from discounts.
+- Reports must show Gift Voucher payments separately from Cash/Card.
+- Voucher issuance should show as voucher sales/liability if accounting separation exists.
+
+10. Security Rules
+- Voucher codes must be unique per business.
+- Cashiers cannot issue or cancel vouchers unless explicitly permitted.
+- Cashiers can only redeem valid vouchers.
+- Cancelled vouchers cannot be redeemed.
+- Expired vouchers cannot be redeemed unless Admin override is later added.
+- All voucher actions must be logged.
+
+11. Reports
+Add reporting for:
+- Vouchers issued
+- Vouchers redeemed
+- Outstanding voucher balance
+- Expired vouchers
+- Cancelled vouchers
+- Voucher redemption by cashier
+- Voucher liability summary
+
+12. Edge Cases
+Handle:
+- Invalid voucher code
+- Expired voucher
+- Cancelled voucher
+- Fully redeemed voucher
+- Voucher balance lower than sale total
+- Voucher balance higher than sale total
+- Refunds involving voucher payments
+
+For refunds:
+- If sale paid by voucher, restore refunded amount back to the same voucher where possible.
+- Log refund reversal in voucher transaction history.
+
+13. UI Requirements
+Use existing NEXXUS UI style:
+- Dark navy background
+- Teal/cyan action buttons
+- Clean table layout
+- Fast POS workflow
+- Barcode scanner friendly voucher entry
+
+Expected Result:
+NEXXUS POS should support full Gift Voucher issuance, payment collection, redemption, partial redemption, balance tracking, receipt printing, reporting, and audit trail.
