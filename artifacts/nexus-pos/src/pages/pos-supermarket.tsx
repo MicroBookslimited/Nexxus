@@ -39,6 +39,7 @@ import {
   LockKeyhole,
   Delete,
   Store,
+  Tag,
   ArrowLeftRight,
   UserRound,
   ChevronRight,
@@ -158,6 +159,70 @@ export function PosSupermarket() {
   useEffect(() => {
     focusScanInput();
   }, []);
+
+  /* ── Price Check (lookup-only popup: no sale, no stock change, no PIN) ── */
+  const [priceCheckOpen, setPriceCheckOpen] = useState(false);
+  const [priceCheckSearch, setPriceCheckSearch] = useState("");
+  const [priceCheckResult, setPriceCheckResult] = useState<{
+    name: string;
+    barcode: string | null;
+    sku: string | null;
+    price: number;
+    isTaxable: boolean;
+    sellingUnit: string | null;
+  } | null>(null);
+  const [priceCheckNotFound, setPriceCheckNotFound] = useState<string | null>(null);
+  const priceCheckInputRef = useRef<HTMLInputElement>(null);
+
+  const focusPriceCheckInput = () => {
+    requestAnimationFrame(() => priceCheckInputRef.current?.focus());
+  };
+
+  const openPriceCheck = () => {
+    setPriceCheckResult(null);
+    setPriceCheckNotFound(null);
+    setPriceCheckSearch("");
+    setPriceCheckOpen(true);
+    focusPriceCheckInput();
+  };
+
+  // Closing never requires a manager PIN — a price check is not a sale.
+  const closePriceCheck = () => {
+    setPriceCheckOpen(false);
+    setPriceCheckResult(null);
+    setPriceCheckNotFound(null);
+    setPriceCheckSearch("");
+    focusScanInput();
+  };
+
+  const handlePriceCheckKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    const code = priceCheckSearch.trim();
+    if (!code) return;
+    const norm = code.toLowerCase();
+    // Look up by exact barcode / SKU first (scanner path).
+    const match =
+      productList.find((p) => (p.barcode ?? "").toLowerCase() === norm) ??
+      productList.find((p) => (p.sku ?? "").toLowerCase() === norm);
+    if (!match) {
+      setPriceCheckResult(null);
+      setPriceCheckNotFound(code);
+      setPriceCheckSearch("");
+      focusPriceCheckInput();
+      return;
+    }
+    setPriceCheckResult({
+      name: match.name,
+      barcode: match.barcode ?? null,
+      sku: match.sku ?? null,
+      price: match.price,
+      isTaxable: match.isTaxable,
+      sellingUnit: match.sellingUnit ?? null,
+    });
+    setPriceCheckNotFound(null);
+    setPriceCheckSearch("");
+    focusPriceCheckInput();
+  };
 
   /* ── Cart ──────────────────────────────────────────────────────────────── */
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -817,6 +882,15 @@ export function PosSupermarket() {
               </div>
             </div>
 
+            {/* Price Check — lookup only, no sale / no stock change */}
+            <button
+              onClick={openPriceCheck}
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 h-12 text-sm font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition flex items-center justify-center gap-2"
+            >
+              <Tag className="h-4 w-4" />
+              Price Check
+            </button>
+
             {/* Quantity / cash keypad */}
             <div className="rounded-2xl bg-muted/50 border border-border p-3">
               <div className="flex items-center justify-between mb-2 px-1">
@@ -1183,6 +1257,71 @@ export function PosSupermarket() {
               <Printer className="h-4 w-4 mr-1.5" />
               Print Receipt
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Price Check dialog (lookup only — no sale, no stock change, no PIN) ── */}
+      <Dialog open={priceCheckOpen} onOpenChange={(o) => { if (!o) closePriceCheck(); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-500">
+              <Tag className="h-5 w-5" />
+              Price Check
+            </DialogTitle>
+            <DialogDescription>
+              Scan or type a barcode / SKU to see its price. This does not affect the current bill or stock.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="relative">
+            <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-amber-500 pointer-events-none" />
+            <Input
+              ref={priceCheckInputRef}
+              autoFocus
+              value={priceCheckSearch}
+              onChange={(e) => setPriceCheckSearch(e.target.value)}
+              onKeyDown={handlePriceCheckKey}
+              placeholder="Scan a barcode…"
+              className="pl-11 h-14 text-lg bg-background border-amber-500/40 focus-visible:border-amber-500 focus-visible:ring-amber-500/20 rounded-xl"
+              autoComplete="off"
+            />
+          </div>
+
+          {priceCheckResult ? (
+            <div className="rounded-xl border border-border bg-muted/40 p-4 text-center space-y-1">
+              <div className="text-lg font-bold text-foreground">{priceCheckResult.name}</div>
+              <div className="text-xs font-mono text-muted-foreground">
+                {priceCheckResult.barcode ?? priceCheckResult.sku ?? "—"}
+                {priceCheckResult.sellingUnit ? ` · ${priceCheckResult.sellingUnit}` : ""}
+              </div>
+              <div className="text-4xl font-extrabold font-mono bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent pt-1">
+                {formatCurrency(priceCheckResult.price, baseCurrency)}
+              </div>
+              {priceCheckResult.isTaxable && taxMode === "exclusive" && (
+                <div className="text-xs text-muted-foreground">
+                  {formatCurrency(priceCheckResult.price * (1 + taxRate), baseCurrency)} incl. {taxPct}% tax
+                </div>
+              )}
+              {priceCheckResult.isTaxable && taxMode === "inclusive" && (
+                <div className="text-xs text-muted-foreground">includes {taxPct}% tax</div>
+              )}
+              {!priceCheckResult.isTaxable && (
+                <div className="text-xs text-muted-foreground">tax-exempt</div>
+              )}
+            </div>
+          ) : priceCheckNotFound ? (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-center text-sm text-rose-600 dark:text-rose-300">
+              Nothing matches “{priceCheckNotFound}”.
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+              Waiting for a scan…
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closePriceCheck}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
