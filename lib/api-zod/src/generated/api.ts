@@ -1689,6 +1689,200 @@ export const DeleteQuotationParams = zod.object({
 });
 
 /**
+ * @summary List gift vouchers
+ */
+export const ListGiftVouchersQueryParams = zod.object({
+  status: zod
+    .enum(["active", "partially_redeemed", "redeemed", "expired", "cancelled"])
+    .optional(),
+  search: zod.coerce.string().optional(),
+});
+
+export const ListGiftVouchersResponseItem = zod.object({
+  id: zod.number(),
+  code: zod.string(),
+  originalValue: zod.number(),
+  balance: zod.number(),
+  status: zod.enum([
+    "active",
+    "partially_redeemed",
+    "redeemed",
+    "expired",
+    "cancelled",
+  ]),
+  customerId: zod.number().nullish(),
+  customerName: zod.string().nullish(),
+  customerPhone: zod.string().nullish(),
+  customerEmail: zod.string().nullish(),
+  paymentMethod: zod.string().nullish(),
+  amountPaid: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  expiryDate: zod.coerce.date().nullish(),
+  issuedByStaffId: zod.number().nullish(),
+  issuedByName: zod.string().nullish(),
+  cancelledAt: zod.coerce.date().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+  transactions: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        voucherId: zod.number(),
+        action: zod.enum([
+          "issue",
+          "redeem",
+          "cancel",
+          "expire",
+          "adjust",
+          "refund",
+        ]),
+        amount: zod.number(),
+        balanceBefore: zod.number(),
+        balanceAfter: zod.number(),
+        relatedOrderId: zod.number().nullish(),
+        staffId: zod.number().nullish(),
+        staffName: zod.string().nullish(),
+        notes: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+      }),
+    )
+    .optional(),
+});
+export const ListGiftVouchersResponse = zod.array(ListGiftVouchersResponseItem);
+
+/**
+ * @summary Issue a new gift voucher
+ */
+export const CreateGiftVoucherBody = zod.object({
+  originalValue: zod.number(),
+  code: zod.string().optional(),
+  customerId: zod.number().nullish(),
+  customerName: zod.string().optional(),
+  customerPhone: zod.string().optional(),
+  customerEmail: zod.string().optional(),
+  paymentMethod: zod.enum(["cash", "card", "bank_transfer", "other"]),
+  expiryDate: zod.coerce.date().nullish(),
+  notes: zod.string().optional(),
+  staffId: zod.number().optional(),
+});
+
+/**
+ * @summary Look up a gift voucher by its code (for redemption)
+ */
+export const LookupGiftVoucherParams = zod.object({
+  code: zod.coerce.string(),
+});
+
+export const LookupGiftVoucherResponse = zod.object({
+  id: zod.number(),
+  code: zod.string(),
+  originalValue: zod.number(),
+  balance: zod.number(),
+  status: zod.enum([
+    "active",
+    "partially_redeemed",
+    "redeemed",
+    "expired",
+    "cancelled",
+  ]),
+  customerId: zod.number().nullish(),
+  customerName: zod.string().nullish(),
+  customerPhone: zod.string().nullish(),
+  customerEmail: zod.string().nullish(),
+  paymentMethod: zod.string().nullish(),
+  amountPaid: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  expiryDate: zod.coerce.date().nullish(),
+  issuedByStaffId: zod.number().nullish(),
+  issuedByName: zod.string().nullish(),
+  cancelledAt: zod.coerce.date().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+  transactions: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        voucherId: zod.number(),
+        action: zod.enum([
+          "issue",
+          "redeem",
+          "cancel",
+          "expire",
+          "adjust",
+          "refund",
+        ]),
+        amount: zod.number(),
+        balanceBefore: zod.number(),
+        balanceAfter: zod.number(),
+        relatedOrderId: zod.number().nullish(),
+        staffId: zod.number().nullish(),
+        staffName: zod.string().nullish(),
+        notes: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary Get a gift voucher by ID with its transaction history
+ */
+export const GetGiftVoucherParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetGiftVoucherResponse = zod.object({
+  id: zod.number(),
+  code: zod.string(),
+  originalValue: zod.number(),
+  balance: zod.number(),
+  status: zod.enum([
+    "active",
+    "partially_redeemed",
+    "redeemed",
+    "expired",
+    "cancelled",
+  ]),
+  customerId: zod.number().nullish(),
+  customerName: zod.string().nullish(),
+  customerPhone: zod.string().nullish(),
+  customerEmail: zod.string().nullish(),
+  paymentMethod: zod.string().nullish(),
+  amountPaid: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  expiryDate: zod.coerce.date().nullish(),
+  issuedByStaffId: zod.number().nullish(),
+  issuedByName: zod.string().nullish(),
+  cancelledAt: zod.coerce.date().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+  transactions: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        voucherId: zod.number(),
+        action: zod.enum([
+          "issue",
+          "redeem",
+          "cancel",
+          "expire",
+          "adjust",
+          "refund",
+        ]),
+        amount: zod.number(),
+        balanceBefore: zod.number(),
+        balanceAfter: zod.number(),
+        relatedOrderId: zod.number().nullish(),
+        staffId: zod.number().nullish(),
+        staffName: zod.string().nullish(),
+        notes: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+      }),
+    )
+    .optional(),
+});
+
+/**
  * @summary Get dashboard summary stats
  */
 export const GetDashboardSummaryResponse = zod.object({

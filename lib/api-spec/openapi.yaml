@@ -763,6 +763,90 @@ paths:
         "204":
           description: Deleted
 
+  /gift-vouchers:
+    get:
+      operationId: listGiftVouchers
+      tags: [gift-vouchers]
+      summary: List gift vouchers
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, partially_redeemed, redeemed, expired, cancelled]
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of gift vouchers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GiftVoucher"
+    post:
+      operationId: createGiftVoucher
+      tags: [gift-vouchers]
+      summary: Issue a new gift voucher
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGiftVoucherBody"
+      responses:
+        "201":
+          description: Issued gift voucher
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GiftVoucher"
+
+  /gift-vouchers/lookup/{code}:
+    get:
+      operationId: lookupGiftVoucher
+      tags: [gift-vouchers]
+      summary: Look up a gift voucher by its code (for redemption)
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Gift voucher
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GiftVoucher"
+        "404":
+          description: Not found
+
+  /gift-vouchers/{id}:
+    get:
+      operationId: getGiftVoucher
+      tags: [gift-vouchers]
+      summary: Get a gift voucher by ID with its transaction history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Gift voucher with history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GiftVoucher"
+
   /dashboard/summary:
     get:
       operationId: getDashboardSummary
@@ -2793,6 +2877,152 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    GiftVoucherTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        voucherId:
+          type: integer
+        action:
+          type: string
+          enum: [issue, redeem, cancel, expire, adjust, refund]
+        amount:
+          type: number
+          format: float
+        balanceBefore:
+          type: number
+          format: float
+        balanceAfter:
+          type: number
+          format: float
+        relatedOrderId:
+          type: integer
+          nullable: true
+        staffId:
+          type: integer
+          nullable: true
+        staffName:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - voucherId
+        - action
+        - amount
+        - balanceBefore
+        - balanceAfter
+        - createdAt
+
+    GiftVoucher:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        originalValue:
+          type: number
+          format: float
+        balance:
+          type: number
+          format: float
+        status:
+          type: string
+          enum: [active, partially_redeemed, redeemed, expired, cancelled]
+        customerId:
+          type: integer
+          nullable: true
+        customerName:
+          type: string
+          nullable: true
+        customerPhone:
+          type: string
+          nullable: true
+        customerEmail:
+          type: string
+          nullable: true
+        paymentMethod:
+          type: string
+          nullable: true
+        amountPaid:
+          type: number
+          format: float
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        expiryDate:
+          type: string
+          format: date-time
+          nullable: true
+        issuedByStaffId:
+          type: integer
+          nullable: true
+        issuedByName:
+          type: string
+          nullable: true
+        cancelledAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/GiftVoucherTransaction"
+      required:
+        - id
+        - code
+        - originalValue
+        - balance
+        - status
+        - createdAt
+        - updatedAt
+
+    CreateGiftVoucherBody:
+      type: object
+      properties:
+        originalValue:
+          type: number
+          format: float
+        code:
+          type: string
+        customerId:
+          type: integer
+          nullable: true
+        customerName:
+          type: string
+        customerPhone:
+          type: string
+        customerEmail:
+          type: string
+        paymentMethod:
+          type: string
+          enum: [cash, card, bank_transfer, other]
+        expiryDate:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+        staffId:
+          type: integer
+      required:
+        - originalValue
+        - paymentMethod
 
     DashboardSummary:
       type: object

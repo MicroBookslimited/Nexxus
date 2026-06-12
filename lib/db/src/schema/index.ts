@@ -29,3 +29,4 @@ export * from "./promotions";
 export * from "./product-batches";
 export * from "./supplier-returns";
 export * from "./override-cards";
+export * from "./gift-vouchers";

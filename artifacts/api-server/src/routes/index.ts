@@ -54,6 +54,7 @@ import promotionsRouter from "./promotions";
 import productBatchesRouter from "./product-batches";
 import supplierReturnsRouter from "./supplier-returns";
 import overrideCardsRouter from "./override-cards";
+import giftVouchersRouter from "./gift-vouchers";
 
 const router: IRouter = Router();
 
@@ -63,6 +64,7 @@ router.use(variantsRouter);
 router.use(ordersRouter);
 router.use(heldOrdersRouter);
 router.use(quotationsRouter);
+router.use(giftVouchersRouter);
 router.use(dashboardRouter);
 router.use(customersRouter);
 router.use(reportsRouter);

@@ -32,6 +32,7 @@ import type {
   CompositeComponent,
   CompositeCost,
   CreateCustomerBody,
+  CreateGiftVoucherBody,
   CreateHeldOrderBody,
   CreateKdsScreenBody,
   CreateOrderBody,
@@ -60,12 +61,14 @@ import type {
   GetRecentOrdersParams,
   GetReportSummaryParams,
   GetTopProductsParams,
+  GiftVoucher,
   HealthStatus,
   HeldOrder,
   HourlySales,
   KdsScreen,
   KitchenOrder,
   ListCustomersParams,
+  ListGiftVouchersParams,
   ListOrdersParams,
   ListProductsParams,
   ListPurchasesParams,
@@ -3162,6 +3165,363 @@ export const useDeleteQuotation = <
 > => {
   return useMutation(getDeleteQuotationMutationOptions(options));
 };
+
+/**
+ * @summary List gift vouchers
+ */
+export const getListGiftVouchersUrl = (params?: ListGiftVouchersParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/gift-vouchers?${stringifiedParams}`
+    : `/api/gift-vouchers`;
+};
+
+export const listGiftVouchers = async (
+  params?: ListGiftVouchersParams,
+  options?: RequestInit,
+): Promise<GiftVoucher[]> => {
+  return customFetch<GiftVoucher[]>(getListGiftVouchersUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListGiftVouchersQueryKey = (
+  params?: ListGiftVouchersParams,
+) => {
+  return [`/api/gift-vouchers`, ...(params ? [params] : [])] as const;
+};
+
+export const getListGiftVouchersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listGiftVouchers>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListGiftVouchersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listGiftVouchers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListGiftVouchersQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listGiftVouchers>>
+  > = ({ signal }) => listGiftVouchers(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listGiftVouchers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListGiftVouchersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listGiftVouchers>>
+>;
+export type ListGiftVouchersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List gift vouchers
+ */
+
+export function useListGiftVouchers<
+  TData = Awaited<ReturnType<typeof listGiftVouchers>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListGiftVouchersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listGiftVouchers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListGiftVouchersQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Issue a new gift voucher
+ */
+export const getCreateGiftVoucherUrl = () => {
+  return `/api/gift-vouchers`;
+};
+
+export const createGiftVoucher = async (
+  createGiftVoucherBody: CreateGiftVoucherBody,
+  options?: RequestInit,
+): Promise<GiftVoucher> => {
+  return customFetch<GiftVoucher>(getCreateGiftVoucherUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createGiftVoucherBody),
+  });
+};
+
+export const getCreateGiftVoucherMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createGiftVoucher>>,
+    TError,
+    { data: BodyType<CreateGiftVoucherBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createGiftVoucher>>,
+  TError,
+  { data: BodyType<CreateGiftVoucherBody> },
+  TContext
+> => {
+  const mutationKey = ["createGiftVoucher"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createGiftVoucher>>,
+    { data: BodyType<CreateGiftVoucherBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createGiftVoucher(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateGiftVoucherMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createGiftVoucher>>
+>;
+export type CreateGiftVoucherMutationBody = BodyType<CreateGiftVoucherBody>;
+export type CreateGiftVoucherMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Issue a new gift voucher
+ */
+export const useCreateGiftVoucher = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createGiftVoucher>>,
+    TError,
+    { data: BodyType<CreateGiftVoucherBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createGiftVoucher>>,
+  TError,
+  { data: BodyType<CreateGiftVoucherBody> },
+  TContext
+> => {
+  return useMutation(getCreateGiftVoucherMutationOptions(options));
+};
+
+/**
+ * @summary Look up a gift voucher by its code (for redemption)
+ */
+export const getLookupGiftVoucherUrl = (code: string) => {
+  return `/api/gift-vouchers/lookup/${code}`;
+};
+
+export const lookupGiftVoucher = async (
+  code: string,
+  options?: RequestInit,
+): Promise<GiftVoucher> => {
+  return customFetch<GiftVoucher>(getLookupGiftVoucherUrl(code), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getLookupGiftVoucherQueryKey = (code: string) => {
+  return [`/api/gift-vouchers/lookup/${code}`] as const;
+};
+
+export const getLookupGiftVoucherQueryOptions = <
+  TData = Awaited<ReturnType<typeof lookupGiftVoucher>>,
+  TError = ErrorType<void>,
+>(
+  code: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof lookupGiftVoucher>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLookupGiftVoucherQueryKey(code);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof lookupGiftVoucher>>
+  > = ({ signal }) => lookupGiftVoucher(code, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!code,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof lookupGiftVoucher>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LookupGiftVoucherQueryResult = NonNullable<
+  Awaited<ReturnType<typeof lookupGiftVoucher>>
+>;
+export type LookupGiftVoucherQueryError = ErrorType<void>;
+
+/**
+ * @summary Look up a gift voucher by its code (for redemption)
+ */
+
+export function useLookupGiftVoucher<
+  TData = Awaited<ReturnType<typeof lookupGiftVoucher>>,
+  TError = ErrorType<void>,
+>(
+  code: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof lookupGiftVoucher>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLookupGiftVoucherQueryOptions(code, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get a gift voucher by ID with its transaction history
+ */
+export const getGetGiftVoucherUrl = (id: number) => {
+  return `/api/gift-vouchers/${id}`;
+};
+
+export const getGiftVoucher = async (
+  id: number,
+  options?: RequestInit,
+): Promise<GiftVoucher> => {
+  return customFetch<GiftVoucher>(getGetGiftVoucherUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGiftVoucherQueryKey = (id: number) => {
+  return [`/api/gift-vouchers/${id}`] as const;
+};
+
+export const getGetGiftVoucherQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGiftVoucher>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGiftVoucher>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGiftVoucherQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGiftVoucher>>> = ({
+    signal,
+  }) => getGiftVoucher(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGiftVoucher>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGiftVoucherQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGiftVoucher>>
+>;
+export type GetGiftVoucherQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get a gift voucher by ID with its transaction history
+ */
+
+export function useGetGiftVoucher<
+  TData = Awaited<ReturnType<typeof getGiftVoucher>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGiftVoucher>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGiftVoucherQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Get dashboard summary stats

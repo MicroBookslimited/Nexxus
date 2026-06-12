@@ -549,6 +549,88 @@ export interface UpdateQuotationBody {
   expiryDate?: string | null;
 }
 
+export type GiftVoucherTransactionAction =
+  (typeof GiftVoucherTransactionAction)[keyof typeof GiftVoucherTransactionAction];
+
+export const GiftVoucherTransactionAction = {
+  issue: "issue",
+  redeem: "redeem",
+  cancel: "cancel",
+  expire: "expire",
+  adjust: "adjust",
+  refund: "refund",
+} as const;
+
+export interface GiftVoucherTransaction {
+  id: number;
+  voucherId: number;
+  action: GiftVoucherTransactionAction;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  relatedOrderId?: number | null;
+  staffId?: number | null;
+  staffName?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export type GiftVoucherStatus =
+  (typeof GiftVoucherStatus)[keyof typeof GiftVoucherStatus];
+
+export const GiftVoucherStatus = {
+  active: "active",
+  partially_redeemed: "partially_redeemed",
+  redeemed: "redeemed",
+  expired: "expired",
+  cancelled: "cancelled",
+} as const;
+
+export interface GiftVoucher {
+  id: number;
+  code: string;
+  originalValue: number;
+  balance: number;
+  status: GiftVoucherStatus;
+  customerId?: number | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  paymentMethod?: string | null;
+  amountPaid?: number | null;
+  notes?: string | null;
+  expiryDate?: string | null;
+  issuedByStaffId?: number | null;
+  issuedByName?: string | null;
+  cancelledAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  transactions?: GiftVoucherTransaction[];
+}
+
+export type CreateGiftVoucherBodyPaymentMethod =
+  (typeof CreateGiftVoucherBodyPaymentMethod)[keyof typeof CreateGiftVoucherBodyPaymentMethod];
+
+export const CreateGiftVoucherBodyPaymentMethod = {
+  cash: "cash",
+  card: "card",
+  bank_transfer: "bank_transfer",
+  other: "other",
+} as const;
+
+export interface CreateGiftVoucherBody {
+  originalValue: number;
+  code?: string;
+  customerId?: number | null;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  paymentMethod: CreateGiftVoucherBodyPaymentMethod;
+  expiryDate?: string | null;
+  notes?: string;
+  staffId?: number;
+}
+
 export interface DashboardSummary {
   todaySales: number;
   todayOrders: number;
@@ -1391,6 +1473,22 @@ export const ListOrdersStatus = {
   cancelled: "cancelled",
   refunded: "refunded",
   voided: "voided",
+} as const;
+
+export type ListGiftVouchersParams = {
+  status?: ListGiftVouchersStatus;
+  search?: string;
+};
+
+export type ListGiftVouchersStatus =
+  (typeof ListGiftVouchersStatus)[keyof typeof ListGiftVouchersStatus];
+
+export const ListGiftVouchersStatus = {
+  active: "active",
+  partially_redeemed: "partially_redeemed",
+  redeemed: "redeemed",
+  expired: "expired",
+  cancelled: "cancelled",
 } as const;
 
 export type GetRecentOrdersParams = {
