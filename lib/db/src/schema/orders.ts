@@ -16,6 +16,10 @@ export const ordersTable = pgTable("orders", {
   tax: real("tax").notNull(),
   total: real("total").notNull(),
   paymentMethod: text("payment_method"),
+  // For card / split (card-portion) payments: which kind of card was used.
+  // "debit" | "credit". Null for non-card payments. Distinct from the
+  // "credit" paymentMethod, which is an on-account / store-credit sale.
+  cardType: text("card_type"),
   splitCardAmount: real("split_card_amount"),
   splitCashAmount: real("split_cash_amount"),
   cashTendered: real("cash_tendered"),

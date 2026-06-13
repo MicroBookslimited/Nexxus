@@ -70,6 +70,7 @@ export interface ReceiptOrder {
   total: number;
   discountValue?: number | null;
   paymentMethod?: string | null;
+  cardType?: string | null;
   splitCardAmount?: number | null;
   splitCashAmount?: number | null;
   cashTendered?: number | null;
@@ -128,6 +129,7 @@ export function receiptOrderFrom(
     total: number;
     discountValue?: number | null;
     paymentMethod?: string | null;
+    cardType?: string | null;
     splitCardAmount?: number | null;
     splitCashAmount?: number | null;
     cashTendered?: number | null;
@@ -154,6 +156,7 @@ export function receiptOrderFrom(
     total: order.total,
     discountValue: order.discountValue ?? null,
     paymentMethod: order.paymentMethod ?? null,
+    cardType: order.cardType ?? null,
     splitCardAmount: order.splitCardAmount ?? null,
     splitCashAmount: order.splitCashAmount ?? null,
     cashTendered: order.cashTendered ?? null,
@@ -335,14 +338,17 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       restPaymentHtml += `<div class="r-row r-light"><span>Gift Voucher${order.giftVoucherCode ? ` (${escHtml(order.giftVoucherCode)})` : ""}</span><span>-${fmt(giftAmt)}</span></div>`;
       restPaymentHtml += `<div class="r-row r-light"><span>Amount Due</span><span>${fmt(amountDue)}</span></div>`;
     }
+    const cardKind = order.cardType === "debit" ? "Debit Card" : order.cardType === "credit" ? "Credit Card" : null;
     if (order.paymentMethod === "split") {
       restPaymentHtml += `
-        <div class="r-row r-light"><span>Card</span><span>${fmt(order.splitCardAmount ?? 0)}</span></div>
+        <div class="r-row r-light"><span>${cardKind ?? "Card"}</span><span>${fmt(order.splitCardAmount ?? 0)}</span></div>
         <div class="r-row r-light"><span>Cash</span><span>${fmt(order.splitCashAmount ?? 0)}</span></div>`;
     } else if (order.paymentMethod !== "gift_voucher") {
-      const pmLabel = order.paymentMethod
-        ? escHtml(order.paymentMethod.charAt(0).toUpperCase() + order.paymentMethod.slice(1))
-        : "Cash";
+      const pmLabel = order.paymentMethod === "card" && cardKind
+        ? cardKind
+        : order.paymentMethod
+          ? escHtml(order.paymentMethod.charAt(0).toUpperCase() + order.paymentMethod.slice(1))
+          : "Cash";
       restPaymentHtml += `<div class="r-row r-light"><span>${pmLabel}</span><span>${fmt(amountDue)}</span></div>`;
     }
     // Only render Tendered / Total / Change when the cashier entered the cash received.
@@ -496,13 +502,17 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     paymentHtml += `<div class="row sub-row"><span>Gift Voucher${order.giftVoucherCode ? ` (${escHtml(order.giftVoucherCode)})` : ""}</span><span class="nowrap">-${fmtNum(giftAmt)}</span></div>`;
     paymentHtml += `<div class="row sub-row"><span>Amount Due</span><span class="nowrap">${fmtNum(amountDue)}</span></div>`;
   }
+  const cardKindUpper2 = order.cardType === "debit" ? "DEBIT CARD" : order.cardType === "credit" ? "CREDIT CARD" : null;
   if (order.paymentMethod === "split") {
     paymentHtml += `
       <div class="row sub-row"><span>Payment</span><span class="nowrap">SPLIT</span></div>
-      <div class="row sub-row"><span>&nbsp;&nbsp;Card</span><span class="nowrap">${fmtNum(order.splitCardAmount ?? 0)}</span></div>
+      <div class="row sub-row"><span>&nbsp;&nbsp;${cardKindUpper2 ?? "Card"}</span><span class="nowrap">${fmtNum(order.splitCardAmount ?? 0)}</span></div>
       <div class="row sub-row"><span>&nbsp;&nbsp;Cash</span><span class="nowrap">${fmtNum(order.splitCashAmount ?? 0)}</span></div>`;
   } else if (order.paymentMethod !== "gift_voucher") {
-    paymentHtml += `<div class="row sub-row"><span>Payment</span><span class="nowrap">${escHtml((order.paymentMethod ?? "—").toUpperCase())}</span></div>`;
+    const pmUpper = order.paymentMethod === "card" && cardKindUpper2
+      ? cardKindUpper2
+      : (order.paymentMethod ?? "—").toUpperCase();
+    paymentHtml += `<div class="row sub-row"><span>Payment</span><span class="nowrap">${escHtml(pmUpper)}</span></div>`;
   }
   // Only render Tendered / Total / Change when the cashier entered the cash received.
   if (order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) {
@@ -1242,8 +1252,10 @@ function buildConvenienceReceiptHtml(
   const isCard   = order.paymentMethod === "card" || order.paymentMethod === "credit";
   const isSplit  = order.paymentMethod === "split";
   const isCash   = order.paymentMethod === "cash";
+  const cardKindUpper3 = order.cardType === "debit" ? "DEBIT CARD" : order.cardType === "credit" ? "CREDIT CARD" : null;
   const methodLabel = (() => {
     if (isCash)   return "CASH";
+    if (order.paymentMethod === "card" && cardKindUpper3) return cardKindUpper3;
     if (isCard)   return "CARD";
     if (isSplit)  return "SPLIT";
     if (order.paymentMethod === "topup") return "TOPUP";
@@ -1263,7 +1275,7 @@ function buildConvenienceReceiptHtml(
     <div class="cv-card-row"><span>CHANGE DUE</span><span>${fmtNum(Math.max(0, order.cashTendered - order.total))}</span></div>` : "";
 
   const splitHtml = isSplit ? `
-    <div class="cv-card-row"><span>CARD</span><span>${fmtNum(order.splitCardAmount ?? 0)}</span></div>
+    <div class="cv-card-row"><span>${cardKindUpper3 ?? "CARD"}</span><span>${fmtNum(order.splitCardAmount ?? 0)}</span></div>
     <div class="cv-card-row"><span>CASH</span><span>${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : "";
 
   // Loyalty

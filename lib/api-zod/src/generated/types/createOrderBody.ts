@@ -12,6 +12,8 @@ import type { CreateOrderBodyOrderType } from "./createOrderBodyOrderType";
 export interface CreateOrderBody {
   items: CreateOrderBodyItemsItem[];
   paymentMethod?: string;
+  /** For card payments (or the card portion of a split) — "debit" or "credit". Printed on the receipt. Distinct from the "credit" paymentMethod, which is an on-account / store-credit sale. */
+  cardType?: string;
   splitCardAmount?: number;
   splitCashAmount?: number;
   /** Cash amount tendered by the customer for cash payments. */

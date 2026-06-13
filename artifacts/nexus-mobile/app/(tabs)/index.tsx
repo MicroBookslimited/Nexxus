@@ -421,6 +421,8 @@ function CheckoutContent({
   const [printing, setPrinting] = useState(false);
 
   const [payment, setPayment] = useState<"cash" | "card">("cash");
+  // Debit/credit choice for card payments; persisted on the order and printed on the receipt.
+  const [cardType, setCardType] = useState<"debit" | "credit" | null>(null);
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [showCustomers, setShowCustomers] = useState(false);
   const [custSearch, setCustSearch] = useState("");
@@ -446,8 +448,18 @@ function CheckoutContent({
     return list.filter((x) => x.name.toLowerCase().includes(q) || x.phone?.includes(q)).slice(0, 20);
   }, [customers, custSearch]);
 
+  // Card payments must declare debit vs credit so it can be printed on the receipt.
+  const promptCardType = () => {
+    Alert.alert("Card type", "Is this a debit or credit card?", [
+      { text: "Debit Card", onPress: () => { setPayment("card"); setCardType("debit"); } },
+      { text: "Credit Card", onPress: () => { setPayment("card"); setCardType("credit"); } },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
   const reset = () => {
     setPayment("cash");
+    setCardType(null);
     setCustomerId(null);
     setShowCustomers(false);
     setCustSearch("");
@@ -466,6 +478,10 @@ function CheckoutContent({
 
   const charge = async () => {
     if (cart.lines.length === 0) return;
+    if (payment === "card" && !cardType) {
+      promptCardType();
+      return;
+    }
     try {
       const lineSnapshot = cart.lines;
       const order = await createOrder.mutateAsync({
@@ -481,6 +497,7 @@ function CheckoutContent({
             };
           }),
           paymentMethod: payment,
+          ...(payment === "card" && cardType ? { cardType } : {}),
           ...(customerId ? { customerId } : {}),
         },
       });
@@ -503,7 +520,14 @@ function CheckoutContent({
         subtotal: order.subtotal,
         tax: order.tax,
         total: order.total,
-        paymentMethod: payment === "cash" ? "Cash" : "Card",
+        paymentMethod:
+          payment === "cash"
+            ? "Cash"
+            : cardType === "debit"
+              ? "Debit Card"
+              : cardType === "credit"
+                ? "Credit Card"
+                : "Card",
       };
       setReceipt(receiptOrder);
       cart.clear();
@@ -704,8 +728,12 @@ function CheckoutContent({
               PAYMENT METHOD
             </Text>
             <View style={{ flexDirection: "row", gap: 10 }}>
-              <Chip label="Cash" active={payment === "cash"} onPress={() => setPayment("cash")} />
-              <Chip label="Card" active={payment === "card"} onPress={() => setPayment("card")} />
+              <Chip label="Cash" active={payment === "cash"} onPress={() => { setPayment("cash"); setCardType(null); }} />
+              <Chip
+                label={cardType === "debit" ? "Debit Card" : cardType === "credit" ? "Credit Card" : "Card"}
+                active={payment === "card"}
+                onPress={promptCardType}
+              />
             </View>
           </ScrollView>
 

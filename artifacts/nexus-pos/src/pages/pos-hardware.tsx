@@ -85,6 +85,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { buildReceiptHtml, openReceiptWindow, receiptOrderFrom } from "@/lib/receipt";
+import { CardTypeDialog, type CardType } from "@/components/card-type-dialog";
 import { printQuotation } from "@/lib/quotation-doc";
 import { printOrderReceipt } from "@/lib/print-receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, getPurchaseUnits, type PurchaseUnit, getPricingTiers, previewTierPrice, type PricingTier, lookupGiftVoucher, type VoucherLookupResult, ApiError } from "@/lib/saas-api";
@@ -263,6 +264,10 @@ export function PosHardware() {
   const [qtyEdit, setQtyEdit] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "split" | "credit">("cash");
+  // Debit/credit choice for card (and the card portion of a split); printed on
+  // the receipt. Unrelated to the on-account "credit" paymentMethod.
+  const [cardType, setCardType] = useState<CardType | null>(null);
+  const [cardTypeDialogOpen, setCardTypeDialogOpen] = useState(false);
   const [splitCashInput, setSplitCashInput] = useState("");
   const [splitCardInput, setSplitCardInput] = useState("");
   const [cashTenderedInput, setCashTenderedInput] = useState("");
@@ -481,6 +486,8 @@ export function PosHardware() {
     setSplitCashInput("");
     setSplitCardInput("");
     setPaymentMethod("cash");
+    setCardType(null);
+    setCardTypeDialogOpen(false);
     setDiscountAmount(0);
     setSelectedCustomerId(null);
     setLoadedQuoteId(null);
@@ -936,6 +943,9 @@ export function PosHardware() {
   // Pick a payment method; pre-fill a balanced 50/50 split for convenience.
   const selectPayment = (m: "cash" | "card" | "split" | "credit") => {
     setPaymentMethod(m);
+    // A card is involved for "card" and "split" (which has a card portion).
+    if (m === "card" || m === "split") { setCardType(null); setCardTypeDialogOpen(true); }
+    else { setCardType(null); }
     if (m === "split") {
       const half = Number((amountDue / 2).toFixed(2));
       setSplitCashInput(half > 0 ? String(half) : "");
@@ -1020,6 +1030,13 @@ export function PosHardware() {
       });
       return;
     }
+    // A card is involved (pure card or the card portion of a split): require the
+    // debit/credit choice so it can be printed on the receipt.
+    if (!voucherCoversAll && (paymentMethod === "card" || paymentMethod === "split") && !cardType) {
+      setCardTypeDialogOpen(true);
+      toast({ title: "Card type required", description: "Choose Debit or Credit to continue.", variant: "destructive" });
+      return;
+    }
     const cashTendered =
       !voucherCoversAll && paymentMethod === "cash" && cashTenderedInput && parseFloat(cashTenderedInput) > 0
         ? parseFloat(cashTenderedInput)
@@ -1032,6 +1049,7 @@ export function PosHardware() {
         // bypass that staleness (same pattern as the standard POS).
         data: {
           paymentMethod: effectivePaymentMethod,
+          cardType: !voucherCoversAll && (paymentMethod === "card" || paymentMethod === "split") ? cardType ?? undefined : undefined,
           staffId: sessionStaff?.id ?? undefined,
           items: cart.map((c) => {
             // Derive everything from the same clamped helpers the UI uses, so the
@@ -2608,6 +2626,13 @@ export function PosHardware() {
       </Dialog>
 
       {/* ── Receipt dialog ──────────────────────────────────────────── */}
+      {/* Debit / Credit card-type prompt (card payments + split card portion) */}
+      <CardTypeDialog
+        open={cardTypeDialogOpen}
+        onSelect={(t) => { setCardType(t); setCardTypeDialogOpen(false); }}
+        onCancel={() => setCardTypeDialogOpen(false)}
+      />
+
       <Dialog open={!!receiptOrder} onOpenChange={(o) => !o && setReceiptOrder(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>

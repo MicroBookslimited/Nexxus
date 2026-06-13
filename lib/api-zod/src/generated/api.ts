@@ -904,6 +904,12 @@ export const ListOrdersResponseItem = zod.object({
       "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
     ),
   paymentMethod: zod.string().nullish(),
+  cardType: zod
+    .string()
+    .nullish()
+    .describe(
+      'For card payments (or the card portion of a split) — \"debit\" or \"credit\". Printed on the receipt as \"Debit Card\" \/ \"Credit Card\". NULL for non-card payments. Distinct from the \"credit\" paymentMethod, which is an on-account \/ store-credit sale.',
+    ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
   cashTendered: zod
@@ -1066,6 +1072,12 @@ export const CreateOrderBody = zod.object({
     }),
   ),
   paymentMethod: zod.string().optional(),
+  cardType: zod
+    .string()
+    .optional()
+    .describe(
+      'For card payments (or the card portion of a split) — \"debit\" or \"credit\". Printed on the receipt. Distinct from the \"credit\" paymentMethod, which is an on-account \/ store-credit sale.',
+    ),
   splitCardAmount: zod.number().optional(),
   splitCashAmount: zod.number().optional(),
   cashTendered: zod
@@ -1138,6 +1150,12 @@ export const GetOrderResponse = zod.object({
       "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
     ),
   paymentMethod: zod.string().nullish(),
+  cardType: zod
+    .string()
+    .nullish()
+    .describe(
+      'For card payments (or the card portion of a split) — \"debit\" or \"credit\". Printed on the receipt as \"Debit Card\" \/ \"Credit Card\". NULL for non-card payments. Distinct from the \"credit\" paymentMethod, which is an on-account \/ store-credit sale.',
+    ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
   cashTendered: zod
@@ -1298,6 +1316,12 @@ export const UpdateOrderStatusResponse = zod.object({
       "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
     ),
   paymentMethod: zod.string().nullish(),
+  cardType: zod
+    .string()
+    .nullish()
+    .describe(
+      'For card payments (or the card portion of a split) — \"debit\" or \"credit\". Printed on the receipt as \"Debit Card\" \/ \"Credit Card\". NULL for non-card payments. Distinct from the \"credit\" paymentMethod, which is an on-account \/ store-credit sale.',
+    ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
   cashTendered: zod
@@ -1473,6 +1497,12 @@ export const RefundOrderItemsResponse = zod.object({
         "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
       ),
     paymentMethod: zod.string().nullish(),
+    cardType: zod
+      .string()
+      .nullish()
+      .describe(
+        'For card payments (or the card portion of a split) — \"debit\" or \"credit\". Printed on the receipt as \"Debit Card\" \/ \"Credit Card\". NULL for non-card payments. Distinct from the \"credit\" paymentMethod, which is an on-account \/ store-credit sale.',
+      ),
     splitCardAmount: zod.number().nullish(),
     splitCashAmount: zod.number().nullish(),
     cashTendered: zod
@@ -1683,6 +1713,12 @@ export const ChargeOrderResponse = zod.object({
       "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
     ),
   paymentMethod: zod.string().nullish(),
+  cardType: zod
+    .string()
+    .nullish()
+    .describe(
+      'For card payments (or the card portion of a split) — \"debit\" or \"credit\". Printed on the receipt as \"Debit Card\" \/ \"Credit Card\". NULL for non-card payments. Distinct from the \"credit\" paymentMethod, which is an on-account \/ store-credit sale.',
+    ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
   cashTendered: zod
@@ -2354,6 +2390,12 @@ export const GetRecentOrdersResponseItem = zod.object({
       "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
     ),
   paymentMethod: zod.string().nullish(),
+  cardType: zod
+    .string()
+    .nullish()
+    .describe(
+      'For card payments (or the card portion of a split) — \"debit\" or \"credit\". Printed on the receipt as \"Debit Card\" \/ \"Credit Card\". NULL for non-card payments. Distinct from the \"credit\" paymentMethod, which is an on-account \/ store-credit sale.',
+    ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
   cashTendered: zod
@@ -2663,6 +2705,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
       "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
     ),
   paymentMethod: zod.string().nullish(),
+  cardType: zod
+    .string()
+    .nullish()
+    .describe(
+      'For card payments (or the card portion of a split) — \"debit\" or \"credit\". Printed on the receipt as \"Debit Card\" \/ \"Credit Card\". NULL for non-card payments. Distinct from the \"credit\" paymentMethod, which is an on-account \/ store-credit sale.',
+    ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
   cashTendered: zod

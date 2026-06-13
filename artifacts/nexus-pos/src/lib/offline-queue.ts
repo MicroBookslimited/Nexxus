@@ -16,6 +16,7 @@ export interface OfflineOrderDisplayData {
   tax: number;
   discountValue: number;
   paymentMethod: string;
+  cardType?: string;
   items: OfflineOrderItem[];
   notes?: string;
   cashTendered?: number;

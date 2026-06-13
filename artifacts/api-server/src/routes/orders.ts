@@ -102,6 +102,7 @@ function normalizeOrder(order: typeof ordersTable.$inferSelect) {
     discountAmount: order.discountAmount ?? undefined,
     discountValue: order.discountValue ?? undefined,
     paymentMethod: order.paymentMethod ?? undefined,
+    cardType: order.cardType ?? undefined,
     splitCardAmount: order.splitCardAmount ?? undefined,
     splitCashAmount: order.splitCashAmount ?? undefined,
     cashTendered: order.cashTendered ?? undefined,
@@ -1042,6 +1043,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           tax,
           total,
           paymentMethod: parsed.data.paymentMethod,
+          cardType: parsed.data.cardType,
           splitCardAmount: parsed.data.splitCardAmount,
           splitCashAmount: parsed.data.splitCashAmount,
           cashTendered: parsed.data.cashTendered,
@@ -1717,6 +1719,7 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
       status: "completed",
       completedAt: new Date(),
       paymentMethod: parsed.data.paymentMethod,
+      cardType: parsed.data.cardType,
       splitCardAmount: parsed.data.splitCardAmount,
       splitCashAmount: parsed.data.splitCashAmount,
     })

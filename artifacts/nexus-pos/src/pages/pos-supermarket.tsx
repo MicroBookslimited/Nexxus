@@ -57,6 +57,7 @@ import {
   PlayCircle,
 } from "lucide-react";
 import { buildReceiptHtml, receiptOrderFrom } from "@/lib/receipt";
+import { CardTypeDialog, type CardType } from "@/components/card-type-dialog";
 import { printOrderReceipt } from "@/lib/print-receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, lookupGiftVoucher, type VoucherLookupResult, ApiError } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -239,6 +240,9 @@ export function PosSupermarket() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "split">("cash");
+  // Debit/credit choice for card (and the card portion of a split); printed on the receipt.
+  const [cardType, setCardType] = useState<CardType | null>(null);
+  const [cardTypeDialogOpen, setCardTypeDialogOpen] = useState(false);
   const [cashTenderedInput, setCashTenderedInput] = useState("");
   const [splitCashInput, setSplitCashInput] = useState("");
   const [splitCardInput, setSplitCardInput] = useState("");
@@ -356,6 +360,8 @@ export function PosSupermarket() {
     setSplitCashInput("");
     setSplitCardInput("");
     setPaymentMethod("cash");
+    setCardType(null);
+    setCardTypeDialogOpen(false);
     setQtyInput("");
     setVoucherCodeInput("");
     setAppliedVoucher(null);
@@ -602,6 +608,9 @@ export function PosSupermarket() {
   // Pick a payment method; pre-fill a balanced 50/50 split for convenience.
   const selectPayment = (m: "cash" | "card" | "split") => {
     setPaymentMethod(m);
+    // A card is involved for "card" and "split" (which has a card portion).
+    if (m === "card" || m === "split") { setCardType(null); setCardTypeDialogOpen(true); }
+    else { setCardType(null); }
     if (m === "split") {
       const half = Number((amountDue / 2).toFixed(2));
       setSplitCashInput(half > 0 ? String(half) : "");
@@ -671,6 +680,13 @@ export function PosSupermarket() {
       });
       return;
     }
+    // A card is involved (pure card or the card portion of a split): require the
+    // debit/credit choice so it can be printed on the receipt.
+    if (!voucherCoversAll && (paymentMethod === "card" || paymentMethod === "split") && !cardType) {
+      setCardTypeDialogOpen(true);
+      toast({ title: "Card type required", description: "Choose Debit or Credit to continue.", variant: "destructive" });
+      return;
+    }
     createOrder.mutate(
       {
         // `cashTendered` / split amounts are accepted by the API but missing from
@@ -678,6 +694,7 @@ export function PosSupermarket() {
         // the other layouts).
         data: {
           paymentMethod: effectivePaymentMethod,
+          cardType: !voucherCoversAll && (paymentMethod === "card" || paymentMethod === "split") ? cardType ?? undefined : undefined,
           staffId: sessionStaff?.id ?? undefined,
           items: cart.map((c) => ({ productId: c.productId, quantity: c.quantity })),
           cashTendered: !voucherCoversAll && paymentMethod === "cash" ? cashTendered : undefined,
@@ -1473,6 +1490,13 @@ export function PosSupermarket() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Debit / Credit card-type prompt (card payments + split card portion) */}
+      <CardTypeDialog
+        open={cardTypeDialogOpen}
+        onSelect={(t) => { setCardType(t); setCardTypeDialogOpen(false); }}
+        onCancel={() => { setCardTypeDialogOpen(false); focusScanInput(); }}
+      />
 
       {/* ── Receipt dialog ──────────────────────────────────────────── */}
       <Dialog open={!!receiptOrder} onOpenChange={(o) => { if (!o) { setReceiptOrder(null); focusScanInput(); } }}>

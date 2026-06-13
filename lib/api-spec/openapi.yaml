@@ -2492,6 +2492,10 @@ components:
         paymentMethod:
           type: string
           nullable: true
+        cardType:
+          type: string
+          nullable: true
+          description: For card payments (or the card portion of a split) — "debit" or "credit". Printed on the receipt as "Debit Card" / "Credit Card". NULL for non-card payments. Distinct from the "credit" paymentMethod, which is an on-account / store-credit sale.
         splitCardAmount:
           type: number
           format: float
@@ -2659,6 +2663,9 @@ components:
               - quantity
         paymentMethod:
           type: string
+        cardType:
+          type: string
+          description: For card payments (or the card portion of a split) — "debit" or "credit". Printed on the receipt. Distinct from the "credit" paymentMethod, which is an on-account / store-credit sale.
         splitCardAmount:
           type: number
           format: float

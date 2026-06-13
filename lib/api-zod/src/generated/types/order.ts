@@ -26,6 +26,8 @@ export interface Order {
   /** Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded. */
   refundedAt?: Date | null;
   paymentMethod?: string | null;
+  /** For card payments (or the card portion of a split) — "debit" or "credit". Printed on the receipt as "Debit Card" / "Credit Card". NULL for non-card payments. Distinct from the "credit" paymentMethod, which is an on-account / store-credit sale. */
+  cardType?: string | null;
   splitCardAmount?: number | null;
   splitCashAmount?: number | null;
   /** Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded. */

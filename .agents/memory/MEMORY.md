@@ -1,3 +1,4 @@
+- [Card payment type vs on-account credit](card-type-vs-credit.md) — cardType (debit/credit) is ONLY for paymentMethod "card"/split card-portion; never set/label it for the on-account "credit" method.
 - [Web receipt printing](web-receipt-printing.md) — web POS uses browser print; Android prints a lean image-free text receipt (ESC/POS pass-through services crash on heavy bitmaps), desktop unchanged. Mobile Expo ESC/POS is separate.
 - [Android Chrome print — body replacement](android-print-dom-replacement.md) — CSS hiding (display:none/visibility/inline !important) all fail on Android; must physically remove body children, inject receipt-only container, double-rAF then print, restore in afterprint.
 - [Repo is not typecheck-clean](typecheck-preexisting-errors.md) — api-server & nexus-pos have pre-existing TS errors; typecheck:libs IS clean.
