@@ -1124,6 +1124,9 @@ function buildSupermarketReceiptHtml(
     <div class="sm-tot-row"><span class="sm-tot-label">CASH TEND</span><span class="sm-tot-val">${fmtNum(order.cashTendered)}</span></div>
     <div class="sm-tot-row"><span class="sm-tot-label">TOTAL</span><span class="sm-tot-val">-${fmtNum(order.total)}</span></div>
     <div class="sm-tot-row"><span class="sm-tot-label">CHANGE DUE</span><span class="sm-tot-val">${fmtNum(changeDue)}</span></div>` : ""}
+    ${order.paymentMethod === "split" ? `
+    <div class="sm-tot-row"><span class="sm-tot-label">${order.cardType === "debit" ? "DEBIT CARD" : order.cardType === "credit" ? "CREDIT CARD" : "CARD"}</span><span class="sm-tot-val">${fmtNum(order.splitCardAmount ?? 0)}</span></div>
+    <div class="sm-tot-row"><span class="sm-tot-label">CASH</span><span class="sm-tot-val">${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}
   </div>
 
   ${accountBlockHtml}
