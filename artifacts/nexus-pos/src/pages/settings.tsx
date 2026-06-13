@@ -43,6 +43,7 @@ export function AdminSettings() {
   const [businessTaxNumber, setBusinessTaxNumber] = useState("");
   const [taxRate, setTaxRate] = useState("");
   const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
+  const [defaultMarkup, setDefaultMarkup] = useState("");
   const [serviceChargeEnabled, setServiceChargeEnabled] = useState(false);
   const [serviceChargeRate, setServiceChargeRate] = useState("");
   const [receiptFooter, setReceiptFooter] = useState("");
@@ -99,6 +100,7 @@ export function AdminSettings() {
     setBusinessTaxNumber(settings.business_tax_number ?? "");
     setTaxRate(settings.tax_rate ?? "15");
     setTaxMode((settings.tax_mode as "exclusive" | "inclusive") ?? "exclusive");
+    setDefaultMarkup(settings.default_markup_percentage ?? "");
     setServiceChargeEnabled(settings.service_charge_enabled === "true");
     setServiceChargeRate(settings.service_charge_rate ?? "");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
@@ -149,6 +151,7 @@ export function AdminSettings() {
           business_logo_url: businessLogoUrl,
           tax_rate: taxRate,
           tax_mode: taxMode,
+          default_markup_percentage: defaultMarkup.trim(),
           service_charge_enabled: serviceChargeEnabled ? "true" : "false",
           service_charge_rate: serviceChargeRate.trim(),
           receipt_footer: receiptFooter,
@@ -438,6 +441,28 @@ export function AdminSettings() {
               />
               <span className="text-sm text-muted-foreground">%</span>
             </div>
+          </div>
+
+          {/* Default Markup — auto-populates the markup box when pricing
+              products (Add product + post-receiving repricing). Blank = none. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="default-markup">Default Markup</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="default-markup"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="e.g. 50"
+                value={defaultMarkup}
+                onChange={(e) => { setDefaultMarkup(e.target.value); markDirty(); }}
+                className="w-28"
+              />
+              <span className="text-sm text-muted-foreground">% on cost</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Pre-fills the markup box when adding or repricing products. Cost × (1 + markup%) = selling price.
+            </p>
           </div>
 
           {/* Tax Mode */}

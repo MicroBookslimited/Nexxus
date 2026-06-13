@@ -234,6 +234,8 @@ type CostChangeRow = {
   oldCost: number | null;
   newCost: number;
   currentPrice: number;
+  // Markup % on the new cost, kept in sync with newPrice (UI-only).
+  markup: string;
   newPrice: string;
   apply: boolean;
 };
@@ -286,6 +288,10 @@ type ProductForm = {
   trackBatches: boolean;
   // Per-product FIFO/LIFO override; "" = inherit tenant setting.
   stockMethodOverride: "" | "fifo" | "lifo";
+  // Markup % on cost (UI-only helper, never persisted to the DB/OpenAPI).
+  // Keeps Cost / Markup / Selling Price in sync; pre-filled from the tenant
+  // default_markup_percentage setting. price = cost * (1 + markup/100).
+  markup: string;
 };
 
 const emptyForm = (): ProductForm => ({
@@ -305,7 +311,19 @@ const emptyForm = (): ProductForm => ({
   isTaxable: true,
   trackBatches: false,
   stockMethodOverride: "",
+  markup: "",
 });
+
+// ─── Markup math (markup is ON COST) ───────────────────────────────────────
+// price = cost * (1 + markup/100); markup = (price - cost)/cost * 100;
+// cost = price / (1 + markup/100). Markup is a UI-only convenience value used
+// to keep the Cost / Markup% / Selling Price trio in sync — it is never sent
+// to or stored by the API.
+const round2 = (n: number): string => (Math.round(n * 100) / 100).toFixed(2);
+const calcPriceFromMarkup = (cost: number, markup: number): number => cost * (1 + markup / 100);
+const calcMarkupFromPrice = (cost: number, price: number): number =>
+  cost > 0 ? ((price - cost) / cost) * 100 : 0;
+const calcCostFromPrice = (price: number, markup: number): number => price / (1 + markup / 100);
 
 /* ─── Variant/modifier editor types ─── */
 type DraftOption = { tempId: string; name: string; priceAdjustment: string; stockCount: string; optionId: number | null; sku: string };
@@ -2772,6 +2790,9 @@ export function Products() {
   const { toast } = useToast();
   const { data: settings } = useGetSettings();
   const businessName = settings?.business_name || "My Store";
+  // Tenant default markup % (UI-only; not part of the generated settings type).
+  const defaultMarkupSetting =
+    (settings as { default_markup_percentage?: string } | undefined)?.default_markup_percentage ?? "";
   const { data: inUseCategories } = useListProductCategories();
   // Curated settings list comes first (preserves the admin's chosen order),
   // then any category actually used by a product that isn't in that list
@@ -3285,6 +3306,7 @@ export function Products() {
         oldCost: r.oldCost,
         newCost: r.newCost,
         currentPrice: r.currentPrice,
+        markup: r.newCost > 0 ? round2(calcMarkupFromPrice(r.newCost, r.suggestedPrice)) : "",
         newPrice: r.suggestedPrice.toFixed(2),
         apply: true,
       };
@@ -3341,7 +3363,7 @@ export function Products() {
 
   const openAdd = () => {
     setEditingProduct(null);
-    setForm({ ...emptyForm(), category: categories[0] ?? "General" });
+    setForm({ ...emptyForm(), category: categories[0] ?? "General", markup: defaultMarkupSetting });
     setDialogTab("details");
     setDialogOpen(true);
   };
@@ -3367,6 +3389,11 @@ export function Products() {
         ? pp.unitOfMeasure
         : "kg";
     const struct: StructureType = pp.structureType === "composite" ? "composite" : "simple";
+    // Derive markup from the existing cost & price (falls back to the tenant
+    // default when there's no cost to compute against).
+    const editCost = pp.costPrice != null ? Number(pp.costPrice) : NaN;
+    const editMarkup =
+      !isNaN(editCost) && editCost > 0 ? round2(calcMarkupFromPrice(editCost, p.price)) : defaultMarkupSetting;
     setForm({
       name: p.name,
       description: p.description ?? "",
@@ -3384,10 +3411,47 @@ export function Products() {
       isTaxable: pp.isTaxable !== false,
       trackBatches: !!pp.trackBatches,
       stockMethodOverride: pp.stockMethodOverride === "fifo" || pp.stockMethodOverride === "lifo" ? pp.stockMethodOverride : "",
+      markup: editMarkup,
     });
     setDialogTab("details");
     setDialogOpen(true);
   };
+
+  // ─── Product-form Cost / Markup% / Selling Price sync ───
+  // Editing Cost or Markup recomputes Price; editing Price recomputes Markup
+  // from the known cost (or back-fills Cost when only a markup is set).
+  const handleFormCostChange = (v: string) =>
+    setForm((f) => {
+      const cost = parseFloat(v);
+      const markup = parseFloat(f.markup);
+      const next = { ...f, costPrice: v };
+      if (!isNaN(cost) && cost > 0 && !isNaN(markup)) next.price = round2(calcPriceFromMarkup(cost, markup));
+      return next;
+    });
+  const handleFormMarkupChange = (v: string) =>
+    setForm((f) => {
+      const cost = parseFloat(f.costPrice);
+      const markup = parseFloat(v);
+      const next = { ...f, markup: v };
+      if (!isNaN(cost) && cost > 0 && !isNaN(markup)) next.price = round2(calcPriceFromMarkup(cost, markup));
+      return next;
+    });
+  const handleFormPriceChange = (v: string) =>
+    setForm((f) => {
+      const cost = parseFloat(f.costPrice);
+      const price = parseFloat(v);
+      const next = { ...f, price: v };
+      if (!isNaN(price)) {
+        if (!isNaN(cost) && cost > 0) {
+          next.markup = round2(calcMarkupFromPrice(cost, price));
+        } else {
+          // No cost yet: back-fill it from the set markup (markup 0 ⇒ cost = price).
+          const markup = parseFloat(f.markup);
+          if (!isNaN(markup)) next.costPrice = round2(calcCostFromPrice(price, markup));
+        }
+      }
+      return next;
+    });
 
   const handleSave = (andClose = false) => {
     if (!form.name.trim() || !form.price || !form.category) {
@@ -4962,12 +5026,13 @@ export function Products() {
             The cost went up on {costChangeRows?.length ?? 0} product{(costChangeRows?.length ?? 0) !== 1 ? "s" : ""}. Suggested prices keep your previous margin. Edit any price or untick to skip.
           </p>
           <div className="flex-1 overflow-y-auto rounded-xl border border-border">
-            <div className="grid grid-cols-[28px_1.6fr_110px_110px_110px_130px] gap-2 px-3 py-2 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide sticky top-0">
+            <div className="grid grid-cols-[28px_1.6fr_96px_96px_96px_96px_120px] gap-2 px-3 py-2 bg-secondary/40 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide sticky top-0">
               <span />
               <span>Product</span>
               <span className="text-right">Old Cost</span>
               <span className="text-right">New Cost</span>
               <span className="text-right">Current Price</span>
+              <span className="text-right">Markup %</span>
               <span className="text-right">New Price</span>
             </div>
             {costChangeRows?.map((row, idx) => {
@@ -4976,7 +5041,7 @@ export function Products() {
               return (
                 <div
                   key={row.productId}
-                  className="grid grid-cols-[28px_1.6fr_110px_110px_110px_130px] gap-2 px-3 py-2 items-center border-b border-border/40 last:border-0"
+                  className="grid grid-cols-[28px_1.6fr_96px_96px_96px_96px_120px] gap-2 px-3 py-2 items-center border-b border-border/40 last:border-0"
                 >
                   <input
                     type="checkbox"
@@ -4999,6 +5064,26 @@ export function Products() {
                   <span className="text-right text-sm font-mono">{formatCurrency(row.newCost)}</span>
                   <span className="text-right text-sm font-mono text-muted-foreground">{formatCurrency(row.currentPrice)}</span>
                   <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={row.markup}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setCostChangeRows((prev) => prev?.map((r, i) => {
+                          if (i !== idx) return r;
+                          const m = parseFloat(v);
+                          const np = !isNaN(m) && r.newCost > 0 ? round2(calcPriceFromMarkup(r.newCost, m)) : r.newPrice;
+                          return { ...r, markup: v, newPrice: np };
+                        }) ?? null);
+                      }}
+                      disabled={!row.apply}
+                      className="h-8 text-sm pr-5 text-right font-mono"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                  </div>
+                  <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
                     <Input
                       type="number"
@@ -5007,7 +5092,12 @@ export function Products() {
                       value={row.newPrice}
                       onChange={(e) => {
                         const v = e.target.value;
-                        setCostChangeRows((prev) => prev?.map((r, i) => i === idx ? { ...r, newPrice: v } : r) ?? null);
+                        setCostChangeRows((prev) => prev?.map((r, i) => {
+                          if (i !== idx) return r;
+                          const price = parseFloat(v);
+                          const mk = !isNaN(price) && r.newCost > 0 ? round2(calcMarkupFromPrice(r.newCost, price)) : r.markup;
+                          return { ...r, newPrice: v, markup: mk };
+                        }) ?? null);
                       }}
                       disabled={!row.apply}
                       className="h-8 text-sm pl-5 text-right font-mono"
@@ -5221,7 +5311,7 @@ export function Products() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-1.5">
                     <Label>Price *</Label>
-                    <Input type="number" step="0.01" min="0" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} placeholder="0.00" />
+                    <Input type="number" step="0.01" min="0" value={form.price} onChange={(e) => handleFormPriceChange(e.target.value)} placeholder="0.00" />
                   </div>
                   <div className="grid gap-1.5">
                     <Label>Category *</Label>
@@ -5380,16 +5470,29 @@ export function Products() {
                     and is the per-unit basis for composites. Hidden on
                     composites because the cost is derived. */}
                 {form.structureType === "simple" && (
-                  <div className="grid gap-1.5">
-                    <Label>Cost price <span className="text-muted-foreground text-[11px]">(optional, for margin reports)</span></Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      value={form.costPrice}
-                      onChange={(e) => setForm((f) => ({ ...f, costPrice: e.target.value }))}
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-1.5">
+                      <Label>Cost price <span className="text-muted-foreground text-[11px]">(optional, for margin reports)</span></Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={form.costPrice}
+                        onChange={(e) => handleFormCostChange(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label>Markup <span className="text-muted-foreground text-[11px]">(% on cost)</span></Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="e.g. 50"
+                        value={form.markup}
+                        onChange={(e) => handleFormMarkupChange(e.target.value)}
+                      />
+                    </div>
                   </div>
                 )}
                 <Separator />

@@ -30,6 +30,7 @@ const DEFAULTS: Record<string, string> = {
   business_tax_number: "",
   tax_rate: "15",
   tax_mode: "exclusive",
+  default_markup_percentage: "",
   service_charge_enabled: "false",
   service_charge_rate: "",
   receipt_footer: "Thank you for your business!",
