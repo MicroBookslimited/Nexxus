@@ -201,7 +201,9 @@ router.get("/customers/by-card/:cardNumber", async (req, res): Promise<void> => 
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
   const raw = Array.isArray(req.params.cardNumber) ? req.params.cardNumber[0] : req.params.cardNumber;
-  const cardNumber = (raw ?? "").trim();
+  // Card numbers are stored uppercase ("LM" + digits); normalize so a manually
+  // typed or lowercased scan still resolves to the right customer.
+  const cardNumber = (raw ?? "").trim().toUpperCase();
   if (!cardNumber) { res.status(400).json({ error: "Invalid card number" }); return; }
 
   const [customer] = await db
