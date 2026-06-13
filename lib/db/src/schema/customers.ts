@@ -1,24 +1,34 @@
-import { pgTable, text, serial, timestamp, real, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, real, integer, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const customersTable = pgTable("customers", {
-  id: serial("id").primaryKey(),
-  tenantId: integer("tenant_id").notNull().default(0),
-  name: text("name").notNull(),
-  email: text("email"),
-  phone: text("phone"),
-  company: text("company"),
-  address: text("address"),
-  city: text("city"),
-  state: text("state"),
-  postalCode: text("postal_code"),
-  notes: text("notes"),
-  loyaltyPoints: integer("loyalty_points").notNull().default(0),
-  totalSpent: real("total_spent").notNull().default(0),
-  orderCount: integer("order_count").notNull().default(0),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const customersTable = pgTable(
+  "customers",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenant_id").notNull().default(0),
+    name: text("name").notNull(),
+    email: text("email"),
+    phone: text("phone"),
+    company: text("company"),
+    address: text("address"),
+    city: text("city"),
+    state: text("state"),
+    postalCode: text("postal_code"),
+    notes: text("notes"),
+    // Loyalty card number (e.g. "LM##########"). Nullable for legacy rows;
+    // auto-assigned on create and backfilled for existing customers. Unique
+    // per tenant (NULLs are distinct in Postgres, so unassigned rows coexist).
+    cardNumber: text("card_number"),
+    loyaltyPoints: integer("loyalty_points").notNull().default(0),
+    totalSpent: real("total_spent").notNull().default(0),
+    orderCount: integer("order_count").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantCardUq: uniqueIndex("customers_tenant_card_uq").on(t.tenantId, t.cardNumber),
+  }),
+);
 
 export const insertCustomerSchema = createInsertSchema(customersTable).omit({ id: true, createdAt: true });
 export type InsertCustomer = z.infer<typeof insertCustomerSchema>;

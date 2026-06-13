@@ -40,7 +40,7 @@ import {
   Tag, PenLine, PackagePlus, Calculator, Delete, RefreshCw,
   ChevronDown, ChevronUp,
 } from "lucide-react";
-import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions, lookupGiftVoucher, type VoucherLookupResult } from "@/lib/saas-api";
+import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions, lookupGiftVoucher, type VoucherLookupResult, fetchCustomerByCard } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
@@ -1144,10 +1144,46 @@ export function POS() {
   const normalizeBarcode = (s: string | null | undefined): string =>
     (s ?? "").trim().toLowerCase();
 
+  // Loyalty card numbers are "LM" + 10 digits (see api-server customers route).
+  const CARD_PATTERN = /^LM\d{10}$/i;
+
+  // Resolve a scanned loyalty card to its customer and select them at the POS.
+  const selectCustomerByCard = async (code: string) => {
+    try {
+      const customer = await fetchCustomerByCard(code);
+      setSelectedCustomerOverride({
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone ?? null,
+        email: customer.email ?? null,
+        loyaltyPoints: customer.loyaltyPoints,
+      });
+      setSelectedCustomerId(customer.id);
+      toast({
+        title: "Customer selected",
+        description: `${customer.name} — ${customer.loyaltyPoints} loyalty points`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Card not recognized",
+        description: err instanceof ApiError && err.status === 404
+          ? "No customer is linked to that loyalty card."
+          : "Could not look up that loyalty card.",
+      });
+    }
+  };
+
   // Process a scanned/typed code. Returns true if it was consumed.
   const tryConsumeCode = (raw: string): boolean => {
     const code = raw.trim();
     if (!code) return false;
+    // Loyalty card scan: select the customer instead of adding a product.
+    if (CARD_PATTERN.test(code)) {
+      void selectCustomerByCard(code);
+      setSearchTerm("");
+      return true;
+    }
     // Weight-embedded EAN-13 barcode: starts with '2', exactly 13 digits.
     if (/^2\d{12}$/.test(code)) {
       void addWeightLabelToCart(code);
@@ -1216,6 +1252,7 @@ export function POS() {
     if (barcodeAmbiguity) return;
     const code = searchTerm.trim();
     if (!code || !products) return;
+    const isCard = CARD_PATTERN.test(code);
     const isEan = /^2\d{12}$/.test(code);
     const normalizedCode = normalizeBarcode(code);
     const hasAnyMatch = products.some(
@@ -1223,7 +1260,7 @@ export function POS() {
         normalizeBarcode(p.barcode) === normalizedCode ||
         normalizeBarcode(p.sku) === normalizedCode,
     );
-    if (!isEan && !hasAnyMatch) return;
+    if (!isCard && !isEan && !hasAnyMatch) return;
     const t = setTimeout(() => {
       tryConsumeCode(code);
     }, 120);

@@ -738,6 +738,7 @@ export interface Customer {
   state?: string | null;
   postalCode?: string | null;
   notes?: string | null;
+  cardNumber?: string | null;
   loyaltyPoints: number;
   totalSpent: number;
   orderCount: number;

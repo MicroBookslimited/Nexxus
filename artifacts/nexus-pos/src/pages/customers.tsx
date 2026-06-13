@@ -6,6 +6,7 @@ import {
   useUpdateCustomer,
   useDeleteCustomer,
   useGetCustomerOrders,
+  useGetSettings,
 } from "@workspace/api-client-react";
 import type { GetCustomerResponse } from "@workspace/api-zod";
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,9 +47,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, Pencil, Trash2, Users, Star, Phone, Mail, ShoppingBag, Upload, FileDown, FileSpreadsheet, ChevronRight, AlertTriangle } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Users, Star, Phone, Mail, ShoppingBag, Upload, FileDown, FileSpreadsheet, ChevronRight, AlertTriangle, CreditCard, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { csvDownload, parseSpreadsheet, type ImportResult } from "@/lib/spreadsheet-import";
+import { printCustomerCard, cardBarcodeDataUrl } from "@/lib/customer-card-doc";
 
 type CustomerForm = {
   name: string;
@@ -481,7 +483,9 @@ export function Customers() {
   const [form, setForm] = useState<CustomerForm>(emptyForm());
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [historyCustomer, setHistoryCustomer] = useState<GetCustomerResponse | null>(null);
+  const [cardCustomer, setCardCustomer] = useState<GetCustomerResponse | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const { data: settings } = useGetSettings();
 
   const openAdd = () => {
     setEditingCustomer(null);
@@ -645,11 +649,14 @@ export function Customers() {
                       </div>
                     </div>
                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => setCardCustomer(customer)}>
+                        <CreditCard className="h-3 w-3 mr-1" />Card
+                      </Button>
                       <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => setHistoryCustomer(customer)}>
                         <ShoppingBag className="h-3 w-3 mr-1" />History
                       </Button>
-                      <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => openEdit(customer)}>
-                        <Pencil className="h-3 w-3 mr-1" />Edit
+                      <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => openEdit(customer)}>
+                        <Pencil className="h-3 w-3" />
                       </Button>
                       <Button size="sm" variant="outline" className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:border-destructive" onClick={() => setDeleteId(customer.id)}>
                         <Trash2 className="h-3 w-3" />
@@ -731,6 +738,68 @@ export function Customers() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Loyalty card dialog */}
+      <Dialog open={!!cardCustomer} onOpenChange={(o) => !o && setCardCustomer(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Loyalty Card</DialogTitle>
+          </DialogHeader>
+          {cardCustomer && (
+            <div className="space-y-4">
+              {cardCustomer.cardNumber ? (
+                <>
+                  <div className="rounded-2xl overflow-hidden border-2 border-[#0B1E2D] bg-gradient-to-br from-[#0B1E2D] to-[#15324a] text-white p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-extrabold text-sm">
+                        {settings?.business_name || "NEXXUS POS"}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-[0.15em] opacity-80">
+                        Loyalty Card
+                      </span>
+                    </div>
+                    <p className="text-[10px] uppercase tracking-wider font-bold opacity-70">Member</p>
+                    <p className="text-xl font-extrabold mb-2 truncate">{cardCustomer.name}</p>
+                    <p className="text-xs opacity-90 mb-3">
+                      Loyalty points: <b className="text-sm">{cardCustomer.loyaltyPoints.toLocaleString("en-US")}</b>
+                    </p>
+                    <div className="bg-white rounded-lg p-2 text-center">
+                      <img
+                        src={cardBarcodeDataUrl(cardCustomer.cardNumber)}
+                        alt={cardCustomer.cardNumber}
+                        className="max-w-full h-auto mx-auto"
+                      />
+                      <p className="font-mono font-bold tracking-[0.2em] text-[#0B1E2D] text-sm mt-1">
+                        {cardCustomer.cardNumber}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    className="w-full gap-2"
+                    onClick={() =>
+                      printCustomerCard(
+                        {
+                          name: cardCustomer.name,
+                          cardNumber: cardCustomer.cardNumber!,
+                          loyaltyPoints: cardCustomer.loyaltyPoints,
+                          memberSince: cardCustomer.createdAt ?? null,
+                        },
+                        settings ?? {},
+                      )
+                    }
+                  >
+                    <Printer className="h-4 w-4" />Print card
+                  </Button>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  This customer doesn't have a loyalty card number yet.
+                </p>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>

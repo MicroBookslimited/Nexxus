@@ -38,7 +38,31 @@ function normalizeCustomer(c: typeof customersTable.$inferSelect) {
     state: c.state ?? undefined,
     postalCode: c.postalCode ?? undefined,
     notes: c.notes ?? undefined,
+    cardNumber: c.cardNumber ?? undefined,
   };
+}
+
+/* ─── Loyalty card numbers ───
+ * Format: "LM" + 10 digits (e.g. "LM0481739204"). The "LM" prefix lets the
+ * POS scan handler recognise a customer card vs a product barcode. Unique per
+ * tenant (DB index `customers_tenant_card_uq`); we retry on the (very rare)
+ * random collision before giving up. */
+function randomCardNumber(): string {
+  let digits = "";
+  for (let i = 0; i < 10; i++) digits += Math.floor(Math.random() * 10);
+  return `LM${digits}`;
+}
+
+async function generateUniqueCardNumber(tenantId: number): Promise<string> {
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const candidate = randomCardNumber();
+    const [existing] = await db
+      .select({ id: customersTable.id })
+      .from(customersTable)
+      .where(and(eq(customersTable.tenantId, tenantId), eq(customersTable.cardNumber, candidate)));
+    if (!existing) return candidate;
+  }
+  throw new Error("Could not generate a unique loyalty card number");
 }
 
 router.get("/customers", async (req, res): Promise<void> => {
@@ -70,6 +94,8 @@ router.post("/customers", async (req, res): Promise<void> => {
     return;
   }
 
+  const cardNumber = await generateUniqueCardNumber(tenantId);
+
   const [customer] = await db
     .insert(customersTable)
     .values({
@@ -83,6 +109,7 @@ router.post("/customers", async (req, res): Promise<void> => {
       state: parsed.data.state,
       postalCode: parsed.data.postalCode,
       notes: parsed.data.notes,
+      cardNumber,
     })
     .returning();
 
@@ -161,6 +188,33 @@ router.get("/customers/:id/receipt-info", async (req, res): Promise<void> => {
     loyaltyPoints: customer.loyaltyPoints,
     outstandingBalance: Number(arRow?.outstanding ?? 0),
   });
+});
+
+/**
+ * Look up a customer by their loyalty card number (tenant-scoped). Used by the
+ * POS to resolve a scanned customer card to the customer + loyalty balance.
+ * Registered before "/customers/:id" — though the segment counts differ, this
+ * keeps the card path unambiguous.
+ */
+router.get("/customers/by-card/:cardNumber", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const raw = Array.isArray(req.params.cardNumber) ? req.params.cardNumber[0] : req.params.cardNumber;
+  const cardNumber = (raw ?? "").trim();
+  if (!cardNumber) { res.status(400).json({ error: "Invalid card number" }); return; }
+
+  const [customer] = await db
+    .select()
+    .from(customersTable)
+    .where(and(eq(customersTable.cardNumber, cardNumber), eq(customersTable.tenantId, tenantId)));
+
+  if (!customer) {
+    res.status(404).json({ error: "Customer not found" });
+    return;
+  }
+
+  res.json(GetCustomerResponse.parse(normalizeCustomer(customer)));
 });
 
 router.get("/customers/:id", async (req, res): Promise<void> => {

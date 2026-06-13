@@ -275,6 +275,23 @@ export interface CustomerReceiptInfo {
 export const fetchCustomerReceiptInfo = (id: number) =>
   api<CustomerReceiptInfo>(`/customers/${id}/receipt-info`, { headers: tenantAuthHeaders() });
 
+export interface CustomerByCardResult {
+  id: number;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  loyaltyPoints: number;
+  cardNumber?: string | null;
+}
+
+/** Look up a customer by their scanned loyalty card number. Throws an ApiError
+ * (404) when no customer matches the card for this tenant. */
+export const fetchCustomerByCard = (cardNumber: string) =>
+  api<CustomerByCardResult>(`/customers/by-card/${encodeURIComponent(cardNumber.trim())}`, {
+    headers: tenantAuthHeaders(),
+    cache: "no-store",
+  });
+
 export interface VoucherLookupResult {
   id: number;
   code: string;

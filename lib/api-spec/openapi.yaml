@@ -1025,6 +1025,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/Customer"
 
+  /customers/by-card/{cardNumber}:
+    get:
+      operationId: getCustomerByCard
+      tags: [customers]
+      summary: Look up a customer by loyalty card number
+      parameters:
+        - name: cardNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "404":
+          description: No customer with that card number
+
   /customers/{id}:
     get:
       operationId: getCustomer
@@ -3307,6 +3328,9 @@ components:
           type: string
           nullable: true
         notes:
+          type: string
+          nullable: true
+        cardNumber:
           type: string
           nullable: true
         loyaltyPoints:

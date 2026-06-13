@@ -4377,6 +4377,95 @@ export const useCreateCustomer = <
 };
 
 /**
+ * @summary Look up a customer by loyalty card number
+ */
+export const getGetCustomerByCardUrl = (cardNumber: string) => {
+  return `/api/customers/by-card/${cardNumber}`;
+};
+
+export const getCustomerByCard = async (
+  cardNumber: string,
+  options?: RequestInit,
+): Promise<Customer> => {
+  return customFetch<Customer>(getGetCustomerByCardUrl(cardNumber), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCustomerByCardQueryKey = (cardNumber: string) => {
+  return [`/api/customers/by-card/${cardNumber}`] as const;
+};
+
+export const getGetCustomerByCardQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCustomerByCard>>,
+  TError = ErrorType<void>,
+>(
+  cardNumber: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCustomerByCard>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCustomerByCardQueryKey(cardNumber);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCustomerByCard>>
+  > = ({ signal }) =>
+    getCustomerByCard(cardNumber, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!cardNumber,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCustomerByCard>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCustomerByCardQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCustomerByCard>>
+>;
+export type GetCustomerByCardQueryError = ErrorType<void>;
+
+/**
+ * @summary Look up a customer by loyalty card number
+ */
+
+export function useGetCustomerByCard<
+  TData = Awaited<ReturnType<typeof getCustomerByCard>>,
+  TError = ErrorType<void>,
+>(
+  cardNumber: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCustomerByCard>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCustomerByCardQueryOptions(cardNumber, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Get a customer by ID
  */
 export const getGetCustomerUrl = (id: number) => {

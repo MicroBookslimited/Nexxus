@@ -2572,6 +2572,7 @@ export const ListCustomersResponseItem = zod.object({
   state: zod.string().nullish(),
   postalCode: zod.string().nullish(),
   notes: zod.string().nullish(),
+  cardNumber: zod.string().nullish(),
   loyaltyPoints: zod.number(),
   totalSpent: zod.number(),
   orderCount: zod.number(),
@@ -2595,6 +2596,31 @@ export const CreateCustomerBody = zod.object({
 });
 
 /**
+ * @summary Look up a customer by loyalty card number
+ */
+export const GetCustomerByCardParams = zod.object({
+  cardNumber: zod.coerce.string(),
+});
+
+export const GetCustomerByCardResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  email: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  company: zod.string().nullish(),
+  address: zod.string().nullish(),
+  city: zod.string().nullish(),
+  state: zod.string().nullish(),
+  postalCode: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  cardNumber: zod.string().nullish(),
+  loyaltyPoints: zod.number(),
+  totalSpent: zod.number(),
+  orderCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
  * @summary Get a customer by ID
  */
 export const GetCustomerParams = zod.object({
@@ -2612,6 +2638,7 @@ export const GetCustomerResponse = zod.object({
   state: zod.string().nullish(),
   postalCode: zod.string().nullish(),
   notes: zod.string().nullish(),
+  cardNumber: zod.string().nullish(),
   loyaltyPoints: zod.number(),
   totalSpent: zod.number(),
   orderCount: zod.number(),
@@ -2648,6 +2675,7 @@ export const UpdateCustomerResponse = zod.object({
   state: zod.string().nullish(),
   postalCode: zod.string().nullish(),
   notes: zod.string().nullish(),
+  cardNumber: zod.string().nullish(),
   loyaltyPoints: zod.number(),
   totalSpent: zod.number(),
   orderCount: zod.number(),
