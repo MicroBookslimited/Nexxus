@@ -9,6 +9,10 @@ import {
   useGetSettings,
   useGetCurrentCashSession,
   getListCustomersQueryKey,
+  useListHeldOrders,
+  useCreateHeldOrder,
+  useDeleteHeldOrder,
+  getListHeldOrdersQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
@@ -49,6 +53,8 @@ import {
   SplitSquareHorizontal,
   ChevronDown,
   ChevronUp,
+  PauseCircle,
+  PlayCircle,
 } from "lucide-react";
 import { buildReceiptHtml, receiptOrderFrom } from "@/lib/receipt";
 import { printOrderReceipt } from "@/lib/print-receipt";
@@ -130,6 +136,10 @@ export function PosSupermarket() {
   const { data: customers } = useListCustomers();
   const createOrder = useCreateOrder();
   const createCustomer = useCreateCustomer();
+  const { data: heldOrders } = useListHeldOrders();
+  const createHeldOrder = useCreateHeldOrder();
+  const deleteHeldOrder = useDeleteHeldOrder();
+  const [heldSheetOpen, setHeldSheetOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -350,6 +360,85 @@ export function PosSupermarket() {
     setVoucherCodeInput("");
     setAppliedVoucher(null);
     setVoucherLookupBusy(false);
+  };
+
+  /* ── Hold / recall bill ───────────────────────────────────────────────────
+     Routine cashier actions in supermarket mode (no manager PIN): holding saves
+     the current bill and clears the lane, recalling reloads a saved bill. */
+  const handleHoldBill = () => {
+    if (cart.length === 0) {
+      toast({ title: "Bill is empty", description: "Scan items before holding a bill.", variant: "destructive" });
+      return;
+    }
+    createHeldOrder.mutate(
+      {
+        data: {
+          items: cart.map((c) => ({
+            productId: c.productId,
+            productName: c.productName,
+            price: c.price,
+            quantity: c.quantity,
+          })),
+        },
+      },
+      {
+        onSuccess: () => {
+          resetCart();
+          toast({ title: "Bill held", description: "Lane cleared. Recall it any time with Recall." });
+          queryClient.invalidateQueries({ queryKey: getListHeldOrdersQueryKey() });
+          focusScanInput();
+        },
+        onError: () => {
+          toast({ title: "Could not hold bill", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const handleRecallBill = (id: number) => {
+    const held = heldOrders?.find((h) => h.id === id);
+    if (!held) return;
+    if (cart.length > 0) {
+      const ok = window.confirm("This will replace the current bill. Continue?");
+      if (!ok) return;
+    }
+    const productMap = new Map(productList.map((p) => [p.id, p]));
+    setCart(
+      held.items.map((item, idx) => {
+        const p = productMap.get(item.productId);
+        return {
+          cartKey: `${item.productId}:recall:${Date.now()}:${idx}`,
+          productId: item.productId,
+          productName: item.productName,
+          barcode: p?.barcode ?? null,
+          price: item.price,
+          quantity: item.quantity,
+          isTaxable: p?.isTaxable ?? true,
+        };
+      }),
+    );
+    setSelectedKey(null);
+    setHeldSheetOpen(false);
+    focusScanInput();
+    deleteHeldOrder.mutate(
+      { id },
+      {
+        onSuccess: () => {
+          toast({ title: "Bill recalled" });
+          queryClient.invalidateQueries({ queryKey: getListHeldOrdersQueryKey() });
+        },
+        onError: () => {
+          // Cart is already restored; warn that the stale held bill couldn't be
+          // removed so the cashier doesn't accidentally recall it twice.
+          toast({
+            title: "Bill recalled, but cleanup failed",
+            description: "The held bill may still appear in the list — refresh before recalling it again.",
+            variant: "destructive",
+          });
+          queryClient.invalidateQueries({ queryKey: getListHeldOrdersQueryKey() });
+        },
+      },
+    );
   };
 
   /* ── Numeric keypad ───────────────────────────────────────────────────── */
@@ -801,16 +890,42 @@ export function PosSupermarket() {
                 ({itemCount} {itemCount === 1 ? "item" : "items"})
               </span>
             </h2>
-            {cart.length > 0 && (
-              <button
-                onClick={() => requestSupermarketAction({ type: "clear" }, true)}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 h-9 text-sm font-semibold text-white bg-rose-500 hover:bg-rose-600 transition"
-                title="Clear bill"
-              >
-                <Trash2 className="h-4 w-4" />
-                Clear
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {cart.length > 0 && (
+                <button
+                  onClick={handleHoldBill}
+                  disabled={createHeldOrder.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 h-9 text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Hold this bill and clear the lane"
+                >
+                  <PauseCircle className="h-4 w-4" />
+                  Hold
+                </button>
+              )}
+              {heldOrders && heldOrders.length > 0 && (
+                <button
+                  onClick={() => setHeldSheetOpen(true)}
+                  className="relative inline-flex items-center gap-1.5 rounded-lg px-3 h-9 text-sm font-semibold text-white bg-teal-500 hover:bg-teal-600 transition"
+                  title={`${heldOrders.length} held bill(s)`}
+                >
+                  <PlayCircle className="h-4 w-4" />
+                  Recall
+                  <span className="ml-0.5 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-white/25 text-white text-[11px] font-mono font-bold">
+                    {heldOrders.length}
+                  </span>
+                </button>
+              )}
+              {cart.length > 0 && (
+                <button
+                  onClick={() => requestSupermarketAction({ type: "clear" }, true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 h-9 text-sm font-semibold text-white bg-rose-500 hover:bg-rose-600 transition"
+                  title="Clear bill"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Column headers */}
@@ -1239,6 +1354,47 @@ export function PosSupermarket() {
               toast({ title: "Override approved", description: `Authorized by ${staff.name}` });
             }}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Held bills dialog ────────────────────────────────────────── */}
+      <Dialog open={heldSheetOpen} onOpenChange={(o) => { setHeldSheetOpen(o); if (!o) focusScanInput(); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PlayCircle className="h-5 w-5 text-teal-500" />
+              Held Bills
+            </DialogTitle>
+            <DialogDescription>Tap a bill to load it back into the lane.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-1 space-y-2 max-h-[60vh] overflow-y-auto">
+            {(!heldOrders || heldOrders.length === 0) ? (
+              <p className="text-sm text-muted-foreground px-1 py-4 text-center">
+                No held bills. Use Hold to park the current bill.
+              </p>
+            ) : (
+              heldOrders.map((h) => {
+                const lineTotal = h.items.reduce((s, it) => s + it.price * it.quantity, 0);
+                return (
+                  <button
+                    key={h.id}
+                    onClick={() => handleRecallBill(h.id)}
+                    className="w-full text-left rounded-xl border border-border hover:border-teal-400/60 hover:bg-teal-500/5 transition px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-foreground">{h.label ?? `Bill #${h.id}`}</span>
+                      <span className="font-mono font-bold text-teal-600 dark:text-teal-300">
+                        {formatCurrency(lineTotal, baseCurrency)}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {h.items.length} {h.items.length === 1 ? "item" : "items"}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
