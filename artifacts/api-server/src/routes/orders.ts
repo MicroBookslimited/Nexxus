@@ -110,6 +110,8 @@ function normalizeOrder(order: typeof ordersTable.$inferSelect) {
     giftVoucherAmount: order.giftVoucherAmount ?? undefined,
     notes: order.notes ?? undefined,
     voidReason: order.voidReason ?? undefined,
+    refundMethod: order.refundMethod ?? undefined,
+    refundedAt: order.refundedAt ?? undefined,
     customerId: order.customerId ?? undefined,
     tableId: order.tableId ?? undefined,
     staffId: order.staffId ?? undefined,
@@ -1917,6 +1919,8 @@ router.post("/orders/:id/refund-items", async (req, res): Promise<void> => {
           loyaltyDiscount: newLoyaltyDiscount,
           total: newTotal,
           refundedTotal: newRefundedTotal,
+          refundMethod: parsed.data.refundToVoucher ? "voucher" : "cash",
+          refundedAt: new Date(),
           status: fullyRefunded ? "refunded" : "completed",
           voidReason: parsed.data.reason,
         })

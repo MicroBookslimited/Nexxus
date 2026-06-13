@@ -37,6 +37,12 @@ export const ordersTable = pgTable("orders", {
   // refunds. Stays 0 for orders never partially refunded. A completed order
   // with refundedTotal > 0 is shown as "Partially refunded".
   refundedTotal: real("refunded_total").default(0),
+  // Method used for the MOST RECENT refund on this order ("cash" | "voucher").
+  // Captured so a later refund-slip reprint can show how the customer was
+  // refunded. Null for orders that were never refunded.
+  refundMethod: text("refund_method"),
+  // Timestamp of the most recent refund, so reprints show the true refund date.
+  refundedAt: timestamp("refunded_at", { withTimezone: true }),
   staffId: integer("staff_id"),
   locationId: integer("location_id"),
   stationNumber: integer("station_number"),

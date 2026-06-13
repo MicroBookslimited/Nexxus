@@ -327,6 +327,10 @@ export interface Order {
   total: number;
   /** Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded. */
   refundedTotal?: number | null;
+  /** Method of the most recent refund on this order ("cash" or "voucher"). Captured so a refund-slip reprint can show how the customer was refunded. NULL = never refunded. */
+  refundMethod?: string | null;
+  /** Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded. */
+  refundedAt?: string | null;
   paymentMethod?: string | null;
   splitCardAmount?: number | null;
   splitCashAmount?: number | null;

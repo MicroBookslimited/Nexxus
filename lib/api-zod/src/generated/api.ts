@@ -891,6 +891,18 @@ export const ListOrdersResponseItem = zod.object({
     .describe(
       "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
     ),
+  refundMethod: zod
+    .string()
+    .nullish()
+    .describe(
+      'Method of the most recent refund on this order (\"cash\" or \"voucher\"). Captured so a refund-slip reprint can show how the customer was refunded. NULL = never refunded.',
+    ),
+  refundedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
+    ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
@@ -1113,6 +1125,18 @@ export const GetOrderResponse = zod.object({
     .describe(
       "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
     ),
+  refundMethod: zod
+    .string()
+    .nullish()
+    .describe(
+      'Method of the most recent refund on this order (\"cash\" or \"voucher\"). Captured so a refund-slip reprint can show how the customer was refunded. NULL = never refunded.',
+    ),
+  refundedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
+    ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
@@ -1260,6 +1284,18 @@ export const UpdateOrderStatusResponse = zod.object({
     .nullish()
     .describe(
       "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+    ),
+  refundMethod: zod
+    .string()
+    .nullish()
+    .describe(
+      'Method of the most recent refund on this order (\"cash\" or \"voucher\"). Captured so a refund-slip reprint can show how the customer was refunded. NULL = never refunded.',
+    ),
+  refundedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
     ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
@@ -1423,6 +1459,18 @@ export const RefundOrderItemsResponse = zod.object({
       .nullish()
       .describe(
         "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+      ),
+    refundMethod: zod
+      .string()
+      .nullish()
+      .describe(
+        'Method of the most recent refund on this order (\"cash\" or \"voucher\"). Captured so a refund-slip reprint can show how the customer was refunded. NULL = never refunded.',
+      ),
+    refundedAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
       ),
     paymentMethod: zod.string().nullish(),
     splitCardAmount: zod.number().nullish(),
@@ -1621,6 +1669,18 @@ export const ChargeOrderResponse = zod.object({
     .nullish()
     .describe(
       "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+    ),
+  refundMethod: zod
+    .string()
+    .nullish()
+    .describe(
+      'Method of the most recent refund on this order (\"cash\" or \"voucher\"). Captured so a refund-slip reprint can show how the customer was refunded. NULL = never refunded.',
+    ),
+  refundedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
     ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
@@ -2281,6 +2341,18 @@ export const GetRecentOrdersResponseItem = zod.object({
     .describe(
       "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
     ),
+  refundMethod: zod
+    .string()
+    .nullish()
+    .describe(
+      'Method of the most recent refund on this order (\"cash\" or \"voucher\"). Captured so a refund-slip reprint can show how the customer was refunded. NULL = never refunded.',
+    ),
+  refundedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
+    ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
@@ -2577,6 +2649,18 @@ export const GetCustomerOrdersResponseItem = zod.object({
     .nullish()
     .describe(
       "Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded.",
+    ),
+  refundMethod: zod
+    .string()
+    .nullish()
+    .describe(
+      'Method of the most recent refund on this order (\"cash\" or \"voucher\"). Captured so a refund-slip reprint can show how the customer was refunded. NULL = never refunded.',
+    ),
+  refundedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp of the most recent refund, so a refund-slip reprint shows the true refund date. NULL = never refunded.",
     ),
   paymentMethod: zod.string().nullish(),
   splitCardAmount: zod.number().nullish(),

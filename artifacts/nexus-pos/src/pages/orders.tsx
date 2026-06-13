@@ -328,11 +328,11 @@ export function Orders() {
     }
   };
 
-  // Reprint a refund slip from an order's *cumulative* refund history. Unlike
-  // the auto-print at refund time, we only have the order's current state here,
-  // so we show every refunded line (qty = refundedQuantity) and the order's
-  // accumulated refundedTotal; the refund method isn't persisted per order, so
-  // it's omitted on a reprint.
+  // Reprint a refund slip from an order's *cumulative* refund history. We show
+  // every refunded line (qty = refundedQuantity) and the order's accumulated
+  // refundedTotal. The method/date reflect the MOST RECENT refund (persisted on
+  // the order as refundMethod/refundedAt); for an order refunded in several
+  // events this is a cumulative summary, not a per-event copy.
   const handleReprintRefundReceipt = (order: NonNullable<typeof orders>[0]) => {
     const refundedLines = order.items.filter((i) => (i.refundedQuantity ?? 0) > 0);
     if (refundedLines.length === 0) {
@@ -354,13 +354,14 @@ export function Orders() {
     const refundData: RefundReceiptData = {
       orderNumber: order.orderNumber,
       originalDate: order.createdAt,
-      refundDate: new Date(),
+      refundDate: order.refundedAt ?? new Date(),
       staffName: order.staffName ?? null,
       stationNumber: order.stationNumber ?? null,
       customerName: order.customerName ?? null,
       items,
       refundTotal: order.refundedTotal ?? items.reduce((s, i) => s + i.amount, 0),
       reason: order.voidReason ?? null,
+      refundMethod: order.refundMethod === "voucher" ? "voucher" : order.refundMethod === "cash" ? "cash" : undefined,
       fullyRefunded: order.status === "refunded",
       isReprint: true,
     };
