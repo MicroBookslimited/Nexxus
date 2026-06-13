@@ -846,6 +846,11 @@ export function PosSupermarket() {
             <Store className="h-3.5 w-3.5 text-white" />
             <span className="text-xs font-semibold text-white tracking-wide">Supermarket Mode</span>
           </div>
+          {cashSession?.session?.stationNumber != null && (
+            <div className="flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1 shadow-sm">
+              <span className="text-xs font-bold text-white tracking-wide">Station #{cashSession.session.stationNumber}</span>
+            </div>
+          )}
         </div>
 
         <div className="ml-auto flex items-center gap-2 shrink-0">
@@ -1154,7 +1159,7 @@ export function PosSupermarket() {
             ) : (
               <button
                 onClick={() => setCustomerOpen(true)}
-                className="w-full rounded-xl border border-dashed border-cyan-500/40 px-3 py-2.5 text-sm text-muted-foreground hover:bg-cyan-500/5 hover:text-cyan-600 dark:hover:text-cyan-200 transition flex items-center justify-center gap-2"
+                className="w-full rounded-xl bg-cyan-600 hover:bg-cyan-700 px-3 py-2.5 text-sm font-semibold text-white shadow-md transition flex items-center justify-center gap-2"
               >
                 <UserPlus className="h-4 w-4" />
                 Add Customer (optional)
