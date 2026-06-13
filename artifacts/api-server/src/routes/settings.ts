@@ -27,6 +27,7 @@ const DEFAULTS: Record<string, string> = {
   business_name: "NEXXUS POS",
   business_address: "",
   business_phone: "",
+  business_tax_number: "",
   tax_rate: "15",
   tax_mode: "exclusive",
   receipt_footer: "Thank you for your business!",

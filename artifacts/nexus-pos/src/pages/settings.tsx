@@ -40,6 +40,7 @@ export function AdminSettings() {
   const [businessLogoUrl, setBusinessLogoUrl] = useState("");
   const [logoUploading, setLogoUploading] = useState(false);
   const [businessPhone, setBusinessPhone] = useState("");
+  const [businessTaxNumber, setBusinessTaxNumber] = useState("");
   const [taxRate, setTaxRate] = useState("");
   const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
   const [receiptFooter, setReceiptFooter] = useState("");
@@ -93,6 +94,7 @@ export function AdminSettings() {
     setBusinessAddress(settings.business_address ?? "");
     setBusinessLogoUrl(settings.business_logo_url ?? "");
     setBusinessPhone(settings.business_phone ?? "");
+    setBusinessTaxNumber(settings.business_tax_number ?? "");
     setTaxRate(settings.tax_rate ?? "15");
     setTaxMode((settings.tax_mode as "exclusive" | "inclusive") ?? "exclusive");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
@@ -139,6 +141,7 @@ export function AdminSettings() {
           business_name: businessName,
           business_address: businessAddress,
           business_phone: businessPhone,
+          business_tax_number: businessTaxNumber.trim(),
           business_logo_url: businessLogoUrl,
           tax_rate: taxRate,
           tax_mode: taxMode,
@@ -323,6 +326,16 @@ export function AdminSettings() {
               onChange={(e) => { setBusinessAddress(e.target.value); markDirty(); }}
               placeholder="123 Main Street, City, State 00000"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="biz-gct">GCT Registration Number</Label>
+            <Input
+              id="biz-gct"
+              value={businessTaxNumber}
+              onChange={(e) => { setBusinessTaxNumber(e.target.value); markDirty(); }}
+              placeholder="e.g. 000-000-000"
+            />
+            <p className="text-xs text-muted-foreground">Shown on every receipt after the business address.</p>
           </div>
 
           {/* Business Logo */}

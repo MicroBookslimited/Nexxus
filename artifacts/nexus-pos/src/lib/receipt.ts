@@ -4,6 +4,7 @@ export interface ReceiptSettings {
   business_name?: string;
   business_address?: string;
   business_phone?: string;
+  business_tax_number?: string;  // GCT / tax registration number shown after the address
   business_logo_url?: string;
   receipt_footer?: string;
   tax_rate?: string;
@@ -236,6 +237,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   const businessName      = settings.business_name      || "NEXXUS POS";
   const businessAddress   = settings.business_address   || "";
   const businessPhone     = settings.business_phone     || "";
+  const businessTaxNumber = (settings.business_tax_number || "").trim();
   const receiptFooter     = settings.receipt_footer     || "Thank you for your business!";
   const receiptSize       = settings.receipt_size       || "80mm";
   const template          = settings.receipt_template   || "classic";
@@ -270,7 +272,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   // ── Supermarket template — render its own document and early-return ───────
   if (template === "supermarket") {
     return buildSupermarketReceiptHtml(order, settings, {
-      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress, businessTaxNumber,
       businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
       taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
       secondaryCurrency, exchangeRate,
@@ -280,7 +282,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   // ── Convenience-store template ─────────────────────────────────────────────
   if (template === "convenience") {
     return buildConvenienceReceiptHtml(order, settings, {
-      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress, businessTaxNumber,
       businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
       taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
       secondaryCurrency, exchangeRate,
@@ -290,7 +292,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   // ── Staple-store template ──────────────────────────────────────────────────
   if (template === "staple") {
     return buildStapleReceiptHtml(order, settings, {
-      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress, businessTaxNumber,
       businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
       taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
       secondaryCurrency, exchangeRate,
@@ -300,7 +302,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   // ── Hardware-store half-letter template — full sheet, render & early-return ─
   if (template === "hardware") {
     return buildHardwareReceiptHtml(order, settings, {
-      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+      escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress, businessTaxNumber,
       businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
       taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
       secondaryCurrency, exchangeRate,
@@ -468,7 +470,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
 
   ${logoHtml}
   <div class="r-biz">${escHtml(businessName)}</div>
-  <div class="r-addr">${addrLines}${phoneLine}</div>
+  <div class="r-addr">${addrLines}${businessTaxNumber ? `<div>GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}${phoneLine}</div>
 
   <div class="r-sep"></div>
 
@@ -721,9 +723,10 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     </div>`;
 
   // ── Address block ─────────────────────────────────────────────────────────
-  const addressBlock = (businessAddress || businessPhone) ? `
+  const addressBlock = (businessAddress || businessPhone || businessTaxNumber) ? `
     ${dividerHtml}
     ${businessAddress ? `<div class="center sub-text">${escHtml(businessAddress)}</div>` : ""}
+    ${businessTaxNumber ? `<div class="center sub-text">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
     ${businessPhone   ? `<div class="center sub-text">Tel: ${escHtml(businessPhone)}</div>` : ""}` : "";
 
   return `<!DOCTYPE html>
@@ -842,6 +845,7 @@ function buildSupermarketReceiptHtml(
     orderNum: string;
     businessName: string;
     businessAddress: string;
+    businessTaxNumber: string;
     businessPhone: string;
     businessLogoUrl: string;
     receiptFooter: string;
@@ -857,7 +861,7 @@ function buildSupermarketReceiptHtml(
   },
 ): string {
   const {
-    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress, businessTaxNumber,
     businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
     taxName, baseFontSize, subFontSize, bodyPadding, is58mm,
     secondaryCurrency, exchangeRate,
@@ -1148,6 +1152,7 @@ function buildSupermarketReceiptHtml(
   <div class="sm-store-name">${escHtml(businessName.toUpperCase())}</div>
   ${businessPhone ? `<div class="sm-center sm-sub">${escHtml(businessPhone)}</div>` : ""}
   ${addressLines.map(l => `<div class="sm-center sm-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
+  ${businessTaxNumber ? `<div class="sm-center sm-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
   ${order.staffName ? `<div class="sm-center sm-sub">CASHIER ${escHtml(order.staffName.toUpperCase())}</div>` : ""}
   ${order.stationNumber != null ? `<div class="sm-center sm-sub">STATION #${order.stationNumber}</div>` : ""}
 
@@ -1210,6 +1215,7 @@ type ReceiptCtx = {
   orderNum: string;
   businessName: string;
   businessAddress: string;
+  businessTaxNumber: string;
   businessPhone: string;
   businessLogoUrl: string;
   receiptFooter: string;
@@ -1230,7 +1236,7 @@ function buildConvenienceReceiptHtml(
   ctx: ReceiptCtx,
 ): string {
   const {
-    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress, businessTaxNumber,
     businessPhone, businessLogoUrl, receiptFooter, receiptSize,
     baseFontSize, subFontSize, bodyPadding, is58mm,
     secondaryCurrency, exchangeRate,
@@ -1438,6 +1444,7 @@ function buildConvenienceReceiptHtml(
   ${logoHtml}
   <div class="cv-name">${escHtml(businessName.toUpperCase())}</div>
   ${addressLines.map(l => `<div class="cv-center cv-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
+  ${businessTaxNumber ? `<div class="cv-center cv-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
   ${businessPhone ? `<div class="cv-center cv-sub">${escHtml(businessPhone)}</div>` : ""}
   ${order.staffName ? `<div class="cv-center cv-sub">CASHIER ${escHtml(order.staffName.toUpperCase())}</div>` : ""}
   ${order.stationNumber != null ? `<div class="cv-center cv-sub">STATION #${order.stationNumber}</div>` : ""}
@@ -1495,7 +1502,7 @@ function buildStapleReceiptHtml(
   ctx: ReceiptCtx,
 ): string {
   const {
-    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress, businessTaxNumber,
     businessPhone, businessLogoUrl, receiptFooter, receiptSize, taxRate,
     baseFontSize, subFontSize, bodyPadding, is58mm,
     secondaryCurrency, exchangeRate,
@@ -1734,6 +1741,7 @@ function buildStapleReceiptHtml(
   <div class="st-store-name">${escHtml(businessName.toUpperCase())}</div>
   ${receiptFooter ? `<div class="st-tagline">${escHtml(receiptFooter)}</div>` : ""}
   ${addressLines.map(l => `<div class="st-center st-sub">${escHtml(l)}</div>`).join("")}
+  ${businessTaxNumber ? `<div class="st-center st-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
   ${businessPhone ? `<div class="st-center st-sub">${escHtml(businessPhone)}</div>` : ""}
 
   <div class="st-div"></div>
@@ -1800,7 +1808,7 @@ function buildHardwareReceiptHtml(
   ctx: ReceiptCtx,
 ): string {
   const {
-    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress,
+    escHtml, fmt, fmtNum, dateStr, orderNum, businessName, businessAddress, businessTaxNumber,
     businessPhone, businessLogoUrl, receiptFooter, taxRate, taxName,
     secondaryCurrency, exchangeRate,
   } = ctx;
@@ -1987,6 +1995,7 @@ function buildHardwareReceiptHtml(
     <div>
       <div class="hw-biz-name">${escHtml(businessName)}</div>
       ${addressLines.map(l => `<div class="hw-biz-line">${escHtml(l)}</div>`).join("")}
+      ${businessTaxNumber ? `<div class="hw-biz-line">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
       ${businessPhone ? `<div class="hw-biz-line">Tel: ${escHtml(businessPhone)}</div>` : ""}
     </div>
     <div class="hw-meta-right">
@@ -2191,6 +2200,7 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
   const businessName      = settings.business_name      || "NEXXUS POS";
   const businessAddress   = settings.business_address   || "";
   const businessPhone     = settings.business_phone     || "";
+  const businessTaxNumber = (settings.business_tax_number || "").trim();
   const receiptFooter     = settings.receipt_footer     || "Thank you for your business!";
   const receiptSize       = settings.receipt_size       || "80mm";
   const is58mm            = receiptSize === "58mm";
@@ -2292,9 +2302,10 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
     if (order.loyaltyPointsRedeemed) loyaltyHtml += `<div class="center">- ${order.loyaltyPointsRedeemed} pts redeemed</div>`;
   }
 
-  const addressHtml = (businessAddress || businessPhone)
+  const addressHtml = (businessAddress || businessPhone || businessTaxNumber)
     ? `<div class="hr"></div>` +
       (businessAddress ? `<div class="center sub">${escHtml(businessAddress)}</div>` : "") +
+      (businessTaxNumber ? `<div class="center sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : "") +
       (businessPhone   ? `<div class="center sub">Tel: ${escHtml(businessPhone)}</div>` : "")
     : "";
 
@@ -2477,6 +2488,7 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, settings: Receip
   const baseCurrency    = settings.base_currency    || "JMD";
   const businessName    = settings.business_name    || "NEXXUS POS";
   const businessAddress = settings.business_address || "";
+  const businessTaxNumber = (settings.business_tax_number || "").trim();
   const businessPhone   = settings.business_phone   || "";
   const receiptFooter   = settings.receipt_footer   || "Thank you for your business!";
   const receiptSize     = settings.receipt_size     || "80mm";
@@ -2564,6 +2576,7 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, settings: Receip
   <body>
     <div class="rf-center rf-biz">${escHtml(businessName)}</div>
     ${businessAddress ? `<div class="rf-center rf-sub">${escHtml(businessAddress)}</div>` : ""}
+    ${businessTaxNumber ? `<div class="rf-center rf-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
     ${businessPhone ? `<div class="rf-center rf-sub">${escHtml(businessPhone)}</div>` : ""}
     <div class="rf-badge">${data.fullyRefunded ? "FULL REFUND" : "PARTIAL REFUND"}</div>
     <div class="rf-meta"><span>Order</span><span>${escHtml(data.orderNumber)}</span></div>
