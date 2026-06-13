@@ -46,6 +46,7 @@ export function AdminSettings() {
   const [receiptSize, setReceiptSize] = useState<"58mm" | "80mm">("80mm");
   const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant" | "hardware">("classic");
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
+  const [receiptBarcode, setReceiptBarcode] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState("JMD");
   const [secondaryCurrency, setSecondaryCurrency] = useState("");
   const [currencyRate, setCurrencyRate] = useState("");
@@ -97,6 +98,7 @@ export function AdminSettings() {
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
     setReceiptSize((settings.receipt_size as "58mm" | "80mm") ?? "80mm");
     setAutoPrintReceipt(settings.auto_print_receipt === "true");
+    setReceiptBarcode(settings.receipt_barcode === "true");
     setReceiptTemplate((settings.receipt_template as "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant" | "hardware") ?? "classic");
     setBaseCurrency(settings.base_currency ?? "JMD");
     setSecondaryCurrency(settings.secondary_currency ?? "");
@@ -143,6 +145,7 @@ export function AdminSettings() {
           receipt_footer: receiptFooter,
           receipt_size: receiptSize,
           auto_print_receipt: autoPrintReceipt ? "true" : "false",
+          receipt_barcode: receiptBarcode ? "true" : "false",
           receipt_template: receiptTemplate,
           base_currency: baseCurrency.toUpperCase().trim() || "JMD",
           secondary_currency: secondaryCurrency.toUpperCase().trim(),
@@ -507,6 +510,31 @@ export function AdminSettings() {
               <span className={cn(
                 "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
                 autoPrintReceipt ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+
+          {/* Receipt number barcode */}
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div className="pr-4">
+              <p className="text-sm font-medium">Print receipt-number barcode</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                When on, a scannable barcode encoding the receipt number is printed in the footer of every receipt — handy for quickly looking up or recalling a sale. Turn off to hide it.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={receiptBarcode}
+              onClick={() => { setReceiptBarcode(!receiptBarcode); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                receiptBarcode ? "bg-primary" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                receiptBarcode ? "translate-x-5" : "translate-x-0"
               )} />
             </button>
           </div>

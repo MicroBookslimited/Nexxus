@@ -1,3 +1,5 @@
+import JsBarcode from "jsbarcode";
+
 export interface ReceiptSettings {
   business_name?: string;
   business_address?: string;
@@ -11,6 +13,7 @@ export interface ReceiptSettings {
   currency_rate?: string;
   receipt_size?: string;       // "58mm" | "80mm"
   receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant" | "hardware"
+  receipt_barcode?: string;    // "true" | "false" — print a CODE128 barcode of the receipt number in the footer
 }
 
 export interface ReceiptOrderItem {
@@ -192,6 +195,33 @@ function escHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * Render a real, scannable CODE128 barcode that encodes the receipt (order)
+ * number as a centered PNG <img>, with the number printed beneath it. Returns
+ * "" on failure so the receipt still prints. Gated by the tenant's
+ * `receipt_barcode` setting at every call site.
+ */
+function receiptNumberBarcodeHtml(code: string): string {
+  const value = String(code ?? "").trim();
+  if (!value) return "";
+  try {
+    const canvas = document.createElement("canvas");
+    JsBarcode(canvas, value, {
+      format: "CODE128",
+      displayValue: true,
+      fontSize: 12,
+      textMargin: 0,
+      margin: 0,
+      width: 2,
+      height: 50,
+    });
+    const url = canvas.toDataURL("image/png");
+    return `<div style="text-align:center;margin:6px 0 2px;"><img src="${url}" alt="${escHtml(value)}" style="max-width:90%;height:auto;" /></div>`;
+  } catch {
+    return "";
+  }
+}
+
 export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings = {}): string {
   const baseCurrency      = settings.base_currency      || "JMD";
   const secondaryCurrency = settings.secondary_currency || "";
@@ -272,6 +302,12 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       secondaryCurrency, exchangeRate,
     });
   }
+
+  // Optional scannable barcode of the receipt number, shown in the footer of
+  // the inline templates (classic/modern/minimal/bold/restaurant) when enabled.
+  const barcodeFooterHtml = settings.receipt_barcode === "true"
+    ? receiptNumberBarcodeHtml(orderNum)
+    : "";
 
   // ── Restaurant template (Loyverse-style) ───────────────────────────────────
   // Bold business name, dotted separators, items with qty×price sub-line,
@@ -458,6 +494,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   ${loyaltyHtml2}
 
   ${receiptFooter ? `<div class="r-footer">${escHtml(receiptFooter)}</div>` : ""}
+  ${barcodeFooterHtml}
   <div class="r-powered">Powered by NEXXUS POS</div>
 
   <div class="r-sep"></div>
@@ -772,6 +809,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   ${dividerHtml}
 
   <div class="footer-msg">${escHtml(receiptFooter)}</div>
+  ${barcodeFooterHtml}
   <div class="powered">Powered by NEXXUS POS</div>
 
   ${dividerHtml}
@@ -791,7 +829,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
  */
 function buildSupermarketReceiptHtml(
   order: ReceiptOrder,
-  _settings: ReceiptSettings,
+  settings: ReceiptSettings,
   ctx: {
     escHtml: (s: string) => string;
     fmt: (n: number, cur?: string) => string;
@@ -972,7 +1010,9 @@ function buildSupermarketReceiptHtml(
     const isBar = (i + code) % 2 === 0;
     bars.push(`<span class="sm-bar" style="width:${w}px;background:${isBar ? "#000" : "transparent"};"></span>`);
   }
-  const barcodeHtml = `
+  const barcodeHtml = settings.receipt_barcode === "true"
+    ? receiptNumberBarcodeHtml(orderNum)
+    : `
     <div class="sm-barcode-wrap">
       <div class="sm-barcode">${bars.join("")}</div>
       <div class="sm-barcode-num">${escHtml(tcGrouped.slice(0, 19))}</div>
@@ -1184,7 +1224,7 @@ type ReceiptCtx = {
 
 function buildConvenienceReceiptHtml(
   order: ReceiptOrder,
-  _settings: ReceiptSettings,
+  settings: ReceiptSettings,
   ctx: ReceiptCtx,
 ): string {
   const {
@@ -1428,6 +1468,8 @@ function buildConvenienceReceiptHtml(
 
   ${receiptFooter ? `<div class="cv-footer-marketing">${escHtml(receiptFooter)}</div>` : ""}
 
+  ${settings.receipt_barcode === "true" ? receiptNumberBarcodeHtml(orderNum) : ""}
+
   <div class="cv-div-d"></div>
   <div class="cv-tid">${escHtml(dateStr)}</div>
   <div class="cv-powered">Powered by NEXXUS POS</div>
@@ -1447,7 +1489,7 @@ function buildConvenienceReceiptHtml(
 // ─────────────────────────────────────────────────────────────────────────────
 function buildStapleReceiptHtml(
   order: ReceiptOrder,
-  _settings: ReceiptSettings,
+  settings: ReceiptSettings,
   ctx: ReceiptCtx,
 ): string {
   const {
@@ -1576,7 +1618,9 @@ function buildStapleReceiptHtml(
     const isBar = (i + code) % 2 === 0;
     bars.push(`<span style="display:inline-block;width:${w}px;height:100%;background:${isBar?"#000":"transparent"};"></span>`);
   }
-  const barcodeHtml = `
+  const barcodeHtml = settings.receipt_barcode === "true"
+    ? receiptNumberBarcodeHtml(orderNum)
+    : `
     <div style="text-align:center;margin:6px 0 2px;">
       <div style="display:inline-flex;align-items:stretch;height:${is58mm?"40px":"52px"};padding:0 4px;">${bars.join("")}</div>
       <div style="font-size:${subFontSize};letter-spacing:2px;margin-top:2px;">${escHtml(orderNum.slice(-16).padStart(16,"0"))}</div>
@@ -1750,7 +1794,7 @@ function buildStapleReceiptHtml(
  */
 function buildHardwareReceiptHtml(
   order: ReceiptOrder,
-  _settings: ReceiptSettings,
+  settings: ReceiptSettings,
   ctx: ReceiptCtx,
 ): string {
   const {
@@ -1846,7 +1890,9 @@ function buildHardwareReceiptHtml(
     bars.push(`<span style="display:inline-block;width:${w}px;height:100%;background:${isBar ? "#000" : "transparent"};"></span>`);
   }
   const barcodeDigits = orderNum.replace(/\D/g, "") || orderNum;
-  const barcodeHtml = `
+  const barcodeHtml = settings.receipt_barcode === "true"
+    ? receiptNumberBarcodeHtml(orderNum)
+    : `
     <div class="hw-barcode">
       <div style="display:inline-flex;align-items:stretch;height:34px;">${bars.join("")}</div>
       <div class="hw-barcode-num">${escHtml(barcodeDigits)}</div>
