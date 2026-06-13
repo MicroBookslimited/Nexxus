@@ -2364,3 +2364,157 @@ export function openReceiptWindow(html: string, opts?: { receiptPageSize?: strin
     a.click();
   }
 }
+
+/** A single line on a refund slip — what was returned, how many, at what price. */
+export interface RefundReceiptLine {
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  /** Money refunded for this line (gross of the item: quantity × unitPrice). */
+  amount: number;
+  sellingUnit?: string | null;
+}
+
+/**
+ * Data for a dedicated refund slip. Distinct from a full sale receipt: it shows
+ * only the items being returned, the amount refunded, the reason, and how the
+ * money was returned (cash or store-credit voucher).
+ */
+export interface RefundReceiptData {
+  orderNumber: string;
+  /** When the original sale happened (printed for reference). */
+  originalDate?: string | Date | null;
+  /** When this refund was processed. */
+  refundDate: string | Date;
+  staffName?: string | null;
+  stationNumber?: number | null;
+  customerName?: string | null;
+  items: RefundReceiptLine[];
+  /** Tax/discount-aware breakdown of the refund; optional (only known at refund time, not on reprint). */
+  subtotalRefunded?: number | null;
+  taxRefunded?: number | null;
+  discountRefunded?: number | null;
+  /** Authoritative total returned to the customer (tax + discounts accounted for). */
+  refundTotal: number;
+  reason?: string | null;
+  refundMethod?: "cash" | "voucher" | null;
+  voucherCode?: string | null;
+  voucherBalance?: number | null;
+  fullyRefunded?: boolean;
+  isReprint?: boolean;
+}
+
+/**
+ * Build the HTML for a dedicated refund slip. Image-free and text-only by
+ * design so it prints safely on Android ESC/POS pass-through services and on
+ * desktop thermal/inkjet printers alike. Honors receipt size (58mm/80mm) and
+ * the business header/footer from settings.
+ */
+export function buildRefundReceiptHtml(data: RefundReceiptData, settings: ReceiptSettings = {}): string {
+  const baseCurrency    = settings.base_currency    || "JMD";
+  const businessName    = settings.business_name    || "NEXXUS POS";
+  const businessAddress = settings.business_address || "";
+  const businessPhone   = settings.business_phone   || "";
+  const receiptFooter   = settings.receipt_footer   || "Thank you for your business!";
+  const receiptSize     = settings.receipt_size     || "80mm";
+  const taxName         = settings.tax_name         || "GCT";
+  const is58mm          = receiptSize === "58mm";
+
+  const fmt = (n: number, cur = baseCurrency) => {
+    try { return new Intl.NumberFormat("en-US", { style: "currency", currency: cur }).format(Math.abs(n)); }
+    catch { return `${cur} ${Math.abs(n).toFixed(2)}`; }
+  };
+  const fmtNum = (n: number) => Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = (d: string | Date | null | undefined) => {
+    if (!d) return "";
+    const dt = typeof d === "string" ? new Date(d) : d;
+    return dt.toLocaleString("en-JM", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
+    });
+  };
+
+  const itemsHtml = data.items.map((it) => {
+    const uom = it.sellingUnit?.trim() ? ` (${escHtml(it.sellingUnit.trim())})` : "";
+    const qtyStr = Number.isInteger(it.quantity)
+      ? String(it.quantity)
+      : it.quantity.toFixed(3).replace(/\.?0+$/, "");
+    return `
+      <div class="rf-item">
+        <div class="rf-item-name">${escHtml(it.productName)}${uom}</div>
+        <div class="rf-item-line"><span>${qtyStr} &times; ${fmtNum(it.unitPrice)}</span><span>${fmtNum(it.amount)}</span></div>
+      </div>`;
+  }).join("");
+
+  const breakdownRows: string[] = [];
+  if (data.subtotalRefunded != null) {
+    breakdownRows.push(`<div class="rf-row"><span>Items refunded</span><span>${fmtNum(data.subtotalRefunded)}</span></div>`);
+  }
+  if (data.discountRefunded != null && Math.abs(data.discountRefunded) > 0.001) {
+    breakdownRows.push(`<div class="rf-row"><span>Discount reversed</span><span>-${fmtNum(data.discountRefunded)}</span></div>`);
+  }
+  if (data.taxRefunded != null && Math.abs(data.taxRefunded) > 0.001) {
+    breakdownRows.push(`<div class="rf-row"><span>${escHtml(taxName)} refunded</span><span>${fmtNum(data.taxRefunded)}</span></div>`);
+  }
+
+  const methodHtml = data.refundMethod === "voucher"
+    ? `<div class="rf-method"><div class="rf-row"><span>Refund method</span><span>Store credit</span></div>${
+        data.voucherCode ? `<div class="rf-row"><span>Voucher</span><span>${escHtml(data.voucherCode)}</span></div>` : ""
+      }${
+        data.voucherBalance != null ? `<div class="rf-row"><span>Voucher balance</span><span>${fmt(data.voucherBalance)}</span></div>` : ""
+      }</div>`
+    : data.refundMethod === "cash"
+      ? `<div class="rf-method"><div class="rf-row"><span>Refund method</span><span>Cash</span></div></div>`
+      : "";
+
+  const cashierHtml  = data.staffName ? `<div class="rf-meta"><span>Cashier</span><span>${escHtml(data.staffName)}</span></div>` : "";
+  const stationHtml  = data.stationNumber != null ? `<div class="rf-meta"><span>Station</span><span>#${data.stationNumber}</span></div>` : "";
+  const customerHtml = data.customerName ? `<div class="rf-meta"><span>Customer</span><span>${escHtml(data.customerName)}</span></div>` : "";
+  const reasonHtml   = data.reason?.trim()
+    ? `<div class="rf-reason"><div class="rf-reason-label">Reason</div><div>${escHtml(data.reason.trim())}</div></div>`
+    : "";
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Refund ${escHtml(data.orderNumber)}</title>
+  <style>
+    @page { size: ${receiptSize} auto; margin: 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Courier New', monospace; width: ${is58mm ? "54mm" : "76mm"}; margin: 0 auto; padding: ${is58mm ? "4px 6px 14px" : "6px 8px 16px"}; color: #000; font-size: 12px; line-height: 1.35; }
+    .rf-center { text-align: center; }
+    .rf-biz { font-size: 14px; font-weight: 800; }
+    .rf-sub { font-size: 10px; }
+    .rf-badge { margin: 6px 0; text-align: center; color: #c00; font-weight: 900; border: 2px solid #c00; padding: 3px; letter-spacing: 1px; font-size: 13px; }
+    .rf-hr { border-top: 1px dashed #000; margin: 6px 0; }
+    .rf-meta, .rf-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+    .rf-item { margin: 3px 0; }
+    .rf-item-name { font-weight: 600; }
+    .rf-item-line { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+    .rf-total { display: flex; justify-content: space-between; gap: 8px; font-weight: 800; font-size: 13px; margin-top: 4px; }
+    .rf-method { margin-top: 4px; }
+    .rf-reason { margin-top: 6px; font-size: 11px; }
+    .rf-reason-label { font-weight: 700; }
+    .rf-footer { text-align: center; margin-top: 8px; font-size: 10px; }
+    .rf-reprint { text-align: center; font-size: 10px; font-style: italic; margin-top: 4px; }
+  </style></head>
+  <body>
+    <div class="rf-center rf-biz">${escHtml(businessName)}</div>
+    ${businessAddress ? `<div class="rf-center rf-sub">${escHtml(businessAddress)}</div>` : ""}
+    ${businessPhone ? `<div class="rf-center rf-sub">${escHtml(businessPhone)}</div>` : ""}
+    <div class="rf-badge">${data.fullyRefunded ? "FULL REFUND" : "PARTIAL REFUND"}</div>
+    <div class="rf-meta"><span>Order</span><span>${escHtml(data.orderNumber)}</span></div>
+    ${data.originalDate ? `<div class="rf-meta"><span>Sold</span><span>${fmtDate(data.originalDate)}</span></div>` : ""}
+    <div class="rf-meta"><span>Refunded</span><span>${fmtDate(data.refundDate)}</span></div>
+    ${cashierHtml}
+    ${stationHtml}
+    ${customerHtml}
+    <div class="rf-hr"></div>
+    ${itemsHtml}
+    <div class="rf-hr"></div>
+    ${breakdownRows.join("")}
+    <div class="rf-total"><span>TOTAL REFUNDED</span><span>${fmt(data.refundTotal)}</span></div>
+    ${methodHtml}
+    ${reasonHtml}
+    <div class="rf-hr"></div>
+    <div class="rf-footer">${escHtml(receiptFooter)}</div>
+    ${data.isReprint ? `<div class="rf-reprint">*** REPRINT ***</div>` : ""}
+  </body></html>`;
+}

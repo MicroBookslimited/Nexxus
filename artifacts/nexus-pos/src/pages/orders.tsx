@@ -2,8 +2,8 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useListOrders, useUpdateOrderStatus, useChargeOrder, useGetSettings, useListStaff, useRefundOrderItems } from "@workspace/api-client-react";
 import { useStaff } from "@/contexts/StaffContext";
-import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom } from "@/lib/receipt";
-import { printOrderReceipt } from "@/lib/print-receipt";
+import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom, buildRefundReceiptHtml, type RefundReceiptLine, type RefundReceiptData } from "@/lib/receipt";
+import { printOrderReceipt, printRefundReceipt } from "@/lib/print-receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo } from "@/lib/saas-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -84,7 +84,7 @@ export function Orders() {
   const [orderToVoid, setOrderToVoid] = useState<number | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [managerPinOpen, setManagerPinOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<{ type: "void" | "refund" | "reprint"; orderId: number } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ type: "void" | "refund" | "reprint" | "refund-reprint"; orderId: number } | null>(null);
 
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [orderToRefund, setOrderToRefund] = useState<number | null>(null);
@@ -182,6 +182,11 @@ export function Orders() {
       .map(([id, qty]) => ({ orderItemId: Number(id), quantity: qty }))
       .filter((l) => l.quantity > 0);
     if (lines.length === 0) return;
+    // Capture the pre-refund order so we can compute the exact (tax/discount-
+    // aware) refund deltas and item names for the refund slip in onSuccess.
+    const original = orders?.find((o) => o.id === orderToRefund) ?? null;
+    const reasonAtConfirm = refundReason;
+    const toVoucherAtConfirm = refundToVoucher;
     refundItems.mutate(
       {
         id: orderToRefund,
@@ -202,6 +207,44 @@ export function Orders() {
               ? `Store credit voucher ${voucher.code} issued for ${formatCurrency(voucher.balance)}.`
               : "Stock has been restored and the sale total adjusted.",
           });
+          // Auto-print the refund slip for this transaction.
+          if (original) {
+            const round2 = (n: number) => Math.round(n * 100) / 100;
+            const after = updated.order;
+            const refundLines: RefundReceiptLine[] = lines.map((l) => {
+              const it = original.items.find((i) => i.id === l.orderItemId);
+              const unit = it
+                ? (it.unitPrice ?? (it.quantity > 0 ? it.lineTotal / it.quantity : 0))
+                : 0;
+              return {
+                productName: it?.productName ?? "Item",
+                quantity: l.quantity,
+                unitPrice: unit,
+                amount: round2(unit * l.quantity),
+                sellingUnit: it?.sellingUnit ?? null,
+              };
+            });
+            const refundData: RefundReceiptData = {
+              orderNumber: original.orderNumber,
+              originalDate: original.createdAt,
+              refundDate: new Date(),
+              staffName: sessionStaff?.name ?? original.staffName ?? null,
+              stationNumber: original.stationNumber ?? null,
+              customerName: original.customerName ?? null,
+              items: refundLines,
+              subtotalRefunded: round2(original.subtotal - after.subtotal),
+              taxRefunded: round2(original.tax - after.tax),
+              discountRefunded: round2((original.discountValue ?? 0) - (after.discountValue ?? 0)),
+              refundTotal: round2(original.total - after.total),
+              reason: reasonAtConfirm,
+              refundMethod: toVoucherAtConfirm ? "voucher" : "cash",
+              voucherCode: voucher?.code ?? null,
+              voucherBalance: voucher?.balance ?? null,
+              fullyRefunded: fully,
+            };
+            const html = buildRefundReceiptHtml(refundData, settings ?? {});
+            printRefundReceipt(html, settings ?? {});
+          }
           queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
           setRefundDialogOpen(false);
           setOrderToRefund(null);
@@ -256,7 +299,7 @@ export function Orders() {
     printOrderReceipt(html, receiptOrder, settings ?? {});
   };
 
-  const openManagerPin = (type: "void" | "refund" | "reprint", orderId: number) => {
+  const openManagerPin = (type: "void" | "refund" | "reprint" | "refund-reprint", orderId: number) => {
     setPendingAction({ type, orderId });
     setManagerPinOpen(true);
   };
@@ -279,7 +322,50 @@ export function Orders() {
     } else if (type === "reprint") {
       const order = orders?.find(o => o.id === orderId) ?? null;
       if (order) handleReprintReceipt(order);
+    } else if (type === "refund-reprint") {
+      const order = orders?.find(o => o.id === orderId) ?? null;
+      if (order) handleReprintRefundReceipt(order);
     }
+  };
+
+  // Reprint a refund slip from an order's *cumulative* refund history. Unlike
+  // the auto-print at refund time, we only have the order's current state here,
+  // so we show every refunded line (qty = refundedQuantity) and the order's
+  // accumulated refundedTotal; the refund method isn't persisted per order, so
+  // it's omitted on a reprint.
+  const handleReprintRefundReceipt = (order: NonNullable<typeof orders>[0]) => {
+    const refundedLines = order.items.filter((i) => (i.refundedQuantity ?? 0) > 0);
+    if (refundedLines.length === 0) {
+      toast({ variant: "destructive", title: "Nothing to reprint", description: "This order has no refunded items." });
+      return;
+    }
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const items: RefundReceiptLine[] = refundedLines.map((i) => {
+      const q = i.refundedQuantity ?? 0;
+      const unit = i.unitPrice ?? 0;
+      return {
+        productName: i.productName,
+        quantity: q,
+        unitPrice: unit,
+        amount: round2(unit * q),
+        sellingUnit: i.sellingUnit ?? null,
+      };
+    });
+    const refundData: RefundReceiptData = {
+      orderNumber: order.orderNumber,
+      originalDate: order.createdAt,
+      refundDate: new Date(),
+      staffName: order.staffName ?? null,
+      stationNumber: order.stationNumber ?? null,
+      customerName: order.customerName ?? null,
+      items,
+      refundTotal: order.refundedTotal ?? items.reduce((s, i) => s + i.amount, 0),
+      reason: order.voidReason ?? null,
+      fullyRefunded: order.status === "refunded",
+      isReprint: true,
+    };
+    const html = buildRefundReceiptHtml(refundData, settings ?? {});
+    printRefundReceipt(html, settings ?? {});
   };
 
   const openChargeDialog = (order: { id: number; orderNumber: string; total: number }) => {
@@ -817,6 +903,17 @@ export function Orders() {
                               <Printer className="h-3 w-3" />
                               Reprint
                             </Button>
+                            {(order.refundedTotal ?? 0) > 0 && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 gap-1 text-xs border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                                onClick={() => openManagerPin("refund-reprint", order.id)}
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                                Refund slip
+                              </Button>
+                            )}
                             <Button
                               variant="outline"
                               size="sm"
@@ -836,6 +933,17 @@ export function Orders() {
                           >
                             <Printer className="h-3 w-3" />
                             Reprint
+                          </Button>
+                        )}
+                        {order.status === 'refunded' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1 text-xs border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                            onClick={() => openManagerPin("refund-reprint", order.id)}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            Refund slip
                           </Button>
                         )}
                       </div>
@@ -987,6 +1095,8 @@ export function Orders() {
                 ? "Processing a refund requires a manager or admin PIN."
                 : pendingAction?.type === "reprint"
                 ? "Reprinting a receipt requires a manager or admin PIN."
+                : pendingAction?.type === "refund-reprint"
+                ? "Reprinting a refund receipt requires a manager or admin PIN."
                 : "Voiding an order requires a manager or admin PIN."}
             </p>
             <PinPad

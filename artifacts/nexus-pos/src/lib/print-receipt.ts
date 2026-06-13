@@ -49,3 +49,19 @@ export function printOrderReceipt(
   const receiptSize = settings.receipt_size === "58mm" ? "58mm" : "80mm";
   openReceiptWindow(buildPlainReceiptHtml(order, settings), { receiptPageSize: receiptSize });
 }
+
+/**
+ * Print a dedicated refund slip. The refund HTML is already image-free and
+ * lightweight (built by `buildRefundReceiptHtml`), so unlike sale receipts it
+ * needs no separate Android plain-text substitution — we just route it through
+ * the Android blob/auto-print path (by passing a page size) so ESC/POS
+ * pass-through services handle it reliably, and the iframe path on desktop.
+ */
+export function printRefundReceipt(html: string, settings: ReceiptSettings = {}): void {
+  if (!isAndroid()) {
+    openReceiptWindow(html);
+    return;
+  }
+  const receiptSize = settings.receipt_size === "58mm" ? "58mm" : "80mm";
+  openReceiptWindow(html, { receiptPageSize: receiptSize });
+}
