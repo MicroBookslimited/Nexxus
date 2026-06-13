@@ -35,16 +35,14 @@ export function CardTypeDialog({
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3 py-2">
           <Button
-            variant="outline"
-            className="h-24 flex-col gap-2 text-base"
+            className="h-24 flex-col gap-2 text-base font-semibold text-white bg-emerald-600 hover:bg-emerald-700 border-0 shadow-md"
             onClick={() => onSelect("debit")}
           >
             <Landmark className="h-7 w-7" />
             Debit Card
           </Button>
           <Button
-            variant="outline"
-            className="h-24 flex-col gap-2 text-base"
+            className="h-24 flex-col gap-2 text-base font-semibold text-white bg-blue-600 hover:bg-blue-700 border-0 shadow-md"
             onClick={() => onSelect("credit")}
           >
             <CreditCard className="h-7 w-7" />
