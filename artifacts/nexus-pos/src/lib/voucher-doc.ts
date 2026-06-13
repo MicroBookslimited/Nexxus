@@ -88,6 +88,9 @@ export function buildVoucherHtml(v: VoucherDoc, settings: ReceiptSettings): stri
     padding: 32px 40px;
     font-size: 13px;
     line-height: 1.5;
+    /* Everything on the voucher is bold so the small print stays legible on
+       low-resolution thermal printers. */
+    font-weight: 700;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -113,18 +116,18 @@ export function buildVoucherHtml(v: VoucherDoc, settings: ReceiptSettings): stri
   .card-body { padding: 22px; text-align: center; }
   .title { font-size: 26px; font-weight: 800; letter-spacing: 3px; color: #0B1E2D; margin: 0 0 4px; }
   .value { font-size: 44px; font-weight: 800; color: #0B1E2D; margin: 8px 0 2px; }
-  .value-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #8a97a8; font-weight: 700; }
-  .balance { margin-top: 10px; font-size: 13px; color: #1a2332; }
-  .balance b { color: #0B1E2D; }
+  .value-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #5a6b80; font-weight: 800; }
+  .balance { margin-top: 10px; font-size: 13px; color: #1a2332; font-weight: 700; }
+  .balance b { color: #0B1E2D; font-weight: 800; }
   .code-box { margin: 18px auto 6px; }
   .code-box img { max-width: 100%; height: auto; }
-  .code-text { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 18px; font-weight: 700; letter-spacing: 3px; margin-top: 6px; }
-  .meta { margin-top: 16px; font-size: 12px; color: #5a6b80; }
+  .code-text { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 18px; font-weight: 800; letter-spacing: 3px; margin-top: 6px; }
+  .meta { margin-top: 16px; font-size: 12px; color: #1a2332; font-weight: 700; }
   .meta div { margin: 2px 0; }
-  .meta b { color: #1a2332; }
-  .notes { margin-top: 14px; padding: 10px 12px; background: #f5f7fa; border-radius: 8px; text-align: left; font-size: 12px; }
-  .notes-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #8a97a8; font-weight: 700; margin-bottom: 3px; }
-  .disclaimer { margin-top: 18px; font-size: 10px; color: #8a97a8; text-align: center; line-height: 1.4; }
+  .meta b { color: #0B1E2D; font-weight: 800; }
+  .notes { margin-top: 14px; padding: 10px 12px; background: #f5f7fa; border-radius: 8px; text-align: left; font-size: 12px; font-weight: 700; }
+  .notes-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #5a6b80; font-weight: 800; margin-bottom: 3px; }
+  .disclaimer { margin-top: 18px; font-size: 10px; color: #1a2332; text-align: center; line-height: 1.4; font-weight: 700; }
 
   @page { size: auto; margin: 12mm; }
   @media print { body { padding: 0; } }
