@@ -19,6 +19,8 @@ export interface CreateOrderBody {
   discountType?: CreateOrderBodyDiscountType;
   discountAmount?: number;
   notes?: string;
+  /** Station/till number from the open cash session, stamped onto the sale so it prints on receipts. */
+  stationNumber?: number;
   customerId?: number;
   tableId?: number;
   staffId?: number;

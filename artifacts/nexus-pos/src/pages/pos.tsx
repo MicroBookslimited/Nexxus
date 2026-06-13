@@ -1723,6 +1723,8 @@ export function POS() {
         tableId: orderMode === "dine-in" ? selectedTableId : null,
         orderType: orderMode,
         locationId: sessionLocationId,
+        staffName: sessionStaff?.name ?? null,
+        stationNumber: cashSession?.session?.stationNumber ?? null,
       } as unknown as GetOrderResponse;
       setReceiptOrder(offlineReceipt);
       // Offline: we can't fetch outstanding AR balance, but we can still
@@ -1783,6 +1785,7 @@ export function POS() {
           tableId: orderMode === "dine-in" ? (selectedTableId ?? undefined) : undefined,
           orderType: orderMode,
           locationId: sessionLocationId ?? undefined,
+          stationNumber: cashSession?.session?.stationNumber ?? undefined,
         },
       },
       {

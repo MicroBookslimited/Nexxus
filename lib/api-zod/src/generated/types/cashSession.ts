@@ -19,4 +19,5 @@ export interface CashSession {
   actualCard?: number;
   actualOther?: number;
   closingNotes?: string;
+  stationNumber?: number | null;
 }

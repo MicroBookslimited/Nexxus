@@ -77,6 +77,8 @@ export interface ReceiptOrder {
   status?: string;
   orderType?: string | null;
   staffName?: string | null;
+  /** Station / till number assigned to the cashier's shift; printed on receipts. */
+  stationNumber?: number | null;
   guestCount?: number | null;
   customerName?: string | null;
   customerPhone?: string | null;
@@ -133,6 +135,7 @@ export function receiptOrderFrom(
     status?: string;
     orderType?: string | null;
     staffName?: string | null;
+    stationNumber?: number | null;
     guestCount?: number | null;
     customerName?: string | null;
     loyaltyPointsEarned?: number | null;
@@ -158,6 +161,7 @@ export function receiptOrderFrom(
     status: order.status,
     orderType: order.orderType ?? null,
     staffName: order.staffName ?? null,
+    stationNumber: order.stationNumber ?? null,
     guestCount: order.guestCount ?? null,
     customerName: customer?.name ?? order.customerName ?? null,
     customerPhone: customer?.phone ?? null,
@@ -423,6 +427,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   <div class="r-sep"></div>
 
   ${order.staffName ? `<div class="r-meta">Employee: ${escHtml(order.staffName)}</div>` : ""}
+  ${order.stationNumber != null ? `<div class="r-meta">Station: #${order.stationNumber}</div>` : ""}
   <div class="r-meta">${escHtml(order.orderType || "Sale")}</div>
   ${order.customerName && !order.staffName ? "" : ""}
   ${customerHtml2}
@@ -462,7 +467,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   // brought unitPrice below originalUnitPrice), we also render a green
   // "↳ You save: -<amount>" sub-line directly under the item.
   const itemsHtml = order.items.map(item => {
-    const unit = item.unitPrice;
+    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     let html = `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)}${uomHtml(item)}${unitStr}</span><span class="nowrap">${fmtNum(item.lineTotal)}</span></div>`;
@@ -623,6 +628,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       <div>${orderTypeLabel}</div>
       ${order.guestCount ? `<div>${order.guestCount} Guest${order.guestCount !== 1 ? "s" : ""}</div>` : ""}
       ${order.staffName ? `<div>Cashier: ${escHtml(order.staffName)}</div>` : ""}
+      ${order.stationNumber != null ? `<div>Station: #${order.stationNumber}</div>` : ""}
       <div>${dateStr}</div>
     </div>`;
 
@@ -839,7 +845,7 @@ function buildSupermarketReceiptHtml(
   const itemRowsHtml = order.items.map(item => {
     const bc = lineBarcode(item);
     const qtyPrefix = item.quantity !== 1 ? `${item.quantity}× ` : "";
-    const unit = item.unitPrice;
+    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     let html = `
@@ -1091,6 +1097,7 @@ function buildSupermarketReceiptHtml(
   <div class="sm-store-name">${escHtml(businessName.toUpperCase())}</div>
   ${businessPhone ? `<div class="sm-center sm-sub">${escHtml(businessPhone)}</div>` : ""}
   ${order.staffName ? `<div class="sm-center sm-sub">CASHIER ${escHtml(order.staffName.toUpperCase())}</div>` : ""}
+  ${order.stationNumber != null ? `<div class="sm-center sm-sub">STATION #${order.stationNumber}</div>` : ""}
   ${addressLines.map(l => `<div class="sm-center sm-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
 
   ${idRowHtml}
@@ -1191,7 +1198,7 @@ function buildConvenienceReceiptHtml(
   // Items — each line: QTY  Name @ unit  Price T/B
   const itemRowsHtml = order.items.map(item => {
     const qtyStr = String(item.quantity).padStart(1, " ");
-    const unit = item.unitPrice;
+    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     let html = `
@@ -1375,6 +1382,8 @@ function buildConvenienceReceiptHtml(
   <div class="cv-name">${escHtml(businessName.toUpperCase())}</div>
   ${addressLines.map(l => `<div class="cv-center cv-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
   ${businessPhone ? `<div class="cv-center cv-sub">${escHtml(businessPhone)}</div>` : ""}
+  ${order.staffName ? `<div class="cv-center cv-sub">CASHIER ${escHtml(order.staffName.toUpperCase())}</div>` : ""}
+  ${order.stationNumber != null ? `<div class="cv-center cv-sub">STATION #${order.stationNumber}</div>` : ""}
   <div class="cv-center cv-sub">THANKS FOR SHOPPING</div>
   <div class="cv-center cv-sub">with ${escHtml(businessName)}</div>
 
@@ -1465,7 +1474,7 @@ function buildStapleReceiptHtml(
   // Item rows — QTY | name\nSKU\n@unit | price N
   const itemRowsHtml = order.items.map((item, i) => {
     const sku = itemSku(item, i);
-    const unit = item.unitPrice;
+    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const subLines: string[] = [];
     if (unit != null) subLines.push(`@ ${fmtNum(unit)}`);
@@ -1675,6 +1684,7 @@ function buildStapleReceiptHtml(
   </div>
 
   ${order.staffName ? `<div class="st-sub">Cashier: ${escHtml(order.staffName)}</div>` : ""}
+  ${order.stationNumber != null ? `<div class="st-sub">Station: #${order.stationNumber}</div>` : ""}
   ${order.customerName ? `<div class="st-sub">Customer: ${escHtml(order.customerName)}</div>` : ""}
 
   <div class="st-div"></div>
@@ -1909,6 +1919,7 @@ function buildHardwareReceiptHtml(
     <div class="hw-meta-left">
       <div>Printed: ${escHtml(dateStr)}</div>
       ${order.staffName ? `<div>Cashier: ${escHtml(order.staffName)}</div>` : ""}
+      ${order.stationNumber != null ? `<div>Station: #${order.stationNumber}</div>` : ""}
     </div>
     <div>
       <div class="hw-biz-name">${escHtml(businessName)}</div>
@@ -2004,6 +2015,8 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   lines.push(`🧾 *${businessName}*`);
   lines.push(`Order #: ${orderNum}  |  Pickup: *${lastThree}*`);
   lines.push(`📅 ${dateStr}`);
+  if (order.staffName) lines.push(`🧑 Cashier: ${order.staffName}`);
+  if (order.stationNumber != null) lines.push(`🏪 Station #${order.stationNumber}`);
 
   // Customer block — only when a customer was attached to the sale.
   if (order.customerName) {
@@ -2022,7 +2035,7 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   lines.push(`─────────────────────`);
 
   for (const item of order.items) {
-    const unit = item.unitPrice;
+    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     lines.push(`${item.quantity}× ${item.productName}${item.sellingUnit?.trim() ? ` (${item.sellingUnit.trim()})` : ""}${unitStr}  ${fmtNum(item.lineTotal)}`);
@@ -2140,7 +2153,7 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
 
   // ── Items ────────────────────────────────────────────────────────────────
   const itemsHtml = order.items.map(item => {
-    const unit = item.unitPrice;
+    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     let html = row(`${item.quantity}&times; ${escHtml(item.productName)}${uomHtml(item)}${unitStr}`, fmtNum(item.lineTotal), "item");
@@ -2263,6 +2276,7 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
   <div class="center bold">${order.orderType ? escHtml(order.orderType) : "Sale"}${order.guestCount ? ` &middot; ${order.guestCount} Guest${order.guestCount !== 1 ? "s" : ""}` : ""}</div>
   <div class="center sub">Order #: ${escHtml(orderNum)}</div>
   ${order.staffName ? `<div class="center sub">Cashier: ${escHtml(order.staffName)}</div>` : ""}
+  ${order.stationNumber != null ? `<div class="center sub">Station: #${order.stationNumber}</div>` : ""}
   <div class="center sub">${dateStr}</div>
   ${customerHtml}
   <div class="hr"></div>

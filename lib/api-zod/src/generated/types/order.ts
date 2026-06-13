@@ -35,6 +35,10 @@ export interface Order {
   notes?: string | null;
   voidReason?: string | null;
   customerId?: number | null;
+  /** Display name of the cashier/staff who rang up the sale (joined from staff by staffId). Printed on receipts. */
+  staffName?: string | null;
+  /** Station/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts. */
+  stationNumber?: number | null;
   items: OrderItem[];
   createdAt: Date;
   completedAt?: Date | null;

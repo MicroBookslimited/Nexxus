@@ -341,6 +341,10 @@ export interface Order {
   notes?: string | null;
   voidReason?: string | null;
   customerId?: number | null;
+  /** Display name of the cashier/staff who rang up the sale (joined from staff by staffId). Printed on receipts. */
+  staffName?: string | null;
+  /** Station/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts. */
+  stationNumber?: number | null;
   items: OrderItem[];
   createdAt: string;
   completedAt?: string | null;
@@ -389,6 +393,8 @@ export interface CreateOrderBody {
   discountType?: CreateOrderBodyDiscountType;
   discountAmount?: number;
   notes?: string;
+  /** Station/till number from the open cash session, stamped onto the sale so it prints on receipts. */
+  stationNumber?: number;
   customerId?: number;
   tableId?: number;
   staffId?: number;
@@ -1392,6 +1398,7 @@ export interface CashSession {
   actualCard?: number;
   actualOther?: number;
   closingNotes?: string;
+  stationNumber?: number | null;
 }
 
 export interface CashPayout {
@@ -1431,6 +1438,12 @@ export interface CashSessionDetail {
 export interface OpenCashSessionBody {
   staffName: string;
   staffId?: number;
+  /**
+   * Optional station/till number (1-10) assigned to the cashier for this shift.
+   * @minimum 1
+   * @maximum 10
+   */
+  stationNumber?: number;
   openingCash: number;
 }
 

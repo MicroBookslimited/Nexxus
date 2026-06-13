@@ -150,8 +150,20 @@ async function getOrderWithItems(orderId: number) {
 
   const suMap = await sellingUnitMap(order.tenantId, items.map((i) => i.productId));
 
+  // Resolve the cashier's display name from staffId so receipts can print it.
+  // The orders table only stores staffId; the name lives on the staff row.
+  let staffName: string | null = null;
+  if (order.staffId) {
+    const [st] = await db
+      .select({ name: staffTable.name })
+      .from(staffTable)
+      .where(and(eq(staffTable.id, order.staffId), eq(staffTable.tenantId, order.tenantId)));
+    staffName = st?.name ?? null;
+  }
+
   return {
     ...normalizeOrder(order),
+    staffName,
     items: items.map((item) => ({
       id: item.id,
       productId: item.productId,
@@ -225,8 +237,26 @@ router.get("/orders", async (req, res): Promise<void> => {
     ordersWithItemsRaw.flatMap((o) => o.items.map((i) => i.productId)),
   );
 
+  // Resolve cashier display names in one tenant-scoped query (avoids N+1) so
+  // receipts reprinted from order history can show the cashier name.
+  const listStaffIds = [
+    ...new Set(
+      ordersWithItemsRaw
+        .map((o) => o.order.staffId)
+        .filter((id): id is number => id != null),
+    ),
+  ];
+  const staffRows = listStaffIds.length
+    ? await db
+        .select({ id: staffTable.id, name: staffTable.name })
+        .from(staffTable)
+        .where(and(eq(staffTable.tenantId, tenantId), inArray(staffTable.id, listStaffIds)))
+    : [];
+  const staffNameMap = new Map(staffRows.map((s) => [s.id, s.name]));
+
   const ordersWithItems = ordersWithItemsRaw.map(({ order, items }) => ({
     ...normalizeOrder(order),
+    staffName: order.staffId != null ? (staffNameMap.get(order.staffId) ?? null) : null,
     items: items.map((item) => ({
       id: item.id,
       productId: item.productId,
@@ -1021,6 +1051,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           tableId: parsed.data.tableId,
           staffId: parsed.data.staffId,
           locationId: parsed.data.locationId,
+          stationNumber: parsed.data.stationNumber,
           orderType: parsed.data.orderType ?? "counter",
           loyaltyPointsRedeemed: pointsToRedeem > 0 ? pointsToRedeem : undefined,
           loyaltyDiscount: loyaltyDiscount > 0 ? loyaltyDiscount : undefined,

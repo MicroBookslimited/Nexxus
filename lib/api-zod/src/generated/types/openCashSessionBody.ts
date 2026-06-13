@@ -9,5 +9,11 @@
 export interface OpenCashSessionBody {
   staffName: string;
   staffId?: number;
+  /**
+   * Optional station/till number (1-10) assigned to the cashier for this shift.
+   * @minimum 1
+   * @maximum 10
+   */
+  stationNumber?: number;
   openingCash: number;
 }

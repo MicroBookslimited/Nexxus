@@ -8,6 +8,7 @@ export const cashSessionsTable = pgTable("cash_sessions", {
   staffName: text("staff_name").notNull(),
   locationId: integer("location_id"),
   locationName: text("location_name"),
+  stationNumber: integer("station_number"),
   openingCash: real("opening_cash").notNull(),
   status: text("status").notNull().default("open"),
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),

@@ -244,6 +244,8 @@ export function Orders() {
       cashTendered: order.cashTendered,
       notes: order.notes,
       status: order.status,
+      staffName: order.staffName ?? null,
+      stationNumber: order.stationNumber ?? null,
       customerName: cust?.name ?? order.customerName ?? null,
       customerPhone: cust?.phone ?? null,
       customerEmail: cust?.email ?? null,

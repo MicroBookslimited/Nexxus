@@ -20,6 +20,7 @@ const OpenSessionBody = z.object({
   staffId: z.number().int().optional(),
   locationId: z.number().int().optional(),
   locationName: z.string().optional(),
+  stationNumber: z.number().int().min(1).max(10).optional(),
   openingCash: z.number().min(0),
 });
 
@@ -466,6 +467,7 @@ router.post("/cash/sessions", async (req, res): Promise<void> => {
       staffId: incomingStaffId,
       locationId: parsed.data.locationId ?? null,
       locationName: parsed.data.locationName ?? null,
+      stationNumber: parsed.data.stationNumber ?? null,
       openingCash: parsed.data.openingCash,
       status: "open",
     })

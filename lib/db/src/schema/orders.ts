@@ -39,6 +39,7 @@ export const ordersTable = pgTable("orders", {
   refundedTotal: real("refunded_total").default(0),
   staffId: integer("staff_id"),
   locationId: integer("location_id"),
+  stationNumber: integer("station_number"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });

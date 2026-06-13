@@ -921,6 +921,18 @@ export const ListOrdersResponseItem = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  staffName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the cashier\/staff who rang up the sale (joined from staff by staffId). Printed on receipts.",
+    ),
+  stationNumber: zod
+    .number()
+    .nullish()
+    .describe(
+      "Station\/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts.",
+    ),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -1051,6 +1063,12 @@ export const CreateOrderBody = zod.object({
   discountType: zod.enum(["percent", "fixed"]).optional(),
   discountAmount: zod.number().optional(),
   notes: zod.string().optional(),
+  stationNumber: zod
+    .number()
+    .optional()
+    .describe(
+      "Station\/till number from the open cash session, stamped onto the sale so it prints on receipts.",
+    ),
   customerId: zod.number().optional(),
   tableId: zod.number().optional(),
   staffId: zod.number().optional(),
@@ -1125,6 +1143,18 @@ export const GetOrderResponse = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  staffName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the cashier\/staff who rang up the sale (joined from staff by staffId). Printed on receipts.",
+    ),
+  stationNumber: zod
+    .number()
+    .nullish()
+    .describe(
+      "Station\/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts.",
+    ),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -1261,6 +1291,18 @@ export const UpdateOrderStatusResponse = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  staffName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the cashier\/staff who rang up the sale (joined from staff by staffId). Printed on receipts.",
+    ),
+  stationNumber: zod
+    .number()
+    .nullish()
+    .describe(
+      "Station\/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts.",
+    ),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -1412,6 +1454,18 @@ export const RefundOrderItemsResponse = zod.object({
     notes: zod.string().nullish(),
     voidReason: zod.string().nullish(),
     customerId: zod.number().nullish(),
+    staffName: zod
+      .string()
+      .nullish()
+      .describe(
+        "Display name of the cashier\/staff who rang up the sale (joined from staff by staffId). Printed on receipts.",
+      ),
+    stationNumber: zod
+      .number()
+      .nullish()
+      .describe(
+        "Station\/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts.",
+      ),
     items: zod.array(
       zod.object({
         id: zod.number(),
@@ -1598,6 +1652,18 @@ export const ChargeOrderResponse = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  staffName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the cashier\/staff who rang up the sale (joined from staff by staffId). Printed on receipts.",
+    ),
+  stationNumber: zod
+    .number()
+    .nullish()
+    .describe(
+      "Station\/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts.",
+    ),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -2245,6 +2311,18 @@ export const GetRecentOrdersResponseItem = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  staffName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the cashier\/staff who rang up the sale (joined from staff by staffId). Printed on receipts.",
+    ),
+  stationNumber: zod
+    .number()
+    .nullish()
+    .describe(
+      "Station\/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts.",
+    ),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -2530,6 +2608,18 @@ export const GetCustomerOrdersResponseItem = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  staffName: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display name of the cashier\/staff who rang up the sale (joined from staff by staffId). Printed on receipts.",
+    ),
+  stationNumber: zod
+    .number()
+    .nullish()
+    .describe(
+      "Station\/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts.",
+    ),
   items: zod.array(
     zod.object({
       id: zod.number(),
@@ -3403,15 +3493,26 @@ export const ListCashSessionsResponseItem = zod.object({
   actualCard: zod.number().optional(),
   actualOther: zod.number().optional(),
   closingNotes: zod.string().optional(),
+  stationNumber: zod.number().nullish(),
 });
 export const ListCashSessionsResponse = zod.array(ListCashSessionsResponseItem);
 
 /**
  * @summary Open a new cash session (start shift)
  */
+export const openCashSessionBodyStationNumberMax = 10;
+
 export const OpenCashSessionBody = zod.object({
   staffName: zod.string(),
   staffId: zod.number().optional(),
+  stationNumber: zod
+    .number()
+    .min(1)
+    .max(openCashSessionBodyStationNumberMax)
+    .optional()
+    .describe(
+      "Optional station\/till number (1-10) assigned to the cashier for this shift.",
+    ),
   openingCash: zod.number(),
 });
 
@@ -3431,6 +3532,7 @@ export const GetCurrentCashSessionResponse = zod.object({
     actualCard: zod.number().optional(),
     actualOther: zod.number().optional(),
     closingNotes: zod.string().optional(),
+    stationNumber: zod.number().nullish(),
   }),
   payouts: zod.array(
     zod.object({
@@ -3482,6 +3584,7 @@ export const GetCashSessionResponse = zod.object({
     actualCard: zod.number().optional(),
     actualOther: zod.number().optional(),
     closingNotes: zod.string().optional(),
+    stationNumber: zod.number().nullish(),
   }),
   payouts: zod.array(
     zod.object({
@@ -3552,6 +3655,7 @@ export const CloseCashSessionResponse = zod.object({
   actualCard: zod.number().optional(),
   actualOther: zod.number().optional(),
   closingNotes: zod.string().optional(),
+  stationNumber: zod.number().nullish(),
 });
 
 /**

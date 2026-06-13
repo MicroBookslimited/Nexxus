@@ -2518,6 +2518,14 @@ components:
         customerId:
           type: integer
           nullable: true
+        staffName:
+          type: string
+          nullable: true
+          description: Display name of the cashier/staff who rang up the sale (joined from staff by staffId). Printed on receipts.
+        stationNumber:
+          type: integer
+          nullable: true
+          description: Station/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts.
         items:
           type: array
           items:
@@ -2660,6 +2668,9 @@ components:
           format: float
         notes:
           type: string
+        stationNumber:
+          type: integer
+          description: Station/till number from the open cash session, stamped onto the sale so it prints on receipts.
         customerId:
           type: integer
         tableId:
@@ -4501,6 +4512,9 @@ components:
           type: number
         closingNotes:
           type: string
+        stationNumber:
+          type: integer
+          nullable: true
       required:
         - id
         - staffName
@@ -4607,6 +4621,11 @@ components:
           type: string
         staffId:
           type: integer
+        stationNumber:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: Optional station/till number (1-10) assigned to the cashier for this shift.
         openingCash:
           type: number
       required:

@@ -51,7 +51,7 @@ function OpenShiftPanel({
   onOpen,
   onExistingShift,
 }: {
-  onOpen: (openingCash: number, staff: OpenShiftStaff, locationId?: number, locationName?: string) => void;
+  onOpen: (openingCash: number, staff: OpenShiftStaff, locationId?: number, locationName?: string, stationNumber?: number) => void;
   onExistingShift: (staff: OpenShiftStaff) => void;
 }) {
   const [step, setStep] = useState<"pin" | "location" | "cash" | "checking">("pin");
@@ -59,6 +59,7 @@ function OpenShiftPanel({
   const [cash, setCash] = useState("");
   const [locations, setLocations] = useState<{ id: number; name: string }[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
+  const [selectedStation, setSelectedStation] = useState<number | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_tenant_token");
@@ -105,7 +106,7 @@ function OpenShiftPanel({
     const amount = parseFloat(cash);
     if (isNaN(amount) || amount < 0 || !staff) return;
     const loc = locations.find(l => l.id === selectedLocationId);
-    onOpen(amount, staff, selectedLocationId ?? undefined, loc?.name);
+    onOpen(amount, staff, selectedLocationId ?? undefined, loc?.name, selectedStation ?? undefined);
   };
 
   const stepLabel = step === "pin"
@@ -200,6 +201,20 @@ function OpenShiftPanel({
                   </Button>
                 </div>
               )}
+              <div className="space-y-1.5">
+                <Label>Station / Till Number <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={selectedStation ?? ""}
+                  onChange={(e) => setSelectedStation(e.target.value ? parseInt(e.target.value) : null)}
+                >
+                  <option value="">None</option>
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>Station {n}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">Assign this cashier to a numbered till; it prints on every receipt.</p>
+              </div>
               <div className="space-y-1.5">
                 <Label>Opening Cash on Hand</Label>
                 <div className="relative">
@@ -1669,9 +1684,9 @@ export function CashManagement() {
     queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
   };
 
-  const handleOpenShift = (openingCash: number, staff: OpenShiftStaff, locationId?: number, locationName?: string) => {
+  const handleOpenShift = (openingCash: number, staff: OpenShiftStaff, locationId?: number, locationName?: string, stationNumber?: number) => {
     openSession.mutate(
-      { data: { staffName: staff.name, staffId: staff.id, openingCash, locationId, locationName } },
+      { data: { staffName: staff.name, staffId: staff.id, openingCash, locationId, locationName, stationNumber } },
       {
         onSuccess: () => {
           // Store the cashier's identity in the staff context so subsequent
