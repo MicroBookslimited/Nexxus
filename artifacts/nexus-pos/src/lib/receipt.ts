@@ -880,9 +880,16 @@ function buildSupermarketReceiptHtml(
 
   // Cash → real change. Card/credit → 0.00 (matches reference receipt where
   // CREDIT TEND line is followed by CHANGE DUE 0.00).
+  // A gift voucher is a TENDER: it pays down `giftAmt`; `amountDue` is the rest.
+  const giftAmt = order.giftVoucherAmount ?? 0;
+  const amountDue = Math.max(0, Math.round((order.total - giftAmt) * 100) / 100);
   const changeDue = (order.paymentMethod === "cash" && order.cashTendered)
-    ? Math.max(0, order.cashTendered - order.total)
+    ? Math.max(0, order.cashTendered - amountDue)
     : 0;
+  const voucherLineHtml = giftAmt > 0
+    ? `<div class="sm-tot-row"><span class="sm-tot-label">GIFT VOUCHER${order.giftVoucherCode ? ` (${escHtml(order.giftVoucherCode)})` : ""}</span><span class="sm-tot-val">-${fmtNum(giftAmt)}</span></div>
+    <div class="sm-tot-row"><span class="sm-tot-label">AMOUNT DUE</span><span class="sm-tot-val">${fmtNum(amountDue)}</span></div>`
+    : "";
 
 
   // ── Items table ──────────────────────────────────────────────────────────
@@ -1159,10 +1166,11 @@ function buildSupermarketReceiptHtml(
     ${discountLineHtml}
     ${taxLineHtml}
     <div class="sm-tot-row total"><span class="sm-tot-label">TOTAL</span><span class="sm-tot-val">${fmtNum(order.total)}</span></div>
+    ${voucherLineHtml}
     ${secondaryLineHtml}
     ${(order.paymentMethod === "cash" && order.cashTendered && order.cashTendered > 0) ? `
     <div class="sm-tot-row"><span class="sm-tot-label">CASH TEND</span><span class="sm-tot-val">${fmtNum(order.cashTendered)}</span></div>
-    <div class="sm-tot-row"><span class="sm-tot-label">TOTAL</span><span class="sm-tot-val">-${fmtNum(order.total)}</span></div>
+    <div class="sm-tot-row"><span class="sm-tot-label">${giftAmt > 0 ? "AMOUNT DUE" : "TOTAL"}</span><span class="sm-tot-val">-${fmtNum(amountDue)}</span></div>
     <div class="sm-tot-row"><span class="sm-tot-label">CHANGE DUE</span><span class="sm-tot-val">${fmtNum(changeDue)}</span></div>` : ""}
     ${order.paymentMethod === "split" ? `
     <div class="sm-tot-row"><span class="sm-tot-label">${order.cardType === "debit" ? "DEBIT CARD" : order.cardType === "credit" ? "CREDIT CARD" : "CARD"}</span><span class="sm-tot-val">${fmtNum(order.splitCardAmount ?? 0)}</span></div>
