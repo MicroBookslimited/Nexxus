@@ -985,23 +985,6 @@ function buildSupermarketReceiptHtml(
   const customerOutstandingHtml = (order.customerName && order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0) ? `
     <div class="sm-balance-due">ACCOUNT BALANCE DUE: ${fmt(order.customerOutstandingBalance)}</div>` : "";
 
-  // ── Account / approval / ref / terminal block ────────────────────────────
-  // Card data isn't captured by the POS today, so for non-card payments we
-  // show all four lines blanked out (matches the reference's spacing). For
-  // card/credit we still don't have a PAN — show masked all-stars.
-  const isCardish = order.paymentMethod === "card" || order.paymentMethod === "split" || order.paymentMethod === "credit";
-  const acctMasked = isCardish ? "**** **** **** ****" : "&nbsp;";
-  const approvalHash = isCardish ? hashCode(orderNum + "ap").slice(-6).toUpperCase() : "";
-  const refHash      = isCardish ? hashCode(orderNum + "rf").slice(-12) : "";
-  const termHash     = isCardish ? hashCode(orderNum + "tm").slice(-10) : "";
-  const accountBlockHtml = `
-    <div class="sm-acct">
-      <div class="sm-acct-row"><span>ACCOUNT  #</span><span class="sm-acct-val">${acctMasked}</span></div>
-      <div class="sm-acct-row"><span>APPROVAL #</span><span class="sm-acct-val">${escHtml(approvalHash)}</span></div>
-      <div class="sm-acct-row"><span>REF      #</span><span class="sm-acct-val">${escHtml(refHash)}</span></div>
-      <div class="sm-acct-row"><span>TERMINAL #</span><span class="sm-acct-val">${escHtml(termHash)}</span></div>
-    </div>`;
-
   // ── Big TC# transaction code (groups of 4 digits) ────────────────────────
   const tcRaw = (hashCode(orderNum + "tc") + hashCode(dateStr + "tc")).slice(0, 20);
   const tcGrouped = tcRaw.match(/.{1,4}/g)?.join(" ") ?? tcRaw;
@@ -1177,7 +1160,6 @@ function buildSupermarketReceiptHtml(
     <div class="sm-tot-row"><span class="sm-tot-label">CASH</span><span class="sm-tot-val">${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}
   </div>
 
-  ${accountBlockHtml}
   ${notesLineHtml}
   ${customerOutstandingHtml}
   ${loyaltyHtml}
