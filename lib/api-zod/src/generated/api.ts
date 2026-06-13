@@ -1002,6 +1002,12 @@ export const ListOrdersResponseItem = zod.object({
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
         ),
+      isTaxable: zod
+        .boolean()
+        .optional()
+        .describe(
+          "Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable).",
+        ),
       notes: zod
         .string()
         .nullish()
@@ -1248,6 +1254,12 @@ export const GetOrderResponse = zod.object({
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
         ),
+      isTaxable: zod
+        .boolean()
+        .optional()
+        .describe(
+          "Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable).",
+        ),
       notes: zod
         .string()
         .nullish()
@@ -1413,6 +1425,12 @@ export const UpdateOrderStatusResponse = zod.object({
         .nullish()
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
+      isTaxable: zod
+        .boolean()
+        .optional()
+        .describe(
+          "Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable).",
         ),
       notes: zod
         .string()
@@ -1594,6 +1612,12 @@ export const RefundOrderItemsResponse = zod.object({
           .nullish()
           .describe(
             'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+          ),
+        isTaxable: zod
+          .boolean()
+          .optional()
+          .describe(
+            "Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable).",
           ),
         notes: zod
           .string()
@@ -1810,6 +1834,12 @@ export const ChargeOrderResponse = zod.object({
         .nullish()
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
+      isTaxable: zod
+        .boolean()
+        .optional()
+        .describe(
+          "Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable).",
         ),
       notes: zod
         .string()
@@ -2488,6 +2518,12 @@ export const GetRecentOrdersResponseItem = zod.object({
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
         ),
+      isTaxable: zod
+        .boolean()
+        .optional()
+        .describe(
+          "Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable).",
+        ),
       notes: zod
         .string()
         .nullish()
@@ -2830,6 +2866,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
         .nullish()
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
+      isTaxable: zod
+        .boolean()
+        .optional()
+        .describe(
+          "Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable).",
         ),
       notes: zod
         .string()

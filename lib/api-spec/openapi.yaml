@@ -2634,6 +2634,9 @@ components:
           type: string
           nullable: true
           description: Optional free-text selling unit / UOM label of the product (e.g. "each", "case"). Surfaced on the POS and receipts. NULL = not set.
+        isTaxable:
+          type: boolean
+          description: Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable).
         notes:
           type: string
           nullable: true

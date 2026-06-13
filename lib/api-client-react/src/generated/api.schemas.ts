@@ -311,6 +311,8 @@ export interface OrderItem {
   lineTotal: number;
   /** Optional free-text selling unit / UOM label of the product (e.g. "each", "case"). Surfaced on the POS and receipts. NULL = not set. */
   sellingUnit?: string | null;
+  /** Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable). */
+  isTaxable?: boolean;
   /** Optional free-text per-line note (e.g. "cut thin", "extra lean"). Surfaced on receipts. NULL = none. */
   notes?: string | null;
 }

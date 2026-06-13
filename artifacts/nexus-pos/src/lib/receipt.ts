@@ -27,15 +27,19 @@ export interface ReceiptOrderItem {
   originalUnitPrice?: number | null;
   variantChoices?: Array<{ optionName: string }> | null;
   modifierChoices?: Array<{ optionName: string }> | null;
-  // Optional product identifiers used by the supermarket template to render a
+  // Optional product identifiers used by some receipt templates to render a
   // per-line "barcode" column. Both are optional so existing callers stay
-  // type-compatible; when missing we derive a stable 12-digit code from the
-  // product name + line index so the receipt still looks supermarket-ish.
+  // type-compatible; when missing we derive a stable code from the product
+  // name. (The supermarket template no longer renders a barcode column.)
   productId?: number | null;
   barcode?: string | null;
   // Optional free-text selling unit / UOM label (e.g. "each", "case",
   // "pieces"). When present, surfaced next to the line item on the receipt.
   sellingUnit?: string | null;
+  // Whether the product is taxable. Resolved live from the product at read
+  // time; used by the supermarket template to mark a line "T" (taxable) or
+  // "N" (non-taxable). Undefined on older callers → treated as taxable.
+  isTaxable?: boolean | null;
   // Optional free-text per-line note (e.g. "cut thin", "extra lean"). When
   // present, surfaced as a sub-line under the item on every receipt template.
   notes?: string | null;
@@ -867,11 +871,6 @@ function buildSupermarketReceiptHtml(
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
     return String(h).padStart(12, "0").slice(-12);
   };
-  const lineBarcode = (item: ReceiptOrderItem): string => {
-    if (item.barcode && item.barcode.trim()) return item.barcode.replace(/\s+/g, "").slice(0, 14);
-    if (item.productId != null) return String(item.productId).padStart(12, "0");
-    return hashCode(item.productName);
-  };
 
   // Map our internal payment method onto a supermarket-style TEND label.
 
@@ -893,21 +892,30 @@ function buildSupermarketReceiptHtml(
 
 
   // ── Items table ──────────────────────────────────────────────────────────
-  // Three columns: name (left), barcode (center, monospace), price + " X"
-  // taxable indicator (right, only when the order is taxed). Modifier/variant
-  // lines are indented under their parent.
-  const taxIndicator = order.tax > 0 ? "&nbsp;X" : "";
+  // Five columns: QTY | ITEM | UNIT | EXT | T/N. The trailing flag marks each
+  // line taxable (T) or non-taxable (N) per the product's isTaxable, replacing
+  // the old single global "X". Modifier/variant lines are indented under their
+  // parent. A labelled header row is rendered above the items.
+  const itemsHeadHtml = `
+    <div class="sm-item sm-item-head">
+      <span class="sm-item-qty">QTY</span>
+      <span class="sm-item-name">ITEM</span>
+      <span class="sm-item-unit">UNIT</span>
+      <span class="sm-item-price">EXT</span>
+      <span class="sm-item-tax">T/N</span>
+    </div>`;
   const itemRowsHtml = order.items.map(item => {
-    const bc = lineBarcode(item);
-    const qtyPrefix = item.quantity !== 1 ? `${item.quantity}× ` : "";
+    const qtyStr = Number.isInteger(item.quantity) ? String(item.quantity) : String(Math.round(item.quantity * 1000) / 1000);
     const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
-    const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
+    const taxFlag = item.isTaxable === false ? "N" : "T";
     let html = `
       <div class="sm-item">
-        <span class="sm-item-name">${escHtml(qtyPrefix + item.productName.toUpperCase())}${uomHtml(item)}${unitStr}</span>
-        <span class="sm-item-bc">${escHtml(bc)}</span>
-        <span class="sm-item-price">${fmtNum(item.lineTotal)}${taxIndicator}</span>
+        <span class="sm-item-qty">${escHtml(qtyStr)}</span>
+        <span class="sm-item-name">${escHtml(item.productName.toUpperCase())}${uomHtml(item)}</span>
+        <span class="sm-item-unit">${unit != null ? fmtNum(unit) : ""}</span>
+        <span class="sm-item-price">${fmtNum(item.lineTotal)}</span>
+        <span class="sm-item-tax">${taxFlag}</span>
       </div>`;
     if (orig != null && unit != null && orig > unit) {
       const lineSaving = (orig - unit) * item.quantity;
@@ -1061,15 +1069,18 @@ function buildSupermarketReceiptHtml(
 
     .sm-item {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-columns: auto minmax(0, 1fr) auto auto auto;
       gap: 6px;
       font-size: ${baseFontSize};
       align-items: baseline;
       margin: 1px 0;
     }
+    .sm-item-qty   { font-weight: 700; white-space: nowrap; text-align: right; }
     .sm-item-name  { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .sm-item-bc    { font-family: 'Courier New', Courier, monospace; color: #222; letter-spacing: 0.5px; }
-    .sm-item-price { white-space: nowrap; font-weight: 700; }
+    .sm-item-unit  { white-space: nowrap; text-align: right; }
+    .sm-item-price { white-space: nowrap; font-weight: 700; text-align: right; }
+    .sm-item-tax   { white-space: nowrap; text-align: center; font-weight: 700; min-width: 1.6em; }
+    .sm-item-head span { border-bottom: 1px solid #000; font-weight: 700; }
     .sm-mod        { padding-left: 12px; font-size: ${subFontSize}; color: #444; }
 
     .sm-tot-block {
@@ -1142,6 +1153,7 @@ function buildSupermarketReceiptHtml(
 
   ${idRowHtml}
 
+  ${itemsHeadHtml}
   ${itemRowsHtml}
 
   <div class="sm-tot-block">

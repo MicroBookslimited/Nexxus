@@ -18,3 +18,10 @@ stable receipts are ever required, persist it on order_items at create time.
 `tenantId` predicate (`and(eq(productsTable.tenantId, tenantId), inArray(...))`) — a
 prior review caught a cross-tenant leak from an id-only `IN (...)` lookup. Batch the
 lookup once per request (not per order) to avoid N+1.
+
+**Also carried by the same helper:** order-item `isTaxable` (for the supermarket
+receipt's per-line T/N marker) is resolved the SAME live-join way — `order_items` has
+no `is_taxable` column, so the `sellingUnitMap` helper returns `{sellingUnit, isTaxable}`
+from the current product. Same live-vs-snapshot tradeoff applies. Adding a NEW such field
+still requires adding it to the OpenAPI OrderItem RESPONSE schema + codegen, or
+`GetOrderResponse.parse`/`ListOrdersResponse.parse` strips it before it reaches the client.

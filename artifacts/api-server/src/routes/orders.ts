@@ -128,14 +128,17 @@ function normalizeOrder(order: typeof ordersTable.$inferSelect) {
  * ids. Returned so order-item responses can surface it on the POS + receipts.
  * Empty productIds → empty map (no query).
  */
-async function sellingUnitMap(tenantId: number, productIds: number[]): Promise<Map<number, string | null>> {
+async function sellingUnitMap(
+  tenantId: number,
+  productIds: number[],
+): Promise<Map<number, { sellingUnit: string | null; isTaxable: boolean }>> {
   const ids = [...new Set(productIds)].filter((n): n is number => typeof n === "number");
   if (ids.length === 0) return new Map();
   const rows = await db
-    .select({ id: productsTable.id, sellingUnit: productsTable.sellingUnit })
+    .select({ id: productsTable.id, sellingUnit: productsTable.sellingUnit, isTaxable: productsTable.isTaxable })
     .from(productsTable)
     .where(and(eq(productsTable.tenantId, tenantId), inArray(productsTable.id, ids)));
-  return new Map(rows.map((r) => [r.id, r.sellingUnit ?? null]));
+  return new Map(rows.map((r) => [r.id, { sellingUnit: r.sellingUnit ?? null, isTaxable: r.isTaxable }]));
 }
 
 async function getOrderWithItems(orderId: number) {
@@ -182,7 +185,8 @@ async function getOrderWithItems(orderId: number) {
       modifierChoices: (item.modifierChoices as any[] | null) ?? undefined,
       lineTotal: item.lineTotal,
       notes: item.notes ?? undefined,
-      sellingUnit: suMap.get(item.productId) ?? undefined,
+      sellingUnit: suMap.get(item.productId)?.sellingUnit ?? undefined,
+      isTaxable: suMap.get(item.productId)?.isTaxable ?? undefined,
     })),
   };
 }
@@ -275,7 +279,8 @@ router.get("/orders", async (req, res): Promise<void> => {
       modifierChoices: (item.modifierChoices as any[] | null) ?? undefined,
       lineTotal: item.lineTotal,
       notes: item.notes ?? undefined,
-      sellingUnit: suMap.get(item.productId) ?? undefined,
+      sellingUnit: suMap.get(item.productId)?.sellingUnit ?? undefined,
+      isTaxable: suMap.get(item.productId)?.isTaxable ?? undefined,
     })),
   }));
 
