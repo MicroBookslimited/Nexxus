@@ -704,6 +704,9 @@ export function PosSupermarket() {
           notes: undefined,
           customerId: selectedCustomerId ?? undefined,
           orderType: "counter",
+          // Station number is set once at shift open and must stay constant for
+          // every receipt in that cashier's shift (see standard POS layout).
+          stationNumber: cashSession?.session?.stationNumber ?? undefined,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any,
       },
