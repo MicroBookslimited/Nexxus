@@ -2555,6 +2555,9 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, settings: Receip
     .rf-reason-label { font-weight: 700; }
     .rf-footer { text-align: center; margin-top: 8px; font-size: 10px; }
     .rf-reprint { text-align: center; font-size: 10px; font-style: italic; margin-top: 4px; }
+    .rf-sign { margin-top: 26px; }
+    .rf-sign-line { border-top: 1px solid #000; }
+    .rf-sign-label { text-align: center; font-size: 10px; margin-top: 2px; }
   </style></head>
   <body>
     <div class="rf-center rf-biz">${escHtml(businessName)}</div>
@@ -2574,6 +2577,10 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, settings: Receip
     <div class="rf-total"><span>TOTAL REFUNDED</span><span>${fmt(data.refundTotal)}</span></div>
     ${methodHtml}
     ${reasonHtml}
+    <div class="rf-sign">
+      <div class="rf-sign-line"></div>
+      <div class="rf-sign-label">Customer Signature</div>
+    </div>
     <div class="rf-hr"></div>
     <div class="rf-footer">${escHtml(receiptFooter)}</div>
     ${data.isReprint ? `<div class="rf-reprint">*** REPRINT ***</div>` : ""}
