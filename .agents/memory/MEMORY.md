@@ -21,6 +21,7 @@
 - [Product selling unit (UOM)](product-selling-unit.md) — optional free-text label; order-item value is a LIVE tenant-scoped product join (not snapshotted); separate from weight-only unitOfMeasure enum.
 - [POS line override/discount payload](pos-line-override-payload.md) — catalog-line price override is markdown-only (discountAmount, tier-aware baseline); derive UI totals + payload from shared clamped helpers so qty crossing a tier never diverges.
 - [Duplicate product detection](duplicate-product-detection.md) — find-duplicates groups by order-insensitive token key + ONE union-find over all products; normalization regex MUST be Unicode-aware or non-Latin names false-group.
+- [OpenAPI request vs response parity](openapi-request-vs-response-fields.md) — a new persisted field must be in BOTH the response AND request (CreateOrderBody) schemas; generated Zod strips request keys not in the contract, so new writes silently drop it.
 - [Gift voucher = tender](gift-voucher-tender.md) — voucher pays amountDue, not a discount; row-lock on redeem; refund-to-voucher issues a NEW voucher ({order,refundVoucher}); cancel/expiry via computed effectiveVoucherStatus.
 - [api-server new-route reload](api-server-route-reload.md) — newly-created+registered route files return 404 until you restart the api-server workflow; don't chase path bugs first.
 - [Generated query-hook queryKey](generated-query-hooks-querykey.md) — passing {query:{enabled}} to a generated get-by-id hook needs explicit queryKey to typecheck; existing omissions are pre-existing errors.

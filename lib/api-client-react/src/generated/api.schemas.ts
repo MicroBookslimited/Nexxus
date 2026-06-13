@@ -311,6 +311,8 @@ export interface OrderItem {
   lineTotal: number;
   /** Optional free-text selling unit / UOM label of the product (e.g. "each", "case"). Surfaced on the POS and receipts. NULL = not set. */
   sellingUnit?: string | null;
+  /** Optional free-text per-line note (e.g. "cut thin", "extra lean"). Surfaced on receipts. NULL = none. */
+  notes?: string | null;
 }
 
 export interface Order {
@@ -355,6 +357,8 @@ export type CreateOrderBodyItemsItem = {
   customPrice?: number;
   variantChoices?: ChoiceItem[];
   modifierChoices?: ChoiceItem[];
+  /** Optional per-line note entered at the POS (e.g. "cut thin, extra lean"). Persisted on the order item and printed on receipts. */
+  notes?: string;
 };
 
 export type CreateOrderBodyDiscountType =

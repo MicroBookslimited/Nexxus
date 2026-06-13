@@ -972,6 +972,12 @@ export const ListOrdersResponseItem = zod.object({
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
         ),
+      notes: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text per-line note (e.g. \"cut thin\", \"extra lean\"). Surfaced on receipts. NULL = none.',
+        ),
     }),
   ),
   createdAt: zod.coerce.date(),
@@ -1027,6 +1033,12 @@ export const CreateOrderBody = zod.object({
           }),
         )
         .optional(),
+      notes: zod
+        .string()
+        .optional()
+        .describe(
+          'Optional per-line note entered at the POS (e.g. \"cut thin, extra lean\"). Persisted on the order item and printed on receipts.',
+        ),
     }),
   ),
   paymentMethod: zod.string().optional(),
@@ -1164,6 +1176,12 @@ export const GetOrderResponse = zod.object({
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
         ),
+      notes: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text per-line note (e.g. \"cut thin\", \"extra lean\"). Surfaced on receipts. NULL = none.',
+        ),
     }),
   ),
   createdAt: zod.coerce.date(),
@@ -1293,6 +1311,12 @@ export const UpdateOrderStatusResponse = zod.object({
         .nullish()
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
+      notes: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text per-line note (e.g. \"cut thin\", \"extra lean\"). Surfaced on receipts. NULL = none.',
         ),
     }),
   ),
@@ -1438,6 +1462,12 @@ export const RefundOrderItemsResponse = zod.object({
           .nullish()
           .describe(
             'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+          ),
+        notes: zod
+          .string()
+          .nullish()
+          .describe(
+            'Optional free-text per-line note (e.g. \"cut thin\", \"extra lean\"). Surfaced on receipts. NULL = none.',
           ),
       }),
     ),
@@ -1618,6 +1648,12 @@ export const ChargeOrderResponse = zod.object({
         .nullish()
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
+      notes: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text per-line note (e.g. \"cut thin\", \"extra lean\"). Surfaced on receipts. NULL = none.',
         ),
     }),
   ),
@@ -2260,6 +2296,12 @@ export const GetRecentOrdersResponseItem = zod.object({
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
         ),
+      notes: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text per-line note (e.g. \"cut thin\", \"extra lean\"). Surfaced on receipts. NULL = none.',
+        ),
     }),
   ),
   createdAt: zod.coerce.date(),
@@ -2538,6 +2580,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
         .nullish()
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
+      notes: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text per-line note (e.g. \"cut thin\", \"extra lean\"). Surfaced on receipts. NULL = none.',
         ),
     }),
   ),

@@ -18,4 +18,6 @@ export type CreateOrderBodyItemsItem = {
   customPrice?: number;
   variantChoices?: ChoiceItem[];
   modifierChoices?: ChoiceItem[];
+  /** Optional per-line note entered at the POS (e.g. "cut thin, extra lean"). Persisted on the order item and printed on receipts. */
+  notes?: string;
 };

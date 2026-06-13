@@ -33,6 +33,9 @@ export interface ReceiptOrderItem {
   // Optional free-text selling unit / UOM label (e.g. "each", "case",
   // "pieces"). When present, surfaced next to the line item on the receipt.
   sellingUnit?: string | null;
+  // Optional free-text per-line note (e.g. "cut thin", "extra lean"). When
+  // present, surfaced as a sub-line under the item on every receipt template.
+  notes?: string | null;
 }
 
 /**
@@ -300,6 +303,9 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
         html += `<div class="r-mod">&nbsp;+ ${escHtml(m.optionName)}</div>`;
       }
+      if (item.notes && item.notes.trim()) {
+        html += `<div class="r-mod">&nbsp;&#8627; Note: ${escHtml(item.notes.trim())}</div>`;
+      }
       if (item.originalUnitPrice != null && item.unitPrice != null && item.originalUnitPrice > item.unitPrice) {
         const saving = (item.originalUnitPrice - item.unitPrice) * item.quantity;
         html += `<div class="r-sub r-save">&nbsp;&#8627; You save: -${fmt(saving)}</div>`;
@@ -469,6 +475,9 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     }
     for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
       html += `<div class="mod-line">&nbsp;+ ${escHtml(m.optionName)}</div>`;
+    }
+    if (item.notes && item.notes.trim()) {
+      html += `<div class="mod-line">&nbsp;&#8627; Note: ${escHtml(item.notes.trim())}</div>`;
     }
     return html;
   }).join("");
@@ -849,6 +858,9 @@ function buildSupermarketReceiptHtml(
     for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
       html += `<div class="sm-mod">&nbsp;&nbsp;+ ${escHtml(m.optionName)}</div>`;
     }
+    if (item.notes && item.notes.trim()) {
+      html += `<div class="sm-mod">&nbsp;&nbsp;↳ Note: ${escHtml(item.notes.trim())}</div>`;
+    }
     return html;
   }).join("");
 
@@ -1121,13 +1133,12 @@ function buildSupermarketReceiptHtml(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Convenience-store receipt — 7-Eleven / corner store style
-// Header: centered name → address → phone → store# → "THANKS FOR SHOPPING"
+// Header: centered name → address → phone → "THANKS FOR SHOPPING"
 // Items: QTY  Name                       Price T/B
 // Totals: SUBTOTAL / TOTAL DUE
-// Payment: large bold method name + amount
-// Card block: ACCT#, ACCT TYPE, APPROVAL#, AUTH CODE, APPROVAL TIME,
-//             network, STORE#, TERM#, TERM SEQ#, REF#, ENTRY, APPROVED
-// Footer: customer agreement, marketing message, T# OP TRN timestamp
+// Payment: large bold method name + amount (real tender only — no fabricated
+//          card/terminal data)
+// Footer: marketing message + date
 // ─────────────────────────────────────────────────────────────────────────────
 type ReceiptCtx = {
   escHtml: (s: string) => string;
@@ -1162,22 +1173,6 @@ function buildConvenienceReceiptHtml(
     baseFontSize, subFontSize, bodyPadding, is58mm,
     secondaryCurrency, exchangeRate,
   } = ctx;
-
-  // Derive stable store/terminal/ref codes from the order number
-  const digits = orderNum.replace(/\D/g, "").padStart(8, "0");
-  const storeNum = digits.slice(-5);
-  const termNum  = digits.slice(-10).padStart(10, "1");
-  const seqNum   = digits.slice(-6).padStart(6, "2");
-  const approvalNum = (parseInt(digits.slice(-6), 10) % 999999).toString().padStart(6, "8");
-  const authCode    = (parseInt(digits.slice(-2), 10) % 99).toString().padStart(2, "0");
-  const refNum      = `${digits.slice(-5)} ${digits.slice(-2)} ${digits.slice(-3)} 1`;
-
-  // Approval time derived from order timestamp (HH:MM:HHMM format on reference)
-  const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
-  const hh = createdAt.getHours().toString().padStart(2, "0");
-  const mm = createdAt.getMinutes().toString().padStart(2, "0");
-  const ss = createdAt.getSeconds().toString().padStart(2, "0");
-  const approvalTime = `${hh}${mm}:${hh}${mm}${ss}`;
 
   // Tax indicator: "T" for taxable (when order has tax), "B" for non-taxable
   const taxInd = order.tax > 0 ? "T" : "B";
@@ -1215,6 +1210,9 @@ function buildConvenienceReceiptHtml(
     for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
       html += `<div class="cv-mod">&nbsp;&nbsp;+ ${escHtml(m.optionName)}</div>`;
     }
+    if (item.notes && item.notes.trim()) {
+      html += `<div class="cv-mod">&nbsp;&nbsp;↳ Note: ${escHtml(item.notes.trim())}</div>`;
+    }
     return html;
   }).join("");
 
@@ -1233,13 +1231,13 @@ function buildConvenienceReceiptHtml(
       <span>${fmt(order.total * exchangeRate, secondaryCurrency)}</span>
     </div>` : "";
 
-  // Payment block — large bold method + amount like "VISA  14.00"
+  // Payment block — large bold method + amount like "CARD  14.00"
   const isCard   = order.paymentMethod === "card" || order.paymentMethod === "credit";
   const isSplit  = order.paymentMethod === "split";
   const isCash   = order.paymentMethod === "cash";
   const methodLabel = (() => {
     if (isCash)   return "CASH";
-    if (isCard)   return "VISA";
+    if (isCard)   return "CARD";
     if (isSplit)  return "SPLIT";
     if (order.paymentMethod === "topup") return "TOPUP";
     if (order.paymentMethod === "loyalty") return "LOYALTY";
@@ -1261,26 +1259,6 @@ function buildConvenienceReceiptHtml(
     <div class="cv-card-row"><span>CARD</span><span>${fmtNum(order.splitCardAmount ?? 0)}</span></div>
     <div class="cv-card-row"><span>CASH</span><span>${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : "";
 
-  // Card detail block — shown for any card-ish payment
-  const hashNum = (s: string, len: number) => {
-    let h = 5381;
-    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-    return String(h).padStart(len, "0").slice(-len);
-  };
-  const isCardish = isCard || isSplit;
-  const cardBlockHtml = isCardish ? `
-    <div class="cv-card-row"><span>ACCT# :</span><span>************</span></div>
-    <div class="cv-card-row"><span>ACCT TYPE :</span><span>DDA</span></div>
-    <div class="cv-card-row"><span>APPROVAL# : ${escHtml(approvalNum)}</span><span>AUTH CODE: ${escHtml(authCode)}</span></div>
-    <div class="cv-card-row"><span>APPROVAL TIME : ${escHtml(approvalTime)}</span></div>
-    <div class="cv-card-single">Maestro</div>
-    <div class="cv-card-row"><span>STORE#  :</span><span>${escHtml(storeNum)}</span></div>
-    <div class="cv-card-row"><span>TERM#   :</span><span>${escHtml(termNum)}</span></div>
-    <div class="cv-card-row"><span>TERM SEQ#:</span><span>${escHtml(seqNum)}</span></div>
-    <div class="cv-card-row"><span>REF#    :</span><span>${escHtml(refNum)}</span></div>
-    <div class="cv-card-row"><span>ENTRY   :</span><span>CHIP</span></div>
-    <div class="cv-card-single">APPROVED</div>` : "";
-
   // Loyalty
   const loyaltyHtml = (order.loyaltyPointsEarned || order.loyaltyPointsRedeemed) ? `
     <div class="cv-center cv-loyalty">
@@ -1295,11 +1273,6 @@ function buildConvenienceReceiptHtml(
     ? `<div class="cv-center cv-outstanding">ACCOUNT BALANCE DUE: ${fmt(order.customerOutstandingBalance)}</div>` : "";
 
   const notesHtml = order.notes ? `<div class="cv-note">Note: ${escHtml(order.notes)}</div>` : "";
-
-  // Footer: T# OP TRN date/time (reference image bottom line)
-  const tNum  = `T${storeNum.slice(-2)}`;
-  const opNum = hashNum(order.staffName ?? orderNum, 4).toUpperCase();
-  const trnNum = `TRN${digits.slice(-4)}`;
 
   return `<!DOCTYPE html>
 <html>
@@ -1402,7 +1375,6 @@ function buildConvenienceReceiptHtml(
   <div class="cv-name">${escHtml(businessName.toUpperCase())}</div>
   ${addressLines.map(l => `<div class="cv-center cv-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
   ${businessPhone ? `<div class="cv-center cv-sub">${escHtml(businessPhone)}</div>` : ""}
-  <div class="cv-center cv-sub">STORE #: ${escHtml(storeNum)}</div>
   <div class="cv-center cv-sub">THANKS FOR SHOPPING</div>
   <div class="cv-center cv-sub">with ${escHtml(businessName)}</div>
 
@@ -1423,7 +1395,6 @@ function buildConvenienceReceiptHtml(
   ${paymentHeaderHtml}
   ${cashChangeHtml}
   ${splitHtml}
-  ${cardBlockHtml}
   ${notesHtml}
   ${loyaltyHtml}
   ${refundedHtml}
@@ -1431,12 +1402,10 @@ function buildConvenienceReceiptHtml(
 
   <div class="cv-div"></div>
 
-  <div class="cv-agreement">CUSTOMER AGREES TO PAY THE ABOVE<br>TOTAL AMOUNT ACCORDING TO THE<br>CARD HOLDERS AGREEMENT</div>
-
   ${receiptFooter ? `<div class="cv-footer-marketing">${escHtml(receiptFooter)}</div>` : ""}
 
   <div class="cv-div-d"></div>
-  <div class="cv-tid">${escHtml(tNum)} ${escHtml(opNum)} ${escHtml(trnNum)} ${escHtml(dateStr)}</div>
+  <div class="cv-tid">${escHtml(dateStr)}</div>
   <div class="cv-powered">Powered by NEXXUS POS</div>
 
 </body>
@@ -1470,9 +1439,6 @@ function buildStapleReceiptHtml(
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
     return String(h).padStart(len, "0").slice(-len);
   };
-
-  const digits = orderNum.replace(/\D/g, "").padStart(10, "0");
-  const transactionId = digits.padStart(18, "2");
 
   // Parse time for the SALE row
   const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
@@ -1510,6 +1476,7 @@ function buildStapleReceiptHtml(
     const mods = [
       ...((item.variantChoices as { optionName: string }[] | null) ?? []).map(v => `↳ ${v.optionName}`),
       ...((item.modifierChoices as { optionName: string }[] | null) ?? []).map(m => `+ ${m.optionName}`),
+      ...(item.notes && item.notes.trim() ? [`↳ Note: ${item.notes.trim()}`] : []),
     ];
     const savingsIdx = (orig != null && unit != null && orig > unit) ? subLines.length - 1 : -1;
     return `
@@ -1549,17 +1516,8 @@ function buildStapleReceiptHtml(
     if (order.paymentMethod === "loyalty") return "LOYALTY";
     return (order.paymentMethod ?? "PAYMENT").toUpperCase();
   })();
-  const authNo  = hashStr(orderNum + "auth", 6).toUpperCase();
-  const aidCode = `${hashStr(orderNum+"aid1",4).toUpperCase()}${hashStr(orderNum+"aid2",2).toUpperCase()}${hashStr(orderNum+"aid3",4).toUpperCase()}${hashStr(orderNum+"aid4",4)}`;
-
-  const isCardish = isCard || isSplit;
   const paymentBlockHtml = `
     <div class="st-pay-label">${escHtml(payLabel)}</div>
-    ${isCardish ? `
-    <div class="st-pay-row"><span>Card No. :</span><span>************ ${digits.slice(-4)}</span></div>
-    <div class="st-pay-single">Chip Read</div>
-    <div class="st-pay-row"><span>Auth No. :</span><span>${escHtml(authNo)}</span></div>
-    <div class="st-pay-row"><span>AID. :</span><span>${escHtml(aidCode)}</span></div>` : ""}
     ${isSplit ? `
     <div class="st-pay-row"><span>CARD</span><span>$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
     <div class="st-pay-row"><span>CASH</span><span>$${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}
@@ -1712,7 +1670,7 @@ function buildStapleReceiptHtml(
 
   <div class="st-sale-row">
     <span class="st-sale-label">SALE</span>
-    <span class="st-sub" style="text-align:right;">${escHtml(transactionId)}<br>${escHtml(saleDate)}</span>
+    <span class="st-sub" style="text-align:right;">${escHtml(orderNum)}<br>${escHtml(saleDate)}</span>
     <span class="st-sub" style="text-align:right;white-space:nowrap;">&nbsp;${escHtml(saleTime)}</span>
   </div>
 
@@ -1798,7 +1756,7 @@ function buildHardwareReceiptHtml(
       : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     return `
       <tr>
-        <td class="hw-item">${escHtml(item.productName)}${uomHtml(item)}</td>
+        <td class="hw-item">${escHtml(item.productName)}${uomHtml(item)}${item.notes && item.notes.trim() ? `<div style="font-size:9px;color:#444;font-style:italic;">Note: ${escHtml(item.notes.trim())}</div>` : ""}</td>
         <td class="hw-num">${fmtNum(item.quantity)}</td>
         <td class="hw-attr">${escHtml(attribute || "—")}</td>
         <td class="hw-attr">${escHtml(size || "—")}</td>
@@ -2078,6 +2036,9 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
     for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
       lines.push(`   + ${m.optionName}`);
     }
+    if (item.notes && item.notes.trim()) {
+      lines.push(`   ↳ Note: ${item.notes.trim()}`);
+    }
   }
 
   lines.push(`─────────────────────`);
@@ -2192,6 +2153,9 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
     }
     for (const m of (item.modifierChoices as { optionName: string }[] | null) ?? []) {
       html += `<div class="sub">&nbsp;+ ${escHtml(m.optionName)}</div>`;
+    }
+    if (item.notes && item.notes.trim()) {
+      html += `<div class="sub">&nbsp;&#8627; Note: ${escHtml(item.notes.trim())}</div>`;
     }
     return html;
   }).join("");

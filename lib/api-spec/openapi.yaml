@@ -2592,6 +2592,10 @@ components:
           type: string
           nullable: true
           description: Optional free-text selling unit / UOM label of the product (e.g. "each", "case"). Surfaced on the POS and receipts. NULL = not set.
+        notes:
+          type: string
+          nullable: true
+          description: Optional free-text per-line note (e.g. "cut thin", "extra lean"). Surfaced on receipts. NULL = none.
       required:
         - id
         - productId
@@ -2631,6 +2635,9 @@ components:
                 type: array
                 items:
                   $ref: "#/components/schemas/ChoiceItem"
+              notes:
+                type: string
+                description: Optional per-line note entered at the POS (e.g. "cut thin, extra lean"). Persisted on the order item and printed on receipts.
             required:
               - quantity
         paymentMethod:
