@@ -884,6 +884,12 @@ export const ListOrdersResponseItem = zod.object({
   discountAmount: zod.number().nullish(),
   discountValue: zod.number().nullish(),
   tax: zod.number(),
+  serviceCharge: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dine-in service charge (restaurant mode). A percentage of the post-discount goods subtotal, applied only to dine-in orders when the tenant enables it. GCT is charged on top of this amount. 0\/null = none. Server-computed.",
+    ),
   total: zod.number(),
   refundedTotal: zod
     .number()
@@ -1136,6 +1142,12 @@ export const GetOrderResponse = zod.object({
   discountAmount: zod.number().nullish(),
   discountValue: zod.number().nullish(),
   tax: zod.number(),
+  serviceCharge: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dine-in service charge (restaurant mode). A percentage of the post-discount goods subtotal, applied only to dine-in orders when the tenant enables it. GCT is charged on top of this amount. 0\/null = none. Server-computed.",
+    ),
   total: zod.number(),
   refundedTotal: zod
     .number()
@@ -1308,6 +1320,12 @@ export const UpdateOrderStatusResponse = zod.object({
   discountAmount: zod.number().nullish(),
   discountValue: zod.number().nullish(),
   tax: zod.number(),
+  serviceCharge: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dine-in service charge (restaurant mode). A percentage of the post-discount goods subtotal, applied only to dine-in orders when the tenant enables it. GCT is charged on top of this amount. 0\/null = none. Server-computed.",
+    ),
   total: zod.number(),
   refundedTotal: zod
     .number()
@@ -1495,6 +1513,12 @@ export const RefundOrderItemsResponse = zod.object({
     discountAmount: zod.number().nullish(),
     discountValue: zod.number().nullish(),
     tax: zod.number(),
+    serviceCharge: zod
+      .number()
+      .nullish()
+      .describe(
+        "Dine-in service charge (restaurant mode). A percentage of the post-discount goods subtotal, applied only to dine-in orders when the tenant enables it. GCT is charged on top of this amount. 0\/null = none. Server-computed.",
+      ),
     total: zod.number(),
     refundedTotal: zod
       .number()
@@ -1717,6 +1741,12 @@ export const ChargeOrderResponse = zod.object({
   discountAmount: zod.number().nullish(),
   discountValue: zod.number().nullish(),
   tax: zod.number(),
+  serviceCharge: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dine-in service charge (restaurant mode). A percentage of the post-discount goods subtotal, applied only to dine-in orders when the tenant enables it. GCT is charged on top of this amount. 0\/null = none. Server-computed.",
+    ),
   total: zod.number(),
   refundedTotal: zod
     .number()
@@ -2400,6 +2430,12 @@ export const GetRecentOrdersResponseItem = zod.object({
   discountAmount: zod.number().nullish(),
   discountValue: zod.number().nullish(),
   tax: zod.number(),
+  serviceCharge: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dine-in service charge (restaurant mode). A percentage of the post-discount goods subtotal, applied only to dine-in orders when the tenant enables it. GCT is charged on top of this amount. 0\/null = none. Server-computed.",
+    ),
   total: zod.number(),
   refundedTotal: zod
     .number()
@@ -2749,6 +2785,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
   discountAmount: zod.number().nullish(),
   discountValue: zod.number().nullish(),
   tax: zod.number(),
+  serviceCharge: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dine-in service charge (restaurant mode). A percentage of the post-discount goods subtotal, applied only to dine-in orders when the tenant enables it. GCT is charged on top of this amount. 0\/null = none. Server-computed.",
+    ),
   total: zod.number(),
   refundedTotal: zod
     .number()

@@ -2493,6 +2493,11 @@ components:
         tax:
           type: number
           format: float
+        serviceCharge:
+          type: number
+          format: float
+          nullable: true
+          description: Dine-in service charge (restaurant mode). A percentage of the post-discount goods subtotal, applied only to dine-in orders when the tenant enables it. GCT is charged on top of this amount. 0/null = none. Server-computed.
         total:
           type: number
           format: float

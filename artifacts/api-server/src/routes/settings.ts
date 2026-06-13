@@ -30,6 +30,8 @@ const DEFAULTS: Record<string, string> = {
   business_tax_number: "",
   tax_rate: "15",
   tax_mode: "exclusive",
+  service_charge_enabled: "false",
+  service_charge_rate: "",
   receipt_footer: "Thank you for your business!",
   base_currency: "JMD",
   secondary_currency: "",

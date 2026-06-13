@@ -101,6 +101,7 @@ function normalizeOrder(order: typeof ordersTable.$inferSelect) {
     discountType: order.discountType ?? undefined,
     discountAmount: order.discountAmount ?? undefined,
     discountValue: order.discountValue ?? undefined,
+    serviceCharge: order.serviceCharge ?? undefined,
     paymentMethod: order.paymentMethod ?? undefined,
     cardType: order.cardType ?? undefined,
     splitCardAmount: order.splitCardAmount ?? undefined,
@@ -505,6 +506,18 @@ router.post("/orders", async (req, res): Promise<void> => {
   const taxModeValue = (await getSetting("tax_mode", tenantId)) ?? "exclusive";
   const allowOverselling = (await getSetting("allow_overselling", tenantId)) === "true";
 
+  // Dine-in service charge (restaurant mode): a tenant-configurable percentage
+  // of the post-discount goods subtotal, applied ONLY to dine-in orders. GCT is
+  // charged on top of it (folded into the tax base below). Disabled / non-dine-in
+  // orders carry a 0 service charge.
+  const serviceChargeEnabled = (await getSetting("service_charge_enabled", tenantId)) === "true";
+  const serviceChargeRate =
+    serviceChargeEnabled && parsed.data.orderType === "dine-in"
+      ? Math.max(0, parseFloat((await getSetting("service_charge_rate", tenantId)) || "0") / 100)
+      : 0;
+  const serviceCharge =
+    serviceChargeRate > 0 ? Math.round(discountedSubtotal * serviceChargeRate * 100) / 100 : 0;
+
   // Apply order-level discount/loyalty proportionally to the taxable bucket
   // so that non-taxable items never inflate the tax base. Promo lines are
   // locked, so the discount's taxable share is computed from the non-promo
@@ -517,12 +530,20 @@ router.post("/orders", async (req, res): Promise<void> => {
     0,
     taxableRawSubtotal - discountValue * taxableFraction - loyaltyDiscount * taxableFraction,
   );
-  const tax = taxModeValue === "inclusive"
+  const goodsTax = taxModeValue === "inclusive"
     ? Math.round(taxableDiscountedSubtotal * taxRate / (1 + taxRate) * 100) / 100
     : Math.round(taxableDiscountedSubtotal * taxRate * 100) / 100;
+  // GCT on the service charge. In inclusive mode the charge is treated as
+  // tax-inclusive (tax extracted); in exclusive mode tax is added on top.
+  const serviceTax = serviceCharge > 0
+    ? (taxModeValue === "inclusive"
+        ? Math.round(serviceCharge * taxRate / (1 + taxRate) * 100) / 100
+        : Math.round(serviceCharge * taxRate * 100) / 100)
+    : 0;
+  const tax = Math.round((goodsTax + serviceTax) * 100) / 100;
   const total = taxModeValue === "inclusive"
-    ? Math.round(discountedSubtotal * 100) / 100
-    : Math.round((discountedSubtotal + tax) * 100) / 100;
+    ? Math.round((discountedSubtotal + serviceCharge) * 100) / 100
+    : Math.round((discountedSubtotal + serviceCharge + tax) * 100) / 100;
 
   const isOpenOrder = parsed.data.orderType === "dine-in" && !parsed.data.paymentMethod;
   const isPaid = !!parsed.data.paymentMethod;
@@ -1046,6 +1067,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           discountAmount: parsed.data.discountAmount,
           discountValue: discountValue > 0 ? Math.round(discountValue * 100) / 100 : undefined,
           tax,
+          serviceCharge: serviceCharge > 0 ? serviceCharge : undefined,
           total,
           paymentMethod: parsed.data.paymentMethod,
           cardType: parsed.data.cardType,

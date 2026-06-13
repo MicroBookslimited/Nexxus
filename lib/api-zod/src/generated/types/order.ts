@@ -18,6 +18,8 @@ export interface Order {
   discountAmount?: number | null;
   discountValue?: number | null;
   tax: number;
+  /** Dine-in service charge (restaurant mode). A percentage of the post-discount goods subtotal, applied only to dine-in orders when the tenant enables it. GCT is charged on top of this amount. 0/null = none. Server-computed. */
+  serviceCharge?: number | null;
   total: number;
   /** Cumulative money refunded via partial (per-item) refunds. > 0 means the order is partially refunded. */
   refundedTotal?: number | null;

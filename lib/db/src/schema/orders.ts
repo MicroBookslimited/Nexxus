@@ -14,6 +14,10 @@ export const ordersTable = pgTable("orders", {
   discountAmount: real("discount_amount"),
   discountValue: real("discount_value"),
   tax: real("tax").notNull(),
+  // Optional dine-in service charge (restaurant mode). Percentage of the
+  // post-discount goods subtotal, applied ONLY to dine-in orders when the
+  // tenant enables it. GCT is charged on top of this amount. 0 = none.
+  serviceCharge: real("service_charge").default(0),
   total: real("total").notNull(),
   paymentMethod: text("payment_method"),
   // For card / split (card-portion) payments: which kind of card was used.

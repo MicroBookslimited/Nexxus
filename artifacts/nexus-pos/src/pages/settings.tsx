@@ -43,6 +43,8 @@ export function AdminSettings() {
   const [businessTaxNumber, setBusinessTaxNumber] = useState("");
   const [taxRate, setTaxRate] = useState("");
   const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
+  const [serviceChargeEnabled, setServiceChargeEnabled] = useState(false);
+  const [serviceChargeRate, setServiceChargeRate] = useState("");
   const [receiptFooter, setReceiptFooter] = useState("");
   const [receiptSize, setReceiptSize] = useState<"58mm" | "80mm">("80mm");
   const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant" | "hardware">("classic");
@@ -97,6 +99,8 @@ export function AdminSettings() {
     setBusinessTaxNumber(settings.business_tax_number ?? "");
     setTaxRate(settings.tax_rate ?? "15");
     setTaxMode((settings.tax_mode as "exclusive" | "inclusive") ?? "exclusive");
+    setServiceChargeEnabled(settings.service_charge_enabled === "true");
+    setServiceChargeRate(settings.service_charge_rate ?? "");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
     setReceiptSize((settings.receipt_size as "58mm" | "80mm") ?? "80mm");
     setAutoPrintReceipt(settings.auto_print_receipt === "true");
@@ -145,6 +149,8 @@ export function AdminSettings() {
           business_logo_url: businessLogoUrl,
           tax_rate: taxRate,
           tax_mode: taxMode,
+          service_charge_enabled: serviceChargeEnabled ? "true" : "false",
+          service_charge_rate: serviceChargeRate.trim(),
           receipt_footer: receiptFooter,
           receipt_size: receiptSize,
           auto_print_receipt: autoPrintReceipt ? "true" : "false",
@@ -458,6 +464,52 @@ export function AdminSettings() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Service Charge (dine-in only) */}
+          <div className="rounded-lg border border-border p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="pr-4">
+                <p className="text-sm font-medium">Service charge (dine-in only)</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  When on, a percentage service charge is added to <strong>dine-in</strong> orders only — never takeout or delivery. This is separate from GCT; GCT is charged on top of the service charge.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={serviceChargeEnabled}
+                onClick={() => { setServiceChargeEnabled(!serviceChargeEnabled); markDirty(); }}
+                className={cn(
+                  "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  serviceChargeEnabled ? "bg-primary" : "bg-muted-foreground/30"
+                )}
+              >
+                <span className={cn(
+                  "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                  serviceChargeEnabled ? "translate-x-5" : "translate-x-0"
+                )} />
+              </button>
+            </div>
+            {serviceChargeEnabled && (
+              <div className="space-y-1.5">
+                <Label htmlFor="service-charge-rate">Service charge rate</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="service-charge-rate"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={serviceChargeRate}
+                    onChange={(e) => { setServiceChargeRate(e.target.value); markDirty(); }}
+                    className="w-28"
+                    placeholder="10"
+                  />
+                  <span className="text-sm text-muted-foreground">% of the order</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Receipt Paper Size */}

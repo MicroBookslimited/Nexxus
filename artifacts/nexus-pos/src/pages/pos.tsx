@@ -429,6 +429,7 @@ function printReceiptWindow(
     items: order.items,
     subtotal: order.subtotal,
     tax: order.tax,
+    serviceCharge: order.serviceCharge,
     total: order.total,
     discountValue: order.discountValue,
     paymentMethod: order.paymentMethod,
@@ -1473,10 +1474,25 @@ export function POS() {
     0,
     taxableSubtotal - cartDiscountValue * taxableFraction - loyaltyDiscountValue * taxableFraction,
   );
-  const tax = taxMode === "inclusive"
+  // Dine-in service charge preview (mirrors the server math in orders.ts):
+  // a % of the post-discount subtotal, dine-in only, with GCT charged on top.
+  const serviceChargeEnabled = settings?.service_charge_enabled === "true";
+  const serviceChargeRate = serviceChargeEnabled && orderMode === "dine-in"
+    ? Math.max(0, parseFloat(settings?.service_charge_rate || "0") / 100)
+    : 0;
+  const serviceCharge = serviceChargeRate > 0
+    ? Math.round(discountedSubtotal * serviceChargeRate * 100) / 100
+    : 0;
+  const goodsTax = taxMode === "inclusive"
     ? taxableDiscountedSubtotal * taxRate / (1 + taxRate)
     : taxableDiscountedSubtotal * taxRate;
-  const total = taxMode === "inclusive" ? discountedSubtotal : discountedSubtotal + tax;
+  const serviceTax = serviceCharge > 0
+    ? (taxMode === "inclusive" ? serviceCharge * taxRate / (1 + taxRate) : serviceCharge * taxRate)
+    : 0;
+  const tax = goodsTax + serviceTax;
+  const total = taxMode === "inclusive"
+    ? discountedSubtotal + serviceCharge
+    : discountedSubtotal + serviceCharge + tax;
 
   // A gift voucher is a TENDER: it pays down `voucherApplied` of the total and
   // the customer settles the remaining `amountDue` with a normal method. The
@@ -1772,6 +1788,7 @@ export function POS() {
         subtotal,
         discountValue: cartDiscountValue + loyaltyDiscountValue,
         tax,
+        serviceCharge,
         total,
         cashTendered: cashTendered ?? null,
         splitCardAmount: paymentMethod === "split" ? splitCardAmount : null,
@@ -2997,6 +3014,11 @@ export function POS() {
                       <span>Loyalty</span><span className="font-mono">-{fmtNum(loyaltyDiscountValue)}</span>
                     </div>
                   )}
+                  {serviceCharge > 0 && (
+                    <div className="flex justify-between text-slate-700">
+                      <span>Service Charge ({fmtNum(serviceChargeRate * 100)}%)</span><span className="font-mono">{fmtNum(serviceCharge)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-slate-700">
                     <span>GCT {taxPct > 0 ? `(${taxPct}%)` : ""}{taxMode === "inclusive" ? " incl." : ""}</span><span className="font-mono">{fmtNum(tax)}</span>
                   </div>
@@ -4054,6 +4076,12 @@ export function POS() {
                   <div className="flex justify-between text-amber-400">
                     <span>Discount</span>
                     <span className="font-mono">-{fmtNum(receiptOrder.discountValue)}</span>
+                  </div>
+                )}
+                {(receiptOrder.serviceCharge ?? 0) > 0 && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Service Charge</span>
+                    <span className="font-mono">{fmtNum(receiptOrder.serviceCharge ?? 0)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-muted-foreground">

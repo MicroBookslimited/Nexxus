@@ -76,6 +76,8 @@ export interface ReceiptOrder {
   subtotal: number;
   tax: number;
   total: number;
+  /** Dine-in service charge (restaurant mode). 0/null = none. Shown before tax. */
+  serviceCharge?: number | null;
   discountValue?: number | null;
   paymentMethod?: string | null;
   cardType?: string | null;
@@ -135,6 +137,7 @@ export function receiptOrderFrom(
     subtotal: number;
     tax: number;
     total: number;
+    serviceCharge?: number | null;
     discountValue?: number | null;
     paymentMethod?: string | null;
     cardType?: string | null;
@@ -162,6 +165,7 @@ export function receiptOrderFrom(
     subtotal: order.subtotal,
     tax: order.tax,
     total: order.total,
+    serviceCharge: order.serviceCharge ?? null,
     discountValue: order.discountValue ?? null,
     paymentMethod: order.paymentMethod ?? null,
     cardType: order.cardType ?? null,
@@ -364,10 +368,11 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     }).join("");
 
     // Totals block — show subtotal + tax only when there's a difference or tax
-    const showBreakdown = (order.tax ?? 0) > 0 || (order.discountValue ?? 0) > 0;
+    const showBreakdown = (order.tax ?? 0) > 0 || (order.discountValue ?? 0) > 0 || (order.serviceCharge ?? 0) > 0;
     const breakdownHtml = showBreakdown ? `
       <div class="r-row r-light"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
       ${(order.discountValue ?? 0) > 0 ? `<div class="r-row r-light"><span>Discount</span><span>-${fmt(order.discountValue ?? 0)}</span></div>` : ""}
+      ${(order.serviceCharge ?? 0) > 0 ? `<div class="r-row r-light"><span>Service Charge</span><span>${fmt(order.serviceCharge ?? 0)}</span></div>` : ""}
       ${(order.tax ?? 0) > 0 ? `<div class="r-row r-light"><span>${escHtml(taxName)} (${taxRate}%)</span><span>${fmt(order.tax)}</span></div>` : ""}
       <div class="r-sep"></div>` : "";
 
@@ -792,6 +797,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   <div class="row sub-row"><span>Subtotal:</span><span class="nowrap">${fmtNum(order.subtotal)}</span></div>
   ${discountHtml}
   ${savingsHtml}
+  ${(order.serviceCharge ?? 0) > 0 ? `<div class="row sub-row"><span>Service Charge:</span><span class="nowrap">${fmtNum(order.serviceCharge ?? 0)}</span></div>` : ""}
   <div class="row sub-row"><span>${taxName} (${taxRate}%):</span><span class="nowrap">${fmtNum(order.tax)}</span></div>
   <div class="total-row"><span>Total:</span><span>${fmt(order.total)}</span></div>
   ${secondaryHtml}
@@ -2135,6 +2141,9 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   if (tierSavings > 0) {
     lines.push(`💰 You saved: -${fmtNum(tierSavings)} (volume pricing)`);
   }
+  if ((order.serviceCharge ?? 0) > 0) {
+    lines.push(`Service:    ${fmtNum(order.serviceCharge ?? 0)}`);
+  }
   lines.push(`${taxName} (${taxRate}%): ${fmtNum(order.tax)}`);
   lines.push(`─────────────────────`);
   lines.push(`*Total:     ${fmt(order.total)}*`);
@@ -2359,6 +2368,7 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
   ${row("Subtotal:", fmtNum(order.subtotal), "sub")}
   ${discountHtml}
   ${savingsHtml}
+  ${(order.serviceCharge ?? 0) > 0 ? row("Service Charge:", fmtNum(order.serviceCharge ?? 0), "sub") : ""}
   ${row(`${escHtml(taxName)} (${escHtml(taxRate)}%):`, fmtNum(order.tax), "sub")}
   ${row("Total:", fmt(order.total), "total")}
   ${secondaryHtml}
