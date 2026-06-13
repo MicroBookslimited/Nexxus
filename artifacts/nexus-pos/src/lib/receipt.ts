@@ -325,7 +325,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
       ? `<div>Tel# ${escHtml(businessPhone)}</div>` : "";
 
     const logoHtml = businessLogoUrl
-      ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:60px;max-width:160px;object-fit:contain;" /></div>`
+      ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:90px;max-width:240px;object-fit:contain;" /></div>`
       : "";
 
     // Items: name + line total on first row, qty × unitPrice on second row,
@@ -664,7 +664,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   const orderTypeLabel = order.orderType ? escHtml(order.orderType) : "Sale";
 
   const logoHtml = businessLogoUrl
-    ? `<div style="text-align:${tpl.headerAlign};margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:60px;max-width:160px;object-fit:contain;" /></div>`
+    ? `<div style="text-align:${tpl.headerAlign};margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:90px;max-width:240px;object-fit:contain;" /></div>`
     : "";
 
   const headerHtml = `
@@ -1022,7 +1022,7 @@ function buildSupermarketReceiptHtml(
     ? `<div class="sm-refunded">★ REFUNDED ★</div>` : "";
 
   const logoHtml = businessLogoUrl
-    ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:60px;max-width:160px;object-fit:contain;" /></div>`
+    ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:90px;max-width:240px;object-fit:contain;" /></div>`
     : "";
 
   // Address may contain commas / line breaks — split on commas/newlines so each
@@ -1146,9 +1146,9 @@ function buildSupermarketReceiptHtml(
   ${logoHtml}
   <div class="sm-store-name">${escHtml(businessName.toUpperCase())}</div>
   ${businessPhone ? `<div class="sm-center sm-sub">${escHtml(businessPhone)}</div>` : ""}
+  ${addressLines.map(l => `<div class="sm-center sm-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
   ${order.staffName ? `<div class="sm-center sm-sub">CASHIER ${escHtml(order.staffName.toUpperCase())}</div>` : ""}
   ${order.stationNumber != null ? `<div class="sm-center sm-sub">STATION #${order.stationNumber}</div>` : ""}
-  ${addressLines.map(l => `<div class="sm-center sm-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
 
   ${idRowHtml}
 
@@ -1245,7 +1245,7 @@ function buildConvenienceReceiptHtml(
 
   // Logo
   const logoHtml = businessLogoUrl
-    ? `<div class="cv-center"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:54px;max-width:140px;object-fit:contain;margin-bottom:3px;" /></div>`
+    ? `<div class="cv-center"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:80px;max-width:210px;object-fit:contain;margin-bottom:3px;" /></div>`
     : "";
 
   // Items — each line: QTY  Name @ unit  Price T/B
@@ -1522,7 +1522,7 @@ function buildStapleReceiptHtml(
   const taxInd = order.tax > 0 ? " N" : "";
 
   const logoHtml = businessLogoUrl
-    ? `<div class="st-center"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:60px;max-width:160px;object-fit:contain;margin-bottom:4px;" /></div>`
+    ? `<div class="st-center"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:90px;max-width:240px;object-fit:contain;margin-bottom:4px;" /></div>`
     : "";
 
   const addressLines = (businessAddress || "")
@@ -1807,7 +1807,7 @@ function buildHardwareReceiptHtml(
     .split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
   const logoHtml = businessLogoUrl
-    ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:54px;max-width:220px;object-fit:contain;" /></div>`
+    ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:80px;max-width:300px;object-fit:contain;" /></div>`
     : "";
 
   // Choices → comma-joined text for the Attribute / Size columns.
