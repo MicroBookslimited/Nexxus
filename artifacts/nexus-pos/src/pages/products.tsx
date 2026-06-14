@@ -2832,6 +2832,7 @@ export function Products() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Record<number, boolean>>({});
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ mode: "archive" | "restore"; done: number; total: number } | null>(null);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [restockProduct, setRestockProduct] = useState<GetProductResponse | null>(null);
   const [restockForm, setRestockForm] = useState<RestockForm>(emptyRestockForm());
@@ -3543,35 +3544,64 @@ export function Products() {
     });
   const clearSelection = () => setSelectedIds({});
 
-  const doBulkArchive = () => {
-    if (selectedList.length === 0) return;
-    bulkArchive.mutate(
-      { data: { ids: selectedList } },
-      {
-        onSuccess: (res) => {
-          toast({ title: `${res.count} product${res.count === 1 ? "" : "s"} archived`, description: "History is preserved. Toggle 'Show archived' to restore." });
-          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-          clearSelection();
-          setBulkConfirmOpen(false);
-        },
-        onError: () => toast({ title: "Bulk archive failed", variant: "destructive" }),
-      },
-    );
+  // Bulk archive/restore run in client-side batches so very large selections
+  // (thousands of products) succeed without a single oversized request timing
+  // out, and surface a progress bar like the import flow.
+  const BULK_CHUNK = 300;
+  const runBatched = async (mode: "archive" | "restore", ids: number[]) => {
+    const mutateAsync = mode === "archive" ? bulkArchive.mutateAsync : bulkRestore.mutateAsync;
+    setBulkProgress({ mode, done: 0, total: ids.length });
+    let affected = 0;
+    let failed = 0;
+    let consecutiveFailures = 0;
+    let aborted = false;
+    for (let i = 0; i < ids.length; i += BULK_CHUNK) {
+      const chunk = ids.slice(i, i + BULK_CHUNK);
+      try {
+        const res = await mutateAsync({ data: { ids: chunk } });
+        affected += res.count;
+        consecutiveFailures = 0;
+      } catch {
+        failed += chunk.length;
+        consecutiveFailures += 1;
+      }
+      setBulkProgress({ mode, done: Math.min(i + BULK_CHUNK, ids.length), total: ids.length });
+      // Stop early if the server is consistently rejecting (e.g. session
+      // expiry / permission loss) rather than hammering it with the rest.
+      if (consecutiveFailures >= 3) {
+        const remaining = ids.length - Math.min(i + BULK_CHUNK, ids.length);
+        failed += remaining;
+        aborted = true;
+        break;
+      }
+    }
+    setBulkProgress(null);
+    return { affected, failed, aborted };
   };
 
-  const doBulkRestore = () => {
-    if (selectedList.length === 0) return;
-    bulkRestore.mutate(
-      { data: { ids: selectedList } },
-      {
-        onSuccess: (res) => {
-          toast({ title: `${res.count} product${res.count === 1 ? "" : "s"} restored` });
-          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-          clearSelection();
-        },
-        onError: () => toast({ title: "Restore failed", variant: "destructive" }),
-      },
-    );
+  const doBulkArchive = async () => {
+    if (selectedList.length === 0 || bulkProgress) return;
+    setBulkConfirmOpen(false);
+    const { affected, failed, aborted } = await runBatched("archive", selectedList);
+    queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    clearSelection();
+    if (failed > 0) {
+      toast({ title: `${affected} archived, ${failed} failed`, description: aborted ? "Stopped early after repeated errors — check your connection and retry." : "Some products could not be archived. Please retry.", variant: "destructive" });
+    } else {
+      toast({ title: `${affected} product${affected === 1 ? "" : "s"} archived`, description: "History is preserved. Toggle 'Show archived' to restore." });
+    }
+  };
+
+  const doBulkRestore = async () => {
+    if (selectedList.length === 0 || bulkProgress) return;
+    const { affected, failed, aborted } = await runBatched("restore", selectedList);
+    queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    clearSelection();
+    if (failed > 0) {
+      toast({ title: `${affected} restored, ${failed} failed`, description: aborted ? "Stopped early after repeated errors — check your connection and retry." : "Some products could not be restored. Please retry.", variant: "destructive" });
+    } else {
+      toast({ title: `${affected} product${affected === 1 ? "" : "s"} restored` });
+    }
   };
 
   const doRestoreOne = (id: number) => {
@@ -3757,7 +3787,7 @@ export function Products() {
           <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={clearSelection}>Clear</Button>
           <div className="flex-1" />
           {showArchived ? (
-            <Button size="sm" variant="default" className="gap-1.5" disabled={bulkRestore.isPending} onClick={doBulkRestore}>
+            <Button size="sm" variant="default" className="gap-1.5" disabled={!!bulkProgress} onClick={doBulkRestore}>
               <RotateCcw className="h-3.5 w-3.5" />Restore selected
             </Button>
           ) : (
@@ -5617,12 +5647,35 @@ export function Products() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={bulkArchive.isPending} onClick={doBulkArchive}>
-              {bulkArchive.isPending ? "Deleting…" : `Delete ${selectedCount}`}
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={!!bulkProgress} onClick={doBulkArchive}>
+              {bulkProgress ? "Deleting…" : `Delete ${selectedCount}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Bulk archive/restore progress */}
+      <Dialog open={!!bulkProgress}>
+        <DialogContent className="sm:max-w-sm" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>{bulkProgress?.mode === "restore" ? "Restoring products" : "Deleting products"}</DialogTitle>
+            <DialogDescription>
+              Please keep this window open until all products are processed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <div className="h-2 rounded-full bg-secondary overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-300 rounded-full"
+                style={{ width: `${bulkProgress ? (bulkProgress.done / Math.max(bulkProgress.total, 1)) * 100 : 0}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              {bulkProgress?.mode === "restore" ? "Restoring" : "Deleting"} {bulkProgress?.done ?? 0} of {bulkProgress?.total ?? 0}…
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Find & Merge Duplicates dialog */}
       <DuplicateMergeDialog open={mergeDialogOpen} onClose={() => setMergeDialogOpen(false)} />
