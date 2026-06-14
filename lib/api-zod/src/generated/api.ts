@@ -4003,3 +4003,183 @@ export const DeleteProductUnitParams = zod.object({
 export const DeleteProductUnitResponse = zod.object({
   success: zod.boolean(),
 });
+
+/**
+ * @summary Get the tenant's Shopify connection status (access token redacted).
+ */
+export const GetShopifyConnectionResponse = zod.object({
+  connected: zod.boolean(),
+  hasToken: zod.boolean(),
+  shopDomain: zod.string().nullish(),
+  apiVersion: zod.string().nullish(),
+  shopName: zod.string().nullish(),
+  status: zod.string().nullish(),
+  isActive: zod.boolean().nullish(),
+  syncProducts: zod.boolean().nullish(),
+  syncInventory: zod.boolean().nullish(),
+  syncOrders: zod.boolean().nullish(),
+  syncCustomers: zod.boolean().nullish(),
+  syncDirection: zod.string().nullish(),
+  defaultLocationId: zod.number().nullish(),
+  lastTestAt: zod.coerce.date().nullish(),
+  lastTestStatus: zod.string().nullish(),
+  lastTestMessage: zod.string().nullish(),
+  lastSyncAt: zod.coerce.date().nullish(),
+  lastSyncStatus: zod.string().nullish(),
+  lastSyncMessage: zod.string().nullish(),
+  connectedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Create or update the tenant's Shopify credentials. The token is stored encrypted and never returned.
+ */
+export const saveShopifyConnectionBodyApiVersionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}$",
+);
+
+export const SaveShopifyConnectionBody = zod.object({
+  shopDomain: zod
+    .string()
+    .describe("Store domain, e.g. my-store.myshopify.com or just the handle."),
+  accessToken: zod
+    .string()
+    .describe("Custom app Admin API access token (stored encrypted)."),
+  apiVersion: zod
+    .string()
+    .regex(saveShopifyConnectionBodyApiVersionRegExp)
+    .optional()
+    .describe("Admin API version, e.g. 2025-01."),
+  webhookSecret: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional custom-app API secret key for webhook HMAC verification.",
+    ),
+});
+
+export const SaveShopifyConnectionResponse = zod.object({
+  connected: zod.boolean(),
+  hasToken: zod.boolean(),
+  shopDomain: zod.string().nullish(),
+  apiVersion: zod.string().nullish(),
+  shopName: zod.string().nullish(),
+  status: zod.string().nullish(),
+  isActive: zod.boolean().nullish(),
+  syncProducts: zod.boolean().nullish(),
+  syncInventory: zod.boolean().nullish(),
+  syncOrders: zod.boolean().nullish(),
+  syncCustomers: zod.boolean().nullish(),
+  syncDirection: zod.string().nullish(),
+  defaultLocationId: zod.number().nullish(),
+  lastTestAt: zod.coerce.date().nullish(),
+  lastTestStatus: zod.string().nullish(),
+  lastTestMessage: zod.string().nullish(),
+  lastSyncAt: zod.coerce.date().nullish(),
+  lastSyncStatus: zod.string().nullish(),
+  lastSyncMessage: zod.string().nullish(),
+  connectedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Verify the saved Shopify credentials live and return the shop name.
+ */
+export const TestShopifyConnectionResponse = zod.object({
+  ok: zod.boolean(),
+  error: zod.string().optional(),
+  shop: zod
+    .object({
+      name: zod.string(),
+      myshopifyDomain: zod.string(),
+      email: zod.string().nullish(),
+      currencyCode: zod.string().nullish(),
+      planDisplayName: zod.string().nullish(),
+    })
+    .optional(),
+  connection: zod
+    .object({
+      connected: zod.boolean(),
+      hasToken: zod.boolean(),
+      shopDomain: zod.string().nullish(),
+      apiVersion: zod.string().nullish(),
+      shopName: zod.string().nullish(),
+      status: zod.string().nullish(),
+      isActive: zod.boolean().nullish(),
+      syncProducts: zod.boolean().nullish(),
+      syncInventory: zod.boolean().nullish(),
+      syncOrders: zod.boolean().nullish(),
+      syncCustomers: zod.boolean().nullish(),
+      syncDirection: zod.string().nullish(),
+      defaultLocationId: zod.number().nullish(),
+      lastTestAt: zod.coerce.date().nullish(),
+      lastTestStatus: zod.string().nullish(),
+      lastTestMessage: zod.string().nullish(),
+      lastSyncAt: zod.coerce.date().nullish(),
+      lastSyncStatus: zod.string().nullish(),
+      lastSyncMessage: zod.string().nullish(),
+      connectedAt: zod.coerce.date().nullish(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Update sync toggles, direction, and default location for the tenant's Shopify connection.
+ */
+export const UpdateShopifySyncSettingsBody = zod.object({
+  syncProducts: zod.boolean().optional(),
+  syncInventory: zod.boolean().optional(),
+  syncOrders: zod.boolean().optional(),
+  syncCustomers: zod.boolean().optional(),
+  syncDirection: zod
+    .enum(["shopify_to_nexus", "nexus_to_shopify", "two_way"])
+    .optional(),
+  defaultLocationId: zod.number().nullish(),
+});
+
+export const UpdateShopifySyncSettingsResponse = zod.object({
+  connected: zod.boolean(),
+  hasToken: zod.boolean(),
+  shopDomain: zod.string().nullish(),
+  apiVersion: zod.string().nullish(),
+  shopName: zod.string().nullish(),
+  status: zod.string().nullish(),
+  isActive: zod.boolean().nullish(),
+  syncProducts: zod.boolean().nullish(),
+  syncInventory: zod.boolean().nullish(),
+  syncOrders: zod.boolean().nullish(),
+  syncCustomers: zod.boolean().nullish(),
+  syncDirection: zod.string().nullish(),
+  defaultLocationId: zod.number().nullish(),
+  lastTestAt: zod.coerce.date().nullish(),
+  lastTestStatus: zod.string().nullish(),
+  lastTestMessage: zod.string().nullish(),
+  lastSyncAt: zod.coerce.date().nullish(),
+  lastSyncStatus: zod.string().nullish(),
+  lastSyncMessage: zod.string().nullish(),
+  connectedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Disconnect Shopify, deactivating the connection and clearing stored credentials.
+ */
+export const DisconnectShopifyResponse = zod.object({
+  connected: zod.boolean(),
+  hasToken: zod.boolean(),
+  shopDomain: zod.string().nullish(),
+  apiVersion: zod.string().nullish(),
+  shopName: zod.string().nullish(),
+  status: zod.string().nullish(),
+  isActive: zod.boolean().nullish(),
+  syncProducts: zod.boolean().nullish(),
+  syncInventory: zod.boolean().nullish(),
+  syncOrders: zod.boolean().nullish(),
+  syncCustomers: zod.boolean().nullish(),
+  syncDirection: zod.string().nullish(),
+  defaultLocationId: zod.number().nullish(),
+  lastTestAt: zod.coerce.date().nullish(),
+  lastTestStatus: zod.string().nullish(),
+  lastTestMessage: zod.string().nullish(),
+  lastSyncAt: zod.coerce.date().nullish(),
+  lastSyncStatus: zod.string().nullish(),
+  lastSyncMessage: zod.string().nullish(),
+  connectedAt: zod.coerce.date().nullish(),
+});

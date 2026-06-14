@@ -54,6 +54,10 @@ export const ordersTable = pgTable("orders", {
   staffId: integer("staff_id"),
   locationId: integer("location_id"),
   stationNumber: integer("station_number"),
+  // Sales channel this order originated from. "pos" for in-store sales (the
+  // default), "shopify" for orders imported from a connected Shopify store,
+  // "online" for the built-in online store. Lets reports distinguish channels.
+  salesChannel: text("sales_channel").notNull().default("pos"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });

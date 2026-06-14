@@ -2020,8 +2020,224 @@ paths:
                 required:
                   - success
 
+  /shopify/connection:
+    get:
+      operationId: getShopifyConnection
+      tags: [shopify]
+      summary: Get the tenant's Shopify connection status (access token redacted).
+      responses:
+        "200":
+          description: Sanitized Shopify connection status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopifyConnectionStatus"
+    post:
+      operationId: saveShopifyConnection
+      tags: [shopify]
+      summary: Create or update the tenant's Shopify credentials. The token is stored encrypted and never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShopifyConnectBody"
+      responses:
+        "200":
+          description: Updated connection status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopifyConnectionStatus"
+
+  /shopify/connection/test:
+    post:
+      operationId: testShopifyConnection
+      tags: [shopify]
+      summary: Verify the saved Shopify credentials live and return the shop name.
+      responses:
+        "200":
+          description: Test succeeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopifyTestResult"
+        "400":
+          description: Test failed or no credentials saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopifyTestResult"
+
+  /shopify/connection/sync-settings:
+    patch:
+      operationId: updateShopifySyncSettings
+      tags: [shopify]
+      summary: Update sync toggles, direction, and default location for the tenant's Shopify connection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShopifySyncSettingsBody"
+      responses:
+        "200":
+          description: Updated connection status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopifyConnectionStatus"
+
+  /shopify/connection/disconnect:
+    post:
+      operationId: disconnectShopify
+      tags: [shopify]
+      summary: Disconnect Shopify, deactivating the connection and clearing stored credentials.
+      responses:
+        "200":
+          description: Updated connection status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopifyConnectionStatus"
+
 components:
   schemas:
+    ShopifyConnectionStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        hasToken:
+          type: boolean
+        shopDomain:
+          type: string
+          nullable: true
+        apiVersion:
+          type: string
+          nullable: true
+        shopName:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+          nullable: true
+        syncProducts:
+          type: boolean
+          nullable: true
+        syncInventory:
+          type: boolean
+          nullable: true
+        syncOrders:
+          type: boolean
+          nullable: true
+        syncCustomers:
+          type: boolean
+          nullable: true
+        syncDirection:
+          type: string
+          nullable: true
+        defaultLocationId:
+          type: integer
+          nullable: true
+        lastTestAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastTestStatus:
+          type: string
+          nullable: true
+        lastTestMessage:
+          type: string
+          nullable: true
+        lastSyncAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastSyncStatus:
+          type: string
+          nullable: true
+        lastSyncMessage:
+          type: string
+          nullable: true
+        connectedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - connected
+        - hasToken
+    ShopifyConnectBody:
+      type: object
+      properties:
+        shopDomain:
+          type: string
+          description: Store domain, e.g. my-store.myshopify.com or just the handle.
+        accessToken:
+          type: string
+          description: Custom app Admin API access token (stored encrypted).
+        apiVersion:
+          type: string
+          description: Admin API version, e.g. 2025-01.
+          pattern: '^\d{4}-\d{2}$'
+        webhookSecret:
+          type: string
+          description: Optional custom-app API secret key for webhook HMAC verification.
+      required:
+        - shopDomain
+        - accessToken
+    ShopifySyncSettingsBody:
+      type: object
+      properties:
+        syncProducts:
+          type: boolean
+        syncInventory:
+          type: boolean
+        syncOrders:
+          type: boolean
+        syncCustomers:
+          type: boolean
+        syncDirection:
+          type: string
+          enum: [shopify_to_nexus, nexus_to_shopify, two_way]
+        defaultLocationId:
+          type: integer
+          nullable: true
+    ShopifyShopInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        myshopifyDomain:
+          type: string
+        email:
+          type: string
+          nullable: true
+        currencyCode:
+          type: string
+          nullable: true
+        planDisplayName:
+          type: string
+          nullable: true
+      required:
+        - name
+        - myshopifyDomain
+    ShopifyTestResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        error:
+          type: string
+        shop:
+          $ref: "#/components/schemas/ShopifyShopInfo"
+        connection:
+          $ref: "#/components/schemas/ShopifyConnectionStatus"
+      required:
+        - ok
     HealthStatus:
       type: object
       properties:

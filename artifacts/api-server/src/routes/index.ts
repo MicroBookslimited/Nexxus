@@ -55,6 +55,7 @@ import productBatchesRouter from "./product-batches";
 import supplierReturnsRouter from "./supplier-returns";
 import overrideCardsRouter from "./override-cards";
 import giftVouchersRouter from "./gift-vouchers";
+import shopifyRouter from "./shopify";
 
 const router: IRouter = Router();
 
@@ -114,5 +115,6 @@ router.use(promotionsRouter);
 router.use(productBatchesRouter);
 router.use(supplierReturnsRouter);
 router.use(overrideCardsRouter);
+router.use(shopifyRouter);
 
 export default router;

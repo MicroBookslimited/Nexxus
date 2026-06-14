@@ -5,6 +5,76 @@
  * Nexus POS API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface ShopifyConnectionStatus {
+  connected: boolean;
+  hasToken: boolean;
+  shopDomain?: string | null;
+  apiVersion?: string | null;
+  shopName?: string | null;
+  status?: string | null;
+  isActive?: boolean | null;
+  syncProducts?: boolean | null;
+  syncInventory?: boolean | null;
+  syncOrders?: boolean | null;
+  syncCustomers?: boolean | null;
+  syncDirection?: string | null;
+  defaultLocationId?: number | null;
+  lastTestAt?: string | null;
+  lastTestStatus?: string | null;
+  lastTestMessage?: string | null;
+  lastSyncAt?: string | null;
+  lastSyncStatus?: string | null;
+  lastSyncMessage?: string | null;
+  connectedAt?: string | null;
+}
+
+export interface ShopifyConnectBody {
+  /** Store domain, e.g. my-store.myshopify.com or just the handle. */
+  shopDomain: string;
+  /** Custom app Admin API access token (stored encrypted). */
+  accessToken: string;
+  /**
+   * Admin API version, e.g. 2025-01.
+   * @pattern ^\d{4}-\d{2}$
+   */
+  apiVersion?: string;
+  /** Optional custom-app API secret key for webhook HMAC verification. */
+  webhookSecret?: string;
+}
+
+export type ShopifySyncSettingsBodySyncDirection =
+  (typeof ShopifySyncSettingsBodySyncDirection)[keyof typeof ShopifySyncSettingsBodySyncDirection];
+
+export const ShopifySyncSettingsBodySyncDirection = {
+  shopify_to_nexus: "shopify_to_nexus",
+  nexus_to_shopify: "nexus_to_shopify",
+  two_way: "two_way",
+} as const;
+
+export interface ShopifySyncSettingsBody {
+  syncProducts?: boolean;
+  syncInventory?: boolean;
+  syncOrders?: boolean;
+  syncCustomers?: boolean;
+  syncDirection?: ShopifySyncSettingsBodySyncDirection;
+  defaultLocationId?: number | null;
+}
+
+export interface ShopifyShopInfo {
+  name: string;
+  myshopifyDomain: string;
+  email?: string | null;
+  currencyCode?: string | null;
+  planDisplayName?: string | null;
+}
+
+export interface ShopifyTestResult {
+  ok: boolean;
+  error?: string;
+  shop?: ShopifyShopInfo;
+  connection?: ShopifyConnectionStatus;
+}
+
 export interface HealthStatus {
   status: string;
 }

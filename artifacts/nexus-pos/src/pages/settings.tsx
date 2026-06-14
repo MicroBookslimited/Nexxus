@@ -18,6 +18,7 @@ import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type Permis
   setBusinessType, setBusinessFeature, type BusinessType } from "@/lib/saas-api";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { QRCodeSVG } from "qrcode.react";
+import { ShopifyIntegrationCard } from "@/components/ShopifyIntegrationCard";
 
 
 export function AdminSettings() {
@@ -274,6 +275,7 @@ export function AdminSettings() {
             { id: "section-qr", label: "QR Code", icon: QrCode },
             { id: "section-admins", label: "Admin Users", icon: UserCog },
             { id: "section-automation", label: "Automation", icon: MailOpen },
+            { id: "section-integrations", label: "Integrations", icon: Link },
             { id: "section-roles", label: "Roles", icon: ShieldCheck },
           ] as { id: string; label: string; icon: ElementType }[]).map(({ id, label, icon: Icon }) => (
             <button
@@ -1611,6 +1613,7 @@ export function AdminSettings() {
 
       <div id="section-admins"><AdminUsersSettings /></div>
       <div id="section-automation"><EmailAutomationSettings /></div>
+      <ShopifyIntegrationCard />
       <div id="section-roles"><RolesSettings /></div>
     </div>
   );
