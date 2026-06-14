@@ -78,8 +78,9 @@ export function ShopifyIntegrationCard() {
       await invalidate();
       if (thenTest) await handleTest();
       else toast({ title: "Saved", description: "Shopify credentials saved. Test the connection to activate." });
-    } catch {
-      toast({ title: "Could not save", description: "Failed to save Shopify credentials.", variant: "destructive" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save Shopify credentials.";
+      toast({ title: "Could not save", description: message, variant: "destructive" });
     }
   }
 
