@@ -4010,6 +4010,14 @@ export const DeleteProductUnitResponse = zod.object({
 export const GetShopifyConnectionResponse = zod.object({
   connected: zod.boolean(),
   hasToken: zod.boolean(),
+  authMode: zod
+    .string()
+    .nullish()
+    .describe('\"token\" (legacy static token) or \"client_credentials\".'),
+  clientId: zod
+    .string()
+    .nullish()
+    .describe("Dev Dashboard app Client ID (client_credentials mode only)."),
   shopDomain: zod.string().nullish(),
   apiVersion: zod.string().nullish(),
   shopName: zod.string().nullish(),
@@ -4037,29 +4045,54 @@ export const saveShopifyConnectionBodyApiVersionRegExp = new RegExp(
   "^\\d{4}-\\d{2}$",
 );
 
-export const SaveShopifyConnectionBody = zod.object({
-  shopDomain: zod
-    .string()
-    .describe("Store domain, e.g. my-store.myshopify.com or just the handle."),
-  accessToken: zod
-    .string()
-    .describe("Custom app Admin API access token (stored encrypted)."),
-  apiVersion: zod
-    .string()
-    .regex(saveShopifyConnectionBodyApiVersionRegExp)
-    .optional()
-    .describe("Admin API version, e.g. 2025-01."),
-  webhookSecret: zod
-    .string()
-    .optional()
-    .describe(
-      "Optional custom-app API secret key for webhook HMAC verification.",
-    ),
-});
+export const SaveShopifyConnectionBody = zod
+  .object({
+    shopDomain: zod
+      .string()
+      .describe(
+        "Store domain, e.g. my-store.myshopify.com or just the handle.",
+      ),
+    accessToken: zod
+      .string()
+      .optional()
+      .describe(
+        "Legacy static custom-app Admin API access token (stored encrypted).",
+      ),
+    clientId: zod
+      .string()
+      .optional()
+      .describe("Dev Dashboard app Client ID (public identifier)."),
+    clientSecret: zod
+      .string()
+      .optional()
+      .describe("Dev Dashboard app Client Secret (shpss_…, stored encrypted)."),
+    apiVersion: zod
+      .string()
+      .regex(saveShopifyConnectionBodyApiVersionRegExp)
+      .optional()
+      .describe("Admin API version, e.g. 2025-01."),
+    webhookSecret: zod
+      .string()
+      .optional()
+      .describe(
+        "Optional custom-app API secret key for webhook HMAC verification.",
+      ),
+  })
+  .describe(
+    "Provide EITHER a legacy static accessToken, OR a clientId + clientSecret pair (Shopify Dev Dashboard apps created after Jan 1, 2026, which are exchanged server-side for a short-lived token).",
+  );
 
 export const SaveShopifyConnectionResponse = zod.object({
   connected: zod.boolean(),
   hasToken: zod.boolean(),
+  authMode: zod
+    .string()
+    .nullish()
+    .describe('\"token\" (legacy static token) or \"client_credentials\".'),
+  clientId: zod
+    .string()
+    .nullish()
+    .describe("Dev Dashboard app Client ID (client_credentials mode only)."),
   shopDomain: zod.string().nullish(),
   apiVersion: zod.string().nullish(),
   shopName: zod.string().nullish(),
@@ -4099,6 +4132,16 @@ export const TestShopifyConnectionResponse = zod.object({
     .object({
       connected: zod.boolean(),
       hasToken: zod.boolean(),
+      authMode: zod
+        .string()
+        .nullish()
+        .describe('\"token\" (legacy static token) or \"client_credentials\".'),
+      clientId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Dev Dashboard app Client ID (client_credentials mode only).",
+        ),
       shopDomain: zod.string().nullish(),
       apiVersion: zod.string().nullish(),
       shopName: zod.string().nullish(),
@@ -4138,6 +4181,14 @@ export const UpdateShopifySyncSettingsBody = zod.object({
 export const UpdateShopifySyncSettingsResponse = zod.object({
   connected: zod.boolean(),
   hasToken: zod.boolean(),
+  authMode: zod
+    .string()
+    .nullish()
+    .describe('\"token\" (legacy static token) or \"client_credentials\".'),
+  clientId: zod
+    .string()
+    .nullish()
+    .describe("Dev Dashboard app Client ID (client_credentials mode only)."),
   shopDomain: zod.string().nullish(),
   apiVersion: zod.string().nullish(),
   shopName: zod.string().nullish(),
@@ -4164,6 +4215,14 @@ export const UpdateShopifySyncSettingsResponse = zod.object({
 export const DisconnectShopifyResponse = zod.object({
   connected: zod.boolean(),
   hasToken: zod.boolean(),
+  authMode: zod
+    .string()
+    .nullish()
+    .describe('\"token\" (legacy static token) or \"client_credentials\".'),
+  clientId: zod
+    .string()
+    .nullish()
+    .describe("Dev Dashboard app Client ID (client_credentials mode only)."),
   shopDomain: zod.string().nullish(),
   apiVersion: zod.string().nullish(),
   shopName: zod.string().nullish(),

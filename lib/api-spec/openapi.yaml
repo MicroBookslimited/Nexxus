@@ -2110,6 +2110,14 @@ components:
           type: boolean
         hasToken:
           type: boolean
+        authMode:
+          type: string
+          nullable: true
+          description: '"token" (legacy static token) or "client_credentials".'
+        clientId:
+          type: string
+          nullable: true
+          description: Dev Dashboard app Client ID (client_credentials mode only).
         shopDomain:
           type: string
           nullable: true
@@ -2172,13 +2180,23 @@ components:
         - hasToken
     ShopifyConnectBody:
       type: object
+      description: >-
+        Provide EITHER a legacy static accessToken, OR a clientId + clientSecret
+        pair (Shopify Dev Dashboard apps created after Jan 1, 2026, which are
+        exchanged server-side for a short-lived token).
       properties:
         shopDomain:
           type: string
           description: Store domain, e.g. my-store.myshopify.com or just the handle.
         accessToken:
           type: string
-          description: Custom app Admin API access token (stored encrypted).
+          description: Legacy static custom-app Admin API access token (stored encrypted).
+        clientId:
+          type: string
+          description: Dev Dashboard app Client ID (public identifier).
+        clientSecret:
+          type: string
+          description: Dev Dashboard app Client Secret (shpss_…, stored encrypted).
         apiVersion:
           type: string
           description: Admin API version, e.g. 2025-01.
@@ -2188,7 +2206,6 @@ components:
           description: Optional custom-app API secret key for webhook HMAC verification.
       required:
         - shopDomain
-        - accessToken
     ShopifySyncSettingsBody:
       type: object
       properties:

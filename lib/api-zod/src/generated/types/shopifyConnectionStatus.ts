@@ -9,6 +9,10 @@
 export interface ShopifyConnectionStatus {
   connected: boolean;
   hasToken: boolean;
+  /** "token" (legacy static token) or "client_credentials". */
+  authMode?: string | null;
+  /** Dev Dashboard app Client ID (client_credentials mode only). */
+  clientId?: string | null;
   shopDomain?: string | null;
   apiVersion?: string | null;
   shopName?: string | null;

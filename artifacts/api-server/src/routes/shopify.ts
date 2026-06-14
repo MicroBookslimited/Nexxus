@@ -10,6 +10,7 @@ import {
   ShopifyApiError,
   normalizeShopDomain,
   isValidShopDomain,
+  exchangeClientCredentials,
 } from "../lib/shopify-client";
 
 const router: IRouter = Router();
@@ -29,7 +30,11 @@ function sanitize(row: ConnectionRow | undefined) {
   }
   return {
     connected: row.isActive,
-    hasToken: !!row.accessTokenEncrypted,
+    hasToken:
+      !!row.accessTokenEncrypted ||
+      (row.authMode === "client_credentials" && !!row.clientId && !!row.clientSecretEncrypted),
+    authMode: row.authMode,
+    clientId: row.clientId,
     shopDomain: row.shopDomain,
     apiVersion: row.apiVersion,
     shopName: row.shopName,
@@ -60,6 +65,54 @@ async function getConnection(tenantId: number): Promise<ConnectionRow | undefine
   return row;
 }
 
+// Re-exchange the client-credentials token this many ms before it expires so a
+// request never goes out with a token that lapses mid-flight.
+const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+/**
+ * Resolve a usable Admin API access token for a connection, regardless of auth
+ * mode. For "token" mode this decrypts the stored static token. For
+ * "client_credentials" mode it returns the cached exchanged token while still
+ * valid, otherwise exchanges the Client ID + Secret for a fresh one and caches
+ * it (encrypted) with its expiry. Throws ShopifyApiError on missing/invalid
+ * credentials.
+ */
+export async function getValidAccessToken(row: ConnectionRow): Promise<string> {
+  if (row.authMode === "client_credentials") {
+    const cachedValid =
+      row.accessTokenEncrypted &&
+      row.accessTokenExpiresAt &&
+      row.accessTokenExpiresAt.getTime() - TOKEN_REFRESH_BUFFER_MS > Date.now();
+    if (cachedValid) {
+      return decryptToken(row.accessTokenEncrypted!);
+    }
+    if (!row.clientId || !row.clientSecretEncrypted) {
+      throw new ShopifyApiError(
+        "No Shopify Client ID / Secret saved. Re-enter your credentials.",
+        400,
+      );
+    }
+    const clientSecret = decryptToken(row.clientSecretEncrypted);
+    const grant = await exchangeClientCredentials(row.shopDomain, row.clientId, clientSecret);
+    const expiresAt = new Date(Date.now() + grant.expiresInSec * 1000);
+    await db
+      .update(shopifyConnectionsTable)
+      .set({
+        accessTokenEncrypted: encryptToken(grant.accessToken),
+        accessTokenExpiresAt: expiresAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(shopifyConnectionsTable.id, row.id));
+    return grant.accessToken;
+  }
+
+  // Legacy static-token mode.
+  if (!row.accessTokenEncrypted) {
+    throw new ShopifyApiError("No Shopify access token saved.", 400);
+  }
+  return decryptToken(row.accessTokenEncrypted);
+}
+
 /* ─── GET /shopify/connection — sanitized status (token redacted) ─── */
 router.get("/shopify/connection", async (req, res): Promise<void> => {
   const payload = getTenantPayload(req);
@@ -69,13 +122,26 @@ router.get("/shopify/connection", async (req, res): Promise<void> => {
 });
 
 /* ─── POST /shopify/connection — create or update credentials ─── */
-const ConnectBody = z.object({
-  shopDomain: z.string().min(1),
-  accessToken: z.string().min(1),
-  apiVersion: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-  // Optional webhook signing secret (the custom app's API secret key).
-  webhookSecret: z.string().optional(),
-});
+const ConnectBody = z
+  .object({
+    shopDomain: z.string().min(1),
+    // Legacy static custom-app token (shpat_…).
+    accessToken: z.string().min(1).optional(),
+    // 2026 Dev Dashboard app: Client ID + Client Secret (exchanged for a
+    // short-lived token via the Client Credentials grant).
+    clientId: z.string().min(1).optional(),
+    clientSecret: z.string().min(1).optional(),
+    apiVersion: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+    // Optional webhook signing secret (the custom app's API secret key).
+    webhookSecret: z.string().optional(),
+  })
+  .refine(
+    (b) => !!b.accessToken || (!!b.clientId && !!b.clientSecret),
+    {
+      message:
+        "Provide either an Admin API access token, or a Client ID and Client Secret.",
+    },
+  );
 
 router.post("/shopify/connection", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
@@ -94,7 +160,28 @@ router.post("/shopify/connection", async (req, res): Promise<void> => {
     return;
   }
 
-  const accessTokenEncrypted = encryptToken(parsed.data.accessToken);
+  const useClientCredentials = !!parsed.data.clientId && !!parsed.data.clientSecret;
+  const authMode = useClientCredentials ? "client_credentials" : "token";
+
+  // Credential columns differ per auth mode. In client_credentials mode the
+  // access token is derived (exchanged) on demand, so we clear any cached token
+  // and its expiry here and store the encrypted Client Secret instead.
+  const credentialColumns = useClientCredentials
+    ? {
+        authMode,
+        clientId: parsed.data.clientId!,
+        clientSecretEncrypted: encryptToken(parsed.data.clientSecret!),
+        accessTokenEncrypted: null,
+        accessTokenExpiresAt: null,
+      }
+    : {
+        authMode,
+        clientId: null,
+        clientSecretEncrypted: null,
+        accessTokenEncrypted: encryptToken(parsed.data.accessToken!),
+        accessTokenExpiresAt: null,
+      };
+
   const webhookSecretEncrypted = parsed.data.webhookSecret
     ? encryptToken(parsed.data.webhookSecret)
     : undefined;
@@ -107,7 +194,7 @@ router.post("/shopify/connection", async (req, res): Promise<void> => {
       .update(shopifyConnectionsTable)
       .set({
         shopDomain,
-        accessTokenEncrypted,
+        ...credentialColumns,
         ...(webhookSecretEncrypted ? { webhookSecretEncrypted } : {}),
         apiVersion,
         // Saving new credentials resets the verified state until tested.
@@ -123,7 +210,7 @@ router.post("/shopify/connection", async (req, res): Promise<void> => {
     await db.insert(shopifyConnectionsTable).values({
       tenantId: payload.tenantId,
       shopDomain,
-      accessTokenEncrypted,
+      ...credentialColumns,
       webhookSecretEncrypted,
       apiVersion,
       status: "disconnected",
@@ -138,7 +225,7 @@ router.post("/shopify/connection", async (req, res): Promise<void> => {
     action: existing ? "shopify.connection.updated" : "shopify.connection.created",
     entityType: "shopify_connection",
     entityId: shopDomain,
-    details: { shopDomain, apiVersion },
+    details: { shopDomain, apiVersion, authMode },
     ipAddress: req.ip,
   });
 
@@ -153,7 +240,11 @@ router.post("/shopify/connection/test", async (req, res): Promise<void> => {
   if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
 
   const row = await getConnection(payload.tenantId);
-  if (!row || !row.accessTokenEncrypted) {
+  const hasCredentials =
+    row &&
+    (row.accessTokenEncrypted ||
+      (row.authMode === "client_credentials" && row.clientId && row.clientSecretEncrypted));
+  if (!row || !hasCredentials) {
     res.status(400).json({ ok: false, error: "No Shopify credentials saved yet" });
     return;
   }
@@ -161,9 +252,31 @@ router.post("/shopify/connection/test", async (req, res): Promise<void> => {
   const startedAt = new Date();
   let token: string;
   try {
-    token = decryptToken(row.accessTokenEncrypted);
-  } catch {
-    res.status(500).json({ ok: false, error: "Stored token could not be decrypted. Re-enter your Shopify token." });
+    // Resolves the static token, or exchanges Client ID + Secret for a fresh
+    // short-lived token (caching it) in client_credentials mode.
+    token = await getValidAccessToken(row);
+  } catch (err) {
+    const message =
+      err instanceof ShopifyApiError
+        ? err.message
+        : "Stored Shopify credentials could not be used. Re-enter them.";
+    const now = new Date();
+    await db
+      .update(shopifyConnectionsTable)
+      .set({
+        status: "failed",
+        isActive: false,
+        lastTestAt: now,
+        lastTestStatus: "failed",
+        lastTestMessage: message,
+        updatedAt: now,
+      })
+      .where(eq(shopifyConnectionsTable.id, row.id));
+    res.status(400).json({
+      ok: false,
+      error: message,
+      connection: sanitize(await getConnection(payload.tenantId)),
+    });
     return;
   }
 
@@ -317,6 +430,9 @@ router.post("/shopify/connection/disconnect", async (req, res): Promise<void> =>
       isActive: false,
       // Clear stored credentials so a disconnect fully revokes local access.
       accessTokenEncrypted: null,
+      accessTokenExpiresAt: null,
+      clientId: null,
+      clientSecretEncrypted: null,
       webhookSecretEncrypted: null,
       shopName: null,
       lastTestStatus: null,

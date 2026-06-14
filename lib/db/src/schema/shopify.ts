@@ -27,8 +27,23 @@ export const shopifyConnectionsTable = pgTable(
     tenantId: integer("tenant_id").notNull(),
     // e.g. "my-store.myshopify.com" (the permanent .myshopify.com domain)
     shopDomain: text("shop_domain").notNull(),
-    // AES-256-GCM encrypted Admin API access token. Never exposed to clients.
+    // How this connection authenticates to the Admin API:
+    //   "token"              — legacy static custom-app token (shpat_…)
+    //   "client_credentials" — Dev Dashboard app: clientId + clientSecret are
+    //                          exchanged for a short-lived access token (the
+    //                          only path Shopify allows for apps created after
+    //                          Jan 1, 2026).
+    authMode: text("auth_mode").notNull().default("token"),
+    // AES-256-GCM encrypted Admin API access token. For "token" mode this is the
+    // user-supplied static token; for "client_credentials" mode it caches the
+    // most recently exchanged short-lived token. Never exposed to clients.
     accessTokenEncrypted: text("access_token_encrypted"),
+    // Expiry of the cached exchanged token (client_credentials mode only).
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+    // Dev Dashboard app Client ID (public identifier, not a secret).
+    clientId: text("client_id"),
+    // AES-256-GCM encrypted Dev Dashboard app Client Secret (shpss_…).
+    clientSecretEncrypted: text("client_secret_encrypted"),
     // Optional AES-256-GCM encrypted webhook signing secret (the custom app's
     // API secret key) used to HMAC-verify inbound webhooks in later phases.
     webhookSecretEncrypted: text("webhook_secret_encrypted"),

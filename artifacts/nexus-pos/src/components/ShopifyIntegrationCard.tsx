@@ -39,10 +39,15 @@ export function ShopifyIntegrationCard() {
   const syncMutation = useUpdateShopifySyncSettings();
   const disconnectMutation = useDisconnectShopify();
 
+  type AuthMethod = "client_credentials" | "token";
+  const [authMethod, setAuthMethod] = useState<AuthMethod>("client_credentials");
   const [shopDomain, setShopDomain] = useState("");
   const [accessToken, setAccessToken] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
   const [apiVersion, setApiVersion] = useState(DEFAULT_API_VERSION);
   const [showToken, setShowToken] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [locations, setLocations] = useState<LocationRow[]>([]);
 
@@ -52,7 +57,11 @@ export function ShopifyIntegrationCard() {
   useEffect(() => {
     if (conn?.shopDomain) setShopDomain(conn.shopDomain);
     if (conn?.apiVersion) setApiVersion(conn.apiVersion);
-  }, [conn?.shopDomain, conn?.apiVersion]);
+    if (conn?.authMode === "token" || conn?.authMode === "client_credentials") {
+      setAuthMethod(conn.authMode);
+    }
+    if (conn?.clientId) setClientId(conn.clientId);
+  }, [conn?.shopDomain, conn?.apiVersion, conn?.authMode, conn?.clientId]);
 
   useEffect(() => {
     const token = localStorage.getItem(TENANT_TOKEN_KEY);
@@ -66,15 +75,40 @@ export function ShopifyIntegrationCard() {
   const connected = !!conn?.connected;
 
   async function handleSave(thenTest: boolean) {
-    if (!shopDomain.trim() || !accessToken.trim()) {
-      toast({ title: "Missing details", description: "Enter your store domain and Admin API access token.", variant: "destructive" });
+    if (!shopDomain.trim()) {
+      toast({ title: "Missing details", description: "Enter your store domain.", variant: "destructive" });
       return;
     }
+
+    const base = { shopDomain: shopDomain.trim(), apiVersion: apiVersion.trim() || DEFAULT_API_VERSION };
+    let data: typeof base & { accessToken?: string; clientId?: string; clientSecret?: string };
+
+    if (authMethod === "client_credentials") {
+      // Re-test without re-entering the secret is only valid when the SAVED
+      // connection is already client-credentials (not a legacy token swap).
+      const savedClientCreds = conn?.authMode === "client_credentials" && hasToken;
+      if (!clientId.trim() || (!clientSecret.trim() && !savedClientCreds)) {
+        toast({ title: "Missing details", description: "Enter your Client ID and Client Secret.", variant: "destructive" });
+        return;
+      }
+      if (!clientSecret.trim()) {
+        // Nothing changed credential-wise — just (re)test the existing connection.
+        if (thenTest) await handleTest();
+        return;
+      }
+      data = { ...base, clientId: clientId.trim(), clientSecret: clientSecret.trim() };
+    } else {
+      if (!accessToken.trim()) {
+        toast({ title: "Missing details", description: "Enter your Admin API access token.", variant: "destructive" });
+        return;
+      }
+      data = { ...base, accessToken: accessToken.trim() };
+    }
+
     try {
-      await saveMutation.mutateAsync({
-        data: { shopDomain: shopDomain.trim(), accessToken: accessToken.trim(), apiVersion: apiVersion.trim() || DEFAULT_API_VERSION },
-      });
+      await saveMutation.mutateAsync({ data });
       setAccessToken("");
+      setClientSecret("");
       await invalidate();
       if (thenTest) await handleTest();
       else toast({ title: "Saved", description: "Shopify credentials saved. Test the connection to activate." });
@@ -104,6 +138,8 @@ export function ShopifyIntegrationCard() {
     try {
       await disconnectMutation.mutateAsync();
       setAccessToken("");
+      setClientSecret("");
+      setClientId("");
       await invalidate();
       toast({ title: "Disconnected", description: "Shopify has been disconnected." });
     } catch {
@@ -139,7 +175,7 @@ export function ShopifyIntegrationCard() {
           <span className="ml-auto">{statusBadge()}</span>
         </CardTitle>
         <CardDescription>
-          Connect your Shopify store with your own custom-app Admin API token.
+          Connect your Shopify store with your app's Client ID &amp; Secret (or a legacy Admin API token).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -173,30 +209,89 @@ export function ShopifyIntegrationCard() {
                   onChange={(e) => setShopDomain(e.target.value)}
                 />
               </div>
+
               <div className="space-y-1.5">
-                <Label htmlFor="shopify-token">Admin API access token</Label>
-                <div className="relative">
-                  <Input
-                    id="shopify-token"
-                    type={showToken ? "text" : "password"}
-                    placeholder={hasToken ? "•••••••• (saved — enter a new token to replace)" : "shpat_…"}
-                    value={accessToken}
-                    onChange={(e) => setAccessToken(e.target.value)}
-                    className="pr-9"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowToken((v) => !v)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    aria-label={showToken ? "Hide token" : "Show token"}
-                  >
-                    {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Stored encrypted. We never display it again after saving.
-                </p>
+                <Label htmlFor="shopify-method">Connection method</Label>
+                <Select
+                  value={authMethod}
+                  onValueChange={(v) => {
+                    setAuthMethod(v as AuthMethod);
+                    // Drop any half-entered secret material when switching methods.
+                    setClientSecret("");
+                    setAccessToken("");
+                  }}
+                >
+                  <SelectTrigger id="shopify-method"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="client_credentials">Client ID &amp; Secret (recommended)</SelectItem>
+                    <SelectItem value="token">Access token (legacy)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+
+              {authMethod === "client_credentials" ? (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="shopify-client-id">Client ID</Label>
+                    <Input
+                      id="shopify-client-id"
+                      placeholder="e.g. a1b2c3d4e5f6…"
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="shopify-client-secret">Client Secret</Label>
+                    <div className="relative">
+                      <Input
+                        id="shopify-client-secret"
+                        type={showSecret ? "text" : "password"}
+                        placeholder={hasToken ? "•••••••• (saved — enter a new secret to replace)" : "shpss_…"}
+                        value={clientSecret}
+                        onChange={(e) => setClientSecret(e.target.value)}
+                        className="pr-9"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret((v) => !v)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label={showSecret ? "Hide secret" : "Show secret"}
+                      >
+                        {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Stored encrypted. We exchange these for a short-lived token and refresh it automatically.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="shopify-token">Admin API access token</Label>
+                  <div className="relative">
+                    <Input
+                      id="shopify-token"
+                      type={showToken ? "text" : "password"}
+                      placeholder={hasToken ? "•••••••• (saved — enter a new token to replace)" : "shpat_…"}
+                      value={accessToken}
+                      onChange={(e) => setAccessToken(e.target.value)}
+                      className="pr-9"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowToken((v) => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      aria-label={showToken ? "Hide token" : "Show token"}
+                    >
+                      {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Stored encrypted. We never display it again after saving.
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-1.5 max-w-[200px]">
                 <Label htmlFor="shopify-version">API version</Label>
                 <Input
@@ -305,15 +400,25 @@ export function ShopifyIntegrationCard() {
                 className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
               >
                 {showInstructions ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                How to create a custom-app token
+                {authMethod === "client_credentials" ? "How to get your Client ID & Secret" : "How to create a custom-app token"}
               </button>
-              {showInstructions && (
+              {showInstructions && authMethod === "client_credentials" && (
+                <ol className="mt-3 space-y-1.5 text-sm text-muted-foreground list-decimal pl-5">
+                  <li>Go to the <span className="font-medium">Shopify Dev Dashboard</span> (<code>shopify.dev/dashboard</code>) and open <span className="font-medium">Apps → Create app</span> (or select an existing app).</li>
+                  <li>Under <span className="font-medium">API access / Configuration</span>, grant the scopes you need (products, inventory, orders, customers).</li>
+                  <li>Install the app on your store, then open the app's <span className="font-medium">Client credentials</span> and copy the <span className="font-medium">Client ID</span> and <span className="font-medium">Client secret</span> (starts with <code>shpss_</code>).</li>
+                  <li>Paste your store domain, Client ID and Client Secret above, then click <span className="font-medium">Connect &amp; Test</span>.</li>
+                  <li className="text-xs">Since Jan 1, 2026 Shopify no longer issues static <code>shpat_</code> tokens — we exchange these credentials for a short-lived token and refresh it for you.</li>
+                </ol>
+              )}
+              {showInstructions && authMethod === "token" && (
                 <ol className="mt-3 space-y-1.5 text-sm text-muted-foreground list-decimal pl-5">
                   <li>In Shopify admin, go to <span className="font-medium">Settings → Apps and sales channels → Develop apps</span>.</li>
                   <li>Click <span className="font-medium">Create an app</span> and name it (e.g. "NEXXUS POS").</li>
                   <li>Open <span className="font-medium">Configuration → Admin API integration</span> and grant the scopes you need (products, inventory, orders, customers).</li>
                   <li>Click <span className="font-medium">Install app</span>, then reveal and copy the <span className="font-medium">Admin API access token</span> (starts with <code>shpat_</code>).</li>
                   <li>Paste your store domain and the token above, then click <span className="font-medium">Connect &amp; Test</span>.</li>
+                  <li className="text-xs">Note: apps created after Jan 1, 2026 can no longer issue static tokens — use the Client ID &amp; Secret method instead.</li>
                 </ol>
               )}
             </div>

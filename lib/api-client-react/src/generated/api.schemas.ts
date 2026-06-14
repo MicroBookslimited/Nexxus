@@ -8,6 +8,10 @@
 export interface ShopifyConnectionStatus {
   connected: boolean;
   hasToken: boolean;
+  /** "token" (legacy static token) or "client_credentials". */
+  authMode?: string | null;
+  /** Dev Dashboard app Client ID (client_credentials mode only). */
+  clientId?: string | null;
   shopDomain?: string | null;
   apiVersion?: string | null;
   shopName?: string | null;
@@ -28,11 +32,18 @@ export interface ShopifyConnectionStatus {
   connectedAt?: string | null;
 }
 
+/**
+ * Provide EITHER a legacy static accessToken, OR a clientId + clientSecret pair (Shopify Dev Dashboard apps created after Jan 1, 2026, which are exchanged server-side for a short-lived token).
+ */
 export interface ShopifyConnectBody {
   /** Store domain, e.g. my-store.myshopify.com or just the handle. */
   shopDomain: string;
-  /** Custom app Admin API access token (stored encrypted). */
-  accessToken: string;
+  /** Legacy static custom-app Admin API access token (stored encrypted). */
+  accessToken?: string;
+  /** Dev Dashboard app Client ID (public identifier). */
+  clientId?: string;
+  /** Dev Dashboard app Client Secret (shpss_…, stored encrypted). */
+  clientSecret?: string;
   /**
    * Admin API version, e.g. 2025-01.
    * @pattern ^\d{4}-\d{2}$

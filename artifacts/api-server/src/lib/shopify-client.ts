@@ -40,6 +40,64 @@ export function isValidShopDomain(domain: string): boolean {
   return /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(domain);
 }
 
+export interface ClientCredentialsGrant {
+  /** Short-lived Admin API access token (shpat_…). */
+  accessToken: string;
+  /** Seconds until the token expires (Shopify returns ~86399 = 24h). */
+  expiresInSec: number;
+}
+
+/**
+ * Exchange a Dev Dashboard app's Client ID + Client Secret for a short-lived
+ * Admin API access token via the OAuth Client Credentials grant. This is the
+ * only credential path Shopify allows for custom apps created after
+ * Jan 1, 2026 (static `shpat_` tokens can no longer be generated in the store
+ * admin). The returned token must be cached and re-exchanged before expiry.
+ */
+export async function exchangeClientCredentials(
+  shopDomain: string,
+  clientId: string,
+  clientSecret: string,
+): Promise<ClientCredentialsGrant> {
+  const domain = normalizeShopDomain(shopDomain);
+  const url = `https://${domain}/admin/oauth/access_token`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "client_credentials",
+    }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => resp.statusText);
+    if (resp.status === 401 || resp.status === 400) {
+      throw new ShopifyApiError(
+        "Shopify rejected the Client ID / Client Secret. Double-check both values and that the app is installed on this store.",
+        resp.status,
+      );
+    }
+    throw new ShopifyApiError(
+      `Shopify token exchange failed (${resp.status}): ${text.slice(0, 300)}`,
+      resp.status,
+    );
+  }
+
+  const json = (await resp.json().catch(() => ({}))) as {
+    access_token?: string;
+    expires_in?: number;
+  };
+  if (!json.access_token) {
+    throw new ShopifyApiError("Shopify token exchange returned no access token.", 500);
+  }
+  return {
+    accessToken: json.access_token,
+    expiresInSec: typeof json.expires_in === "number" ? json.expires_in : 86399,
+  };
+}
+
 export class ShopifyAdminClient {
   private readonly endpoint: string;
   private readonly accessToken: string;
