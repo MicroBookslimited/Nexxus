@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
 import { getSetting } from "./settings";
+import { getActiveProductCount, planProductLimitError } from "../utils/plan-limits";
 
 const router: IRouter = Router();
 
@@ -68,6 +69,9 @@ router.post("/billing/paypal/create-order", async (req, res): Promise<void> => {
   const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.slug, parsed.data.planSlug));
   if (!plan) { res.status(404).json({ error: "Plan not found" }); return; }
 
+  const limitErr = planProductLimitError(plan, await getActiveProductCount(tenant.tenantId));
+  if (limitErr) { res.status(409).json(limitErr); return; }
+
   const amount = parsed.data.billingCycle === "annual" ? plan.priceAnnual : plan.priceMonthly;
 
   try {
@@ -107,6 +111,14 @@ router.post("/billing/paypal/capture-order", async (req, res): Promise<void> => 
 
   const parsed = CapturePayPalOrderBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+
+  // Re-check the product limit before capturing the payment (defense in depth:
+  // the client could capture with a different planSlug than create-order used).
+  const [capturePlan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.slug, parsed.data.planSlug));
+  if (capturePlan) {
+    const captureLimitErr = planProductLimitError(capturePlan, await getActiveProductCount(tenant.tenantId));
+    if (captureLimitErr) { res.status(409).json(captureLimitErr); return; }
+  }
 
   try {
     const ppToken = await getPayPalToken();
@@ -232,6 +244,9 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
   const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.slug, parsed.data.planSlug));
   if (!plan) { res.status(404).json({ error: "Plan not found" }); return; }
 
+  const limitErr = planProductLimitError(plan, await getActiveProductCount(tenant.tenantId));
+  if (limitErr) { res.status(409).json(limitErr); return; }
+
   const amount = parsed.data.billingCycle === "annual" ? plan.priceAnnual : plan.priceMonthly;
   // Expiry: user enters MM / YY → convert to YYMM (e.g. "12 / 31" → "3112")
   const [mm, yy] = parsed.data.cardExpiry.split("/").map((s) => s.trim());
@@ -311,6 +326,19 @@ router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> 
   const pending = pending3DS.get(spiToken);
   if (!pending) { res.send(closeScript("error", "Transaction expired or not found. Please try again.")); return; }
 
+  // Final product-limit recheck BEFORE capturing the payment — the tenant may
+  // have added products during the 3DS challenge. Abandoning here (not calling
+  // /api/spi/payment) means the card is never charged.
+  const [pendingPlan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, pending.planId));
+  if (pendingPlan) {
+    const limitErr = planProductLimitError(pendingPlan, await getActiveProductCount(pending.tenantId));
+    if (limitErr) {
+      pending3DS.set(spiToken, { ...pending, status: "declined", message: limitErr.error });
+      res.send(closeScript("declined", limitErr.error));
+      return;
+    }
+  }
+
   try {
     // Payment step: body must be the raw SpiToken string, not a JSON object
     const { data } = await callPowerTranz("/api/spi/payment", spiToken);
@@ -386,6 +414,9 @@ router.post("/billing/bank-transfer", async (req, res): Promise<void> => {
 
   const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.slug, parsed.data.planSlug));
   if (!plan) { res.status(404).json({ error: "Plan not found" }); return; }
+
+  const limitErr = planProductLimitError(plan, await getActiveProductCount(tenant.tenantId));
+  if (limitErr) { res.status(409).json(limitErr); return; }
 
   const amount = parsed.data.billingCycle === "annual" ? plan.priceAnnual : plan.priceMonthly;
 

@@ -33,3 +33,4 @@
 - [Lib schema/codegen change → rebuild libs](lib-schema-rebuild-stale-types.md) — after a lib/db schema or OpenAPI codegen change, run `pnpm run typecheck:libs` before artifact typecheck or you get phantom "property does not exist" on the new field.
 - [Bulk product ops must chunk client-side](bulk-ops-chunking.md) — GET /products has no limit; selecting thousands of archived rows into one bulk archive/restore request times out. Chunk client-side + progress bar.
 - [Shopify per-tenant connection](shopify-per-tenant-connection.md) — each tenant pastes own custom-app Admin token (not Replit connector); AES-256-GCM at rest (SHOPIFY_TOKEN_ENC_KEY or scrypt(SESSION_SECRET)); never returned to client.
+- [Plan limit enforcement boundaries](plan-limit-enforcement-boundaries.md) — quota checks (maxProducts) must guard EVERY charge/activation path; for 3DS recheck pre-capture, not in activateSubscription (runs post-capture).

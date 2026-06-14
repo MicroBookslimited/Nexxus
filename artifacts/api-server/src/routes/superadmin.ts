@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 import { eq, desc, count, sql, ilike, or, and, isNull } from "drizzle-orm";
 import { computeNextStartDate, addBillingCycle } from "../utils/manual-payments";
+import { getActiveProductCount, planProductLimitError } from "../utils/plan-limits";
 import { getSetting } from "./settings";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
@@ -417,6 +418,17 @@ router.patch("/superadmin/bank-transfer-proofs/:id", async (req, res): Promise<v
 
   const [proof] = await db.select().from(bankTransferProofsTable).where(eq(bankTransferProofsTable.id, id));
   if (!proof) { res.status(404).json({ error: "Proof not found" }); return; }
+
+  // Re-check the product limit at approval time — the tenant may have added
+  // products since submitting the proof. Block activation (without marking the
+  // proof reviewed) if the tenant now exceeds the plan's product limit.
+  if (parsed.data.status === "approved" && proof.planId) {
+    const [proofPlan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, proof.planId));
+    if (proofPlan) {
+      const limitErr = planProductLimitError(proofPlan, await getActiveProductCount(proof.tenantId));
+      if (limitErr) { res.status(409).json(limitErr); return; }
+    }
+  }
 
   await db.update(bankTransferProofsTable).set({
     status: parsed.data.status,
