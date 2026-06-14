@@ -1234,8 +1234,17 @@ export function POS() {
         e.preventDefault();
         return;
       }
-      if (searchTerm.trim()) {
-        tryConsumeCode(searchTerm);
+      if (!searchTerm.trim()) return;
+      // First try the exact-code paths (loyalty card, weight label, exact
+      // barcode/SKU match — including the duplicate-barcode picker).
+      if (tryConsumeCode(searchTerm)) return;
+      // Otherwise, if the current search (by name/partial barcode/SKU) has
+      // narrowed the visible grid to exactly ONE product, add it directly so
+      // the cashier doesn't have to reach over and tap the single result.
+      // handleProductTap clears the search and routes variant/modifier/
+      // weight/multi-unit products through their pickers, just like a tap.
+      if (filteredProducts && filteredProducts.length === 1) {
+        void handleProductTap(filteredProducts[0]);
       }
     }
   };
