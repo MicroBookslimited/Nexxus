@@ -1,0 +1,396 @@
+Build a Shopify integration module for NEXXUS POS.
+
+GOAL:
+Allow NEXXUS POS businesses to connect their Shopify website so products, inventory, customers, and online orders can sync between Shopify and NEXXUS.
+
+IMPORTANT CONTEXT:
+Shopify supports Admin API and webhooks for product, order, customer, and inventory workflows. Shopify API versions change regularly, so build this integration using configurable API versioning and avoid hardcoding deprecated endpoints. Use Shopify GraphQL Admin API where practical. Shopify webhooks can be used to notify NEXXUS when orders, products, or inventory changes happen. Shopify documentation notes that webhooks send event payloads to HTTPS URLs. Shopify also releases API versions regularly, so versioning must be handled carefully. 
+
+--------------------------------------------------
+1. INTEGRATION SETTINGS
+--------------------------------------------------
+
+Create a Shopify Integration settings page inside NEXXUS Back Office:
+
+Settings → Integrations → Shopify
+
+Fields:
+- shop_domain
+- access_token
+- api_version
+- sync_products_enabled
+- sync_inventory_enabled
+- sync_orders_enabled
+- sync_customers_enabled
+- default_location_id
+- sync_direction
+
+sync_direction options:
+- shopify_to_nexxus
+- nexxus_to_shopify
+- two_way
+
+Store credentials securely using encryption.
+
+--------------------------------------------------
+2. DATABASE TABLES
+--------------------------------------------------
+
+Create table: shopify_connections
+
+Fields:
+- id
+- tenant_id
+- shop_domain
+- encrypted_access_token
+- api_version
+- is_active
+- default_nexxus_location_id
+- created_at
+- updated_at
+
+Create table: shopify_product_mappings
+
+Fields:
+- id
+- tenant_id
+- nexxus_product_id
+- shopify_product_id
+- shopify_variant_id
+- shopify_inventory_item_id
+- shopify_location_id
+- sku
+- barcode
+- last_synced_at
+
+Create table: shopify_order_mappings
+
+Fields:
+- id
+- tenant_id
+- nexxus_order_id
+- shopify_order_id
+- shopify_order_number
+- sync_status
+- last_synced_at
+
+Create table: shopify_sync_logs
+
+Fields:
+- id
+- tenant_id
+- sync_type
+- direction
+- status
+- message
+- payload_summary
+- created_at
+
+--------------------------------------------------
+3. PRODUCT SYNC
+--------------------------------------------------
+
+Allow products to sync between Shopify and NEXXUS.
+
+Product fields to map:
+- name/title
+- SKU
+- barcode
+- description
+- category/product_type
+- price
+- cost if available
+- image URL
+- active/status
+- variants
+- inventory tracking status
+
+Rules:
+- Match products using SKU first.
+- If SKU is missing, use barcode.
+- If neither exists, create as unmatched and flag for review.
+- Prevent duplicate product creation.
+- Support Shopify variants as NEXXUS product variants where applicable.
+
+Admin UI:
+- Sync Products Now button
+- View mapped products
+- View unmapped products
+- Resolve mapping manually
+
+--------------------------------------------------
+4. INVENTORY SYNC
+--------------------------------------------------
+
+Support inventory syncing by location.
+
+Rules:
+- NEXXUS stock should remain the operational source of truth unless admin selects Shopify as source.
+- If NEXXUS is source of truth:
+    - When POS sale reduces stock, update Shopify inventory.
+    - When stock count or purchase increases stock, update Shopify inventory.
+- If Shopify is source of truth:
+    - Shopify inventory updates should update NEXXUS stock.
+
+Must support:
+- Shopify inventory item IDs
+- Shopify location IDs
+- NEXXUS location IDs
+- multi-location mapping
+
+Important:
+NEXXUS should maintain its own inventory movement ledger. Do not rely only on Shopify history.
+
+--------------------------------------------------
+5. ORDER SYNC
+--------------------------------------------------
+
+When an order is placed on Shopify:
+- Receive webhook or pull order from Shopify
+- Create online order in NEXXUS
+- Deduct inventory in NEXXUS based on mapped products
+- Mark order source as "Shopify"
+- Store Shopify order ID and order number
+
+NEXXUS order statuses:
+- pending
+- paid
+- processing
+- fulfilled
+- cancelled
+- refunded
+
+Shopify order events to support:
+- order created
+- order paid
+- order fulfilled
+- order cancelled
+- order refunded
+
+If product is not mapped:
+- Create order with warning
+- Flag unmapped item
+- Do not silently fail
+
+--------------------------------------------------
+6. CUSTOMER SYNC
+--------------------------------------------------
+
+When Shopify order includes customer:
+- Match customer by email or phone
+- If not found, create customer in NEXXUS
+- Store Shopify customer ID
+
+Customer fields:
+- first name
+- last name
+- email
+- phone
+- address
+- order history link
+
+--------------------------------------------------
+7. WEBHOOKS
+--------------------------------------------------
+
+Create webhook endpoints:
+
+POST /webhooks/shopify/orders-create
+POST /webhooks/shopify/orders-paid
+POST /webhooks/shopify/orders-cancelled
+POST /webhooks/shopify/orders-refunded
+POST /webhooks/shopify/products-update
+POST /webhooks/shopify/inventory-levels-update
+
+Security:
+- Verify Shopify webhook HMAC signature.
+- Reject invalid signatures.
+- Log all webhook requests.
+- Make webhook handling idempotent.
+- Prevent duplicate order imports.
+
+--------------------------------------------------
+8. MANUAL SYNC TOOLS
+--------------------------------------------------
+
+Add admin actions:
+
+- Test Shopify Connection
+- Sync Products Now
+- Sync Inventory Now
+- Sync Orders Now
+- Re-sync Failed Items
+- Disconnect Shopify
+
+Show sync history and errors clearly.
+
+--------------------------------------------------
+9. CONFLICT HANDLING
+--------------------------------------------------
+
+Conflict examples:
+- Price changed in Shopify and NEXXUS
+- Stock adjusted in Shopify and NEXXUS
+- Product deleted from Shopify
+- SKU duplicated
+
+Conflict rules:
+- Respect selected source of truth.
+- Log conflicts.
+- Show conflict resolution screen.
+
+Conflict resolution options:
+- Use NEXXUS value
+- Use Shopify value
+- Ignore
+- Manual edit
+
+--------------------------------------------------
+10. POS + ONLINE STORE BEHAVIOR
+--------------------------------------------------
+
+Orders from Shopify should appear in:
+
+Orders → Online Orders
+
+Show:
+- Shopify badge
+- customer
+- items
+- payment status
+- fulfillment status
+- sync status
+
+Inventory should update across:
+- POS
+- NEXXUS Online Store
+- Shopify Store
+
+--------------------------------------------------
+11. REPORTING
+--------------------------------------------------
+
+Add Shopify source filters to sales reports:
+
+Reports:
+- Sales by Channel
+- Shopify Sales
+- Online Order Summary
+- Inventory Sync Report
+- Sync Error Report
+
+Sales channel values:
+- POS
+- NEXXUS Online Store
+- Shopify
+
+--------------------------------------------------
+12. QUICKBOOKS DAILY SUMMARY COMPATIBILITY
+--------------------------------------------------
+
+Ensure Shopify orders imported into NEXXUS are included in the daily sales summary if configured.
+
+Daily Summary should show:
+- POS sales
+- Shopify sales
+- NEXXUS Online Store sales
+- payment breakdown
+- tax totals
+
+--------------------------------------------------
+13. ERROR HANDLING
+--------------------------------------------------
+
+All sync operations must return structured errors.
+
+Example:
+{
+  "error": "SHOPIFY_PRODUCT_NOT_MAPPED",
+  "message": "Shopify item could not be matched to a NEXXUS product.",
+  "shopify_variant_id": "gid://shopify/ProductVariant/..."
+}
+
+Retry failed jobs automatically where safe.
+
+--------------------------------------------------
+14. BACKGROUND JOBS
+--------------------------------------------------
+
+Create background sync workers for:
+- product sync
+- inventory sync
+- order sync
+- failed webhook retry
+
+Use queue system if available.
+
+Avoid blocking POS checkout.
+
+--------------------------------------------------
+15. SECURITY REQUIREMENTS
+--------------------------------------------------
+
+- Encrypt Shopify tokens
+- Verify webhook signatures
+- Tenant isolation on all Shopify records
+- Do not expose access tokens to frontend
+- Log connection changes in audit trail
+
+--------------------------------------------------
+16. UI REQUIREMENTS
+--------------------------------------------------
+
+Settings → Integrations → Shopify
+
+Sections:
+1. Connection Status
+2. Store Details
+3. Sync Settings
+4. Location Mapping
+5. Product Mapping
+6. Webhook Status
+7. Sync Logs
+
+Use clear status badges:
+- Connected
+- Disconnected
+- Syncing
+- Failed
+- Needs Attention
+
+--------------------------------------------------
+17. TEST CASES
+--------------------------------------------------
+
+Test:
+- Connect Shopify store
+- Import products
+- Map products by SKU
+- Import Shopify order
+- Deduct inventory in NEXXUS
+- Push inventory update to Shopify
+- Handle cancelled order
+- Handle refunded order
+- Handle unmapped product
+- Reject invalid webhook signature
+- Prevent duplicate order import
+
+--------------------------------------------------
+18. OUTPUT REQUIRED
+--------------------------------------------------
+
+Provide:
+- database migrations
+- backend services
+- Shopify API client
+- webhook handlers
+- sync workers
+- frontend settings UI
+- product mapping UI
+- order import logic
+- inventory sync logic
+- report updates
+- test cases
+- implementation notes
+
+Build this cleanly, modularly, and safely for a multi-tenant SaaS POS system.
