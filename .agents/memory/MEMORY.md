@@ -7,6 +7,7 @@
 - [Staff authz pattern](staff-auth-pattern.md) — privileged endpoints gate on a client-supplied staffId (tenant JWT has no staff identity); spoofable app-wide, fix is a dedicated task.
 - [Mobile→web auth handoff](mobile-web-auth-handoff.md) — Expo passes tenant token to web in-app checkout via URL fragment (#token=), never query, so it never hits server/proxy logs.
 - [Expo prod bundle resolves all require()](expo-metro-prod-bundle.md) — nexus-mobile deploys as a static Expo Go bundle; Metro resolves every require() literal at build time. Never depend on Node polyfills (buffer); verify with `expo export`, not just typecheck.
+- [Deploy build concurrency timeouts](deploy-build-concurrency-timeouts.md) — publish builds ALL artifacts on one machine at once; mobile "Metro timeout" + sibling vite SIGTERM = one slow build, not broken code. Keep build-script startup timeouts generous.
 - [replit.md deep-dive split](replit-md-reorg.md) — DONE: architecture deep-dives live verbatim in docs/architecture.md; replit.md keeps a one-line index + [Details](#slug) links. Keep both in sync on new decisions.
 - [Optimistic PATCH + scan race](optimistic-patch-scan-race.md) — counters that PATCH absolute values under barcode scanning need a sync ref + per-item write-seq guard or increments drop.
 - [Drizzle push applies ALL drift](drizzle-push-unrelated-drift.md) — `db push` diffs the whole schema; pre-existing drift can prompt to truncate an unrelated table. For one additive column use `ALTER TABLE … ADD COLUMN IF NOT EXISTS` instead.

@@ -177,7 +177,13 @@ async function startMetro(expoPublicDomain, expoPublicReplId) {
     });
   }
 
-  for (let i = 0; i < 60; i++) {
+  // Wait up to ~4 minutes for Metro to become healthy. During a deployment
+  // publish, all artifacts build on the same machine concurrently (the web
+  // vite build alone can take 7+ minutes under that contention), so Metro can
+  // be slow to answer its first health check. The old 60s budget timed out and
+  // failed the entire publish even though Metro was simply starting slowly.
+  const METRO_STARTUP_ATTEMPTS = 240;
+  for (let i = 0; i < METRO_STARTUP_ATTEMPTS; i++) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     const healthy = await checkMetroHealth();
@@ -187,7 +193,7 @@ async function startMetro(expoPublicDomain, expoPublicReplId) {
     }
   }
 
-  console.error("Metro timeout");
+  console.error(`Metro timeout (not healthy after ${METRO_STARTUP_ATTEMPTS}s)`);
   process.exit(1);
 }
 
