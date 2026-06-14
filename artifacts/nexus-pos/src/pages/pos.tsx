@@ -1278,6 +1278,49 @@ export function POS() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, products, barcodeAmbiguity]);
 
+  // Auto-add a single SEARCH result. When the cashier types a name (or partial
+  // code) and the visible grid narrows to exactly ONE product, add it
+  // automatically — no tap or Enter needed. Debounced ~400ms so it fires only
+  // once typing pauses, not mid-keystroke (which could add the wrong item while
+  // the list briefly shows a single match). Exact barcode/SKU/loyalty/weight
+  // codes are intentionally skipped here — the barcode auto-detect effect above
+  // already consumes those (and clears the search), so we never double-add.
+  // Suppressed while any picker/modal is open so a re-render can't add behind it.
+  useEffect(() => {
+    if (
+      barcodeAmbiguity ||
+      customizingProductId !== null ||
+      unitPickerState ||
+      weightModalProduct
+    )
+      return;
+    const code = searchTerm.trim();
+    if (!code || !products) return;
+    if (CARD_PATTERN.test(code) || /^2\d{12}$/.test(code)) return;
+    const normalizedCode = normalizeBarcode(code);
+    const isExactCode = products.some(
+      (p: NonNullable<typeof products>[number]) =>
+        normalizeBarcode(p.barcode) === normalizedCode ||
+        normalizeBarcode(p.sku) === normalizedCode,
+    );
+    if (isExactCode) return;
+    if (!filteredProducts || filteredProducts.length !== 1) return;
+    const [only] = filteredProducts;
+    const t = setTimeout(() => {
+      void handleProductTap(only);
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    searchTerm,
+    products,
+    categoryFilter,
+    barcodeAmbiguity,
+    customizingProductId,
+    unitPickerState,
+    weightModalProduct,
+  ]);
+
   const [editingNoteKey, setEditingNoteKey] = useState<string | null>(null);
 
   const updateQuantity = (cartKey: string, delta: number) => {
