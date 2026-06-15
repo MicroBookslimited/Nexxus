@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, integer, timestamp, unique, real } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, integer, timestamp, unique, real, index } from "drizzle-orm/pg-core";
 import { staffTable } from "./staff";
 import { productsTable } from "./products";
 
@@ -25,7 +25,10 @@ export const locationInventoryTable = pgTable("location_inventory", {
   productId: integer("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
   stockCount: real("stock_count").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [unique("uq_location_product").on(t.locationId, t.productId)]);
+}, (t) => [
+  unique("uq_location_product").on(t.locationId, t.productId),
+  index("idx_location_inventory_product").on(t.productId),
+]);
 
 export const stockTransfersTable = pgTable("stock_transfers", {
   id: serial("id").primaryKey(),

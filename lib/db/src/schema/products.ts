@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, integer, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, real, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -62,7 +62,10 @@ export const productsTable = pgTable("products", {
   // historical records (orders, purchase bills, accounting links) remain
   // intact. NULL = active. Restorable by clearing this column.
   archivedAt: timestamp("archived_at", { withTimezone: true }),
-});
+}, (t) => [
+  index("idx_products_tenant_category").on(t.tenantId, t.category),
+  index("idx_products_tenant_archived").on(t.tenantId, t.archivedAt),
+]);
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({ id: true, createdAt: true });
 export type InsertProduct = z.infer<typeof insertProductSchema>;

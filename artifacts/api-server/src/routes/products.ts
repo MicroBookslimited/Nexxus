@@ -130,6 +130,9 @@ router.get("/products", async (req, res): Promise<void> => {
   }
 
   const stockMap = new Map(locationStock.map((s) => [s.productId, s.stockCount]));
+  // Index overrides by productId for O(1) lookup in the per-product map below
+  // (avoids an O(N²) overrides.find() per product on large catalogs).
+  const overrideMap = new Map(overrides.map((o) => [o.productId, o]));
 
   // ── Combined cross-location stock (dashboard / no locationId) ───────────
   // When no specific location is requested, the displayed stock should be the
@@ -235,9 +238,51 @@ router.get("/products", async (req, res): Promise<void> => {
   }
   // ──────────────────────────────────────────────────────────────────────
 
-  const enriched = await Promise.all(
-    products.map(async (p) => {
-      const override = overrides.find((o) => o.productId === p.id);
+  // ── Capability flags (variants / modifiers / composite) ───────────────
+  // Previously each product ran THREE COUNT queries here (one per flag),
+  // i.e. 3×N round-trips for a list of N products — the dominant cost for
+  // large catalogs. Instead, resolve all three flags for the whole result
+  // set in 3 grouped queries and look them up from in-memory Sets.
+  const productIds = products.map((p) => p.id);
+  const variantFlagSet = new Set<number>();
+  const modifierFlagSet = new Set<number>();
+  const compositeFlagSet = new Set<number>();
+  if (productIds.length > 0) {
+    const [variantRows, modifierRows, compositeRows] = await Promise.all([
+      db
+        .select({ productId: variantGroupsTable.productId })
+        .from(variantGroupsTable)
+        .where(inArray(variantGroupsTable.productId, productIds))
+        .groupBy(variantGroupsTable.productId),
+      db
+        .select({ productId: modifierGroupsTable.productId })
+        .from(modifierGroupsTable)
+        .where(inArray(modifierGroupsTable.productId, productIds))
+        .groupBy(modifierGroupsTable.productId),
+      db
+        .select({ parentProductId: compositeProductComponentsTable.parentProductId })
+        .from(compositeProductComponentsTable)
+        .where(inArray(compositeProductComponentsTable.parentProductId, productIds))
+        .groupBy(compositeProductComponentsTable.parentProductId),
+    ]);
+    for (const r of variantRows) variantFlagSet.add(r.productId);
+    for (const r of modifierRows) modifierFlagSet.add(r.productId);
+    for (const r of compositeRows) compositeFlagSet.add(r.parentProductId);
+  }
+
+  const applyFlags = (p: typeof productsTable.$inferSelect) => ({
+    ...p,
+    imageUrl: p.imageUrl ?? undefined,
+    description: p.description ?? undefined,
+    barcode: p.barcode ?? undefined,
+    sku: p.sku ?? undefined,
+    hasVariants: variantFlagSet.has(p.id),
+    hasModifiers: modifierFlagSet.has(p.id),
+    isComposite: compositeFlagSet.has(p.id),
+  });
+
+  const enriched = products.map((p) => {
+      const override = overrideMap.get(p.id);
       const effectivePrice = override?.priceOverride != null ? override.priceOverride : p.price;
       const isComposite = p.structureType === "composite";
       // Combined cross-location total (only meaningful for non-composite when
@@ -263,9 +308,8 @@ router.get("/products", async (req, res): Promise<void> => {
         : usingLocSum
           ? true
           : (locationId ? (override ? override.isAvailable && p.inStock : p.inStock) : p.inStock);
-      return withFlags({ ...p, price: effectivePrice, inStock: effectiveInStock, stockCount: effectiveStockCount });
-    })
-  );
+      return applyFlags({ ...p, price: effectivePrice, inStock: effectiveInStock, stockCount: effectiveStockCount });
+    });
 
   res.json(ListProductsResponse.parse(enriched));
 });

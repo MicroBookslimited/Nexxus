@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, real, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, real, boolean, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { productsTable } from "./products";
 
 export const variantGroupsTable = pgTable("variant_groups", {
@@ -7,7 +7,7 @@ export const variantGroupsTable = pgTable("variant_groups", {
   name: text("name").notNull(),
   required: boolean("required").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("idx_variant_groups_product").on(t.productId)]);
 
 export const variantOptionsTable = pgTable("variant_options", {
   id: serial("id").primaryKey(),
@@ -30,7 +30,7 @@ export const modifierGroupsTable = pgTable("modifier_groups", {
   minSelections: integer("min_selections").notNull().default(0),
   maxSelections: integer("max_selections").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("idx_modifier_groups_product").on(t.productId)]);
 
 export const modifierOptionsTable = pgTable("modifier_options", {
   id: serial("id").primaryKey(),

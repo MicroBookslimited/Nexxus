@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, real, timestamp, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, real, timestamp, unique, index } from "drizzle-orm/pg-core";
 import { productsTable } from "./products";
 
 /**
@@ -32,6 +32,7 @@ export const compositeProductComponentsTable = pgTable(
   },
   (t) => [
     unique("uq_composite_parent_child").on(t.parentProductId, t.childProductId),
+    index("idx_composite_parent_product").on(t.parentProductId),
   ],
 );
 
