@@ -98,6 +98,81 @@ export async function exchangeClientCredentials(
   };
 }
 
+/**
+ * Build the Shopify OAuth Authorization Code Grant authorize URL. The browser is
+ * redirected here; after the merchant approves, Shopify redirects back to
+ * `redirectUri` with `code`, `shop`, `state`, `hmac`, `timestamp`. We request an
+ * OFFLINE token (no `access_mode` / not `per-user`) which is long-lived and does
+ * not expire, so it can be used by background sync.
+ */
+export function buildAuthorizeUrl(opts: {
+  shopDomain: string;
+  clientId: string;
+  scopes: string;
+  redirectUri: string;
+  state: string;
+}): string {
+  const domain = normalizeShopDomain(opts.shopDomain);
+  const params = new URLSearchParams({
+    client_id: opts.clientId,
+    scope: opts.scopes,
+    redirect_uri: opts.redirectUri,
+    state: opts.state,
+    // Offline (default) access mode → long-lived token. Be explicit.
+    "grant_options[]": "",
+  });
+  return `https://${domain}/admin/oauth/authorize?${params.toString()}`;
+}
+
+export interface AuthorizationCodeGrant {
+  /** Long-lived OFFLINE Admin API access token (shpat_…). */
+  accessToken: string;
+  /** Space-separated scopes Shopify actually granted. */
+  scope: string;
+}
+
+/**
+ * Exchange an authorization `code` (from the OAuth callback) for a long-lived
+ * OFFLINE Admin API access token via
+ * `POST https://{shop}/admin/oauth/access_token`. Throws ShopifyApiError on
+ * failure.
+ */
+export async function exchangeAuthorizationCode(
+  shopDomain: string,
+  clientId: string,
+  clientSecret: string,
+  code: string,
+): Promise<AuthorizationCodeGrant> {
+  const domain = normalizeShopDomain(shopDomain);
+  const url = `https://${domain}/admin/oauth/access_token`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+    }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => resp.statusText);
+    throw new ShopifyApiError(
+      `Shopify authorization-code exchange failed (${resp.status}): ${text.slice(0, 300)}`,
+      resp.status,
+    );
+  }
+
+  const json = (await resp.json().catch(() => ({}))) as {
+    access_token?: string;
+    scope?: string;
+  };
+  if (!json.access_token) {
+    throw new ShopifyApiError("Shopify token exchange returned no access token.", 500);
+  }
+  return { accessToken: json.access_token, scope: json.scope ?? "" };
+}
+
 export class ShopifyAdminClient {
   private readonly endpoint: string;
   private readonly accessToken: string;

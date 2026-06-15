@@ -97,8 +97,10 @@ import type {
   SaveVariantsBody,
   SendEodReportEmailBody,
   SendReceiptEmailBody,
-  ShopifyConnectBody,
   ShopifyConnectionStatus,
+  ShopifyDisconnectResult,
+  ShopifyOAuthStartBody,
+  ShopifyOAuthStartResult,
   ShopifySyncSettingsBody,
   ShopifyTestResult,
   StaffMember,
@@ -8787,31 +8789,34 @@ export const useDeleteProductUnit = <
 };
 
 /**
- * @summary Get the tenant's Shopify connection status (access token redacted).
+ * @summary List all of the tenant's connected Shopify stores (tokens redacted).
  */
-export const getGetShopifyConnectionUrl = () => {
-  return `/api/shopify/connection`;
+export const getListShopifyConnectionsUrl = () => {
+  return `/api/shopify/connections`;
 };
 
-export const getShopifyConnection = async (
+export const listShopifyConnections = async (
   options?: RequestInit,
-): Promise<ShopifyConnectionStatus> => {
-  return customFetch<ShopifyConnectionStatus>(getGetShopifyConnectionUrl(), {
-    ...options,
-    method: "GET",
-  });
+): Promise<ShopifyConnectionStatus[]> => {
+  return customFetch<ShopifyConnectionStatus[]>(
+    getListShopifyConnectionsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
-export const getGetShopifyConnectionQueryKey = () => {
-  return [`/api/shopify/connection`] as const;
+export const getListShopifyConnectionsQueryKey = () => {
+  return [`/api/shopify/connections`] as const;
 };
 
-export const getGetShopifyConnectionQueryOptions = <
-  TData = Awaited<ReturnType<typeof getShopifyConnection>>,
+export const getListShopifyConnectionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listShopifyConnections>>,
   TError = ErrorType<unknown>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getShopifyConnection>>,
+    Awaited<ReturnType<typeof listShopifyConnections>>,
     TError,
     TData
   >;
@@ -8819,40 +8824,41 @@ export const getGetShopifyConnectionQueryOptions = <
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetShopifyConnectionQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getListShopifyConnectionsQueryKey();
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getShopifyConnection>>
-  > = ({ signal }) => getShopifyConnection({ signal, ...requestOptions });
+    Awaited<ReturnType<typeof listShopifyConnections>>
+  > = ({ signal }) => listShopifyConnections({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getShopifyConnection>>,
+    Awaited<ReturnType<typeof listShopifyConnections>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type GetShopifyConnectionQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getShopifyConnection>>
+export type ListShopifyConnectionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listShopifyConnections>>
 >;
-export type GetShopifyConnectionQueryError = ErrorType<unknown>;
+export type ListShopifyConnectionsQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get the tenant's Shopify connection status (access token redacted).
+ * @summary List all of the tenant's connected Shopify stores (tokens redacted).
  */
 
-export function useGetShopifyConnection<
-  TData = Awaited<ReturnType<typeof getShopifyConnection>>,
+export function useListShopifyConnections<
+  TData = Awaited<ReturnType<typeof listShopifyConnections>>,
   TError = ErrorType<unknown>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getShopifyConnection>>,
+    Awaited<ReturnType<typeof listShopifyConnections>>,
     TError,
     TData
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetShopifyConnectionQueryOptions(options);
+  const queryOptions = getListShopifyConnectionsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -8862,42 +8868,42 @@ export function useGetShopifyConnection<
 }
 
 /**
- * @summary Create or update the tenant's Shopify credentials. The token is stored encrypted and never returned.
+ * @summary Begin the "Connect Shopify store" OAuth flow; returns the Shopify authorize URL to redirect to.
  */
-export const getSaveShopifyConnectionUrl = () => {
-  return `/api/shopify/connection`;
+export const getStartShopifyOAuthUrl = () => {
+  return `/api/shopify/oauth/start`;
 };
 
-export const saveShopifyConnection = async (
-  shopifyConnectBody: ShopifyConnectBody,
+export const startShopifyOAuth = async (
+  shopifyOAuthStartBody: ShopifyOAuthStartBody,
   options?: RequestInit,
-): Promise<ShopifyConnectionStatus> => {
-  return customFetch<ShopifyConnectionStatus>(getSaveShopifyConnectionUrl(), {
+): Promise<ShopifyOAuthStartResult> => {
+  return customFetch<ShopifyOAuthStartResult>(getStartShopifyOAuthUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(shopifyConnectBody),
+    body: JSON.stringify(shopifyOAuthStartBody),
   });
 };
 
-export const getSaveShopifyConnectionMutationOptions = <
+export const getStartShopifyOAuthMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof saveShopifyConnection>>,
+    Awaited<ReturnType<typeof startShopifyOAuth>>,
     TError,
-    { data: BodyType<ShopifyConnectBody> },
+    { data: BodyType<ShopifyOAuthStartBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof saveShopifyConnection>>,
+  Awaited<ReturnType<typeof startShopifyOAuth>>,
   TError,
-  { data: BodyType<ShopifyConnectBody> },
+  { data: BodyType<ShopifyOAuthStartBody> },
   TContext
 > => {
-  const mutationKey = ["saveShopifyConnection"];
+  const mutationKey = ["startShopifyOAuth"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -8907,57 +8913,58 @@ export const getSaveShopifyConnectionMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof saveShopifyConnection>>,
-    { data: BodyType<ShopifyConnectBody> }
+    Awaited<ReturnType<typeof startShopifyOAuth>>,
+    { data: BodyType<ShopifyOAuthStartBody> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return saveShopifyConnection(data, requestOptions);
+    return startShopifyOAuth(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type SaveShopifyConnectionMutationResult = NonNullable<
-  Awaited<ReturnType<typeof saveShopifyConnection>>
+export type StartShopifyOAuthMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startShopifyOAuth>>
 >;
-export type SaveShopifyConnectionMutationBody = BodyType<ShopifyConnectBody>;
-export type SaveShopifyConnectionMutationError = ErrorType<unknown>;
+export type StartShopifyOAuthMutationBody = BodyType<ShopifyOAuthStartBody>;
+export type StartShopifyOAuthMutationError = ErrorType<unknown>;
 
 /**
- * @summary Create or update the tenant's Shopify credentials. The token is stored encrypted and never returned.
+ * @summary Begin the "Connect Shopify store" OAuth flow; returns the Shopify authorize URL to redirect to.
  */
-export const useSaveShopifyConnection = <
+export const useStartShopifyOAuth = <
   TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof saveShopifyConnection>>,
+    Awaited<ReturnType<typeof startShopifyOAuth>>,
     TError,
-    { data: BodyType<ShopifyConnectBody> },
+    { data: BodyType<ShopifyOAuthStartBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof saveShopifyConnection>>,
+  Awaited<ReturnType<typeof startShopifyOAuth>>,
   TError,
-  { data: BodyType<ShopifyConnectBody> },
+  { data: BodyType<ShopifyOAuthStartBody> },
   TContext
 > => {
-  return useMutation(getSaveShopifyConnectionMutationOptions(options));
+  return useMutation(getStartShopifyOAuthMutationOptions(options));
 };
 
 /**
- * @summary Verify the saved Shopify credentials live and return the shop name.
+ * @summary Verify a connected store's token live and return the shop name.
  */
-export const getTestShopifyConnectionUrl = () => {
-  return `/api/shopify/connection/test`;
+export const getTestShopifyConnectionUrl = (id: number) => {
+  return `/api/shopify/connections/${id}/test`;
 };
 
 export const testShopifyConnection = async (
+  id: number,
   options?: RequestInit,
 ): Promise<ShopifyTestResult> => {
-  return customFetch<ShopifyTestResult>(getTestShopifyConnectionUrl(), {
+  return customFetch<ShopifyTestResult>(getTestShopifyConnectionUrl(id), {
     ...options,
     method: "POST",
   });
@@ -8970,14 +8977,14 @@ export const getTestShopifyConnectionMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof testShopifyConnection>>,
     TError,
-    void,
+    { id: number },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof testShopifyConnection>>,
   TError,
-  void,
+  { id: number },
   TContext
 > => {
   const mutationKey = ["testShopifyConnection"];
@@ -8991,9 +8998,11 @@ export const getTestShopifyConnectionMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof testShopifyConnection>>,
-    void
-  > = () => {
-    return testShopifyConnection(requestOptions);
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return testShopifyConnection(id, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -9006,7 +9015,7 @@ export type TestShopifyConnectionMutationResult = NonNullable<
 export type TestShopifyConnectionMutationError = ErrorType<ShopifyTestResult>;
 
 /**
- * @summary Verify the saved Shopify credentials live and return the shop name.
+ * @summary Verify a connected store's token live and return the shop name.
  */
 export const useTestShopifyConnection = <
   TError = ErrorType<ShopifyTestResult>,
@@ -9015,32 +9024,33 @@ export const useTestShopifyConnection = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof testShopifyConnection>>,
     TError,
-    void,
+    { id: number },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof testShopifyConnection>>,
   TError,
-  void,
+  { id: number },
   TContext
 > => {
   return useMutation(getTestShopifyConnectionMutationOptions(options));
 };
 
 /**
- * @summary Update sync toggles, direction, and default location for the tenant's Shopify connection.
+ * @summary Update sync toggles, direction, and default location for a connected store.
  */
-export const getUpdateShopifySyncSettingsUrl = () => {
-  return `/api/shopify/connection/sync-settings`;
+export const getUpdateShopifySyncSettingsUrl = (id: number) => {
+  return `/api/shopify/connections/${id}/sync-settings`;
 };
 
 export const updateShopifySyncSettings = async (
+  id: number,
   shopifySyncSettingsBody: ShopifySyncSettingsBody,
   options?: RequestInit,
 ): Promise<ShopifyConnectionStatus> => {
   return customFetch<ShopifyConnectionStatus>(
-    getUpdateShopifySyncSettingsUrl(),
+    getUpdateShopifySyncSettingsUrl(id),
     {
       ...options,
       method: "PATCH",
@@ -9057,14 +9067,14 @@ export const getUpdateShopifySyncSettingsMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof updateShopifySyncSettings>>,
     TError,
-    { data: BodyType<ShopifySyncSettingsBody> },
+    { id: number; data: BodyType<ShopifySyncSettingsBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof updateShopifySyncSettings>>,
   TError,
-  { data: BodyType<ShopifySyncSettingsBody> },
+  { id: number; data: BodyType<ShopifySyncSettingsBody> },
   TContext
 > => {
   const mutationKey = ["updateShopifySyncSettings"];
@@ -9078,11 +9088,11 @@ export const getUpdateShopifySyncSettingsMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof updateShopifySyncSettings>>,
-    { data: BodyType<ShopifySyncSettingsBody> }
+    { id: number; data: BodyType<ShopifySyncSettingsBody> }
   > = (props) => {
-    const { data } = props ?? {};
+    const { id, data } = props ?? {};
 
-    return updateShopifySyncSettings(data, requestOptions);
+    return updateShopifySyncSettings(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -9096,7 +9106,7 @@ export type UpdateShopifySyncSettingsMutationBody =
 export type UpdateShopifySyncSettingsMutationError = ErrorType<unknown>;
 
 /**
- * @summary Update sync toggles, direction, and default location for the tenant's Shopify connection.
+ * @summary Update sync toggles, direction, and default location for a connected store.
  */
 export const useUpdateShopifySyncSettings = <
   TError = ErrorType<unknown>,
@@ -9105,30 +9115,31 @@ export const useUpdateShopifySyncSettings = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof updateShopifySyncSettings>>,
     TError,
-    { data: BodyType<ShopifySyncSettingsBody> },
+    { id: number; data: BodyType<ShopifySyncSettingsBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof updateShopifySyncSettings>>,
   TError,
-  { data: BodyType<ShopifySyncSettingsBody> },
+  { id: number; data: BodyType<ShopifySyncSettingsBody> },
   TContext
 > => {
   return useMutation(getUpdateShopifySyncSettingsMutationOptions(options));
 };
 
 /**
- * @summary Disconnect Shopify, deactivating the connection and clearing stored credentials.
+ * @summary Disconnect a Shopify store, removing it and revoking local access.
  */
-export const getDisconnectShopifyUrl = () => {
-  return `/api/shopify/connection/disconnect`;
+export const getDisconnectShopifyUrl = (id: number) => {
+  return `/api/shopify/connections/${id}/disconnect`;
 };
 
 export const disconnectShopify = async (
+  id: number,
   options?: RequestInit,
-): Promise<ShopifyConnectionStatus> => {
-  return customFetch<ShopifyConnectionStatus>(getDisconnectShopifyUrl(), {
+): Promise<ShopifyDisconnectResult> => {
+  return customFetch<ShopifyDisconnectResult>(getDisconnectShopifyUrl(id), {
     ...options,
     method: "POST",
   });
@@ -9141,14 +9152,14 @@ export const getDisconnectShopifyMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof disconnectShopify>>,
     TError,
-    void,
+    { id: number },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof disconnectShopify>>,
   TError,
-  void,
+  { id: number },
   TContext
 > => {
   const mutationKey = ["disconnectShopify"];
@@ -9162,9 +9173,11 @@ export const getDisconnectShopifyMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof disconnectShopify>>,
-    void
-  > = () => {
-    return disconnectShopify(requestOptions);
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return disconnectShopify(id, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -9177,7 +9190,7 @@ export type DisconnectShopifyMutationResult = NonNullable<
 export type DisconnectShopifyMutationError = ErrorType<unknown>;
 
 /**
- * @summary Disconnect Shopify, deactivating the connection and clearing stored credentials.
+ * @summary Disconnect a Shopify store, removing it and revoking local access.
  */
 export const useDisconnectShopify = <
   TError = ErrorType<unknown>,
@@ -9186,14 +9199,14 @@ export const useDisconnectShopify = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof disconnectShopify>>,
     TError,
-    void,
+    { id: number },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof disconnectShopify>>,
   TError,
-  void,
+  { id: number },
   TContext
 > => {
   return useMutation(getDisconnectShopifyMutationOptions(options));

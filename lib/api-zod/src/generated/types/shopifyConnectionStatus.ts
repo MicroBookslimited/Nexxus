@@ -7,10 +7,13 @@
  */
 
 export interface ShopifyConnectionStatus {
+  id?: number;
   connected: boolean;
   hasToken: boolean;
-  /** "token" (legacy static token) or "client_credentials". */
+  /** "oauth" (Authorization Code Grant), "token" (legacy static token), or "client_credentials". */
   authMode?: string | null;
+  /** Space- or comma-separated list of Admin API scopes Shopify granted (oauth mode). */
+  grantedScopes?: string | null;
   /** Dev Dashboard app Client ID (client_credentials mode only). */
   clientId?: string | null;
   shopDomain?: string | null;

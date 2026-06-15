@@ -4005,15 +4005,24 @@ export const DeleteProductUnitResponse = zod.object({
 });
 
 /**
- * @summary Get the tenant's Shopify connection status (access token redacted).
+ * @summary List all of the tenant's connected Shopify stores (tokens redacted).
  */
-export const GetShopifyConnectionResponse = zod.object({
+export const ListShopifyConnectionsResponseItem = zod.object({
+  id: zod.number().optional(),
   connected: zod.boolean(),
   hasToken: zod.boolean(),
   authMode: zod
     .string()
     .nullish()
-    .describe('\"token\" (legacy static token) or \"client_credentials\".'),
+    .describe(
+      '\"oauth\" (Authorization Code Grant), \"token\" (legacy static token), or \"client_credentials\".',
+    ),
+  grantedScopes: zod
+    .string()
+    .nullish()
+    .describe(
+      "Space- or comma-separated list of Admin API scopes Shopify granted (oauth mode).",
+    ),
   clientId: zod
     .string()
     .nullish()
@@ -4037,85 +4046,40 @@ export const GetShopifyConnectionResponse = zod.object({
   lastSyncMessage: zod.string().nullish(),
   connectedAt: zod.coerce.date().nullish(),
 });
-
-/**
- * @summary Create or update the tenant's Shopify credentials. The token is stored encrypted and never returned.
- */
-export const saveShopifyConnectionBodyApiVersionRegExp = new RegExp(
-  "^\\d{4}-\\d{2}$",
+export const ListShopifyConnectionsResponse = zod.array(
+  ListShopifyConnectionsResponseItem,
 );
 
-export const SaveShopifyConnectionBody = zod
+/**
+ * @summary Begin the "Connect Shopify store" OAuth flow; returns the Shopify authorize URL to redirect to.
+ */
+export const StartShopifyOAuthBody = zod
   .object({
     shopDomain: zod
       .string()
       .describe(
         "Store domain, e.g. my-store.myshopify.com or just the handle.",
       ),
-    accessToken: zod
-      .string()
-      .optional()
-      .describe(
-        "Legacy static custom-app Admin API access token (stored encrypted).",
-      ),
-    clientId: zod
-      .string()
-      .optional()
-      .describe("Dev Dashboard app Client ID (public identifier)."),
-    clientSecret: zod
-      .string()
-      .optional()
-      .describe("Dev Dashboard app Client Secret (shpss_…, stored encrypted)."),
-    apiVersion: zod
-      .string()
-      .regex(saveShopifyConnectionBodyApiVersionRegExp)
-      .optional()
-      .describe("Admin API version, e.g. 2025-01."),
-    webhookSecret: zod
-      .string()
-      .optional()
-      .describe(
-        "Optional custom-app API secret key for webhook HMAC verification.",
-      ),
   })
   .describe(
-    "Provide EITHER a legacy static accessToken, OR a clientId + clientSecret pair (Shopify Dev Dashboard apps created after Jan 1, 2026, which are exchanged server-side for a short-lived token).",
+    'Start the OAuth \"Connect Shopify store\" flow for the given store domain.',
   );
 
-export const SaveShopifyConnectionResponse = zod.object({
-  connected: zod.boolean(),
-  hasToken: zod.boolean(),
-  authMode: zod
+export const StartShopifyOAuthResponse = zod.object({
+  authorizeUrl: zod
     .string()
-    .nullish()
-    .describe('\"token\" (legacy static token) or \"client_credentials\".'),
-  clientId: zod
-    .string()
-    .nullish()
-    .describe("Dev Dashboard app Client ID (client_credentials mode only)."),
-  shopDomain: zod.string().nullish(),
-  apiVersion: zod.string().nullish(),
-  shopName: zod.string().nullish(),
-  status: zod.string().nullish(),
-  isActive: zod.boolean().nullish(),
-  syncProducts: zod.boolean().nullish(),
-  syncInventory: zod.boolean().nullish(),
-  syncOrders: zod.boolean().nullish(),
-  syncCustomers: zod.boolean().nullish(),
-  syncDirection: zod.string().nullish(),
-  defaultLocationId: zod.number().nullish(),
-  lastTestAt: zod.coerce.date().nullish(),
-  lastTestStatus: zod.string().nullish(),
-  lastTestMessage: zod.string().nullish(),
-  lastSyncAt: zod.coerce.date().nullish(),
-  lastSyncStatus: zod.string().nullish(),
-  lastSyncMessage: zod.string().nullish(),
-  connectedAt: zod.coerce.date().nullish(),
+    .describe(
+      "Shopify OAuth authorize URL the browser should be redirected to.",
+    ),
 });
 
 /**
- * @summary Verify the saved Shopify credentials live and return the shop name.
+ * @summary Verify a connected store's token live and return the shop name.
  */
+export const TestShopifyConnectionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
 export const TestShopifyConnectionResponse = zod.object({
   ok: zod.boolean(),
   error: zod.string().optional(),
@@ -4130,12 +4094,21 @@ export const TestShopifyConnectionResponse = zod.object({
     .optional(),
   connection: zod
     .object({
+      id: zod.number().optional(),
       connected: zod.boolean(),
       hasToken: zod.boolean(),
       authMode: zod
         .string()
         .nullish()
-        .describe('\"token\" (legacy static token) or \"client_credentials\".'),
+        .describe(
+          '\"oauth\" (Authorization Code Grant), \"token\" (legacy static token), or \"client_credentials\".',
+        ),
+      grantedScopes: zod
+        .string()
+        .nullish()
+        .describe(
+          "Space- or comma-separated list of Admin API scopes Shopify granted (oauth mode).",
+        ),
       clientId: zod
         .string()
         .nullish()
@@ -4165,8 +4138,12 @@ export const TestShopifyConnectionResponse = zod.object({
 });
 
 /**
- * @summary Update sync toggles, direction, and default location for the tenant's Shopify connection.
+ * @summary Update sync toggles, direction, and default location for a connected store.
  */
+export const UpdateShopifySyncSettingsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
 export const UpdateShopifySyncSettingsBody = zod.object({
   syncProducts: zod.boolean().optional(),
   syncInventory: zod.boolean().optional(),
@@ -4179,12 +4156,21 @@ export const UpdateShopifySyncSettingsBody = zod.object({
 });
 
 export const UpdateShopifySyncSettingsResponse = zod.object({
+  id: zod.number().optional(),
   connected: zod.boolean(),
   hasToken: zod.boolean(),
   authMode: zod
     .string()
     .nullish()
-    .describe('\"token\" (legacy static token) or \"client_credentials\".'),
+    .describe(
+      '\"oauth\" (Authorization Code Grant), \"token\" (legacy static token), or \"client_credentials\".',
+    ),
+  grantedScopes: zod
+    .string()
+    .nullish()
+    .describe(
+      "Space- or comma-separated list of Admin API scopes Shopify granted (oauth mode).",
+    ),
   clientId: zod
     .string()
     .nullish()
@@ -4210,35 +4196,12 @@ export const UpdateShopifySyncSettingsResponse = zod.object({
 });
 
 /**
- * @summary Disconnect Shopify, deactivating the connection and clearing stored credentials.
+ * @summary Disconnect a Shopify store, removing it and revoking local access.
  */
+export const DisconnectShopifyParams = zod.object({
+  id: zod.coerce.number(),
+});
+
 export const DisconnectShopifyResponse = zod.object({
-  connected: zod.boolean(),
-  hasToken: zod.boolean(),
-  authMode: zod
-    .string()
-    .nullish()
-    .describe('\"token\" (legacy static token) or \"client_credentials\".'),
-  clientId: zod
-    .string()
-    .nullish()
-    .describe("Dev Dashboard app Client ID (client_credentials mode only)."),
-  shopDomain: zod.string().nullish(),
-  apiVersion: zod.string().nullish(),
-  shopName: zod.string().nullish(),
-  status: zod.string().nullish(),
-  isActive: zod.boolean().nullish(),
-  syncProducts: zod.boolean().nullish(),
-  syncInventory: zod.boolean().nullish(),
-  syncOrders: zod.boolean().nullish(),
-  syncCustomers: zod.boolean().nullish(),
-  syncDirection: zod.string().nullish(),
-  defaultLocationId: zod.number().nullish(),
-  lastTestAt: zod.coerce.date().nullish(),
-  lastTestStatus: zod.string().nullish(),
-  lastTestMessage: zod.string().nullish(),
-  lastSyncAt: zod.coerce.date().nullish(),
-  lastSyncStatus: zod.string().nullish(),
-  lastSyncMessage: zod.string().nullish(),
-  connectedAt: zod.coerce.date().nullish(),
+  ok: zod.boolean(),
 });

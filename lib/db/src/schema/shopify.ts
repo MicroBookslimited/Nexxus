@@ -10,15 +10,16 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
- * Per-tenant Shopify connection. Each tenant creates a Shopify CUSTOM APP in
- * their own Shopify admin and pastes its Admin API access token here — we do
- * NOT use an app-scoped OAuth connector (that only supports one store per
- * project). The access token and webhook signing secret are stored ENCRYPTED
- * (AES-256-GCM) and are never returned to the client.
+ * Per-tenant Shopify connection. The primary path is the OAuth Authorization
+ * Code Grant ("Connect Shopify store"): the tenant authorizes our single
+ * Shopify app and we store the resulting long-lived OFFLINE Admin API access
+ * token, encrypted (AES-256-GCM). A tenant may connect MULTIPLE stores (one row
+ * per store, across different Shopify orgs). Legacy pasted-token and
+ * client-credentials modes remain supported for backward compatibility.
  *
- * One row per tenant (enforced by a unique index on tenantId). `isActive`
- * mirrors whether the connection is currently usable; `status` is the
- * human-facing state shown in the UI.
+ * Uniqueness is per (tenantId, shopDomain) so the same store can't be connected
+ * twice for a tenant while different stores coexist. `isActive` mirrors whether
+ * the connection is currently usable; `status` is the human-facing state.
  */
 export const shopifyConnectionsTable = pgTable(
   "shopify_connections",
@@ -28,18 +29,22 @@ export const shopifyConnectionsTable = pgTable(
     // e.g. "my-store.myshopify.com" (the permanent .myshopify.com domain)
     shopDomain: text("shop_domain").notNull(),
     // How this connection authenticates to the Admin API:
+    //   "oauth"              — Authorization Code Grant; a long-lived OFFLINE
+    //                          access token is stored in accessTokenEncrypted
+    //                          (no expiry, no refresh). This is the default for
+    //                          newly connected stores.
     //   "token"              — legacy static custom-app token (shpat_…)
     //   "client_credentials" — Dev Dashboard app: clientId + clientSecret are
-    //                          exchanged for a short-lived access token (the
-    //                          only path Shopify allows for apps created after
-    //                          Jan 1, 2026).
+    //                          exchanged for a short-lived access token.
     authMode: text("auth_mode").notNull().default("token"),
-    // AES-256-GCM encrypted Admin API access token. For "token" mode this is the
-    // user-supplied static token; for "client_credentials" mode it caches the
-    // most recently exchanged short-lived token. Never exposed to clients.
+    // AES-256-GCM encrypted Admin API access token. For "oauth" and "token"
+    // modes this is the long-lived token; for "client_credentials" mode it
+    // caches the most recently exchanged short-lived token. Never exposed.
     accessTokenEncrypted: text("access_token_encrypted"),
     // Expiry of the cached exchanged token (client_credentials mode only).
     accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+    // Space-separated list of scopes Shopify actually granted (oauth mode).
+    grantedScopes: text("granted_scopes"),
     // Dev Dashboard app Client ID (public identifier, not a secret).
     clientId: text("client_id"),
     // AES-256-GCM encrypted Dev Dashboard app Client Secret (shpss_…).
@@ -77,9 +82,32 @@ export const shopifyConnectionsTable = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    tenantUnique: uniqueIndex("shopify_connections_tenant_unique").on(t.tenantId),
+    tenantShopUnique: uniqueIndex("shopify_connections_tenant_shop_unique").on(
+      t.tenantId,
+      t.shopDomain,
+    ),
   }),
 );
+
+/**
+ * Short-lived, single-use OAuth `state` nonces for the Authorization Code Grant
+ * "Connect Shopify store" flow. We generate a row here (tied to the tenant that
+ * initiated the connect and the target shop domain) before redirecting the
+ * browser to Shopify, then verify+consume it in the (public, unauthenticated)
+ * callback to tie the callback back to the correct tenant and defeat CSRF.
+ * Rows expire after a few minutes and are deleted once consumed.
+ */
+export const shopifyOauthStatesTable = pgTable("shopify_oauth_states", {
+  // The opaque random nonce passed to Shopify as `state` (also the PK).
+  state: text("state").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  shopDomain: text("shop_domain").notNull(),
+  // When this nonce stops being accepted (~10 min after creation).
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  // Set when the nonce has been consumed by a callback (single-use guard).
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 /**
  * Maps a NEXXUS product to its Shopify counterpart (product + variant +
@@ -169,6 +197,7 @@ export const shopifySyncLogsTable = pgTable("shopify_sync_logs", {
 });
 
 export type ShopifyConnection = typeof shopifyConnectionsTable.$inferSelect;
+export type ShopifyOauthState = typeof shopifyOauthStatesTable.$inferSelect;
 export type ShopifyProductMapping = typeof shopifyProductMappingsTable.$inferSelect;
 export type ShopifyOrderMapping = typeof shopifyOrderMappingsTable.$inferSelect;
 export type ShopifySyncLog = typeof shopifySyncLogsTable.$inferSelect;

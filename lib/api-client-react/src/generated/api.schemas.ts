@@ -6,10 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 export interface ShopifyConnectionStatus {
+  id?: number;
   connected: boolean;
   hasToken: boolean;
-  /** "token" (legacy static token) or "client_credentials". */
+  /** "oauth" (Authorization Code Grant), "token" (legacy static token), or "client_credentials". */
   authMode?: string | null;
+  /** Space- or comma-separated list of Admin API scopes Shopify granted (oauth mode). */
+  grantedScopes?: string | null;
   /** Dev Dashboard app Client ID (client_credentials mode only). */
   clientId?: string | null;
   shopDomain?: string | null;
@@ -33,24 +36,20 @@ export interface ShopifyConnectionStatus {
 }
 
 /**
- * Provide EITHER a legacy static accessToken, OR a clientId + clientSecret pair (Shopify Dev Dashboard apps created after Jan 1, 2026, which are exchanged server-side for a short-lived token).
+ * Start the OAuth "Connect Shopify store" flow for the given store domain.
  */
-export interface ShopifyConnectBody {
+export interface ShopifyOAuthStartBody {
   /** Store domain, e.g. my-store.myshopify.com or just the handle. */
   shopDomain: string;
-  /** Legacy static custom-app Admin API access token (stored encrypted). */
-  accessToken?: string;
-  /** Dev Dashboard app Client ID (public identifier). */
-  clientId?: string;
-  /** Dev Dashboard app Client Secret (shpss_…, stored encrypted). */
-  clientSecret?: string;
-  /**
-   * Admin API version, e.g. 2025-01.
-   * @pattern ^\d{4}-\d{2}$
-   */
-  apiVersion?: string;
-  /** Optional custom-app API secret key for webhook HMAC verification. */
-  webhookSecret?: string;
+}
+
+export interface ShopifyOAuthStartResult {
+  /** Shopify OAuth authorize URL the browser should be redirected to. */
+  authorizeUrl: string;
+}
+
+export interface ShopifyDisconnectResult {
+  ok: boolean;
 }
 
 export type ShopifySyncSettingsBodySyncDirection =

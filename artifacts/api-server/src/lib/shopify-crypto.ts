@@ -70,6 +70,40 @@ export function decryptToken(payload: string): string {
 }
 
 /**
+ * Verify the HMAC on a Shopify OAuth redirect (authorize callback). This is
+ * DISTINCT from {@link verifyWebhookHmac}: webhooks sign the raw body and return
+ * a base64 digest in a header, whereas OAuth signs the query string.
+ *
+ * Algorithm (per Shopify docs): take all query params EXCEPT `hmac` and
+ * `signature`, sort them lexicographically by key, join as `key=value` pairs with
+ * `&`, compute a hex SHA-256 HMAC with the app's Client Secret, and
+ * timing-safe-compare it to the supplied `hmac` param.
+ */
+export function verifyOAuthHmac(
+  query: Record<string, unknown>,
+  secret: string,
+): boolean {
+  const provided = query["hmac"];
+  if (typeof provided !== "string" || provided.length === 0) return false;
+
+  const message = Object.keys(query)
+    .filter((k) => k !== "hmac" && k !== "signature")
+    .sort()
+    .map((k) => {
+      const v = query[k];
+      const value = Array.isArray(v) ? v.join(",") : String(v);
+      return `${k}=${value}`;
+    })
+    .join("&");
+
+  const digest = crypto.createHmac("sha256", secret).update(message).digest("hex");
+  const a = Buffer.from(digest);
+  const b = Buffer.from(provided);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
  * Verify a Shopify webhook HMAC. Shopify signs the raw request body with the
  * app's API secret key (base64-encoded SHA-256 HMAC in the
  * `X-Shopify-Hmac-Sha256` header). Used in a later phase; included now so the

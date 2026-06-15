@@ -2020,41 +2020,51 @@ paths:
                 required:
                   - success
 
-  /shopify/connection:
+  /shopify/connections:
     get:
-      operationId: getShopifyConnection
+      operationId: listShopifyConnections
       tags: [shopify]
-      summary: Get the tenant's Shopify connection status (access token redacted).
+      summary: List all of the tenant's connected Shopify stores (tokens redacted).
       responses:
         "200":
-          description: Sanitized Shopify connection status
+          description: Array of sanitized Shopify connection statuses
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ShopifyConnectionStatus"
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShopifyConnectionStatus"
+
+  /shopify/oauth/start:
     post:
-      operationId: saveShopifyConnection
+      operationId: startShopifyOAuth
       tags: [shopify]
-      summary: Create or update the tenant's Shopify credentials. The token is stored encrypted and never returned.
+      summary: Begin the "Connect Shopify store" OAuth flow; returns the Shopify authorize URL to redirect to.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ShopifyConnectBody"
+              $ref: "#/components/schemas/ShopifyOAuthStartBody"
       responses:
         "200":
-          description: Updated connection status
+          description: Authorize URL the browser should be redirected to
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ShopifyConnectionStatus"
+                $ref: "#/components/schemas/ShopifyOAuthStartResult"
 
-  /shopify/connection/test:
+  /shopify/connections/{id}/test:
     post:
       operationId: testShopifyConnection
       tags: [shopify]
-      summary: Verify the saved Shopify credentials live and return the shop name.
+      summary: Verify a connected store's token live and return the shop name.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
       responses:
         "200":
           description: Test succeeded
@@ -2063,17 +2073,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/ShopifyTestResult"
         "400":
-          description: Test failed or no credentials saved
+          description: Test failed
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ShopifyTestResult"
 
-  /shopify/connection/sync-settings:
+  /shopify/connections/{id}/sync-settings:
     patch:
       operationId: updateShopifySyncSettings
       tags: [shopify]
-      summary: Update sync toggles, direction, and default location for the tenant's Shopify connection.
+      summary: Update sync toggles, direction, and default location for a connected store.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
       requestBody:
         required: true
         content:
@@ -2088,24 +2104,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/ShopifyConnectionStatus"
 
-  /shopify/connection/disconnect:
+  /shopify/connections/{id}/disconnect:
     post:
       operationId: disconnectShopify
       tags: [shopify]
-      summary: Disconnect Shopify, deactivating the connection and clearing stored credentials.
+      summary: Disconnect a Shopify store, removing it and revoking local access.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
       responses:
         "200":
-          description: Updated connection status
+          description: Disconnected
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ShopifyConnectionStatus"
+                $ref: "#/components/schemas/ShopifyDisconnectResult"
 
 components:
   schemas:
     ShopifyConnectionStatus:
       type: object
       properties:
+        id:
+          type: integer
         connected:
           type: boolean
         hasToken:
@@ -2113,7 +2137,11 @@ components:
         authMode:
           type: string
           nullable: true
-          description: '"token" (legacy static token) or "client_credentials".'
+          description: '"oauth" (Authorization Code Grant), "token" (legacy static token), or "client_credentials".'
+        grantedScopes:
+          type: string
+          nullable: true
+          description: Space- or comma-separated list of Admin API scopes Shopify granted (oauth mode).
         clientId:
           type: string
           nullable: true
@@ -2178,34 +2206,30 @@ components:
       required:
         - connected
         - hasToken
-    ShopifyConnectBody:
+    ShopifyOAuthStartBody:
       type: object
-      description: >-
-        Provide EITHER a legacy static accessToken, OR a clientId + clientSecret
-        pair (Shopify Dev Dashboard apps created after Jan 1, 2026, which are
-        exchanged server-side for a short-lived token).
+      description: Start the OAuth "Connect Shopify store" flow for the given store domain.
       properties:
         shopDomain:
           type: string
           description: Store domain, e.g. my-store.myshopify.com or just the handle.
-        accessToken:
-          type: string
-          description: Legacy static custom-app Admin API access token (stored encrypted).
-        clientId:
-          type: string
-          description: Dev Dashboard app Client ID (public identifier).
-        clientSecret:
-          type: string
-          description: Dev Dashboard app Client Secret (shpss_…, stored encrypted).
-        apiVersion:
-          type: string
-          description: Admin API version, e.g. 2025-01.
-          pattern: '^\d{4}-\d{2}$'
-        webhookSecret:
-          type: string
-          description: Optional custom-app API secret key for webhook HMAC verification.
       required:
         - shopDomain
+    ShopifyOAuthStartResult:
+      type: object
+      properties:
+        authorizeUrl:
+          type: string
+          description: Shopify OAuth authorize URL the browser should be redirected to.
+      required:
+        - authorizeUrl
+    ShopifyDisconnectResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required:
+        - ok
     ShopifySyncSettingsBody:
       type: object
       properties:

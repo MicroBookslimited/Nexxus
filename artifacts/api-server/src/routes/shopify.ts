@@ -1,19 +1,54 @@
 import { Router, type IRouter, type Request } from "express";
-import { and, eq } from "drizzle-orm";
-import { db, shopifyConnectionsTable, shopifySyncLogsTable, locationsTable } from "@workspace/db";
+import crypto from "node:crypto";
+import { and, asc, eq, isNull, lt } from "drizzle-orm";
+import {
+  db,
+  shopifyConnectionsTable,
+  shopifyOauthStatesTable,
+  shopifySyncLogsTable,
+  locationsTable,
+} from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { logAudit } from "./audit";
-import { encryptToken, decryptToken } from "../lib/shopify-crypto";
+import { encryptToken, decryptToken, verifyOAuthHmac } from "../lib/shopify-crypto";
 import {
   ShopifyAdminClient,
   ShopifyApiError,
   normalizeShopDomain,
   isValidShopDomain,
   exchangeClientCredentials,
+  buildAuthorizeUrl,
+  exchangeAuthorizationCode,
 } from "../lib/shopify-client";
 
 const router: IRouter = Router();
+
+/**
+ * Admin API scopes requested when a merchant authorizes the app via OAuth. Kept
+ * here (single source of truth) so the authorize URL and any docs stay in sync.
+ */
+export const SHOPIFY_OAUTH_SCOPES = [
+  "read_products",
+  "write_products",
+  "read_inventory",
+  "write_inventory",
+  "read_locations",
+  "read_orders",
+  "write_orders",
+  "read_draft_orders",
+  "write_draft_orders",
+  "read_customers",
+  "write_customers",
+  "read_discounts",
+  "write_discounts",
+].join(",");
+
+const DEFAULT_API_VERSION = "2025-01";
+
+// OAuth `state` nonce lifetime — the merchant must complete the consent screen
+// within this window or the connect attempt is rejected.
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 function getTenantPayload(req: Request) {
   const auth = req.headers["authorization"];
@@ -21,14 +56,33 @@ function getTenantPayload(req: Request) {
   return verifyTenantToken(auth.slice(7));
 }
 
+/**
+ * Public base URL of this deployment (used to build the OAuth redirect_uri and
+ * the post-callback redirect back to the web app). Mirrors the precedence used
+ * in index.ts: APP_BASE_URL → first REPLIT_DOMAINS entry → REPLIT_DEV_DOMAIN.
+ */
+function getPublicBaseUrl(): string {
+  return (
+    process.env["APP_BASE_URL"] ??
+    (process.env["REPLIT_DOMAINS"]
+      ? `https://${process.env["REPLIT_DOMAINS"].split(",")[0]!.trim()}`
+      : process.env["REPLIT_DEV_DOMAIN"]
+        ? `https://${process.env["REPLIT_DEV_DOMAIN"]}`
+        : "")
+  ).replace(/\/+$/, "");
+}
+
+/** The single, fixed OAuth callback path (must be whitelisted in the Shopify app). */
+function getRedirectUri(): string {
+  return `${getPublicBaseUrl()}/api/shopify/oauth/callback`;
+}
+
 type ConnectionRow = typeof shopifyConnectionsTable.$inferSelect;
 
-/** Strip secrets and shape the connection for the client. */
-function sanitize(row: ConnectionRow | undefined) {
-  if (!row) {
-    return { connected: false as const, hasToken: false };
-  }
+/** Strip secrets and shape a single connection for the client. */
+function sanitize(row: ConnectionRow) {
   return {
+    id: row.id,
     connected: row.isActive,
     hasToken:
       !!row.accessTokenEncrypted ||
@@ -40,6 +94,7 @@ function sanitize(row: ConnectionRow | undefined) {
     shopName: row.shopName,
     status: row.status,
     isActive: row.isActive,
+    grantedScopes: row.grantedScopes,
     syncProducts: row.syncProducts,
     syncInventory: row.syncInventory,
     syncOrders: row.syncOrders,
@@ -56,11 +111,22 @@ function sanitize(row: ConnectionRow | undefined) {
   };
 }
 
-async function getConnection(tenantId: number): Promise<ConnectionRow | undefined> {
-  const [row] = await db
+async function listConnections(tenantId: number): Promise<ConnectionRow[]> {
+  return db
     .select()
     .from(shopifyConnectionsTable)
     .where(eq(shopifyConnectionsTable.tenantId, tenantId))
+    .orderBy(asc(shopifyConnectionsTable.id));
+}
+
+async function getConnectionById(
+  tenantId: number,
+  id: number,
+): Promise<ConnectionRow | undefined> {
+  const [row] = await db
+    .select()
+    .from(shopifyConnectionsTable)
+    .where(and(eq(shopifyConnectionsTable.id, id), eq(shopifyConnectionsTable.tenantId, tenantId)))
     .limit(1);
   return row;
 }
@@ -71,11 +137,11 @@ const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 /**
  * Resolve a usable Admin API access token for a connection, regardless of auth
- * mode. For "token" mode this decrypts the stored static token. For
- * "client_credentials" mode it returns the cached exchanged token while still
- * valid, otherwise exchanges the Client ID + Secret for a fresh one and caches
- * it (encrypted) with its expiry. Throws ShopifyApiError on missing/invalid
- * credentials.
+ * mode:
+ *   - "oauth" / "token": decrypt the stored long-lived token.
+ *   - "client_credentials": return the cached exchanged token while still valid,
+ *     otherwise exchange Client ID + Secret for a fresh one and cache it.
+ * Throws ShopifyApiError on missing/invalid credentials.
  */
 export async function getValidAccessToken(row: ConnectionRow): Promise<string> {
   if (row.authMode === "client_credentials") {
@@ -106,160 +172,31 @@ export async function getValidAccessToken(row: ConnectionRow): Promise<string> {
     return grant.accessToken;
   }
 
-  // Legacy static-token mode.
+  // OAuth (long-lived offline token) and legacy static-token modes both just
+  // decrypt the stored token.
   if (!row.accessTokenEncrypted) {
     throw new ShopifyApiError("No Shopify access token saved.", 400);
   }
   return decryptToken(row.accessTokenEncrypted);
 }
 
-/* ─── GET /shopify/connection — sanitized status (token redacted) ─── */
-router.get("/shopify/connection", async (req, res): Promise<void> => {
-  const payload = getTenantPayload(req);
-  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
-  const row = await getConnection(payload.tenantId);
-  res.json(sanitize(row));
-});
-
-/* ─── POST /shopify/connection — create or update credentials ─── */
-const ConnectBody = z
-  .object({
-    shopDomain: z.string().min(1),
-    // Legacy static custom-app token (shpat_…).
-    accessToken: z.string().min(1).optional(),
-    // 2026 Dev Dashboard app: Client ID + Client Secret (exchanged for a
-    // short-lived token via the Client Credentials grant).
-    clientId: z.string().min(1).optional(),
-    clientSecret: z.string().min(1).optional(),
-    apiVersion: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-    // Optional webhook signing secret (the custom app's API secret key).
-    webhookSecret: z.string().optional(),
-  })
-  .refine(
-    (b) => !!b.accessToken || (!!b.clientId && !!b.clientSecret),
-    {
-      message:
-        "Provide either an Admin API access token, or a Client ID and Client Secret.",
-    },
-  );
-
-router.post("/shopify/connection", async (req, res): Promise<void> => {
-  if (!requireFullTenant(req as never, res as never)) return;
-  const payload = getTenantPayload(req);
-  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
-
-  const parsed = ConnectBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid body", details: parsed.error.issues });
-    return;
-  }
-
-  const shopDomain = normalizeShopDomain(parsed.data.shopDomain);
-  if (!isValidShopDomain(shopDomain)) {
-    res.status(400).json({ error: "Enter a valid Shopify store domain, e.g. my-store.myshopify.com" });
-    return;
-  }
-
-  const useClientCredentials = !!parsed.data.clientId && !!parsed.data.clientSecret;
-  const authMode = useClientCredentials ? "client_credentials" : "token";
-
-  // Credential columns differ per auth mode. In client_credentials mode the
-  // access token is derived (exchanged) on demand, so we clear any cached token
-  // and its expiry here and store the encrypted Client Secret instead.
-  const credentialColumns = useClientCredentials
-    ? {
-        authMode,
-        clientId: parsed.data.clientId!,
-        clientSecretEncrypted: encryptToken(parsed.data.clientSecret!),
-        accessTokenEncrypted: null,
-        accessTokenExpiresAt: null,
-      }
-    : {
-        authMode,
-        clientId: null,
-        clientSecretEncrypted: null,
-        accessTokenEncrypted: encryptToken(parsed.data.accessToken!),
-        accessTokenExpiresAt: null,
-      };
-
-  const webhookSecretEncrypted = parsed.data.webhookSecret
-    ? encryptToken(parsed.data.webhookSecret)
-    : undefined;
-  const apiVersion = parsed.data.apiVersion ?? "2025-01";
-  const now = new Date();
-
-  const existing = await getConnection(payload.tenantId);
-  if (existing) {
-    await db
-      .update(shopifyConnectionsTable)
-      .set({
-        shopDomain,
-        ...credentialColumns,
-        ...(webhookSecretEncrypted ? { webhookSecretEncrypted } : {}),
-        apiVersion,
-        // Saving new credentials resets the verified state until tested.
-        status: "disconnected",
-        isActive: false,
-        shopName: null,
-        lastTestStatus: null,
-        lastTestMessage: null,
-        updatedAt: now,
-      })
-      .where(eq(shopifyConnectionsTable.id, existing.id));
-  } else {
-    await db.insert(shopifyConnectionsTable).values({
-      tenantId: payload.tenantId,
-      shopDomain,
-      ...credentialColumns,
-      webhookSecretEncrypted,
-      apiVersion,
-      status: "disconnected",
-      isActive: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-
-  await logAudit({
-    tenantId: payload.tenantId,
-    action: existing ? "shopify.connection.updated" : "shopify.connection.created",
-    entityType: "shopify_connection",
-    entityId: shopDomain,
-    details: { shopDomain, apiVersion, authMode },
-    ipAddress: req.ip,
-  });
-
-  const row = await getConnection(payload.tenantId);
-  res.json(sanitize(row));
-});
-
-/* ─── POST /shopify/connection/test — verify credentials live ─── */
-router.post("/shopify/connection/test", async (req, res): Promise<void> => {
-  if (!requireFullTenant(req as never, res as never)) return;
-  const payload = getTenantPayload(req);
-  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
-
-  const row = await getConnection(payload.tenantId);
-  const hasCredentials =
-    row &&
-    (row.accessTokenEncrypted ||
-      (row.authMode === "client_credentials" && row.clientId && row.clientSecretEncrypted));
-  if (!row || !hasCredentials) {
-    res.status(400).json({ ok: false, error: "No Shopify credentials saved yet" });
-    return;
-  }
-
+/** Run the live connection test for a row, persisting the result. Returns the test outcome. */
+async function runConnectionTest(
+  tenantId: number,
+  row: ConnectionRow,
+): Promise<
+  | { ok: true; shop: Awaited<ReturnType<ShopifyAdminClient["testConnection"]>> }
+  | { ok: false; error: string }
+> {
   const startedAt = new Date();
   let token: string;
   try {
-    // Resolves the static token, or exchanges Client ID + Secret for a fresh
-    // short-lived token (caching it) in client_credentials mode.
     token = await getValidAccessToken(row);
   } catch (err) {
     const message =
       err instanceof ShopifyApiError
         ? err.message
-        : "Stored Shopify credentials could not be used. Re-enter them.";
+        : "Stored Shopify credentials could not be used. Reconnect the store.";
     const now = new Date();
     await db
       .update(shopifyConnectionsTable)
@@ -272,12 +209,7 @@ router.post("/shopify/connection/test", async (req, res): Promise<void> => {
         updatedAt: now,
       })
       .where(eq(shopifyConnectionsTable.id, row.id));
-    res.status(400).json({
-      ok: false,
-      error: message,
-      connection: sanitize(await getConnection(payload.tenantId)),
-    });
-    return;
+    return { ok: false, error: message };
   }
 
   const client = new ShopifyAdminClient({
@@ -304,7 +236,7 @@ router.post("/shopify/connection/test", async (req, res): Promise<void> => {
       .where(eq(shopifyConnectionsTable.id, row.id));
 
     await db.insert(shopifySyncLogsTable).values({
-      tenantId: payload.tenantId,
+      tenantId,
       syncType: "connection",
       status: "success",
       message: `Connection test succeeded (${shop.name})`,
@@ -313,16 +245,7 @@ router.post("/shopify/connection/test", async (req, res): Promise<void> => {
       completedAt: now,
     });
 
-    await logAudit({
-      tenantId: payload.tenantId,
-      action: "shopify.connection.tested",
-      entityType: "shopify_connection",
-      entityId: row.shopDomain,
-      details: { result: "success", shopName: shop.name },
-      ipAddress: req.ip,
-    });
-
-    res.json({ ok: true, shop, connection: sanitize(await getConnection(payload.tenantId)) });
+    return { ok: true, shop };
   } catch (err) {
     const message = err instanceof ShopifyApiError ? err.message : "Connection test failed";
     const now = new Date();
@@ -339,7 +262,7 @@ router.post("/shopify/connection/test", async (req, res): Promise<void> => {
       .where(eq(shopifyConnectionsTable.id, row.id));
 
     await db.insert(shopifySyncLogsTable).values({
-      tenantId: payload.tenantId,
+      tenantId,
       syncType: "connection",
       status: "error",
       message,
@@ -347,20 +270,291 @@ router.post("/shopify/connection/test", async (req, res): Promise<void> => {
       completedAt: now,
     });
 
+    return { ok: false, error: message };
+  }
+}
+
+/* ─── GET /shopify/connections — list all of the tenant's stores ─── */
+router.get("/shopify/connections", async (req, res): Promise<void> => {
+  const payload = getTenantPayload(req);
+  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const rows = await listConnections(payload.tenantId);
+  res.json(rows.map(sanitize));
+});
+
+/* ─── POST /shopify/oauth/start — begin the Connect Shopify store flow ─── */
+const OAuthStartBody = z.object({
+  shopDomain: z.string().min(1),
+});
+
+router.post("/shopify/oauth/start", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const payload = getTenantPayload(req);
+  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const clientId = process.env["SHOPIFY_API_KEY"];
+  if (!clientId) {
+    res.status(500).json({
+      error: "Shopify app is not configured (missing SHOPIFY_API_KEY). Contact support.",
+    });
+    return;
+  }
+
+  const parsed = OAuthStartBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid body", details: parsed.error.issues });
+    return;
+  }
+
+  const shopDomain = normalizeShopDomain(parsed.data.shopDomain);
+  if (!isValidShopDomain(shopDomain)) {
+    res.status(400).json({ error: "Enter a valid Shopify store domain, e.g. my-store.myshopify.com" });
+    return;
+  }
+
+  const redirectUri = getRedirectUri();
+  if (!redirectUri.startsWith("https://")) {
+    res.status(500).json({ error: "Server base URL is not configured for OAuth callbacks." });
+    return;
+  }
+
+  // Best-effort cleanup of expired nonces so the table stays small.
+  await db
+    .delete(shopifyOauthStatesTable)
+    .where(lt(shopifyOauthStatesTable.expiresAt, new Date()))
+    .catch(() => undefined);
+
+  const state = crypto.randomBytes(32).toString("hex");
+  await db.insert(shopifyOauthStatesTable).values({
+    state,
+    tenantId: payload.tenantId,
+    shopDomain,
+    expiresAt: new Date(Date.now() + OAUTH_STATE_TTL_MS),
+  });
+
+  const authorizeUrl = buildAuthorizeUrl({
+    shopDomain,
+    clientId,
+    scopes: SHOPIFY_OAUTH_SCOPES,
+    redirectUri,
+    state,
+  });
+
+  await logAudit({
+    tenantId: payload.tenantId,
+    action: "shopify.oauth.started",
+    entityType: "shopify_connection",
+    entityId: shopDomain,
+    details: { shopDomain },
+    ipAddress: req.ip,
+  });
+
+  res.json({ authorizeUrl });
+});
+
+/* ─── GET /shopify/oauth/callback — PUBLIC Shopify redirect target ─── */
+// Unauthenticated: the browser arrives here from Shopify with no tenant token.
+// The tenant is recovered from the single-use `state` nonce; authenticity is
+// proven by the HMAC signed with our Client Secret.
+router.get("/shopify/oauth/callback", async (req, res): Promise<void> => {
+  const baseUrl = getPublicBaseUrl();
+  const fail = (message: string) => {
+    const url = `${baseUrl}/settings?shopify=error&message=${encodeURIComponent(message)}#section-integrations`;
+    res.redirect(url);
+  };
+
+  const clientId = process.env["SHOPIFY_API_KEY"];
+  const clientSecret = process.env["SHOPIFY_API_SECRET"];
+  if (!clientId || !clientSecret) {
+    fail("Shopify app is not configured. Contact support.");
+    return;
+  }
+
+  const query = req.query as Record<string, unknown>;
+  const code = typeof query["code"] === "string" ? query["code"] : "";
+  const shopParam = typeof query["shop"] === "string" ? query["shop"] : "";
+  const state = typeof query["state"] === "string" ? query["state"] : "";
+
+  if (!code || !shopParam || !state) {
+    fail("Shopify did not return the expected authorization parameters.");
+    return;
+  }
+
+  // 1) Authenticity: HMAC over the query string with the Client Secret.
+  if (!verifyOAuthHmac(query, clientSecret)) {
+    fail("Could not verify the Shopify response signature.");
+    return;
+  }
+
+  const shopDomain = normalizeShopDomain(shopParam);
+  if (!isValidShopDomain(shopDomain)) {
+    fail("Shopify returned an invalid store domain.");
+    return;
+  }
+
+  // 2) CSRF + tenant binding: consume the single-use state nonce.
+  const [stateRow] = await db
+    .select()
+    .from(shopifyOauthStatesTable)
+    .where(eq(shopifyOauthStatesTable.state, state))
+    .limit(1);
+
+  if (
+    !stateRow ||
+    stateRow.expiresAt.getTime() < Date.now() ||
+    stateRow.shopDomain !== shopDomain
+  ) {
+    fail("This Shopify connection link is invalid or has expired. Please try again.");
+    return;
+  }
+
+  // Atomically claim the nonce (single-use): the UPDATE only matches while
+  // usedAt IS NULL, so a concurrent/replayed callback gets zero rows and aborts.
+  const claimed = await db
+    .update(shopifyOauthStatesTable)
+    .set({ usedAt: new Date() })
+    .where(and(eq(shopifyOauthStatesTable.state, state), isNull(shopifyOauthStatesTable.usedAt)))
+    .returning({ state: shopifyOauthStatesTable.state });
+  if (claimed.length === 0) {
+    fail("This Shopify connection link has already been used. Please try again.");
+    return;
+  }
+
+  const tenantId = stateRow.tenantId;
+
+  // 3) Exchange the code for a long-lived offline access token.
+  let grant: { accessToken: string; scope: string };
+  try {
+    grant = await exchangeAuthorizationCode(shopDomain, clientId, clientSecret, code);
+  } catch (err) {
+    const message =
+      err instanceof ShopifyApiError ? err.message : "Failed to complete the Shopify connection.";
     await logAudit({
-      tenantId: payload.tenantId,
-      action: "shopify.connection.tested",
+      tenantId,
+      action: "shopify.oauth.failed",
       entityType: "shopify_connection",
-      entityId: row.shopDomain,
-      details: { result: "failed", message },
+      entityId: shopDomain,
+      details: { message },
       ipAddress: req.ip,
     });
+    fail(message);
+    return;
+  }
 
-    res.status(400).json({ ok: false, error: message, connection: sanitize(await getConnection(payload.tenantId)) });
+  // 4) Upsert the connection for (tenant, shop).
+  const now = new Date();
+  const existing = await db
+    .select()
+    .from(shopifyConnectionsTable)
+    .where(
+      and(
+        eq(shopifyConnectionsTable.tenantId, tenantId),
+        eq(shopifyConnectionsTable.shopDomain, shopDomain),
+      ),
+    )
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(shopifyConnectionsTable)
+      .set({
+        authMode: "oauth",
+        accessTokenEncrypted: encryptToken(grant.accessToken),
+        accessTokenExpiresAt: null,
+        grantedScopes: grant.scope || SHOPIFY_OAUTH_SCOPES,
+        clientId: null,
+        clientSecretEncrypted: null,
+        status: "connected",
+        isActive: true,
+        lastTestStatus: null,
+        lastTestMessage: null,
+        connectedAt: existing[0].connectedAt ?? now,
+        updatedAt: now,
+      })
+      .where(eq(shopifyConnectionsTable.id, existing[0].id));
+  } else {
+    await db.insert(shopifyConnectionsTable).values({
+      tenantId,
+      shopDomain,
+      authMode: "oauth",
+      accessTokenEncrypted: encryptToken(grant.accessToken),
+      grantedScopes: grant.scope || SHOPIFY_OAUTH_SCOPES,
+      apiVersion: DEFAULT_API_VERSION,
+      status: "connected",
+      isActive: true,
+      connectedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  // 5) Best-effort live test to capture the shop name (don't fail the connect on it).
+  const [row] = await db
+    .select()
+    .from(shopifyConnectionsTable)
+    .where(
+      and(
+        eq(shopifyConnectionsTable.tenantId, tenantId),
+        eq(shopifyConnectionsTable.shopDomain, shopDomain),
+      ),
+    )
+    .limit(1);
+  if (row) {
+    await runConnectionTest(tenantId, row).catch(() => undefined);
+  }
+
+  // Drop the consumed nonce.
+  await db
+    .delete(shopifyOauthStatesTable)
+    .where(eq(shopifyOauthStatesTable.state, state))
+    .catch(() => undefined);
+
+  await logAudit({
+    tenantId,
+    action: "shopify.oauth.connected",
+    entityType: "shopify_connection",
+    entityId: shopDomain,
+    details: { shopDomain, scopes: grant.scope || SHOPIFY_OAUTH_SCOPES },
+    ipAddress: req.ip,
+  });
+
+  res.redirect(
+    `${baseUrl}/settings?shopify=connected&shop=${encodeURIComponent(shopDomain)}#section-integrations`,
+  );
+});
+
+/* ─── POST /shopify/connections/:id/test — verify a store's token live ─── */
+router.post("/shopify/connections/:id/test", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const payload = getTenantPayload(req);
+  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid connection id" }); return; }
+
+  const row = await getConnectionById(payload.tenantId, id);
+  if (!row) { res.status(404).json({ ok: false, error: "Connection not found" }); return; }
+
+  const result = await runConnectionTest(payload.tenantId, row);
+
+  await logAudit({
+    tenantId: payload.tenantId,
+    action: "shopify.connection.tested",
+    entityType: "shopify_connection",
+    entityId: row.shopDomain,
+    details: result.ok ? { result: "success", shopName: result.shop.name } : { result: "failed", message: result.error },
+    ipAddress: req.ip,
+  });
+
+  const connection = sanitize((await getConnectionById(payload.tenantId, id))!);
+  if (result.ok) {
+    res.json({ ok: true, shop: result.shop, connection });
+  } else {
+    res.status(400).json({ ok: false, error: result.error, connection });
   }
 });
 
-/* ─── PATCH /shopify/connection/sync-settings — toggles/direction/location ─── */
+/* ─── PATCH /shopify/connections/:id/sync-settings — toggles/direction/location ─── */
 const SyncSettingsBody = z.object({
   syncProducts: z.boolean().optional(),
   syncInventory: z.boolean().optional(),
@@ -370,10 +564,13 @@ const SyncSettingsBody = z.object({
   defaultLocationId: z.number().int().nullable().optional(),
 });
 
-router.patch("/shopify/connection/sync-settings", async (req, res): Promise<void> => {
+router.patch("/shopify/connections/:id/sync-settings", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
   const payload = getTenantPayload(req);
   if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid connection id" }); return; }
 
   const parsed = SyncSettingsBody.safeParse(req.body);
   if (!parsed.success) {
@@ -381,7 +578,7 @@ router.patch("/shopify/connection/sync-settings", async (req, res): Promise<void
     return;
   }
 
-  const row = await getConnection(payload.tenantId);
+  const row = await getConnectionById(payload.tenantId, id);
   if (!row) { res.status(404).json({ error: "No Shopify connection to update" }); return; }
 
   // Validate that a chosen default location belongs to this tenant.
@@ -411,35 +608,24 @@ router.patch("/shopify/connection/sync-settings", async (req, res): Promise<void
     ipAddress: req.ip,
   });
 
-  res.json(sanitize(await getConnection(payload.tenantId)));
+  res.json(sanitize((await getConnectionById(payload.tenantId, id))!));
 });
 
-/* ─── POST /shopify/connection/disconnect — deactivate connection ─── */
-router.post("/shopify/connection/disconnect", async (req, res): Promise<void> => {
+/* ─── POST /shopify/connections/:id/disconnect — remove a store ─── */
+router.post("/shopify/connections/:id/disconnect", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
   const payload = getTenantPayload(req);
   if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-  const row = await getConnection(payload.tenantId);
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid connection id" }); return; }
+
+  const row = await getConnectionById(payload.tenantId, id);
   if (!row) { res.status(404).json({ error: "No Shopify connection to disconnect" }); return; }
 
-  await db
-    .update(shopifyConnectionsTable)
-    .set({
-      status: "disconnected",
-      isActive: false,
-      // Clear stored credentials so a disconnect fully revokes local access.
-      accessTokenEncrypted: null,
-      accessTokenExpiresAt: null,
-      clientId: null,
-      clientSecretEncrypted: null,
-      webhookSecretEncrypted: null,
-      shopName: null,
-      lastTestStatus: null,
-      lastTestMessage: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(shopifyConnectionsTable.id, row.id));
+  // Multi-store: removing the row fully revokes our local access and drops it
+  // from the tenant's store list.
+  await db.delete(shopifyConnectionsTable).where(eq(shopifyConnectionsTable.id, row.id));
 
   await logAudit({
     tenantId: payload.tenantId,
@@ -449,7 +635,7 @@ router.post("/shopify/connection/disconnect", async (req, res): Promise<void> =>
     ipAddress: req.ip,
   });
 
-  res.json(sanitize(await getConnection(payload.tenantId)));
+  res.json({ ok: true });
 });
 
 export default router;
