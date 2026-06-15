@@ -97,6 +97,8 @@ import type {
   SaveVariantsBody,
   SendEodReportEmailBody,
   SendReceiptEmailBody,
+  ShopifyAppCredentialsBody,
+  ShopifyAppCredentialsStatus,
   ShopifyConnectionStatus,
   ShopifyDisconnectResult,
   ShopifyOAuthStartBody,
@@ -8786,6 +8788,175 @@ export const useDeleteProductUnit = <
   TContext
 > => {
   return useMutation(getDeleteProductUnitMutationOptions(options));
+};
+
+/**
+ * @summary Get the tenant's Shopify app credentials status (Client ID + API version; secret redacted).
+ */
+export const getGetShopifyAppCredentialsUrl = () => {
+  return `/api/shopify/app-credentials`;
+};
+
+export const getShopifyAppCredentials = async (
+  options?: RequestInit,
+): Promise<ShopifyAppCredentialsStatus> => {
+  return customFetch<ShopifyAppCredentialsStatus>(
+    getGetShopifyAppCredentialsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetShopifyAppCredentialsQueryKey = () => {
+  return [`/api/shopify/app-credentials`] as const;
+};
+
+export const getGetShopifyAppCredentialsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getShopifyAppCredentials>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getShopifyAppCredentials>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetShopifyAppCredentialsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getShopifyAppCredentials>>
+  > = ({ signal }) => getShopifyAppCredentials({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getShopifyAppCredentials>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetShopifyAppCredentialsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getShopifyAppCredentials>>
+>;
+export type GetShopifyAppCredentialsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the tenant's Shopify app credentials status (Client ID + API version; secret redacted).
+ */
+
+export function useGetShopifyAppCredentials<
+  TData = Awaited<ReturnType<typeof getShopifyAppCredentials>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getShopifyAppCredentials>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetShopifyAppCredentialsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Save the tenant's Shopify app Client ID and Secret (secret stored encrypted, never returned).
+ */
+export const getSaveShopifyAppCredentialsUrl = () => {
+  return `/api/shopify/app-credentials`;
+};
+
+export const saveShopifyAppCredentials = async (
+  shopifyAppCredentialsBody: ShopifyAppCredentialsBody,
+  options?: RequestInit,
+): Promise<ShopifyAppCredentialsStatus> => {
+  return customFetch<ShopifyAppCredentialsStatus>(
+    getSaveShopifyAppCredentialsUrl(),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(shopifyAppCredentialsBody),
+    },
+  );
+};
+
+export const getSaveShopifyAppCredentialsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveShopifyAppCredentials>>,
+    TError,
+    { data: BodyType<ShopifyAppCredentialsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveShopifyAppCredentials>>,
+  TError,
+  { data: BodyType<ShopifyAppCredentialsBody> },
+  TContext
+> => {
+  const mutationKey = ["saveShopifyAppCredentials"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveShopifyAppCredentials>>,
+    { data: BodyType<ShopifyAppCredentialsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return saveShopifyAppCredentials(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveShopifyAppCredentialsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveShopifyAppCredentials>>
+>;
+export type SaveShopifyAppCredentialsMutationBody =
+  BodyType<ShopifyAppCredentialsBody>;
+export type SaveShopifyAppCredentialsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Save the tenant's Shopify app Client ID and Secret (secret stored encrypted, never returned).
+ */
+export const useSaveShopifyAppCredentials = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveShopifyAppCredentials>>,
+    TError,
+    { data: BodyType<ShopifyAppCredentialsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveShopifyAppCredentials>>,
+  TError,
+  { data: BodyType<ShopifyAppCredentialsBody> },
+  TContext
+> => {
+  return useMutation(getSaveShopifyAppCredentialsMutationOptions(options));
 };
 
 /**

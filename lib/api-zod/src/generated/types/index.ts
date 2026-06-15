@@ -156,6 +156,8 @@ export * from "./saveVariantsBodyGroupsItem";
 export * from "./saveVariantsBodyGroupsItemOptionsItem";
 export * from "./sendEodReportEmailBody";
 export * from "./sendReceiptEmailBody";
+export * from "./shopifyAppCredentialsBody";
+export * from "./shopifyAppCredentialsStatus";
 export * from "./shopifyConnectionStatus";
 export * from "./shopifyDisconnectResult";
 export * from "./shopifyOAuthStartBody";

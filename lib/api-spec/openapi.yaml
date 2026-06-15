@@ -2020,6 +2020,36 @@ paths:
                 required:
                   - success
 
+  /shopify/app-credentials:
+    get:
+      operationId: getShopifyAppCredentials
+      tags: [shopify]
+      summary: Get the tenant's Shopify app credentials status (Client ID + API version; secret redacted).
+      responses:
+        "200":
+          description: App credentials status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopifyAppCredentialsStatus"
+    put:
+      operationId: saveShopifyAppCredentials
+      tags: [shopify]
+      summary: Save the tenant's Shopify app Client ID and Secret (secret stored encrypted, never returned).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShopifyAppCredentialsBody"
+      responses:
+        "200":
+          description: Updated app credentials status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopifyAppCredentialsStatus"
+
   /shopify/connections:
     get:
       operationId: listShopifyConnections
@@ -2206,6 +2236,38 @@ components:
       required:
         - connected
         - hasToken
+    ShopifyAppCredentialsStatus:
+      type: object
+      properties:
+        configured:
+          type: boolean
+          description: Whether the tenant has saved a Client ID + Secret.
+        clientId:
+          type: string
+          nullable: true
+          description: The saved Shopify app Client ID / API key (public).
+        apiVersion:
+          type: string
+          description: Default Admin API version, e.g. 2025-01.
+      required:
+        - configured
+        - apiVersion
+    ShopifyAppCredentialsBody:
+      type: object
+      description: Save the tenant's Shopify app Client ID + Secret. The secret may be omitted on update to keep the stored one.
+      properties:
+        clientId:
+          type: string
+          description: Shopify app Client ID / API key (public identifier).
+        clientSecret:
+          type: string
+          description: Shopify app Client Secret / API secret key (stored encrypted).
+        apiVersion:
+          type: string
+          description: Default Admin API version, e.g. 2025-01.
+          pattern: '^\d{4}-\d{2}$'
+      required:
+        - clientId
     ShopifyOAuthStartBody:
       type: object
       description: Start the OAuth "Connect Shopify store" flow for the given store domain.

@@ -4005,6 +4005,59 @@ export const DeleteProductUnitResponse = zod.object({
 });
 
 /**
+ * @summary Get the tenant's Shopify app credentials status (Client ID + API version; secret redacted).
+ */
+export const GetShopifyAppCredentialsResponse = zod.object({
+  configured: zod
+    .boolean()
+    .describe("Whether the tenant has saved a Client ID + Secret."),
+  clientId: zod
+    .string()
+    .nullish()
+    .describe("The saved Shopify app Client ID \/ API key (public)."),
+  apiVersion: zod.string().describe("Default Admin API version, e.g. 2025-01."),
+});
+
+/**
+ * @summary Save the tenant's Shopify app Client ID and Secret (secret stored encrypted, never returned).
+ */
+export const saveShopifyAppCredentialsBodyApiVersionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}$",
+);
+
+export const SaveShopifyAppCredentialsBody = zod
+  .object({
+    clientId: zod
+      .string()
+      .describe("Shopify app Client ID \/ API key (public identifier)."),
+    clientSecret: zod
+      .string()
+      .optional()
+      .describe(
+        "Shopify app Client Secret \/ API secret key (stored encrypted).",
+      ),
+    apiVersion: zod
+      .string()
+      .regex(saveShopifyAppCredentialsBodyApiVersionRegExp)
+      .optional()
+      .describe("Default Admin API version, e.g. 2025-01."),
+  })
+  .describe(
+    "Save the tenant's Shopify app Client ID + Secret. The secret may be omitted on update to keep the stored one.",
+  );
+
+export const SaveShopifyAppCredentialsResponse = zod.object({
+  configured: zod
+    .boolean()
+    .describe("Whether the tenant has saved a Client ID + Secret."),
+  clientId: zod
+    .string()
+    .nullish()
+    .describe("The saved Shopify app Client ID \/ API key (public)."),
+  apiVersion: zod.string().describe("Default Admin API version, e.g. 2025-01."),
+});
+
+/**
  * @summary List all of the tenant's connected Shopify stores (tokens redacted).
  */
 export const ListShopifyConnectionsResponseItem = zod.object({

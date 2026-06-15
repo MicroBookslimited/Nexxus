@@ -35,6 +35,30 @@ export interface ShopifyConnectionStatus {
   connectedAt?: string | null;
 }
 
+export interface ShopifyAppCredentialsStatus {
+  /** Whether the tenant has saved a Client ID + Secret. */
+  configured: boolean;
+  /** The saved Shopify app Client ID / API key (public). */
+  clientId?: string | null;
+  /** Default Admin API version, e.g. 2025-01. */
+  apiVersion: string;
+}
+
+/**
+ * Save the tenant's Shopify app Client ID + Secret. The secret may be omitted on update to keep the stored one.
+ */
+export interface ShopifyAppCredentialsBody {
+  /** Shopify app Client ID / API key (public identifier). */
+  clientId: string;
+  /** Shopify app Client Secret / API secret key (stored encrypted). */
+  clientSecret?: string;
+  /**
+   * Default Admin API version, e.g. 2025-01.
+   * @pattern ^\d{4}-\d{2}$
+   */
+  apiVersion?: string;
+}
+
 /**
  * Start the OAuth "Connect Shopify store" flow for the given store domain.
  */

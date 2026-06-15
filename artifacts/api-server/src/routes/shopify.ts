@@ -4,6 +4,7 @@ import { and, asc, eq, isNull, lt } from "drizzle-orm";
 import {
   db,
   shopifyConnectionsTable,
+  shopifyAppCredentialsTable,
   shopifyOauthStatesTable,
   shopifySyncLogsTable,
   locationsTable,
@@ -75,6 +76,37 @@ function getPublicBaseUrl(): string {
 /** The single, fixed OAuth callback path (must be whitelisted in the Shopify app). */
 function getRedirectUri(): string {
   return `${getPublicBaseUrl()}/api/shopify/oauth/callback`;
+}
+
+/**
+ * Resolve the Shopify APP credentials (Client ID + Secret) used to drive the
+ * OAuth flow for a tenant. The primary source is the tenant's own credentials,
+ * entered in tenant settings and stored encrypted. As a backward-compatible
+ * fallback (for a single platform-wide app), the SHOPIFY_API_KEY /
+ * SHOPIFY_API_SECRET env vars are used when the tenant has none saved.
+ * Returns null when neither source is configured.
+ */
+async function getAppCredentials(
+  tenantId: number,
+): Promise<{ clientId: string; clientSecret: string; apiVersion: string } | null> {
+  const [row] = await db
+    .select()
+    .from(shopifyAppCredentialsTable)
+    .where(eq(shopifyAppCredentialsTable.tenantId, tenantId))
+    .limit(1);
+  if (row) {
+    return {
+      clientId: row.clientId,
+      clientSecret: decryptToken(row.clientSecretEncrypted),
+      apiVersion: row.apiVersion || DEFAULT_API_VERSION,
+    };
+  }
+  const envId = process.env["SHOPIFY_API_KEY"];
+  const envSecret = process.env["SHOPIFY_API_SECRET"];
+  if (envId && envSecret) {
+    return { clientId: envId, clientSecret: envSecret, apiVersion: DEFAULT_API_VERSION };
+  }
+  return null;
 }
 
 type ConnectionRow = typeof shopifyConnectionsTable.$inferSelect;
@@ -282,6 +314,100 @@ router.get("/shopify/connections", async (req, res): Promise<void> => {
   res.json(rows.map(sanitize));
 });
 
+/* ─── GET /shopify/app-credentials — the tenant's app Client ID/version (secret redacted) ─── */
+router.get("/shopify/app-credentials", async (req, res): Promise<void> => {
+  const payload = getTenantPayload(req);
+  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const [row] = await db
+    .select()
+    .from(shopifyAppCredentialsTable)
+    .where(eq(shopifyAppCredentialsTable.tenantId, payload.tenantId))
+    .limit(1);
+  res.json({
+    configured: !!row,
+    clientId: row?.clientId ?? null,
+    apiVersion: row?.apiVersion ?? DEFAULT_API_VERSION,
+  });
+});
+
+/* ─── PUT /shopify/app-credentials — save the tenant's Shopify app Client ID + Secret ─── */
+const AppCredentialsBody = z.object({
+  clientId: z.string().trim().min(1),
+  clientSecret: z.string().trim().min(1).optional(),
+  apiVersion: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}$/)
+    .optional(),
+});
+
+router.put("/shopify/app-credentials", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const payload = getTenantPayload(req);
+  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const parsed = AppCredentialsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid body", details: parsed.error.issues });
+    return;
+  }
+  const { clientId, clientSecret, apiVersion } = parsed.data;
+
+  const [existing] = await db
+    .select()
+    .from(shopifyAppCredentialsTable)
+    .where(eq(shopifyAppCredentialsTable.tenantId, payload.tenantId))
+    .limit(1);
+
+  // The secret is required on first save; on update it may be omitted to keep
+  // the stored one (so the tenant can change just the Client ID or version).
+  if (!existing && !clientSecret) {
+    res.status(400).json({ error: "Enter your Shopify app's Client Secret." });
+    return;
+  }
+
+  const now = new Date();
+  if (existing) {
+    await db
+      .update(shopifyAppCredentialsTable)
+      .set({
+        clientId: clientId.trim(),
+        ...(clientSecret ? { clientSecretEncrypted: encryptToken(clientSecret.trim()) } : {}),
+        ...(apiVersion ? { apiVersion } : {}),
+        updatedAt: now,
+      })
+      .where(eq(shopifyAppCredentialsTable.tenantId, payload.tenantId));
+  } else {
+    await db.insert(shopifyAppCredentialsTable).values({
+      tenantId: payload.tenantId,
+      clientId: clientId.trim(),
+      clientSecretEncrypted: encryptToken(clientSecret!.trim()),
+      apiVersion: apiVersion ?? DEFAULT_API_VERSION,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  await logAudit({
+    tenantId: payload.tenantId,
+    action: existing ? "shopify.app_credentials.updated" : "shopify.app_credentials.created",
+    entityType: "shopify_app_credentials",
+    entityId: String(payload.tenantId),
+    ipAddress: req.ip,
+  });
+
+  const [row] = await db
+    .select()
+    .from(shopifyAppCredentialsTable)
+    .where(eq(shopifyAppCredentialsTable.tenantId, payload.tenantId))
+    .limit(1);
+  res.json({
+    configured: !!row,
+    clientId: row?.clientId ?? null,
+    apiVersion: row?.apiVersion ?? DEFAULT_API_VERSION,
+  });
+});
+
 /* ─── POST /shopify/oauth/start — begin the Connect Shopify store flow ─── */
 const OAuthStartBody = z.object({
   shopDomain: z.string().min(1),
@@ -292,13 +418,15 @@ router.post("/shopify/oauth/start", async (req, res): Promise<void> => {
   const payload = getTenantPayload(req);
   if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-  const clientId = process.env["SHOPIFY_API_KEY"];
-  if (!clientId) {
-    res.status(500).json({
-      error: "Shopify app is not configured (missing SHOPIFY_API_KEY). Contact support.",
+  const appCreds = await getAppCredentials(payload.tenantId);
+  if (!appCreds) {
+    res.status(400).json({
+      error:
+        "Enter your Shopify app's API key (Client ID) and secret in settings before connecting a store.",
     });
     return;
   }
+  const clientId = appCreds.clientId;
 
   const parsed = OAuthStartBody.safeParse(req.body);
   if (!parsed.success) {
@@ -363,13 +491,6 @@ router.get("/shopify/oauth/callback", async (req, res): Promise<void> => {
     res.redirect(url);
   };
 
-  const clientId = process.env["SHOPIFY_API_KEY"];
-  const clientSecret = process.env["SHOPIFY_API_SECRET"];
-  if (!clientId || !clientSecret) {
-    fail("Shopify app is not configured. Contact support.");
-    return;
-  }
-
   const query = req.query as Record<string, unknown>;
   const code = typeof query["code"] === "string" ? query["code"] : "";
   const shopParam = typeof query["shop"] === "string" ? query["shop"] : "";
@@ -380,19 +501,15 @@ router.get("/shopify/oauth/callback", async (req, res): Promise<void> => {
     return;
   }
 
-  // 1) Authenticity: HMAC over the query string with the Client Secret.
-  if (!verifyOAuthHmac(query, clientSecret)) {
-    fail("Could not verify the Shopify response signature.");
-    return;
-  }
-
   const shopDomain = normalizeShopDomain(shopParam);
   if (!isValidShopDomain(shopDomain)) {
     fail("Shopify returned an invalid store domain.");
     return;
   }
 
-  // 2) CSRF + tenant binding: consume the single-use state nonce.
+  // 1) CSRF + tenant binding: look up the single-use state nonce. The opaque
+  // nonce maps the callback back to the tenant that initiated the connect, which
+  // is what tells us WHICH app credentials (and thus which Client Secret) to use.
   const [stateRow] = await db
     .select()
     .from(shopifyOauthStatesTable)
@@ -405,6 +522,21 @@ router.get("/shopify/oauth/callback", async (req, res): Promise<void> => {
     stateRow.shopDomain !== shopDomain
   ) {
     fail("This Shopify connection link is invalid or has expired. Please try again.");
+    return;
+  }
+
+  // 2) Load the initiating tenant's app credentials, then verify authenticity:
+  // HMAC over the query string signed with that tenant's Client Secret.
+  const appCreds = await getAppCredentials(stateRow.tenantId);
+  if (!appCreds) {
+    fail("Shopify app credentials are not configured. Re-enter them in settings.");
+    return;
+  }
+  const clientId = appCreds.clientId;
+  const clientSecret = appCreds.clientSecret;
+
+  if (!verifyOAuthHmac(query, clientSecret)) {
+    fail("Could not verify the Shopify response signature.");
     return;
   }
 
@@ -462,6 +594,7 @@ router.get("/shopify/oauth/callback", async (req, res): Promise<void> => {
         accessTokenEncrypted: encryptToken(grant.accessToken),
         accessTokenExpiresAt: null,
         grantedScopes: grant.scope || SHOPIFY_OAUTH_SCOPES,
+        apiVersion: appCreds.apiVersion || DEFAULT_API_VERSION,
         clientId: null,
         clientSecretEncrypted: null,
         status: "connected",
@@ -479,7 +612,7 @@ router.get("/shopify/oauth/callback", async (req, res): Promise<void> => {
       authMode: "oauth",
       accessTokenEncrypted: encryptToken(grant.accessToken),
       grantedScopes: grant.scope || SHOPIFY_OAUTH_SCOPES,
-      apiVersion: DEFAULT_API_VERSION,
+      apiVersion: appCreds.apiVersion || DEFAULT_API_VERSION,
       status: "connected",
       isActive: true,
       connectedAt: now,

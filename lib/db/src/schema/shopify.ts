@@ -90,6 +90,27 @@ export const shopifyConnectionsTable = pgTable(
 );
 
 /**
+ * Per-tenant Shopify APP credentials (the Client ID + Client Secret of the
+ * tenant's own Shopify app, entered in tenant settings). These drive the OAuth
+ * "Connect Shopify store" flow: the Client ID builds the authorize URL and the
+ * Client Secret verifies the callback HMAC and exchanges the authorization code
+ * for an access token. The secret is stored encrypted (AES-256-GCM) and never
+ * returned to the client. One row per tenant; a tenant can connect multiple
+ * stores under their single app.
+ */
+export const shopifyAppCredentialsTable = pgTable("shopify_app_credentials", {
+  tenantId: integer("tenant_id").primaryKey(),
+  // Shopify app Client ID / API key (public identifier, not a secret).
+  clientId: text("client_id").notNull(),
+  // AES-256-GCM encrypted Shopify app Client Secret / API secret key.
+  clientSecretEncrypted: text("client_secret_encrypted").notNull(),
+  // Default Admin API version applied to stores connected with these creds.
+  apiVersion: text("api_version").notNull().default("2025-01"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Short-lived, single-use OAuth `state` nonces for the Authorization Code Grant
  * "Connect Shopify store" flow. We generate a row here (tied to the tenant that
  * initiated the connect and the target shop domain) before redirecting the
