@@ -92,7 +92,20 @@ export function ShopifyIntegrationCard() {
         return;
       }
       if (!clientSecret.trim()) {
-        // Nothing changed credential-wise — just (re)test the existing connection.
+        // No new secret entered. The save contract requires the secret, so if
+        // non-secret fields were edited we must ask for it rather than silently
+        // dropping those edits; otherwise just (re)test the existing connection.
+        const domainChanged = shopDomain.trim() !== (conn?.shopDomain ?? "");
+        const versionChanged =
+          (apiVersion.trim() || DEFAULT_API_VERSION) !== (conn?.apiVersion ?? DEFAULT_API_VERSION);
+        if (domainChanged || versionChanged) {
+          toast({
+            title: "Re-enter Client Secret",
+            description: "Enter your Client Secret again to apply the updated details.",
+            variant: "destructive",
+          });
+          return;
+        }
         if (thenTest) await handleTest();
         return;
       }
