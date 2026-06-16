@@ -1208,10 +1208,10 @@ const IMPORT_FIELDS = [
 ];
 
 const TEMPLATE_ROWS = [
-  ["Name", "Price", "Category", "Description", "Barcode", "SKU", "Stock Quantity", "In Stock", "Unit of Measure"],
-  ["Jerk Chicken",  "850.00", "Food",       "Seasoned jerk chicken",   "1234567890123", "JC001", "50",  "yes", "each"],
-  ["Ting Soda",     "120.00", "Beverages",  "Grapefruit flavour soda", "1234567890124", "TS001", "100", "yes", "case"],
-  ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "1234567890125", "RC001", "30",  "yes", "each"],
+  ["Name", "Price", "Category", "Description", "Barcode", "SKU", "Stock Quantity", "In Stock", "Unit of Measure", "Size"],
+  ["Jerk Chicken",  "850.00", "Food",       "Seasoned jerk chicken",   "1234567890123", "JC001", "50",  "yes", "each", "Large"],
+  ["Ting Soda",     "120.00", "Beverages",  "Grapefruit flavour soda", "1234567890124", "TS001", "100", "yes", "case", "500ml"],
+  ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "1234567890125", "RC001", "30",  "yes", "each", "12 inch"],
 ];
 
 /**
@@ -1268,12 +1268,10 @@ function ImportProductsDialog({ open, onClose, onImported }: {
   const createProduct = useCreateProduct();
   const { toast } = useToast();
   const fileRef = React.useRef<HTMLInputElement>(null);
-  const { data: settings } = useGetSettings();
-  const showProductSize = settings?.show_product_size === "true";
-  // Only expose the Size mapping target when the tenant feature is on.
-  const importFields = showProductSize
-    ? [...IMPORT_FIELDS, { key: "size", label: "Size", required: false }]
-    : IMPORT_FIELDS;
+  // Size is always mappable/importable so data from a QuickBooks (or other)
+  // export can be brought in regardless of whether the tenant has turned on the
+  // Size display feature — it simply shows up once they enable it.
+  const importFields = [...IMPORT_FIELDS, { key: "size", label: "Size", required: false }];
 
   const [step, setStep]         = useState<"upload" | "map" | "done">("upload");
   const [headers, setHeaders]   = useState<string[]>([]);
@@ -1315,7 +1313,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         else if (l === "stock quantity" || l === "quantity" || l === "qty") auto[h] = "stockCount"; // numeric qty
         else if (l === "in stock" || l === "track stock" || l === "available for sale") auto[h] = "inStock"; // boolean Y/N
         else if (l === "unit of measure" || l === "uom" || l === "selling unit" || l === "sold as" || l === "sell by" || l === "unit") auto[h] = "sellingUnit"; // free-text UOM
-        else if (showProductSize && (l === "size" || l === "item size" || l === "product size")) auto[h] = "size"; // optional size label
+        else if (l === "size" || l === "item size" || l === "product size") auto[h] = "size"; // optional size label
         // ── QuickBooks POS exact-header matches ──
         else if (l === "department")                                    auto[h] = "category";     // QBPOS category
         else if (l === "regular price" || l === "list price")           auto[h] = "price";        // QBPOS price
@@ -1374,7 +1372,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       const category   = d.category?.trim() || "General";
       try {
         await new Promise<void>((resolve, reject) => {
-          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, sku: d.sku?.trim() || undefined, size: showProductSize ? (d.size?.trim() || undefined) : undefined, stockCount, inStock: stockCount > 0 ? inStock : false, sellingUnit: d.sellingUnit?.trim() || undefined } },
+          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, sku: d.sku?.trim() || undefined, size: d.size?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false, sellingUnit: d.sellingUnit?.trim() || undefined } },
             { onSuccess: () => resolve(), onError: (e) => reject(e) });
         });
         out.push({ row: i + 2, name: d.name, status: "ok" });
