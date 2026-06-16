@@ -7,6 +7,7 @@ import {
   useCreateProduct,
   useUpdateProduct,
   useDeleteProduct,
+  useDeleteProductPermanent,
   useBulkArchiveProducts,
   useBulkRestoreProducts,
   useListProductCategories,
@@ -2832,7 +2833,7 @@ function DuplicateMergeDialog({ open, onClose }: { open: boolean; onClose: () =>
 }
 
 export function Products() {
-  const { can } = useStaff();
+  const { can, staff } = useStaff();
   const canManage = can("inventory.manage");
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -2853,6 +2854,7 @@ export function Products() {
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
+  const deletePermanent = useDeleteProductPermanent();
   const bulkArchive = useBulkArchiveProducts();
   const bulkRestore = useBulkRestoreProducts();
   const queryClient = useQueryClient();
@@ -2900,6 +2902,7 @@ export function Products() {
   const [editingProduct, setEditingProduct] = useState<GetProductResponse | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm());
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [permDelete, setPermDelete] = useState<{ id: number; name: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Record<number, boolean>>({});
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ mode: "archive" | "restore"; done: number; total: number } | null>(null);
@@ -3691,6 +3694,30 @@ export function Products() {
     );
   };
 
+  // Permanent (hard) delete — only offered for archived products with zero
+  // sales/purchase history (server enforces; UI gates on product.deletable).
+  const handlePermDelete = () => {
+    if (!permDelete) return;
+    deletePermanent.mutate(
+      { id: permDelete.id, params: { staffId: staff?.id ?? 0 } },
+      {
+        onSuccess: () => {
+          toast({ title: "Product permanently deleted" });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          setPermDelete(null);
+        },
+        onError: (e: any) => {
+          toast({
+            title: "Couldn't delete",
+            description: e?.data?.error ?? "This product can't be permanently deleted.",
+            variant: "destructive",
+          });
+          setPermDelete(null);
+        },
+      },
+    );
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-8 space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -3954,6 +3981,11 @@ export function Products() {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
+                      {canManage && product.deletable && (
+                        <Button size="sm" variant="outline" className="h-9 px-3 text-destructive border-destructive/40 hover:bg-destructive/10" title="Delete permanently" onClick={() => setPermDelete({ id: product.id, name: product.name })}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -4087,9 +4119,16 @@ export function Products() {
                       </Button>
                     )}
                     {canManage && (product.archivedAt ? (
+                      <>
                       <Button size="icon" variant="outline" className="h-9 w-9 text-emerald-400 border-emerald-400/40 hover:bg-emerald-400/10" title="Restore" onClick={() => doRestoreOne(product.id)}>
                         <RotateCcw className="h-4 w-4" />
                       </Button>
+                      {product.deletable && (
+                        <Button size="icon" variant="outline" className="h-9 w-9 text-destructive border-destructive/40 hover:bg-destructive/10" title="Delete permanently" onClick={() => setPermDelete({ id: product.id, name: product.name })}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                      </>
                     ) : (
                       <Button size="icon" variant="outline" className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:border-destructive" title="Delete (archive)" onClick={() => setDeleteId(product.id)}>
                         <Trash2 className="h-4 w-4" />
@@ -5716,6 +5755,24 @@ export function Products() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleDelete}>
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Permanent (hard) delete confirm — archived + no history only */}
+      <AlertDialog open={!!permDelete} onOpenChange={(o) => !o && setPermDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Permanently delete "{permDelete?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone. The product and its configuration will be erased for good. This is only allowed because it's archived and has no sales or purchase history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handlePermDelete} disabled={deletePermanent.isPending}>
+              {deletePermanent.isPending ? "Deleting…" : "Delete permanently"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

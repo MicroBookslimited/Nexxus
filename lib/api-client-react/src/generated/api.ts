@@ -53,6 +53,7 @@ import type {
   DuplicateGroup,
   EmailSentResponse,
   ExportOrdersParams,
+  DeleteProductPermanentParams,
   FindDuplicateProductsParams,
   GetAvailableCompositeParams,
   GetDailySalesParams,
@@ -639,6 +640,106 @@ export const useDeleteProduct = <
   TContext
 > => {
   return useMutation(getDeleteProductMutationOptions(options));
+};
+
+/**
+ * @summary Permanently (hard) delete an archived product that has no sales/purchase/transaction history.
+ */
+export const getDeleteProductPermanentUrl = (
+  id: number,
+  params: DeleteProductPermanentParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/products/${id}/permanent?${stringifiedParams}`
+    : `/api/products/${id}/permanent`;
+};
+
+export const deleteProductPermanent = async (
+  id: number,
+  params: DeleteProductPermanentParams,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteProductPermanentUrl(id, params), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteProductPermanentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteProductPermanent>>,
+    TError,
+    { id: number; params: DeleteProductPermanentParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteProductPermanent>>,
+  TError,
+  { id: number; params: DeleteProductPermanentParams },
+  TContext
+> => {
+  const mutationKey = ["deleteProductPermanent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteProductPermanent>>,
+    { id: number; params: DeleteProductPermanentParams }
+  > = (props) => {
+    const { id, params } = props ?? {};
+
+    return deleteProductPermanent(id, params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteProductPermanentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteProductPermanent>>
+>;
+
+export type DeleteProductPermanentMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Permanently (hard) delete an archived product that has no sales/purchase/transaction history.
+ */
+export const useDeleteProductPermanent = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteProductPermanent>>,
+    TError,
+    { id: number; params: DeleteProductPermanentParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteProductPermanent>>,
+  TError,
+  { id: number; params: DeleteProductPermanentParams },
+  TContext
+> => {
+  return useMutation(getDeleteProductPermanentMutationOptions(options));
 };
 
 /**

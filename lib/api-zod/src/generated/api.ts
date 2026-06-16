@@ -92,6 +92,12 @@ export const ListProductsResponseItem = zod.object({
     .describe(
       "True when this product has at least one composite component row.",
     ),
+  deletable: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True only for an archived product with zero sales\/purchase\/transaction history (eligible for permanent delete). Only meaningful when archived products are included in the list.",
+    ),
   createdAt: zod.coerce.date(),
   archivedAt: zod.coerce
     .date()
@@ -216,6 +222,12 @@ export const GetProductResponse = zod.object({
     .describe(
       "True when this product has at least one composite component row.",
     ),
+  deletable: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True only for an archived product with zero sales\/purchase\/transaction history (eligible for permanent delete). Only meaningful when archived products are included in the list.",
+    ),
   createdAt: zod.coerce.date(),
   archivedAt: zod.coerce
     .date()
@@ -335,6 +347,12 @@ export const UpdateProductResponse = zod.object({
     .boolean()
     .describe(
       "True when this product has at least one composite component row.",
+    ),
+  deletable: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True only for an archived product with zero sales\/purchase\/transaction history (eligible for permanent delete). Only meaningful when archived products are included in the list.",
     ),
   createdAt: zod.coerce.date(),
   archivedAt: zod.coerce
@@ -3078,6 +3096,12 @@ export const GetLowStockProductsResponseItem = zod.object({
     .boolean()
     .describe(
       "True when this product has at least one composite component row.",
+    ),
+  deletable: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True only for an archived product with zero sales\/purchase\/transaction history (eligible for permanent delete). Only meaningful when archived products are included in the list.",
     ),
   createdAt: zod.coerce.date(),
   archivedAt: zod.coerce

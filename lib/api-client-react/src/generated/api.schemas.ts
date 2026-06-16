@@ -197,6 +197,8 @@ export interface Product {
   hasModifiers: boolean;
   /** True when this product has at least one composite component row. */
   isComposite: boolean;
+  /** True only for an archived product with zero sales/purchase/transaction history (eligible for permanent delete). Only meaningful when archived products are included in the list. */
+  deletable?: boolean;
   createdAt: string;
   /** Soft-delete timestamp. When set the product is archived (hidden from catalog/POS/menu) but its history is preserved. NULL = active. */
   archivedAt?: string | null;
@@ -1623,6 +1625,13 @@ export type ListProductsParams = {
 export type FindDuplicateProductsParams = {
   /**
    * Staff member performing the lookup (must be Owner/Admin or have inventory.manage).
+   */
+  staffId: number;
+};
+
+export type DeleteProductPermanentParams = {
+  /**
+   * Staff member performing the delete (must be Owner/Admin or have inventory.manage).
    */
   staffId: number;
 };

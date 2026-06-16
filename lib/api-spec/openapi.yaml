@@ -164,6 +164,33 @@ paths:
         "204":
           description: Deleted
 
+  /products/{id}/permanent:
+    delete:
+      operationId: deleteProductPermanent
+      tags: [products]
+      summary: Permanently (hard) delete an archived product that has no sales/purchase/transaction history.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: staffId
+          in: query
+          required: true
+          description: Staff member performing the delete (must be Owner/Admin or have inventory.manage).
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Permanently deleted
+        "400":
+          description: Product is not archived
+        "404":
+          description: Not found
+        "409":
+          description: Product has history and cannot be permanently deleted
+
   /products/bulk-archive:
     post:
       operationId: bulkArchiveProducts
@@ -2466,6 +2493,9 @@ components:
         isComposite:
           type: boolean
           description: True when this product has at least one composite component row.
+        deletable:
+          type: boolean
+          description: True only for an archived product with zero sales/purchase/transaction history (eligible for permanent delete). Only meaningful when archived products are included in the list.
         createdAt:
           type: string
           format: date-time

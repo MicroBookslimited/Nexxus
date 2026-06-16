@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { eq, like, and, inArray, isNull, isNotNull, sql, type SQL, count, desc, asc, gte, lte } from "drizzle-orm";
-import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable, compositeProductComponentsTable, orderItemsTable, purchaseBillItemsTable, purchasesTable, supplierReturnItemsTable, stockTransfersTable, weightLabelsTable, stockAdjustmentsTable, stockCountItemsTable, productBatchesTable, productionBatchItemsTable, productPricingTiersTable, productPurchaseUnitsTable, promotionsTable, recipesTable, recipeIngredientsTable, heldOrdersTable, staffTable, rolesTable } from "@workspace/db";
+import { db, productsTable, variantGroupsTable, modifierGroupsTable, locationsTable, productLocationsTable, locationInventoryTable, stockMovementsTable, compositeProductComponentsTable, orderItemsTable, purchaseBillItemsTable, purchaseOrderItemsTable, purchasesTable, supplierReturnItemsTable, stockTransfersTable, weightLabelsTable, stockAdjustmentsTable, stockCountItemsTable, productBatchesTable, productionBatchItemsTable, productPricingTiersTable, productPurchaseUnitsTable, promotionsTable, recipesTable, recipeIngredientsTable, heldOrdersTable, staffTable, rolesTable } from "@workspace/db";
 import { logAudit } from "./audit";
 import {
   CreateProductBody,
@@ -86,6 +86,39 @@ async function withFlags(p: typeof productsTable.$inferSelect) {
     hasModifiers: Number(mCount.n) > 0,
     isComposite: Number(cCount.n) > 0,
   };
+}
+
+/* ── Permanent-delete eligibility ──────────────────────────────────────────
+ * A product may be permanently (hard) deleted ONLY when it carries no sales,
+ * purchase, or other transaction history. Any row in the tables below blocks
+ * deletion: order_items (sales); purchases / purchase_bill_items /
+ * purchase_order_items / supplier_return_items (purchases); stock_adjustments,
+ * stock_transfers, production_batch_items, stock_count_items (other movements
+ * / counts). Pure config & inventory rows (locations, inventory levels,
+ * variants, batches, recipes, modifiers, composite links, the stock_movements
+ * log) are ON DELETE CASCADE and disappear with the product, so they never
+ * block deletion. Returns the subset of `ids` that have at least one history
+ * row. Filtering by productId alone is sufficient: a product id belongs to
+ * exactly one tenant. */
+async function productsWithHistory(
+  ids: number[],
+  tx: Pick<typeof db, "selectDistinct"> = db,
+): Promise<Set<number>> {
+  const set = new Set<number>();
+  if (ids.length === 0) return set;
+  const results = await Promise.all([
+    tx.selectDistinct({ id: orderItemsTable.productId }).from(orderItemsTable).where(inArray(orderItemsTable.productId, ids)),
+    tx.selectDistinct({ id: purchasesTable.productId }).from(purchasesTable).where(inArray(purchasesTable.productId, ids)),
+    tx.selectDistinct({ id: purchaseBillItemsTable.productId }).from(purchaseBillItemsTable).where(inArray(purchaseBillItemsTable.productId, ids)),
+    tx.selectDistinct({ id: purchaseOrderItemsTable.productId }).from(purchaseOrderItemsTable).where(inArray(purchaseOrderItemsTable.productId, ids)),
+    tx.selectDistinct({ id: supplierReturnItemsTable.productId }).from(supplierReturnItemsTable).where(inArray(supplierReturnItemsTable.productId, ids)),
+    tx.selectDistinct({ id: stockAdjustmentsTable.productId }).from(stockAdjustmentsTable).where(inArray(stockAdjustmentsTable.productId, ids)),
+    tx.selectDistinct({ id: stockTransfersTable.productId }).from(stockTransfersTable).where(inArray(stockTransfersTable.productId, ids)),
+    tx.selectDistinct({ id: productionBatchItemsTable.productId }).from(productionBatchItemsTable).where(inArray(productionBatchItemsTable.productId, ids)),
+    tx.selectDistinct({ id: stockCountItemsTable.productId }).from(stockCountItemsTable).where(inArray(stockCountItemsTable.productId, ids)),
+  ]);
+  for (const rows of results) for (const r of rows) if (r.id != null) set.add(r.id);
+  return set;
 }
 
 router.get("/products", async (req, res): Promise<void> => {
@@ -270,6 +303,13 @@ router.get("/products", async (req, res): Promise<void> => {
     for (const r of compositeRows) compositeFlagSet.add(r.parentProductId);
   }
 
+  // Permanent-delete eligibility. Only meaningful for archived products and
+  // only computed when archived rows are actually requested (the toggle), so
+  // the default catalog list pays nothing for this.
+  const historySet = query.data.includeArchived
+    ? await productsWithHistory(products.filter((p) => p.archivedAt).map((p) => p.id))
+    : new Set<number>();
+
   const applyFlags = (p: typeof productsTable.$inferSelect) => ({
     ...p,
     imageUrl: p.imageUrl ?? undefined,
@@ -279,6 +319,8 @@ router.get("/products", async (req, res): Promise<void> => {
     hasVariants: variantFlagSet.has(p.id),
     hasModifiers: modifierFlagSet.has(p.id),
     isComposite: compositeFlagSet.has(p.id),
+    // True only for an archived product with zero transaction history.
+    deletable: !!p.archivedAt && !historySet.has(p.id),
   });
 
   const enriched = products.map((p) => {
@@ -966,6 +1008,57 @@ router.delete("/products/:id", async (req, res): Promise<void> => {
   }
 
   await logAudit({ tenantId, action: "product.archive", entityType: "product", entityId: product.id, details: { name: product.name } });
+  res.sendStatus(204);
+});
+
+/* ── Permanent (hard) delete ───────────────────────────────────────────────
+ * Unlike DELETE /products/:id (which only archives), this removes the product
+ * row for good. Allowed ONLY when the product is ALREADY archived AND has zero
+ * sales/purchase/transaction history (see productsWithHistory). All config and
+ * inventory rows cascade away with it. This is the one sanctioned exception to
+ * the "never hard-delete" rule — and it's safe precisely because there is no
+ * history to preserve. */
+router.delete("/products/:id/permanent", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = DeleteProductParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  // Destructive op: require a non-technician Owner/Admin (or inventory.manage)
+  // caller, mirroring the merge endpoint.
+  const staffId = parseInt(String(req.query["staffId"] ?? ""), 10);
+  if (!Number.isFinite(staffId) || staffId <= 0) { res.status(400).json({ error: "staffId query param required" }); return; }
+  const authed = await authoriseInventoryCaller(req as Request, res, staffId);
+  if (!authed) return;
+  const { tenantId } = authed;
+
+  // Eligibility re-check + delete must be atomic. We lock the product row and
+  // re-verify (archived + zero history) inside the same transaction so a
+  // concurrent write can't slip history in between the check and the delete.
+  const outcome = await db.transaction(async (tx) => {
+    const [product] = await tx
+      .select()
+      .from(productsTable)
+      .where(and(eq(productsTable.id, params.data.id), eq(productsTable.tenantId, tenantId)))
+      .for("update");
+    if (!product) return { status: 404 as const };
+    if (!product.archivedAt) return { status: 400 as const };
+    const history = await productsWithHistory([product.id], tx);
+    if (history.has(product.id)) return { status: 409 as const };
+    await tx.delete(productsTable).where(and(eq(productsTable.id, product.id), eq(productsTable.tenantId, tenantId)));
+    return { status: 204 as const, id: product.id, name: product.name };
+  });
+
+  if (outcome.status === 404) { res.status(404).json({ error: "Product not found" }); return; }
+  if (outcome.status === 400) {
+    res.status(400).json({ error: "Product must be archived before it can be permanently deleted." });
+    return;
+  }
+  if (outcome.status === 409) {
+    res.status(409).json({ error: "This product has sales or purchase history and can't be permanently deleted. It stays archived so its records are preserved." });
+    return;
+  }
+
+  await logAudit({ tenantId, action: "product.permanent_delete", entityType: "product", entityId: outcome.id, details: { name: outcome.name } });
   res.sendStatus(204);
 });
 
