@@ -14,6 +14,7 @@ import {
   ListProductsQueryParams,
   BulkArchiveProductsBody,
   BulkRestoreProductsBody,
+  BulkPermanentDeleteProductsBody,
   MergeProductsBody,
 } from "@workspace/api-zod";
 import { verifyTenantToken } from "./saas-auth";
@@ -1060,6 +1061,55 @@ router.delete("/products/:id/permanent", async (req, res): Promise<void> => {
 
   await logAudit({ tenantId, action: "product.permanent_delete", entityType: "product", entityId: outcome.id, details: { name: outcome.name } });
   res.sendStatus(204);
+});
+
+/* ── Bulk permanent (hard) delete ──────────────────────────────────────────
+ * Same rules as the single permanent delete, applied to many ids at once:
+ * only ARCHIVED products with zero history are removed; everything else in the
+ * selection is silently skipped (reported back as `skipped`). The eligibility
+ * re-check + delete run inside one transaction with the candidate rows locked
+ * FOR UPDATE so concurrent writes can't slip history in between. */
+router.post("/products/bulk-permanent-delete", async (req, res): Promise<void> => {
+  const parsed = BulkPermanentDeleteProductsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const authed = await authoriseInventoryCaller(req as Request, res, parsed.data.staffId);
+  if (!authed) return;
+  const { tenantId } = authed;
+
+  const requested = Array.from(new Set(parsed.data.ids));
+
+  const { deletedIds } = await db.transaction(async (tx) => {
+    // Lock the candidate rows (tenant-scoped, archived only) for the duration
+    // of the eligibility check + delete.
+    const candidates = await tx
+      .select({ id: productsTable.id, name: productsTable.name })
+      .from(productsTable)
+      .where(and(
+        eq(productsTable.tenantId, tenantId),
+        inArray(productsTable.id, requested),
+        isNotNull(productsTable.archivedAt),
+      ))
+      .for("update");
+    if (candidates.length === 0) return { deletedIds: [] as number[] };
+
+    const candidateIds = candidates.map((c) => c.id);
+    const withHistory = await productsWithHistory(candidateIds, tx);
+    const eligible = candidates.filter((c) => !withHistory.has(c.id));
+    if (eligible.length === 0) return { deletedIds: [] as number[] };
+
+    const eligibleIds = eligible.map((c) => c.id);
+    await tx.delete(productsTable).where(and(
+      eq(productsTable.tenantId, tenantId),
+      inArray(productsTable.id, eligibleIds),
+    ));
+    return { deletedIds: eligibleIds };
+  });
+
+  if (deletedIds.length > 0) {
+    await logAudit({ tenantId, action: "product.bulk_permanent_delete", entityType: "product", entityId: 0, details: { ids: deletedIds } });
+  }
+  res.json({ deleted: deletedIds.length, skipped: requested.length - deletedIds.length });
 });
 
 /* ── Bulk archive / restore (soft delete) ──────────────────────────────────

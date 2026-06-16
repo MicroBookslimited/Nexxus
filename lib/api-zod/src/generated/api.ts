@@ -395,6 +395,20 @@ export const BulkRestoreProductsResponse = zod.object({
 });
 
 /**
+ * @summary Permanently (hard) delete multiple archived products that have no history. Skips ineligible ids.
+ */
+
+export const BulkPermanentDeleteProductsBody = zod.object({
+  ids: zod.array(zod.number()).min(1),
+  staffId: zod.number(),
+});
+
+export const BulkPermanentDeleteProductsResponse = zod.object({
+  deleted: zod.number(),
+  skipped: zod.number(),
+});
+
+/**
  * @summary Find groups of duplicate products by name (exact + fuzzy similar matches).
  */
 export const FindDuplicateProductsQueryParams = zod.object({

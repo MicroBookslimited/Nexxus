@@ -26,6 +26,12 @@ helper. The route requires a `staffId` query param + `authoriseInventoryCaller`
 inside a `db.transaction` with `SELECT ... FOR UPDATE` on the product row before
 deleting + audit (`product.permanent_delete`).
 
+**Bulk variant:** `POST /products/bulk-permanent-delete` ({ids, staffId}) applies
+the exact same rules to many ids in one transaction (archived candidates locked
+FOR UPDATE, shared productsWithHistory check, delete eligible subset), silently
+skipping ineligible/with-history ids and returning {deleted, skipped}. The UI
+only sends the `deletable` subset of the selection and chunks it client-side.
+
 **Residual race (accepted):** the FOR-UPDATE lock on the product row does not
 lock the history tables, so a strict TOCTOU window exists in theory. It's
 accepted because a product must be archived first, and archived products are

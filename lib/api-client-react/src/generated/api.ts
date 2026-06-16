@@ -23,6 +23,8 @@ import type {
   AvailableComposite,
   BulkProductIdsBody,
   BulkProductsResult,
+  BulkPermanentDeleteProductsBody,
+  BulkPermanentDeleteResult,
   CancelGiftVoucherBody,
   CashPayout,
   CashSession,
@@ -912,6 +914,92 @@ export const useBulkRestoreProducts = <
   TContext
 > => {
   return useMutation(getBulkRestoreProductsMutationOptions(options));
+};
+
+/**
+ * @summary Permanently (hard) delete multiple archived products that have no history. Ineligible ids are skipped.
+ */
+export const getBulkPermanentDeleteProductsUrl = () => {
+  return `/api/products/bulk-permanent-delete`;
+};
+
+export const bulkPermanentDeleteProducts = async (
+  bulkPermanentDeleteProductsBody: BulkPermanentDeleteProductsBody,
+  options?: RequestInit,
+): Promise<BulkPermanentDeleteResult> => {
+  return customFetch<BulkPermanentDeleteResult>(getBulkPermanentDeleteProductsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkPermanentDeleteProductsBody),
+  });
+};
+
+export const getBulkPermanentDeleteProductsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkPermanentDeleteProducts>>,
+    TError,
+    { data: BodyType<BulkPermanentDeleteProductsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkPermanentDeleteProducts>>,
+  TError,
+  { data: BodyType<BulkPermanentDeleteProductsBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkPermanentDeleteProducts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkPermanentDeleteProducts>>,
+    { data: BodyType<BulkPermanentDeleteProductsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkPermanentDeleteProducts(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkPermanentDeleteProductsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkPermanentDeleteProducts>>
+>;
+export type BulkPermanentDeleteProductsMutationBody = BodyType<BulkPermanentDeleteProductsBody>;
+export type BulkPermanentDeleteProductsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Permanently (hard) delete multiple archived products that have no history. Ineligible ids are skipped.
+ */
+export const useBulkPermanentDeleteProducts = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkPermanentDeleteProducts>>,
+    TError,
+    { data: BodyType<BulkPermanentDeleteProductsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkPermanentDeleteProducts>>,
+  TError,
+  { data: BodyType<BulkPermanentDeleteProductsBody> },
+  TContext
+> => {
+  return useMutation(getBulkPermanentDeleteProductsMutationOptions(options));
 };
 
 /**

@@ -229,6 +229,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/BulkProductsResult"
 
+  /products/bulk-permanent-delete:
+    post:
+      operationId: bulkPermanentDeleteProducts
+      tags: [products]
+      summary: Permanently (hard) delete multiple archived products that have no history. Ineligible ids are skipped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkPermanentDeleteProductsBody"
+      responses:
+        "200":
+          description: Number of products permanently deleted and number skipped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkPermanentDeleteResult"
+
   /products/find-duplicates:
     get:
       operationId: findDuplicateProducts
@@ -2537,6 +2556,32 @@ components:
           type: integer
       required:
         - count
+
+    BulkPermanentDeleteProductsBody:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: integer
+          minItems: 1
+        staffId:
+          type: integer
+          description: Staff member performing the delete (must be Owner/Admin or have inventory.manage).
+      required:
+        - ids
+        - staffId
+
+    BulkPermanentDeleteResult:
+      type: object
+      properties:
+        deleted:
+          type: integer
+        skipped:
+          type: integer
+      required:
+        - deleted
+        - skipped
 
     DuplicateProduct:
       type: object

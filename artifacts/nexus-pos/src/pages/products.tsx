@@ -10,6 +10,7 @@ import {
   useDeleteProductPermanent,
   useBulkArchiveProducts,
   useBulkRestoreProducts,
+  useBulkPermanentDeleteProducts,
   useListProductCategories,
   useFindDuplicateProducts,
   getFindDuplicateProductsQueryKey,
@@ -2857,6 +2858,7 @@ export function Products() {
   const deletePermanent = useDeleteProductPermanent();
   const bulkArchive = useBulkArchiveProducts();
   const bulkRestore = useBulkRestoreProducts();
+  const bulkPermDelete = useBulkPermanentDeleteProducts();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: settings } = useGetSettings();
@@ -2905,7 +2907,8 @@ export function Products() {
   const [permDelete, setPermDelete] = useState<{ id: number; name: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Record<number, boolean>>({});
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState<{ mode: "archive" | "restore"; done: number; total: number } | null>(null);
+  const [bulkPermConfirmOpen, setBulkPermConfirmOpen] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ mode: "archive" | "restore" | "permdelete"; done: number; total: number } | null>(null);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [restockProduct, setRestockProduct] = useState<GetProductResponse | null>(null);
   const [restockForm, setRestockForm] = useState<RestockForm>(emptyRestockForm());
@@ -3608,6 +3611,17 @@ export function Products() {
     [selectedIds],
   );
   const selectedCount = selectedList.length;
+  // Among the current (archived) selection, which ids are eligible for a
+  // permanent hard-delete (archived + zero history → product.deletable).
+  const deletableIdSet = useMemo(
+    () => new Set((filteredProducts ?? []).filter((p) => p.deletable).map((p) => p.id)),
+    [filteredProducts],
+  );
+  const selectedDeletableList = useMemo(
+    () => selectedList.filter((id) => deletableIdSet.has(id)),
+    [selectedList, deletableIdSet],
+  );
+  const selectedDeletableCount = selectedDeletableList.length;
   const visibleIds = useMemo(() => (filteredProducts ?? []).map((p) => p.id), [filteredProducts]);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds[id]);
   const toggleSelect = (id: number) =>
@@ -3666,6 +3680,48 @@ export function Products() {
       toast({ title: `${affected} archived, ${failed} failed`, description: aborted ? "Stopped early after repeated errors — check your connection and retry." : "Some products could not be archived. Please retry.", variant: "destructive" });
     } else {
       toast({ title: `${affected} product${affected === 1 ? "" : "s"} archived`, description: "History is preserved. Toggle 'Show archived' to restore." });
+    }
+  };
+
+  // Permanent (hard) delete for the eligible (deletable) subset of the
+  // selection. Runs in client-side chunks like archive/restore; the server
+  // re-checks eligibility and silently skips anything that isn't deletable.
+  const doBulkPermDelete = async () => {
+    setBulkPermConfirmOpen(false);
+    if (selectedDeletableList.length === 0 || bulkProgress) return;
+    const ids = selectedDeletableList;
+    setBulkProgress({ mode: "permdelete", done: 0, total: ids.length });
+    let deleted = 0;
+    let skipped = 0;
+    let consecutiveFailures = 0;
+    let aborted = false;
+    for (let i = 0; i < ids.length; i += BULK_CHUNK) {
+      const chunk = ids.slice(i, i + BULK_CHUNK);
+      try {
+        const res = await bulkPermDelete.mutateAsync({ data: { ids: chunk, staffId: staff?.id ?? 0 } });
+        deleted += res.deleted;
+        skipped += res.skipped;
+        consecutiveFailures = 0;
+      } catch {
+        skipped += chunk.length;
+        consecutiveFailures += 1;
+      }
+      setBulkProgress({ mode: "permdelete", done: Math.min(i + BULK_CHUNK, ids.length), total: ids.length });
+      if (consecutiveFailures >= 3) {
+        skipped += ids.length - Math.min(i + BULK_CHUNK, ids.length);
+        aborted = true;
+        break;
+      }
+    }
+    setBulkProgress(null);
+    queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    clearSelection();
+    if (deleted > 0 && skipped === 0) {
+      toast({ title: `${deleted} product${deleted === 1 ? "" : "s"} permanently deleted` });
+    } else if (deleted > 0) {
+      toast({ title: `${deleted} permanently deleted, ${skipped} skipped`, description: aborted ? "Stopped early after repeated errors — check your connection and retry." : "Skipped products have history or couldn't be deleted." });
+    } else {
+      toast({ title: "Nothing deleted", description: aborted ? "Stopped early after repeated errors — please retry." : "None of the selected products were eligible for permanent delete.", variant: "destructive" });
     }
   };
 
@@ -3888,9 +3944,16 @@ export function Products() {
           <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={clearSelection}>Clear</Button>
           <div className="flex-1" />
           {showArchived ? (
-            <Button size="sm" variant="default" className="gap-1.5" disabled={!!bulkProgress} onClick={doBulkRestore}>
-              <RotateCcw className="h-3.5 w-3.5" />Restore selected
-            </Button>
+            <>
+              {selectedDeletableCount > 0 && (
+                <Button size="sm" variant="destructive" className="gap-1.5" disabled={!!bulkProgress} onClick={() => setBulkPermConfirmOpen(true)}>
+                  <Trash2 className="h-3.5 w-3.5" />Delete permanently ({selectedDeletableCount})
+                </Button>
+              )}
+              <Button size="sm" variant="default" className="gap-1.5" disabled={!!bulkProgress} onClick={doBulkRestore}>
+                <RotateCcw className="h-3.5 w-3.5" />Restore selected
+              </Button>
+            </>
           ) : (
             <Button size="sm" variant="destructive" className="gap-1.5" onClick={() => setBulkConfirmOpen(true)}>
               <Trash2 className="h-3.5 w-3.5" />Delete selected
@@ -5791,6 +5854,24 @@ export function Products() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={!!bulkProgress} onClick={doBulkArchive}>
               {bulkProgress ? "Deleting…" : `Delete ${selectedCount}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk permanent (hard) delete confirm */}
+      <AlertDialog open={bulkPermConfirmOpen} onOpenChange={setBulkPermConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Permanently delete {selectedDeletableCount} product{selectedDeletableCount === 1 ? "" : "s"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes {selectedDeletableCount === 1 ? "this product" : "these products"} and cannot be undone. Only archived products with no sales or purchase history are eligible — anything else in your selection is skipped. This action is irreversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={!!bulkProgress} onClick={doBulkPermDelete}>
+              {bulkProgress ? "Deleting…" : `Delete ${selectedDeletableCount} permanently`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

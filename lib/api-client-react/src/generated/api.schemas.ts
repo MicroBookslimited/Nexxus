@@ -213,6 +213,18 @@ export interface BulkProductsResult {
   count: number;
 }
 
+export interface BulkPermanentDeleteProductsBody {
+  /** @minItems 1 */
+  ids: number[];
+  /** Staff member performing the delete (must be Owner/Admin or have inventory.manage). */
+  staffId: number;
+}
+
+export interface BulkPermanentDeleteResult {
+  deleted: number;
+  skipped: number;
+}
+
 export interface DuplicateProduct {
   id: number;
   name: string;
