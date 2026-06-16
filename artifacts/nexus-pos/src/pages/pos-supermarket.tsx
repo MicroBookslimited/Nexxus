@@ -133,7 +133,13 @@ export function PosSupermarket() {
   const businessDisplayName = settings?.business_name;
   const supermarketMode = settings?.supermarket_mode === "true";
 
-  const { data: products } = useListProducts();
+  // The active cash session's location drives per-location pricing (so a product
+  // with a location-specific price_override is rung up at that price, not the
+  // global default). Set from the cash session once it loads (below).
+  const [sessionLocationId, setSessionLocationId] = useState<number | null>(null);
+  const { data: products } = useListProducts(
+    sessionLocationId ? { locationId: sessionLocationId } : undefined,
+  );
   const { data: customers } = useListCustomers();
   const createOrder = useCreateOrder();
   const createCustomer = useCreateCustomer();
@@ -157,6 +163,15 @@ export function PosSupermarket() {
   useEffect(() => {
     if (sessionStaff && locked) setLocked(false);
   }, [sessionStaff?.id]);
+
+  // Always follow the active cash session's location so products are priced for
+  // that location. Unlike the standard POS there is no manual location picker
+  // here, so we track the session value directly (and stay correct across a
+  // cashier/shift switch without a full remount).
+  useEffect(() => {
+    const locId = cashSession?.session?.locationId ?? null;
+    setSessionLocationId((prev) => (prev === locId ? prev : locId));
+  }, [cashSession?.session?.locationId]);
 
   /* ── Search / scanner ───────────────────────────────────────────────── */
   const [searchTerm, setSearchTerm] = useState("");
@@ -704,6 +719,8 @@ export function PosSupermarket() {
           notes: undefined,
           customerId: selectedCustomerId ?? undefined,
           orderType: "counter",
+          // Location drives per-location pricing + stock on the server.
+          locationId: sessionLocationId ?? undefined,
           // Station number is set once at shift open and must stay constant for
           // every receipt in that cashier's shift (see standard POS layout).
           stationNumber: cashSession?.session?.stationNumber ?? undefined,
@@ -1072,7 +1089,7 @@ export function PosSupermarket() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyDown={handleSearchKey}
                   placeholder="Scan a barcode…"
-                  className="pl-11 pr-10 h-14 text-lg bg-background border-cyan-500/40 focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20 text-foreground placeholder:text-muted-foreground rounded-xl"
+                  className="pl-11 pr-10 h-14 text-lg bg-white border-cyan-500/40 focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20 text-gray-900 placeholder:text-gray-400 rounded-xl"
                   autoComplete="off"
                 />
                 {searchTerm && (
@@ -1089,7 +1106,7 @@ export function PosSupermarket() {
             {/* Price Check — lookup only, no sale / no stock change */}
             <button
               onClick={openPriceCheck}
-              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 h-12 text-sm font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition flex items-center justify-center gap-2"
+              className="w-full rounded-xl border border-amber-600 bg-amber-500 px-3 h-12 text-sm font-bold text-white hover:bg-amber-600 transition flex items-center justify-center gap-2"
             >
               <Tag className="h-4 w-4" />
               Price Check

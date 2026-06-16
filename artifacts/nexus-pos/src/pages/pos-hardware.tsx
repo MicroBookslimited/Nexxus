@@ -208,7 +208,13 @@ export function PosHardware() {
   const businessLogoUrl = settings?.business_logo_url;
   const businessDisplayName = settings?.business_name;
 
-  const { data: products } = useListProducts();
+  // The active cash session's location drives per-location pricing (so a product
+  // with a location-specific price_override is rung up at that price, not the
+  // global default). Set from the cash session once it loads (below).
+  const [sessionLocationId, setSessionLocationId] = useState<number | null>(null);
+  const { data: products } = useListProducts(
+    sessionLocationId ? { locationId: sessionLocationId } : undefined,
+  );
   const { data: customers } = useListCustomers();
   const { data: heldOrders } = useListHeldOrders();
   const createOrder = useCreateOrder();
@@ -240,6 +246,15 @@ export function PosHardware() {
   useEffect(() => {
     if (sessionStaff && locked) setLocked(false);
   }, [sessionStaff?.id]);
+
+  // Always follow the active cash session's location so products are priced for
+  // that location. Unlike the standard POS there is no manual location picker
+  // here, so we track the session value directly (and stay correct across a
+  // cashier/shift switch without a full remount).
+  useEffect(() => {
+    const locId = cashSession?.session?.locationId ?? null;
+    setSessionLocationId((prev) => (prev === locId ? prev : locId));
+  }, [cashSession?.session?.locationId]);
 
   const handlePinSuccess = (staff: { id: number; name: string; role: string; permissions?: string[] }) => {
     setStaff({ id: staff.id, name: staff.name, role: staff.role, permissions: staff.permissions ?? [] });
@@ -1080,6 +1095,8 @@ export function PosHardware() {
           notes: notes.trim() || undefined,
           customerId: selectedCustomerId ?? undefined,
           orderType: "counter",
+          // Location drives per-location pricing + stock on the server.
+          locationId: sessionLocationId ?? undefined,
           // Station number is set once at shift open and must stay constant for
           // every receipt in that cashier's shift (see standard POS layout).
           stationNumber: cashSession?.session?.stationNumber ?? undefined,

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { logAudit } from "./audit";
-import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable, variantCombinationsTable, productBatchesTable, giftVouchersTable, giftVoucherTransactionsTable, staffTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, customersTable, diningTablesTable, locationInventoryTable, productLocationsTable, accountsReceivableTable, recipesTable, recipeIngredientsTable, ingredientsTable, ingredientUsageLogsTable, stockMovementsTable, productPricingTiersTable, paymentMethodsTable, compositeProductComponentsTable, variantOptionsTable, variantGroupsTable, variantCombinationsTable, productBatchesTable, giftVouchersTable, giftVoucherTransactionsTable, staffTable } from "@workspace/db";
 import { generateVoucherCode, isUniqueViolation, normalizeVoucher } from "../lib/vouchers";
 import { applyVolumePricing } from "../lib/pricing";
 import { getSetting } from "./settings";
@@ -429,6 +429,22 @@ router.post("/orders", async (req, res): Promise<void> => {
       return;
     }
 
+    // Location-specific base price. When the sale is tied to a location, a
+    // per-location price override (product_locations.price_override) takes the
+    // place of the global product price. Volume tiers and originalUnitPrice are
+    // then computed against this location price. Falls back to product.price.
+    let basePrice = product.price;
+    if (parsed.data.locationId != null) {
+      const [locOverride] = await db
+        .select({ priceOverride: productLocationsTable.priceOverride })
+        .from(productLocationsTable)
+        .where(and(
+          eq(productLocationsTable.productId, product.id),
+          eq(productLocationsTable.locationId, parsed.data.locationId),
+        ));
+      if (locOverride?.priceOverride != null) basePrice = locOverride.priceOverride;
+    }
+
     const variantAdj = (item.variantChoices ?? []).reduce((s, c) => s + c.priceAdjustment, 0);
     const modifierAdj = (item.modifierChoices ?? []).reduce((s, c) => s + c.priceAdjustment, 0);
 
@@ -452,7 +468,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           eq(productPricingTiersTable.tenantId, tenantId),
           eq(productPricingTiersTable.productId, product.id),
         ));
-      const tierResult = applyVolumePricing(product.price, item.quantity, tiers);
+      const tierResult = applyVolumePricing(basePrice, item.quantity, tiers);
       tierUnitPrice = tierResult.unitPrice;
       itemDiscount = item.discountAmount ?? 0;
     }
@@ -470,7 +486,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       productName: product.name,
       quantity: item.quantity,
       unitPrice: tierUnitPrice,
-      originalUnitPrice: product.price,
+      originalUnitPrice: basePrice,
       discountAmount: itemDiscount > 0 ? itemDiscount : undefined,
       variantAdjustment: variantAdj !== 0 ? variantAdj : undefined,
       modifierAdjustment: modifierAdj !== 0 ? modifierAdj : undefined,
