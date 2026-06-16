@@ -26,6 +26,12 @@ export const ListProductsQueryParams = zod.object({
     .describe(
       "When true, include soft-deleted (archived) products in the response. Defaults to false.",
     ),
+  locationId: zod.coerce
+    .number()
+    .optional()
+    .describe(
+      "Optional — when set, each product's price reflects that location's price_override and stock/availability reflect that location's inventory.",
+    ),
 });
 
 export const ListProductsResponseItem = zod.object({
@@ -1115,6 +1121,12 @@ export const CreateOrderBody = zod.object({
     .optional()
     .describe(
       "Gift voucher code to redeem as a tender against this sale. The server locks the voucher, applies min(balance, total), and records a redeem ledger entry. Does not change subtotal\/tax\/total.",
+    ),
+  locationId: zod
+    .number()
+    .optional()
+    .describe(
+      "Open cash session's location. When set, catalog line prices are resolved against that location's price_override and stock is deducted from that location's inventory.",
     ),
 });
 
