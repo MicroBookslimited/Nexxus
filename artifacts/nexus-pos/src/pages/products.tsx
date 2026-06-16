@@ -783,6 +783,7 @@ type ProductLocationRow = {
   locationName: string;
   isAvailable: boolean;
   priceOverride: number | null;
+  markupOverride: number | null;
   stockCount: number | null;
 };
 
@@ -791,7 +792,7 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
 }
 
-function LocationsEditor({ productId }: { productId: number }) {
+function LocationsEditor({ productId, productCost, defaultMarkup }: { productId: number; productCost: number | null; defaultMarkup: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const queryKey = [`/api/products/${productId}/locations`];
@@ -805,20 +806,37 @@ function LocationsEditor({ productId }: { productId: number }) {
     },
   });
 
-  const [draft, setDraft] = useState<Record<number, { isAvailable: boolean; priceOverride: string; stockCount: string }>>({});
+  const [draft, setDraft] = useState<Record<number, { isAvailable: boolean; priceOverride: string; markup: string; stockCount: string }>>({});
+  // Tracks rows whose markup/price the user actually edited. Only these become
+  // explicit per-location overrides on save; untouched rows keep their original
+  // (possibly null = inherit product price) values so the pre-filled default
+  // markup never silently converts an inherited location into an override.
+  const [dirty, setDirty] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     if (!rows) return;
-    const initial: Record<number, { isAvailable: boolean; priceOverride: string; stockCount: string }> = {};
+    const initial: Record<number, { isAvailable: boolean; priceOverride: string; markup: string; stockCount: string }> = {};
     rows.forEach((r) => {
+      const markup = r.markupOverride != null ? String(r.markupOverride) : defaultMarkup;
+      let priceOverride = r.priceOverride != null ? String(r.priceOverride) : "";
+      // Pre-fill a suggested price from the effective markup when none is set.
+      if (r.priceOverride == null && productCost != null && productCost >= 0) {
+        const m = parseFloat(markup);
+        if (Number.isFinite(m)) priceOverride = round2(productCost * (1 + m / 100));
+      }
       initial[r.locationId] = {
         isAvailable: r.isAvailable,
-        priceOverride: r.priceOverride != null ? String(r.priceOverride) : "",
+        priceOverride,
+        markup,
         stockCount: r.stockCount != null ? String(r.stockCount) : "",
       };
     });
     setDraft(initial);
-  }, [rows]);
+    setDirty({});
+    // productCost intentionally excluded: pre-fill is a one-time suggestion at
+    // load; live edits recompute via the onChange handlers using the latest cost.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, defaultMarkup]);
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -830,14 +848,25 @@ function LocationsEditor({ productId }: { productId: number }) {
         rows.map(async (row) => {
           const d = draft[row.locationId];
           if (!d) return;
-          const priceOverride = d.priceOverride !== "" ? parseFloat(d.priceOverride) : null;
+          // Only persist markup/price as an override when the user edited them;
+          // otherwise keep the original values so inherited rows stay inherited.
+          const edited = !!dirty[row.locationId];
+          const parsedPrice = d.priceOverride !== "" ? parseFloat(d.priceOverride) : null;
+          const parsedMarkup = d.markup !== "" ? parseFloat(d.markup) : null;
+          const priceOverride = edited
+            ? (Number.isFinite(parsedPrice as number) ? parsedPrice : null)
+            : row.priceOverride;
+          const markupOverride = edited
+            ? (Number.isFinite(parsedMarkup as number) ? parsedMarkup : null)
+            : row.markupOverride;
 
           await fetch(`/api/products/${productId}/locations/${row.locationId}`, {
             method: "PUT",
             headers: authHeaders(),
             body: JSON.stringify({
               isAvailable: d.isAvailable,
-              priceOverride: Number.isFinite(priceOverride as number) ? priceOverride : null,
+              priceOverride,
+              markupOverride,
             }),
           });
 
@@ -880,7 +909,9 @@ function LocationsEditor({ productId }: { productId: number }) {
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">Control availability, price, and stock level of this product at each location.</p>
       {rows.map((row) => {
-        const d = draft[row.locationId] ?? { isAvailable: row.isAvailable, priceOverride: "", stockCount: "" };
+        const d = draft[row.locationId] ?? { isAvailable: row.isAvailable, priceOverride: "", markup: defaultMarkup, stockCount: "" };
+        const canMarkupToPrice = productCost != null && productCost >= 0;
+        const canPriceToMarkup = productCost != null && productCost > 0;
         return (
           <Card key={row.locationId} className="border-border/50">
             <CardContent className="pt-3 pb-3 space-y-2">
@@ -897,14 +928,41 @@ function LocationsEditor({ productId }: { productId: number }) {
               </div>
               <div className="flex items-center gap-2 pl-6">
                 <div className="relative flex-1">
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="Markup"
+                    value={d.markup}
+                    onChange={(e) => {
+                      const mk = e.target.value;
+                      const m = parseFloat(mk);
+                      const nextPrice = canMarkupToPrice && Number.isFinite(m)
+                        ? round2((productCost as number) * (1 + m / 100))
+                        : d.priceOverride;
+                      setDirty((prev) => ({ ...prev, [row.locationId]: true }));
+                      setDraft((prev) => ({ ...prev, [row.locationId]: { ...d, markup: mk, priceOverride: nextPrice } }));
+                    }}
+                    className="h-8 text-xs pr-6"
+                  />
+                </div>
+                <div className="relative flex-1">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
                   <Input
                     type="number"
                     step="0.01"
                     min="0"
-                    placeholder="Price override"
+                    placeholder="Price"
                     value={d.priceOverride}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, [row.locationId]: { ...d, priceOverride: e.target.value } }))}
+                    onChange={(e) => {
+                      const pv = e.target.value;
+                      const p = parseFloat(pv);
+                      const nextMarkup = canPriceToMarkup && Number.isFinite(p)
+                        ? round2(((p / (productCost as number)) - 1) * 100)
+                        : d.markup;
+                      setDirty((prev) => ({ ...prev, [row.locationId]: true }));
+                      setDraft((prev) => ({ ...prev, [row.locationId]: { ...d, priceOverride: pv, markup: nextMarkup } }));
+                    }}
                     className="h-8 text-xs pl-5"
                   />
                 </div>
@@ -913,7 +971,7 @@ function LocationsEditor({ productId }: { productId: number }) {
                   <Input
                     type="number"
                     min="0"
-                    placeholder={row.stockCount != null ? `${row.stockCount} in stock` : "Stock count"}
+                    placeholder={row.stockCount != null ? `${row.stockCount} in stock` : "Stock"}
                     value={d.stockCount}
                     onChange={(e) => setDraft((prev) => ({ ...prev, [row.locationId]: { ...d, stockCount: e.target.value } }))}
                     className="h-8 text-xs pl-7"
@@ -5586,7 +5644,7 @@ export function Products() {
               </TabsContent>
 
               <TabsContent value="locations" className="mt-0">
-                {editingProduct && <LocationsEditor productId={editingProduct.id} />}
+                {editingProduct && <LocationsEditor productId={editingProduct.id} productCost={form.costPrice.trim() === "" ? null : parseFloat(form.costPrice)} defaultMarkup={defaultMarkupSetting} />}
               </TabsContent>
 
               <TabsContent value="pricing" className="mt-0">

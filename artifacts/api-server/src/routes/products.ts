@@ -886,6 +886,29 @@ router.put("/products/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  // Per-location markup recalculation: when the product cost changes, every
+  // location whose price is driven by a saved markup % (markupOverride set) is
+  // recomputed so its margin stays constant. Locations with no markupOverride
+  // inherit the product price and are left untouched.
+  if (parsed.data.costPrice !== undefined && product.costPrice != null) {
+    const newCost = product.costPrice;
+    const locRows = await db
+      .select({ locationId: productLocationsTable.locationId, markupOverride: productLocationsTable.markupOverride })
+      .from(productLocationsTable)
+      .where(eq(productLocationsTable.productId, product.id));
+    for (const lr of locRows) {
+      if (lr.markupOverride == null) continue;
+      const recomputed = Math.round(newCost * (1 + lr.markupOverride / 100) * 100) / 100;
+      await db
+        .update(productLocationsTable)
+        .set({ priceOverride: recomputed, updatedAt: new Date() })
+        .where(and(
+          eq(productLocationsTable.productId, product.id),
+          eq(productLocationsTable.locationId, lr.locationId),
+        ));
+    }
+  }
+
   // Backfill: toggling trackBatches on means existing stock has no batch
   // history. Create one "legacy" batch (no expiry, no batch number) for
   // the current stockCount so SUM(batches) == product.stockCount.
@@ -1025,6 +1048,7 @@ router.get("/products/:id/locations", async (req, res): Promise<void> => {
       locationName: loc.name,
       isAvailable: override ? override.isAvailable : true,
       priceOverride: override?.priceOverride ?? null,
+      markupOverride: override?.markupOverride ?? null,
       stockCount: invMap.get(loc.id) ?? null,
     };
   });
@@ -1044,7 +1068,7 @@ router.put("/products/:id/locations", async (req, res): Promise<void> => {
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
   const { locations } = req.body as {
-    locations: Array<{ locationId: number; isAvailable: boolean; priceOverride: number | null }>;
+    locations: Array<{ locationId: number; isAvailable: boolean; priceOverride: number | null; markupOverride?: number | null }>;
   };
 
   if (!Array.isArray(locations)) { res.status(400).json({ error: "locations must be an array" }); return; }
@@ -1057,6 +1081,7 @@ router.put("/products/:id/locations", async (req, res): Promise<void> => {
         locationId: loc.locationId,
         isAvailable: loc.isAvailable,
         priceOverride: loc.priceOverride ?? null,
+        markupOverride: loc.markupOverride ?? null,
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
@@ -1064,6 +1089,7 @@ router.put("/products/:id/locations", async (req, res): Promise<void> => {
         set: {
           isAvailable: loc.isAvailable,
           priceOverride: loc.priceOverride ?? null,
+          markupOverride: loc.markupOverride ?? null,
           updatedAt: new Date(),
         },
       });

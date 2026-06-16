@@ -329,6 +329,7 @@ router.get("/products/:id/locations", async (req, res): Promise<void> => {
       locationName: loc.name,
       isAvailable: pl ? pl.isAvailable : true,
       priceOverride: pl ? pl.priceOverride : null,
+      markupOverride: pl ? pl.markupOverride : null,
     };
   }));
 });
@@ -336,6 +337,7 @@ router.get("/products/:id/locations", async (req, res): Promise<void> => {
 const ProductLocationBody = z.object({
   isAvailable: z.boolean(),
   priceOverride: z.number().nullable().optional(),
+  markupOverride: z.number().nullable().optional(),
 });
 
 router.put("/products/:id/locations/:locationId", async (req, res): Promise<void> => {
@@ -362,6 +364,7 @@ router.put("/products/:id/locations/:locationId", async (req, res): Promise<void
       locationId,
       isAvailable: parsed.data.isAvailable,
       priceOverride: parsed.data.priceOverride ?? null,
+      markupOverride: parsed.data.markupOverride ?? null,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -369,6 +372,7 @@ router.put("/products/:id/locations/:locationId", async (req, res): Promise<void
       set: {
         isAvailable: parsed.data.isAvailable,
         priceOverride: parsed.data.priceOverride ?? null,
+        markupOverride: parsed.data.markupOverride ?? null,
         updatedAt: new Date(),
       },
     })

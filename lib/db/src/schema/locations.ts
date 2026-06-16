@@ -46,6 +46,10 @@ export const productLocationsTable = pgTable("product_locations", {
   locationId: integer("location_id").notNull().references(() => locationsTable.id, { onDelete: "cascade" }),
   isAvailable: boolean("is_available").notNull().default(true),
   priceOverride: real("price_override"),
+  // Per-location markup % (on cost). Drives priceOverride in the Locations tab
+  // and is recomputed into priceOverride when the product cost changes. null
+  // means the location inherits the product's default price.
+  markupOverride: real("markup_override"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [unique("uq_product_location_avail").on(t.productId, t.locationId)]);
 
