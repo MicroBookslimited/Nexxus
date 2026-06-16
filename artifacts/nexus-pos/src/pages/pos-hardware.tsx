@@ -201,7 +201,6 @@ export function PosHardware() {
   const [locked, setLocked] = useState(() => !sessionStaff);
 
   const { data: settings } = useGetSettings();
-  const showProductSize = settings?.show_product_size === "true";
   const baseCurrency = settings?.base_currency || "JMD";
   const taxRate = parseFloat(settings?.tax_rate || "15") / 100;
   const taxMode = (settings?.tax_mode as "exclusive" | "inclusive") ?? "exclusive";
@@ -1495,7 +1494,7 @@ export function PosHardware() {
                       {p.sku && p.barcode && (
                         <div className="font-mono text-[10px] text-slate-500 truncate">{p.barcode}</div>
                       )}
-                      {showProductSize && p.size && (
+                      {p.size && (
                         <div className="text-[10px] text-slate-400 truncate">Size: {p.size}</div>
                       )}
                     </div>
@@ -1561,6 +1560,7 @@ export function PosHardware() {
                 const tiers = pricingTiersByProduct.get(c.productId) ?? [];
                 const { tier } = previewTierPrice(c.price, c.quantity, tiers);
                 const cartSellingUnit = products?.find((p) => p.id === c.productId)?.sellingUnit;
+                const cartSize = products?.find((p) => p.id === c.productId)?.size;
                 return (
                 <div
                   key={c.cartKey}
@@ -1584,6 +1584,11 @@ export function PosHardware() {
                       {cartSellingUnit && (
                         <span className="shrink-0 rounded-md bg-white/5 border border-white/10 px-1.5 py-0.5 text-[9px] font-bold text-slate-300 uppercase tracking-wide">
                           {cartSellingUnit}
+                        </span>
+                      )}
+                      {cartSize && (
+                        <span className="shrink-0 rounded-md bg-white/5 border border-white/10 px-1.5 py-0.5 text-[9px] font-bold text-slate-300 uppercase tracking-wide">
+                          {cartSize}
                         </span>
                       )}
                     </div>

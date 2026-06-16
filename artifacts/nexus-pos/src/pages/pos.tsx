@@ -464,7 +464,6 @@ export function POS() {
   );
   const createOrder = useCreateOrder();
   const { data: settings } = useGetSettings();
-  const showProductSize = settings?.show_product_size === "true";
   const baseCurrency = settings?.base_currency || "JMD";
   const secondaryCurrency = settings?.secondary_currency || "";
   const exchangeRate = parseFloat(settings?.currency_rate || "0");
@@ -2564,6 +2563,7 @@ export function POS() {
                     const lineTotal = itemEff * item.quantity - item.itemDiscount;
                     const ci = compositeInfo(item.productId);
                     const cartSellingUnit = products?.find((p) => p.id === item.productId)?.sellingUnit;
+                    const cartSize = products?.find((p) => p.id === item.productId)?.size;
                     return (
                     <motion.div key={item.cartKey} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}>
                       <div className="rounded-lg bg-secondary/30 p-2">
@@ -2582,6 +2582,11 @@ export function POS() {
                               {cartSellingUnit ? (
                                 <span className="ml-1 text-[10px] uppercase tracking-wider text-muted-foreground">
                                   · {cartSellingUnit}
+                                </span>
+                              ) : null}
+                              {cartSize ? (
+                                <span className="ml-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                                  · Size {cartSize}
                                 </span>
                               ) : null}
                             </p>
@@ -4531,7 +4536,7 @@ export function POS() {
                         <p className="text-[11px] text-white/60 truncate">
                           {p.category}
                           {p.sku ? <> &middot; SKU <span className="font-mono">{p.sku}</span></> : null}
-                          {showProductSize && p.size ? <> &middot; Size <span className="font-mono">{p.size}</span></> : null}
+                          {p.size ? <> &middot; Size <span className="font-mono">{p.size}</span></> : null}
                         </p>
                       </div>
                       <div className="text-right shrink-0">

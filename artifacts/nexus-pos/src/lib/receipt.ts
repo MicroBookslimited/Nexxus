@@ -39,8 +39,8 @@ export interface ReceiptOrderItem {
   // "pieces"). When present, surfaced next to the line item on the receipt.
   sellingUnit?: string | null;
   // Optional free-text product size label (e.g. "12 inch", "Large", "500ml").
-  // Surfaced next to the line item ONLY when the tenant show_product_size
-  // setting is on. Resolved live from the product at read time.
+  // Surfaced next to the line item whenever populated. Resolved live from the
+  // product at read time.
   size?: string | null;
   // Whether the product is taxable. Resolved live from the product at read
   // time; used by the supermarket template to mark a line "T" (taxable) or
@@ -197,14 +197,14 @@ export function receiptOrderFrom(
 
 /**
  * HTML-escaped " (uom)" + optional " [size]" suffix for a line item. The size
- * portion is only appended when the tenant `show_product_size` setting is on,
- * so a tenant with the feature off sees no change on receipts.
+ * portion is appended whenever the product has a size populated, independent of
+ * any tenant setting.
  */
 function uomHtml(item: ReceiptOrderItem, settings: ReceiptSettings = {}): string {
   const u = item.sellingUnit?.trim();
   const uomPart = u ? ` (${escHtml(u)})` : "";
   const s = item.size?.trim();
-  const sizePart = settings.show_product_size === "true" && s ? ` [${escHtml(s)}]` : "";
+  const sizePart = s ? ` [${escHtml(s)}]` : "";
   return uomPart + sizePart;
 }
 
@@ -2128,7 +2128,7 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
     const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
-    lines.push(`${item.quantity}× ${item.productName}${item.sellingUnit?.trim() ? ` (${item.sellingUnit.trim()})` : ""}${settings.show_product_size === "true" && item.size?.trim() ? ` [${item.size.trim()}]` : ""}${unitStr}  ${fmtNum(item.lineTotal)}`);
+    lines.push(`${item.quantity}× ${item.productName}${item.sellingUnit?.trim() ? ` (${item.sellingUnit.trim()})` : ""}${item.size?.trim() ? ` [${item.size.trim()}]` : ""}${unitStr}  ${fmtNum(item.lineTotal)}`);
     if (orig != null && unit != null && orig > unit) {
       const lineSaving = (orig - unit) * item.quantity;
       lines.push(`   ↳ You save (was ${fmtNum(orig)}) -${fmtNum(lineSaving)}`);
@@ -2469,7 +2469,7 @@ export interface RefundReceiptLine {
   /** Money refunded for this line (gross of the item: quantity × unitPrice). */
   amount: number;
   sellingUnit?: string | null;
-  /** Optional product size label; only rendered when show_product_size is on. */
+  /** Optional product size label; rendered whenever populated. */
   size?: string | null;
 }
 
@@ -2535,7 +2535,7 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, settings: Receip
 
   const itemsHtml = data.items.map((it) => {
     const uom = it.sellingUnit?.trim() ? ` (${escHtml(it.sellingUnit.trim())})` : "";
-    const sizeLabel = settings.show_product_size === "true" && it.size?.trim() ? ` [${escHtml(it.size.trim())}]` : "";
+    const sizeLabel = it.size?.trim() ? ` [${escHtml(it.size.trim())}]` : "";
     const qtyStr = Number.isInteger(it.quantity)
       ? String(it.quantity)
       : it.quantity.toFixed(3).replace(/\.?0+$/, "");
