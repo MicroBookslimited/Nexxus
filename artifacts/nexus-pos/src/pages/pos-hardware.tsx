@@ -201,6 +201,7 @@ export function PosHardware() {
   const [locked, setLocked] = useState(() => !sessionStaff);
 
   const { data: settings } = useGetSettings();
+  const showProductSize = settings?.show_product_size === "true";
   const baseCurrency = settings?.base_currency || "JMD";
   const taxRate = parseFloat(settings?.tax_rate || "15") / 100;
   const taxMode = (settings?.tax_mode as "exclusive" | "inclusive") ?? "exclusive";
@@ -1493,6 +1494,9 @@ export function PosHardware() {
                       </div>
                       {p.sku && p.barcode && (
                         <div className="font-mono text-[10px] text-slate-500 truncate">{p.barcode}</div>
+                      )}
+                      {showProductSize && p.size && (
+                        <div className="text-[10px] text-slate-400 truncate">Size: {p.size}</div>
                       )}
                     </div>
                     <div className="min-w-0">

@@ -175,6 +175,8 @@ export interface Product {
   imageUrl?: string | null;
   barcode?: string | null;
   sku?: string | null;
+  /** Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on. NULL = not set. */
+  size?: string | null;
   inStock: boolean;
   stockCount: number;
   soldByWeight: boolean;
@@ -296,6 +298,8 @@ export interface CreateProductBody {
   imageUrl?: string;
   barcode?: string;
   sku?: string;
+  /** Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on. */
+  size?: string | null;
   inStock?: boolean;
   stockCount?: number;
   soldByWeight?: boolean;
@@ -415,6 +419,8 @@ export interface OrderItem {
   lineTotal: number;
   /** Optional free-text selling unit / UOM label of the product (e.g. "each", "case"). Surfaced on the POS and receipts. NULL = not set. */
   sellingUnit?: string | null;
+  /** Optional free-text product size label of the product (e.g. "12 inch", "Large", "500ml"). Surfaced on the POS and receipts when show_product_size is on. NULL = not set. */
+  size?: string | null;
   /** Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable). */
   isTaxable?: boolean;
   /** Optional free-text per-line note (e.g. "cut thin", "extra lean"). Surfaced on receipts. NULL = none. */

@@ -125,6 +125,7 @@ export function PosSupermarket() {
   const [locked, setLocked] = useState(() => !sessionStaff);
 
   const { data: settings } = useGetSettings();
+  const showProductSize = settings?.show_product_size === "true";
   const baseCurrency = settings?.base_currency || "JMD";
   const taxRate = parseFloat(settings?.tax_rate || "15") / 100;
   const taxMode = (settings?.tax_mode as "exclusive" | "inclusive") ?? "exclusive";
@@ -197,6 +198,7 @@ export function PosSupermarket() {
     price: number;
     isTaxable: boolean;
     sellingUnit: string | null;
+    size: string | null;
   } | null>(null);
   const [priceCheckNotFound, setPriceCheckNotFound] = useState<string | null>(null);
   const priceCheckInputRef = useRef<HTMLInputElement>(null);
@@ -245,6 +247,7 @@ export function PosSupermarket() {
       price: match.price,
       isTaxable: match.isTaxable,
       sellingUnit: match.sellingUnit ?? null,
+      size: match.size ?? null,
     });
     setPriceCheckNotFound(null);
     setPriceCheckSearch("");
@@ -1616,6 +1619,7 @@ export function PosSupermarket() {
               <div className="text-xs font-mono text-muted-foreground">
                 {priceCheckResult.barcode ?? priceCheckResult.sku ?? "—"}
                 {priceCheckResult.sellingUnit ? ` · ${priceCheckResult.sellingUnit}` : ""}
+                {showProductSize && priceCheckResult.size ? ` · ${priceCheckResult.size}` : ""}
               </div>
               <div className="text-4xl font-extrabold font-mono bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent pt-1">
                 {formatCurrency(priceCheckResult.price, baseCurrency)}

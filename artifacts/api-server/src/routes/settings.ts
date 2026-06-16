@@ -46,6 +46,7 @@ const DEFAULTS: Record<string, string> = {
   low_stock_alerts_hour: "1",
   allow_overselling: "false",
   kiosk_lock_enabled: "false",
+  show_product_size: "false",
   product_categories: '["Beverages","Food","Bakery","Merchandise","Other"]',
   topup_enabled: "false",
   topup_commission_rate: "5",

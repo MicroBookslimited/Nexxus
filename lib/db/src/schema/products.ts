@@ -14,6 +14,10 @@ export const productsTable = pgTable("products", {
   // Stock-keeping unit. Optional, human-assigned identifier. Distinct from
   // barcode (which is the scanned EAN/UPC). Both are matched at the POS.
   sku: text("sku"),
+  // Optional free-text product size label (e.g. "12 inch", "Large", "500ml").
+  // Display-only; surfaced when the tenant `show_product_size` setting is on.
+  // NULL = not set.
+  size: text("size"),
   inStock: boolean("in_stock").notNull().default(true),
   stockCount: real("stock_count").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

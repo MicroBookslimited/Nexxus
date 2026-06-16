@@ -222,6 +222,7 @@ export function Orders() {
                 unitPrice: unit,
                 amount: round2(unit * l.quantity),
                 sellingUnit: it?.sellingUnit ?? null,
+                size: it?.size ?? null,
               };
             });
             const refundData: RefundReceiptData = {
@@ -349,6 +350,7 @@ export function Orders() {
         unitPrice: unit,
         amount: round2(unit * q),
         sellingUnit: i.sellingUnit ?? null,
+        size: i.size ?? null,
       };
     });
     const refundData: RefundReceiptData = {

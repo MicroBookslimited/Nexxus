@@ -132,14 +132,14 @@ function normalizeOrder(order: typeof ordersTable.$inferSelect) {
 async function sellingUnitMap(
   tenantId: number,
   productIds: number[],
-): Promise<Map<number, { sellingUnit: string | null; isTaxable: boolean }>> {
+): Promise<Map<number, { sellingUnit: string | null; size: string | null; isTaxable: boolean }>> {
   const ids = [...new Set(productIds)].filter((n): n is number => typeof n === "number");
   if (ids.length === 0) return new Map();
   const rows = await db
-    .select({ id: productsTable.id, sellingUnit: productsTable.sellingUnit, isTaxable: productsTable.isTaxable })
+    .select({ id: productsTable.id, sellingUnit: productsTable.sellingUnit, size: productsTable.size, isTaxable: productsTable.isTaxable })
     .from(productsTable)
     .where(and(eq(productsTable.tenantId, tenantId), inArray(productsTable.id, ids)));
-  return new Map(rows.map((r) => [r.id, { sellingUnit: r.sellingUnit ?? null, isTaxable: r.isTaxable }]));
+  return new Map(rows.map((r) => [r.id, { sellingUnit: r.sellingUnit ?? null, size: r.size ?? null, isTaxable: r.isTaxable }]));
 }
 
 async function getOrderWithItems(orderId: number) {
@@ -187,6 +187,7 @@ async function getOrderWithItems(orderId: number) {
       lineTotal: item.lineTotal,
       notes: item.notes ?? undefined,
       sellingUnit: suMap.get(item.productId)?.sellingUnit ?? undefined,
+      size: suMap.get(item.productId)?.size ?? undefined,
       isTaxable: suMap.get(item.productId)?.isTaxable ?? undefined,
     })),
   };
@@ -281,6 +282,7 @@ router.get("/orders", async (req, res): Promise<void> => {
       lineTotal: item.lineTotal,
       notes: item.notes ?? undefined,
       sellingUnit: suMap.get(item.productId)?.sellingUnit ?? undefined,
+      size: suMap.get(item.productId)?.size ?? undefined,
       isTaxable: suMap.get(item.productId)?.isTaxable ?? undefined,
     })),
   }));

@@ -269,6 +269,9 @@ type ProductForm = {
   category: string;
   barcode: string;
   sku: string;
+  // Optional free-text size label (e.g. "12 inch", "Large", "500ml"). Empty
+  // string = "not set". Gated behind the show_product_size tenant setting.
+  size: string;
   inStock: boolean;
   stockCount: string;
   soldByWeight: boolean;
@@ -301,6 +304,7 @@ const emptyForm = (): ProductForm => ({
   category: "Beverages",
   barcode: "",
   sku: "",
+  size: "",
   inStock: true,
   stockCount: "0",
   soldByWeight: false,
@@ -1262,6 +1266,12 @@ function ImportProductsDialog({ open, onClose, onImported }: {
   const createProduct = useCreateProduct();
   const { toast } = useToast();
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const { data: settings } = useGetSettings();
+  const showProductSize = settings?.show_product_size === "true";
+  // Only expose the Size mapping target when the tenant feature is on.
+  const importFields = showProductSize
+    ? [...IMPORT_FIELDS, { key: "size", label: "Size", required: false }]
+    : IMPORT_FIELDS;
 
   const [step, setStep]         = useState<"upload" | "map" | "done">("upload");
   const [headers, setHeaders]   = useState<string[]>([]);
@@ -1303,6 +1313,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         else if (l === "stock quantity" || l === "quantity" || l === "qty") auto[h] = "stockCount"; // numeric qty
         else if (l === "in stock" || l === "track stock" || l === "available for sale") auto[h] = "inStock"; // boolean Y/N
         else if (l === "unit of measure" || l === "uom" || l === "selling unit" || l === "sold as" || l === "sell by" || l === "unit") auto[h] = "sellingUnit"; // free-text UOM
+        else if (showProductSize && (l === "size" || l === "item size" || l === "product size")) auto[h] = "size"; // optional size label
         // ── QuickBooks POS exact-header matches ──
         else if (l === "department")                                    auto[h] = "category";     // QBPOS category
         else if (l === "regular price" || l === "list price")           auto[h] = "price";        // QBPOS price
@@ -1361,7 +1372,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       const category   = d.category?.trim() || "General";
       try {
         await new Promise<void>((resolve, reject) => {
-          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, sku: d.sku?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false, sellingUnit: d.sellingUnit?.trim() || undefined } },
+          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, sku: d.sku?.trim() || undefined, size: showProductSize ? (d.size?.trim() || undefined) : undefined, stockCount, inStock: stockCount > 0 ? inStock : false, sellingUnit: d.sellingUnit?.trim() || undefined } },
             { onSuccess: () => resolve(), onError: (e) => reject(e) });
         });
         out.push({ row: i + 2, name: d.name, status: "ok" });
@@ -1458,7 +1469,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
               <div className="rounded-lg border border-border bg-secondary/10 p-4 text-xs text-muted-foreground space-y-1">
                 <p className="font-semibold text-foreground text-sm mb-2">Expected columns</p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-                  {IMPORT_FIELDS.map(f => (
+                  {importFields.map(f => (
                     <span key={f.key}><span className="font-medium text-foreground">{f.label}</span>{f.required ? <span className="text-red-400 ml-0.5">*</span> : <span className="text-muted-foreground"> (optional)</span>}</span>
                   ))}
                 </div>
@@ -1488,7 +1499,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
                         <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__skip__">— Skip this column —</SelectItem>
-                          {IMPORT_FIELDS.map(f => (
+                          {importFields.map(f => (
                             <SelectItem key={f.key} value={f.key}>
                               {f.label}{f.required ? " *" : ""}
                             </SelectItem>
@@ -1511,7 +1522,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
                             <th key={h} className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">
                               {h}
                               {mapping[h] && mapping[h] !== "__skip__" && (
-                                <span className="ml-1 text-[10px] text-primary font-normal">→ {IMPORT_FIELDS.find(f => f.key === mapping[h])?.label}</span>
+                                <span className="ml-1 text-[10px] text-primary font-normal">→ {importFields.find(f => f.key === mapping[h])?.label}</span>
                               )}
                             </th>
                           ))}
@@ -2848,6 +2859,7 @@ export function Products() {
   const { toast } = useToast();
   const { data: settings } = useGetSettings();
   const businessName = settings?.business_name || "My Store";
+  const showProductSize = settings?.show_product_size === "true";
   // Tenant default markup % (UI-only; not part of the generated settings type).
   const defaultMarkupSetting =
     (settings as { default_markup_percentage?: string } | undefined)?.default_markup_percentage ?? "";
@@ -3460,6 +3472,7 @@ export function Products() {
       category: p.category,
       barcode: p.barcode ?? "",
       sku: p.sku ?? "",
+      size: p.size ?? "",
       inStock: p.inStock,
       stockCount: p.stockCount.toString(),
       soldByWeight: !!pp.soldByWeight,
@@ -3528,6 +3541,9 @@ export function Products() {
       category: form.category,
       barcode: form.barcode || undefined,
       sku: form.sku || undefined,
+      // Only send size when the feature is on, so a tenant with it off never
+      // overwrites an existing size (undefined = no write on update).
+      size: showProductSize ? (form.size.trim() === "" ? null : form.size.trim()) : undefined,
       inStock: isComposite ? true : form.inStock,
       stockCount: isComposite ? 0 : (parseFloat(form.stockCount) || 0),
       soldByWeight: form.soldByWeight,
@@ -3888,6 +3904,7 @@ export function Products() {
                       <Badge variant="outline" className="text-[10px] shrink-0">{product.category}</Badge>
                     </div>
                     {product.sku && <p className="text-[11px] text-muted-foreground/80 font-mono truncate mt-0.5">SKU: {product.sku}</p>}
+                    {showProductSize && product.size && <p className="text-[11px] text-muted-foreground/80 truncate mt-0.5">Size: {product.size}</p>}
                   </CardHeader>
                   <CardContent className="pt-0 space-y-3">
                     <div className="flex items-center justify-between">
@@ -4009,6 +4026,7 @@ export function Products() {
                     </p>
                     {product.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{product.description}</p>}
                     {product.sku && <p className="text-[11px] text-muted-foreground/80 font-mono truncate mt-0.5">SKU: {product.sku}</p>}
+                    {showProductSize && product.size && <p className="text-[11px] text-muted-foreground/80 truncate mt-0.5">Size: {product.size}</p>}
                   </div>
 
                   {/* Category */}
@@ -5434,6 +5452,15 @@ export function Products() {
                     <Input value={form.sku} onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))} placeholder="e.g. JC001" />
                   </div>
                 </div>
+                {showProductSize && (
+                  <div className="grid gap-1.5">
+                    <Label>
+                      Size{" "}
+                      <span className="text-muted-foreground text-[11px]">(optional — shows on POS &amp; receipts)</span>
+                    </Label>
+                    <Input value={form.size} onChange={(e) => setForm((f) => ({ ...f, size: e.target.value }))} placeholder="e.g. 12 inch, Large, 500ml" />
+                  </div>
+                )}
                 <div className="grid gap-1.5">
                   <Label>
                     Unit of measure{" "}

@@ -43,6 +43,12 @@ export const ListProductsResponseItem = zod.object({
   imageUrl: zod.string().nullish(),
   barcode: zod.string().nullish(),
   sku: zod.string().nullish(),
+  size: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+    ),
   inStock: zod.boolean(),
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
@@ -107,6 +113,12 @@ export const CreateProductBody = zod.object({
   imageUrl: zod.string().optional(),
   barcode: zod.string().optional(),
   sku: zod.string().optional(),
+  size: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+    ),
   inStock: zod.boolean().optional(),
   stockCount: zod.number().optional(),
   soldByWeight: zod.boolean().optional(),
@@ -155,6 +167,12 @@ export const GetProductResponse = zod.object({
   imageUrl: zod.string().nullish(),
   barcode: zod.string().nullish(),
   sku: zod.string().nullish(),
+  size: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+    ),
   inStock: zod.boolean(),
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
@@ -222,6 +240,12 @@ export const UpdateProductBody = zod.object({
   imageUrl: zod.string().optional(),
   barcode: zod.string().optional(),
   sku: zod.string().optional(),
+  size: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+    ),
   inStock: zod.boolean().optional(),
   stockCount: zod.number().optional(),
   soldByWeight: zod.boolean().optional(),
@@ -263,6 +287,12 @@ export const UpdateProductResponse = zod.object({
   imageUrl: zod.string().nullish(),
   barcode: zod.string().nullish(),
   sku: zod.string().nullish(),
+  size: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+    ),
   inStock: zod.boolean(),
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),
@@ -1014,6 +1044,12 @@ export const ListOrdersResponseItem = zod.object({
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
         ),
+      size: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text product size label of the product (e.g. \"12 inch\", \"Large\", \"500ml\"). Surfaced on the POS and receipts when show_product_size is on. NULL = not set.',
+        ),
       isTaxable: zod
         .boolean()
         .optional()
@@ -1278,6 +1314,12 @@ export const GetOrderResponse = zod.object({
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
         ),
+      size: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text product size label of the product (e.g. \"12 inch\", \"Large\", \"500ml\"). Surfaced on the POS and receipts when show_product_size is on. NULL = not set.',
+        ),
       isTaxable: zod
         .boolean()
         .optional()
@@ -1455,6 +1497,12 @@ export const UpdateOrderStatusResponse = zod.object({
         .nullish()
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
+      size: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text product size label of the product (e.g. \"12 inch\", \"Large\", \"500ml\"). Surfaced on the POS and receipts when show_product_size is on. NULL = not set.',
         ),
       isTaxable: zod
         .boolean()
@@ -1648,6 +1696,12 @@ export const RefundOrderItemsResponse = zod.object({
           .nullish()
           .describe(
             'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+          ),
+        size: zod
+          .string()
+          .nullish()
+          .describe(
+            'Optional free-text product size label of the product (e.g. \"12 inch\", \"Large\", \"500ml\"). Surfaced on the POS and receipts when show_product_size is on. NULL = not set.',
           ),
         isTaxable: zod
           .boolean()
@@ -1876,6 +1930,12 @@ export const ChargeOrderResponse = zod.object({
         .nullish()
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
+        ),
+      size: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text product size label of the product (e.g. \"12 inch\", \"Large\", \"500ml\"). Surfaced on the POS and receipts when show_product_size is on. NULL = not set.',
         ),
       isTaxable: zod
         .boolean()
@@ -2566,6 +2626,12 @@ export const GetRecentOrdersResponseItem = zod.object({
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
         ),
+      size: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text product size label of the product (e.g. \"12 inch\", \"Large\", \"500ml\"). Surfaced on the POS and receipts when show_product_size is on. NULL = not set.',
+        ),
       isTaxable: zod
         .boolean()
         .optional()
@@ -2921,6 +2987,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
         .describe(
           'Optional free-text selling unit \/ UOM label of the product (e.g. \"each\", \"case\"). Surfaced on the POS and receipts. NULL = not set.',
         ),
+      size: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional free-text product size label of the product (e.g. \"12 inch\", \"Large\", \"500ml\"). Surfaced on the POS and receipts when show_product_size is on. NULL = not set.',
+        ),
       isTaxable: zod
         .boolean()
         .optional()
@@ -2958,6 +3030,12 @@ export const GetLowStockProductsResponseItem = zod.object({
   imageUrl: zod.string().nullish(),
   barcode: zod.string().nullish(),
   sku: zod.string().nullish(),
+  size: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+    ),
   inStock: zod.boolean(),
   stockCount: zod.number(),
   soldByWeight: zod.boolean(),

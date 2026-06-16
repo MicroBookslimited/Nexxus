@@ -2421,6 +2421,10 @@ components:
         sku:
           type: string
           nullable: true
+        size:
+          type: string
+          nullable: true
+          description: Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on. NULL = not set.
         inStock:
           type: boolean
         stockCount:
@@ -2620,6 +2624,10 @@ components:
           type: string
         sku:
           type: string
+        size:
+          type: string
+          nullable: true
+          description: Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.
         inStock:
           type: boolean
         stockCount:
@@ -2963,6 +2971,10 @@ components:
           type: string
           nullable: true
           description: Optional free-text selling unit / UOM label of the product (e.g. "each", "case"). Surfaced on the POS and receipts. NULL = not set.
+        size:
+          type: string
+          nullable: true
+          description: Optional free-text product size label of the product (e.g. "12 inch", "Large", "500ml"). Surfaced on the POS and receipts when show_product_size is on. NULL = not set.
         isTaxable:
           type: boolean
           description: Whether the product is taxable (resolved live from the product). Surfaced so receipts can mark lines as T (taxable) or N (non-taxable).

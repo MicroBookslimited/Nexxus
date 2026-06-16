@@ -67,6 +67,7 @@ export function AdminSettings() {
   const [hardwareUiMode, setHardwareUiMode] = useState(false);
   const [supermarketUiMode, setSupermarketUiMode] = useState(false);
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
+  const [showProductSize, setShowProductSize] = useState(false);
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
   const [sendingTest, setSendingTest] = useState(false);
   const [sendingLowStockTest, setSendingLowStockTest] = useState(false);
@@ -124,6 +125,7 @@ export function AdminSettings() {
     setHardwareUiMode(settings.hardware_ui_mode === "true");
     setSupermarketUiMode(settings.supermarket_ui_mode === "true");
     setKioskLockEnabled(settings.kiosk_lock_enabled === "true");
+    setShowProductSize(settings.show_product_size === "true");
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
     setDirty(false);
   }, [settings]);
@@ -175,6 +177,7 @@ export function AdminSettings() {
           hardware_ui_mode: hardwareUiMode ? "true" : "false",
           supermarket_ui_mode: supermarketUiMode ? "true" : "false",
           kiosk_lock_enabled: kioskLockEnabled ? "true" : "false",
+          show_product_size: showProductSize ? "true" : "false",
           stock_method: stockMethod,
         },
       },
@@ -1588,6 +1591,31 @@ export function AdminSettings() {
               </ul>
             </div>
           )}
+
+          {/* Product Size */}
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div className="pr-4">
+              <p className="text-sm font-medium">Show Product Size</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                When on, an optional Size field appears on the product editor, products list, and CSV import, and the size is shown on POS product cards, search results, and printed receipts. Leave off to hide it everywhere.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showProductSize}
+              onClick={() => { setShowProductSize(!showProductSize); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                showProductSize ? "bg-teal-500" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                showProductSize ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
         </CardContent>
       </Card>
 

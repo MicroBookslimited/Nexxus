@@ -464,6 +464,7 @@ export function POS() {
   );
   const createOrder = useCreateOrder();
   const { data: settings } = useGetSettings();
+  const showProductSize = settings?.show_product_size === "true";
   const baseCurrency = settings?.base_currency || "JMD";
   const secondaryCurrency = settings?.secondary_currency || "";
   const exchangeRate = parseFloat(settings?.currency_rate || "0");
@@ -1789,6 +1790,7 @@ export function POS() {
             productId: item.productId,
             productName: item.productName,
             sellingUnit: products?.find((p) => p.id === item.productId)?.sellingUnit ?? null,
+            size: products?.find((p) => p.id === item.productId)?.size ?? null,
             quantity: item.quantity,
             unitPrice: itemEffOffline,
             // Persist the original (untiered) base unit price so the receipt
@@ -4529,6 +4531,7 @@ export function POS() {
                         <p className="text-[11px] text-white/60 truncate">
                           {p.category}
                           {p.sku ? <> &middot; SKU <span className="font-mono">{p.sku}</span></> : null}
+                          {showProductSize && p.size ? <> &middot; Size <span className="font-mono">{p.size}</span></> : null}
                         </p>
                       </div>
                       <div className="text-right shrink-0">

@@ -15,6 +15,7 @@ export interface ReceiptSettings {
   receipt_size?: string;       // "58mm" | "80mm"
   receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant" | "hardware"
   receipt_barcode?: string;    // "true" | "false" — print a CODE128 barcode of the receipt number in the footer
+  show_product_size?: string;  // "true" | "false" — surface the optional product size label on line items
 }
 
 export interface ReceiptOrderItem {
@@ -37,6 +38,10 @@ export interface ReceiptOrderItem {
   // Optional free-text selling unit / UOM label (e.g. "each", "case",
   // "pieces"). When present, surfaced next to the line item on the receipt.
   sellingUnit?: string | null;
+  // Optional free-text product size label (e.g. "12 inch", "Large", "500ml").
+  // Surfaced next to the line item ONLY when the tenant show_product_size
+  // setting is on. Resolved live from the product at read time.
+  size?: string | null;
   // Whether the product is taxable. Resolved live from the product at read
   // time; used by the supermarket template to mark a line "T" (taxable) or
   // "N" (non-taxable). Undefined on older callers → treated as taxable.
@@ -190,10 +195,17 @@ export function receiptOrderFrom(
   };
 }
 
-/** HTML-escaped " (uom)" suffix for a line item, or "" when no selling unit. */
-function uomHtml(item: ReceiptOrderItem): string {
+/**
+ * HTML-escaped " (uom)" + optional " [size]" suffix for a line item. The size
+ * portion is only appended when the tenant `show_product_size` setting is on,
+ * so a tenant with the feature off sees no change on receipts.
+ */
+function uomHtml(item: ReceiptOrderItem, settings: ReceiptSettings = {}): string {
   const u = item.sellingUnit?.trim();
-  return u ? ` (${escHtml(u)})` : "";
+  const uomPart = u ? ` (${escHtml(u)})` : "";
+  const s = item.size?.trim();
+  const sizePart = settings.show_product_size === "true" && s ? ` [${escHtml(s)}]` : "";
+  return uomPart + sizePart;
 }
 
 function escHtml(str: string): string {
@@ -346,7 +358,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
         : fmt(item.lineTotal / (item.quantity || 1));
       let html = `
         <div class="r-row">
-          <span class="r-name">${escHtml(item.productName)}${uomHtml(item)}</span>
+          <span class="r-name">${escHtml(item.productName)}${uomHtml(item, settings)}</span>
           <span class="r-price">${fmt(item.lineTotal)}</span>
         </div>
         <div class="r-sub">${item.quantity} x ${unitPriceStr}</div>`;
@@ -524,7 +536,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
-    let html = `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)}${uomHtml(item)}${unitStr}</span><span class="nowrap">${fmtNum(item.lineTotal)}</span></div>`;
+    let html = `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)}${uomHtml(item, settings)}${unitStr}</span><span class="nowrap">${fmtNum(item.lineTotal)}</span></div>`;
     if (orig != null && unit != null && orig > unit) {
       const lineSaving = (orig - unit) * item.quantity;
       html += `<div class="row sub-row savings"><span>&nbsp;&#8627; You save (was ${fmtNum(orig)})</span><span class="nowrap">-${fmtNum(lineSaving)}</span></div>`;
@@ -922,7 +934,7 @@ function buildSupermarketReceiptHtml(
     let html = `
       <div class="sm-item">
         <span class="sm-item-qty">${escHtml(qtyStr)}</span>
-        <span class="sm-item-name">${escHtml(item.productName.toUpperCase())}${uomHtml(item)}</span>
+        <span class="sm-item-name">${escHtml(item.productName.toUpperCase())}${uomHtml(item, settings)}</span>
         <span class="sm-item-unit">${unit != null ? fmtNum(unit) : ""}</span>
         <span class="sm-item-price">${fmtNum(item.lineTotal)}</span>
         <span class="sm-item-tax">${taxFlag}</span>
@@ -1271,7 +1283,7 @@ function buildConvenienceReceiptHtml(
     let html = `
       <div class="cv-item">
         <span class="cv-item-qty">${escHtml(qtyStr)}</span>
-        <span class="cv-item-name">${escHtml(item.productName)}${uomHtml(item)}${unitStr}</span>
+        <span class="cv-item-name">${escHtml(item.productName)}${uomHtml(item, settings)}${unitStr}</span>
         <span class="cv-item-price">${fmtNum(item.lineTotal)}${taxInd}</span>
       </div>`;
     if (orig != null && unit != null && orig > unit) {
@@ -1564,7 +1576,7 @@ function buildStapleReceiptHtml(
       <div class="st-item-row">
         <span class="st-qty">${item.quantity}</span>
         <span class="st-name-sku">
-          <span class="st-name">${escHtml(item.productName)}${uomHtml(item)}</span>
+          <span class="st-name">${escHtml(item.productName)}${uomHtml(item, settings)}</span>
           <span class="st-sku">${escHtml(sku)}</span>
           ${subLines.map((s, idx) => `<span class="st-mod"${idx === savingsIdx ? ' style="color:#0a7a0a;font-weight:700;"' : ""}>${escHtml(s)}</span>`).join("")}
           ${mods.map(m => `<span class="st-mod">${escHtml(m)}</span>`).join("")}
@@ -1841,7 +1853,7 @@ function buildHardwareReceiptHtml(
       : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     return `
       <tr>
-        <td class="hw-item">${escHtml(item.productName)}${uomHtml(item)}${item.notes && item.notes.trim() ? `<div style="font-size:9px;color:#444;font-style:italic;">Note: ${escHtml(item.notes.trim())}</div>` : ""}</td>
+        <td class="hw-item">${escHtml(item.productName)}${uomHtml(item, settings)}${item.notes && item.notes.trim() ? `<div style="font-size:9px;color:#444;font-style:italic;">Note: ${escHtml(item.notes.trim())}</div>` : ""}</td>
         <td class="hw-num">${fmtNum(item.quantity)}</td>
         <td class="hw-attr">${escHtml(attribute || "—")}</td>
         <td class="hw-attr">${escHtml(size || "—")}</td>
@@ -2116,7 +2128,7 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
     const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
-    lines.push(`${item.quantity}× ${item.productName}${item.sellingUnit?.trim() ? ` (${item.sellingUnit.trim()})` : ""}${unitStr}  ${fmtNum(item.lineTotal)}`);
+    lines.push(`${item.quantity}× ${item.productName}${item.sellingUnit?.trim() ? ` (${item.sellingUnit.trim()})` : ""}${settings.show_product_size === "true" && item.size?.trim() ? ` [${item.size.trim()}]` : ""}${unitStr}  ${fmtNum(item.lineTotal)}`);
     if (orig != null && unit != null && orig > unit) {
       const lineSaving = (orig - unit) * item.quantity;
       lines.push(`   ↳ You save (was ${fmtNum(orig)}) -${fmtNum(lineSaving)}`);
@@ -2238,7 +2250,7 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
     const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
-    let html = row(`${item.quantity}&times; ${escHtml(item.productName)}${uomHtml(item)}${unitStr}`, fmtNum(item.lineTotal), "item");
+    let html = row(`${item.quantity}&times; ${escHtml(item.productName)}${uomHtml(item, settings)}${unitStr}`, fmtNum(item.lineTotal), "item");
     if (orig != null && unit != null && orig > unit) {
       const lineSaving = (orig - unit) * item.quantity;
       html += row(`&nbsp;&#8627; You save (was ${fmtNum(orig)})`, `-${fmtNum(lineSaving)}`, "sub");
@@ -2457,6 +2469,8 @@ export interface RefundReceiptLine {
   /** Money refunded for this line (gross of the item: quantity × unitPrice). */
   amount: number;
   sellingUnit?: string | null;
+  /** Optional product size label; only rendered when show_product_size is on. */
+  size?: string | null;
 }
 
 /**
@@ -2521,12 +2535,13 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, settings: Receip
 
   const itemsHtml = data.items.map((it) => {
     const uom = it.sellingUnit?.trim() ? ` (${escHtml(it.sellingUnit.trim())})` : "";
+    const sizeLabel = settings.show_product_size === "true" && it.size?.trim() ? ` [${escHtml(it.size.trim())}]` : "";
     const qtyStr = Number.isInteger(it.quantity)
       ? String(it.quantity)
       : it.quantity.toFixed(3).replace(/\.?0+$/, "");
     return `
       <div class="rf-item">
-        <div class="rf-item-name">${escHtml(it.productName)}${uom}</div>
+        <div class="rf-item-name">${escHtml(it.productName)}${uom}${sizeLabel}</div>
         <div class="rf-item-line"><span>${qtyStr} &times; ${fmtNum(it.unitPrice)}</span><span>${fmtNum(it.amount)}</span></div>
       </div>`;
   }).join("");
