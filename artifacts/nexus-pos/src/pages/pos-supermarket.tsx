@@ -17,6 +17,7 @@ import {
 import { useQueryClient, useQueries } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
 import { usePosChrome } from "@/contexts/PosChromeContext";
+import { ZoomControls } from "@/components/ZoomControls";
 import { useToast } from "@/hooks/use-toast";
 import { PinPad } from "@/components/PinPad";
 import { Button } from "@/components/ui/button";
@@ -901,6 +902,10 @@ export function PosSupermarket() {
         </div>
 
         <div className="ml-auto flex items-center gap-2 shrink-0">
+          <ZoomControls
+            buttonClassName="inline-flex items-center justify-center rounded-xl border border-border bg-card hover:bg-muted px-2.5 h-11 text-foreground shadow-sm transition"
+            labelClassName="text-foreground"
+          />
           <button
             onClick={toggleHeader}
             className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card hover:bg-muted px-3 h-11 text-xs font-semibold text-foreground shadow-sm transition"

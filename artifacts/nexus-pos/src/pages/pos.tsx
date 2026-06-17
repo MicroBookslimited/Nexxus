@@ -46,6 +46,7 @@ import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
 import { useStaff } from "@/contexts/StaffContext";
 import { usePosChrome } from "@/contexts/PosChromeContext";
+import { ZoomControls } from "@/components/ZoomControls";
 import { useLocation, Link } from "wouter";
 import { useQueryClient, useQueries, useQuery } from "@tanstack/react-query";
 import { getPricingTiers, previewTierPrice, type PricingTier } from "@/lib/saas-api";
@@ -2219,6 +2220,10 @@ export function POS() {
             )}
           </div>
           <div className="shrink-0 flex items-center gap-1.5">
+            <ZoomControls
+              buttonClassName="flex items-center justify-center rounded-md border border-slate-500 bg-slate-600 p-1.5 text-white hover:bg-slate-500 hover:border-slate-400 active:scale-95 transition-all duration-150 shadow-sm"
+              labelClassName="text-white"
+            />
             <button
               title={headerHidden ? "Show menu" : "Hide menu"}
               onClick={toggleHeader}

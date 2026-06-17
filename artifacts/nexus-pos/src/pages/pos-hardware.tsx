@@ -20,6 +20,7 @@ import {
 import { useQueryClient, useQueries } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
 import { usePosChrome } from "@/contexts/PosChromeContext";
+import { ZoomControls } from "@/components/ZoomControls";
 import { useToast } from "@/hooks/use-toast";
 import { PinPad } from "@/components/PinPad";
 import { Button } from "@/components/ui/button";
@@ -1347,6 +1348,10 @@ export function PosHardware() {
 
           {/* User badge */}
           <div className="shrink-0 flex items-center gap-2">
+            <ZoomControls
+              buttonClassName="h-11 inline-flex items-center justify-center rounded-xl bg-[#0a1a2a] border border-white/10 px-2.5 text-slate-300 hover:bg-white/5 transition"
+              labelClassName="text-slate-300"
+            />
             <button
               onClick={toggleHeader}
               className="h-11 inline-flex items-center gap-1.5 rounded-xl bg-[#0a1a2a] border border-white/10 px-3 text-sm font-medium text-slate-300 hover:bg-white/5 transition"
