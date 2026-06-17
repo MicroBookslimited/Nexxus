@@ -14,7 +14,7 @@ import {
   useDeleteHeldOrder,
   getListHeldOrdersQueryKey,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQueries } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
 import { usePosChrome } from "@/contexts/PosChromeContext";
 import { useToast } from "@/hooks/use-toast";
@@ -59,7 +59,7 @@ import {
 import { buildReceiptHtml, receiptOrderFrom } from "@/lib/receipt";
 import { CardTypeDialog, type CardType } from "@/components/card-type-dialog";
 import { printOrderReceipt } from "@/lib/print-receipt";
-import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, lookupGiftVoucher, type VoucherLookupResult, ApiError } from "@/lib/saas-api";
+import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, lookupGiftVoucher, type VoucherLookupResult, ApiError, getPricingTiers, previewTierPrice, type PricingTier } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -273,6 +273,34 @@ export function PosSupermarket() {
   const [qtyInput, setQtyInput] = useState("");
 
   const cartBottomRef = useRef<HTMLDivElement>(null);
+
+  // ── Volume / tier pricing ────────────────────────────────────────────────
+  // Fetch pricing tiers for every product currently in the cart so the cart
+  // display, subtotal, and tax all reflect the correct tiered unit price.
+  // (The checkout payload sends {productId, quantity} and the server applies
+  // tiers authoritatively — this only makes the pre-checkout display accurate.)
+  const cartProductIds = useMemo(
+    () => Array.from(new Set(cart.map((c) => c.productId))),
+    [cart],
+  );
+  const tierQueries = useQueries({
+    queries: cartProductIds.map((pid) => ({
+      queryKey: ["pricing-tiers", pid],
+      queryFn: () => getPricingTiers(pid),
+      staleTime: 60_000,
+    })),
+  });
+  const pricingTiersByProduct = useMemo(() => {
+    const m = new Map<number, PricingTier[]>();
+    cartProductIds.forEach((pid, i) => {
+      m.set(pid, (tierQueries[i]?.data as PricingTier[] | undefined) ?? []);
+    });
+    return m;
+  }, [cartProductIds, tierQueries]);
+
+  /** Tier-adjusted unit price for a cart line (falls back to base price). */
+  const effectiveUnitPrice = (c: CartLine) =>
+    previewTierPrice(c.price, c.quantity, pricingTiersByProduct.get(c.productId) ?? []).unitPrice;
   useEffect(() => {
     if (cart.length > 0) cartBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [cart.length]);
@@ -586,8 +614,8 @@ export function PosSupermarket() {
   };
 
   /* ── Totals ────────────────────────────────────────────────────────────── */
-  const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
-  const taxBase = cart.reduce((s, c) => (c.isTaxable ? s + c.price * c.quantity : s), 0);
+  const subtotal = cart.reduce((s, c) => s + effectiveUnitPrice(c) * c.quantity, 0);
+  const taxBase = cart.reduce((s, c) => (c.isTaxable ? s + effectiveUnitPrice(c) * c.quantity : s), 0);
   const tax =
     taxMode === "inclusive" ? (taxBase * taxRate) / (1 + taxRate) : taxBase * taxRate;
   const total = subtotal + (taxMode === "exclusive" ? tax : 0);
@@ -1020,7 +1048,12 @@ export function PosSupermarket() {
                         })()}
                       </div>
                       <div className="text-sm font-mono text-cyan-600 dark:text-cyan-300/80 truncate">
-                        {c.barcode ?? `#${c.productId}`} · @ {formatCurrency(c.price, baseCurrency)}
+                        {c.barcode ?? `#${c.productId}`} · @ {formatCurrency(effectiveUnitPrice(c), baseCurrency)}
+                        {effectiveUnitPrice(c) < c.price && (
+                          <span className="ml-1.5 text-emerald-500 font-semibold">
+                            ↓ Vol. {formatCurrency(c.price, baseCurrency)}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -1039,7 +1072,7 @@ export function PosSupermarket() {
                       </button>
                     </div>
                     <div className="text-right font-mono text-2xl font-extrabold text-foreground">
-                      {formatCurrency(c.price * c.quantity, baseCurrency)}
+                      {formatCurrency(effectiveUnitPrice(c) * c.quantity, baseCurrency)}
                     </div>
                     <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
                       <button
