@@ -80,27 +80,13 @@ function getRedirectUri(): string {
 
 /**
  * Resolve the Shopify APP credentials (Client ID + Secret) used to drive the
- * OAuth flow for a tenant. The primary source is the tenant's own credentials,
- * entered in tenant settings and stored encrypted. As a backward-compatible
- * fallback (for a single platform-wide app), the SHOPIFY_API_KEY /
- * SHOPIFY_API_SECRET env vars are used when the tenant has none saved.
- * Returns null when neither source is configured.
+ * OAuth flow. Credentials are platform-managed via environment variables only
+ * (SHOPIFY_API_KEY / SHOPIFY_API_SECRET) — never stored per-tenant.
+ * Returns null when env vars are not configured.
  */
 async function getAppCredentials(
-  tenantId: number,
+  _tenantId: number,
 ): Promise<{ clientId: string; clientSecret: string; apiVersion: string } | null> {
-  const [row] = await db
-    .select()
-    .from(shopifyAppCredentialsTable)
-    .where(eq(shopifyAppCredentialsTable.tenantId, tenantId))
-    .limit(1);
-  if (row) {
-    return {
-      clientId: row.clientId,
-      clientSecret: decryptToken(row.clientSecretEncrypted),
-      apiVersion: row.apiVersion || DEFAULT_API_VERSION,
-    };
-  }
   const envId = process.env["SHOPIFY_API_KEY"];
   const envSecret = process.env["SHOPIFY_API_SECRET"];
   if (envId && envSecret) {
@@ -314,97 +300,18 @@ router.get("/shopify/connections", async (req, res): Promise<void> => {
   res.json(rows.map(sanitize));
 });
 
-/* ─── GET /shopify/app-credentials — the tenant's app Client ID/version (secret redacted) ─── */
+/* ─── GET /shopify/app-credentials — reports whether platform env-var credentials are set ─── */
 router.get("/shopify/app-credentials", async (req, res): Promise<void> => {
   const payload = getTenantPayload(req);
   if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
-  const [row] = await db
-    .select()
-    .from(shopifyAppCredentialsTable)
-    .where(eq(shopifyAppCredentialsTable.tenantId, payload.tenantId))
-    .limit(1);
-  res.json({
-    configured: !!row,
-    clientId: row?.clientId ?? null,
-    apiVersion: row?.apiVersion ?? DEFAULT_API_VERSION,
-  });
+  const configured = !!(process.env["SHOPIFY_API_KEY"] && process.env["SHOPIFY_API_SECRET"]);
+  res.json({ configured, clientId: null, apiVersion: DEFAULT_API_VERSION });
 });
 
-/* ─── PUT /shopify/app-credentials — save the tenant's Shopify app Client ID + Secret ─── */
-const AppCredentialsBody = z.object({
-  clientId: z.string().trim().min(1),
-  clientSecret: z.string().trim().min(1).optional(),
-  apiVersion: z
-    .string()
-    .trim()
-    .regex(/^\d{4}-\d{2}$/)
-    .optional(),
-});
-
-router.put("/shopify/app-credentials", async (req, res): Promise<void> => {
-  if (!requireFullTenant(req as never, res as never)) return;
-  const payload = getTenantPayload(req);
-  if (!payload) { res.status(401).json({ error: "Unauthorized" }); return; }
-
-  const parsed = AppCredentialsBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid body", details: parsed.error.issues });
-    return;
-  }
-  const { clientId, clientSecret, apiVersion } = parsed.data;
-
-  const [existing] = await db
-    .select()
-    .from(shopifyAppCredentialsTable)
-    .where(eq(shopifyAppCredentialsTable.tenantId, payload.tenantId))
-    .limit(1);
-
-  // The secret is required on first save; on update it may be omitted to keep
-  // the stored one (so the tenant can change just the Client ID or version).
-  if (!existing && !clientSecret) {
-    res.status(400).json({ error: "Enter your Shopify app's Client Secret." });
-    return;
-  }
-
-  const now = new Date();
-  if (existing) {
-    await db
-      .update(shopifyAppCredentialsTable)
-      .set({
-        clientId: clientId.trim(),
-        ...(clientSecret ? { clientSecretEncrypted: encryptToken(clientSecret.trim()) } : {}),
-        ...(apiVersion ? { apiVersion } : {}),
-        updatedAt: now,
-      })
-      .where(eq(shopifyAppCredentialsTable.tenantId, payload.tenantId));
-  } else {
-    await db.insert(shopifyAppCredentialsTable).values({
-      tenantId: payload.tenantId,
-      clientId: clientId.trim(),
-      clientSecretEncrypted: encryptToken(clientSecret!.trim()),
-      apiVersion: apiVersion ?? DEFAULT_API_VERSION,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-
-  await logAudit({
-    tenantId: payload.tenantId,
-    action: existing ? "shopify.app_credentials.updated" : "shopify.app_credentials.created",
-    entityType: "shopify_app_credentials",
-    entityId: String(payload.tenantId),
-    ipAddress: req.ip,
-  });
-
-  const [row] = await db
-    .select()
-    .from(shopifyAppCredentialsTable)
-    .where(eq(shopifyAppCredentialsTable.tenantId, payload.tenantId))
-    .limit(1);
-  res.json({
-    configured: !!row,
-    clientId: row?.clientId ?? null,
-    apiVersion: row?.apiVersion ?? DEFAULT_API_VERSION,
+/* ─── PUT /shopify/app-credentials — deprecated; credentials are platform-managed via env vars ─── */
+router.put("/shopify/app-credentials", async (_req, res): Promise<void> => {
+  res.status(410).json({
+    error: "Shopify app credentials are managed via environment variables (SHOPIFY_API_KEY / SHOPIFY_API_SECRET) and cannot be set per-tenant.",
   });
 });
 

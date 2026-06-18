@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react";
 import {
   useListShopifyConnections,
-  useGetShopifyAppCredentials,
-  useSaveShopifyAppCredentials,
   useStartShopifyOAuth,
   useTestShopifyConnection,
   useUpdateShopifySyncSettings,
   useDisconnectShopify,
   getListShopifyConnectionsQueryKey,
-  getGetShopifyAppCredentialsQueryKey,
   type ShopifyConnectionStatus,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,10 +22,8 @@ import { useToast } from "@/hooks/use-toast";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import {
   ShoppingBag, CheckCircle2, AlertCircle, Loader2, ChevronDown, ChevronRight,
-  Plug, Unplug, Store, Key, Eye, EyeOff, Save,
+  Plug, Unplug, Store,
 } from "lucide-react";
-
-const DEFAULT_API_VERSION = "2025-01";
 
 type LocationRow = { id: number; name: string };
 
@@ -36,9 +31,7 @@ export function ShopifyIntegrationCard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: connections, isLoading } = useListShopifyConnections();
-  const { data: appCreds, isLoading: credsLoading } = useGetShopifyAppCredentials();
 
-  const saveCredsMutation = useSaveShopifyAppCredentials();
   const startMutation = useStartShopifyOAuth();
   const testMutation = useTestShopifyConnection();
   const syncMutation = useUpdateShopifySyncSettings();
@@ -49,25 +42,8 @@ export function ShopifyIntegrationCard() {
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [busyId, setBusyId] = useState<number | null>(null);
 
-  // App-credentials form (the tenant's Shopify app Client ID + Secret).
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [apiVersion, setApiVersion] = useState(DEFAULT_API_VERSION);
-  const [showSecret, setShowSecret] = useState(false);
-  const [showCredsForm, setShowCredsForm] = useState(false);
-
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: getListShopifyConnectionsQueryKey() });
-  const invalidateCreds = () =>
-    queryClient.invalidateQueries({ queryKey: getGetShopifyAppCredentialsQueryKey() });
-
-  // Prefill the credentials form from the saved values (secret stays blank).
-  useEffect(() => {
-    if (appCreds?.clientId) setClientId(appCreds.clientId);
-    if (appCreds?.apiVersion) setApiVersion(appCreds.apiVersion);
-    // Auto-open the form when nothing is configured yet.
-    if (appCreds && !appCreds.configured) setShowCredsForm(true);
-  }, [appCreds?.clientId, appCreds?.apiVersion, appCreds?.configured]);
 
   // Load locations (for the per-store default-location picker).
   useEffect(() => {
@@ -106,35 +82,6 @@ export function ShopifyIntegrationCard() {
     window.history.replaceState(null, "", newUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function handleSaveCreds() {
-    const id = clientId.trim();
-    if (!id) {
-      toast({ title: "Missing Client ID", description: "Enter your Shopify app's Client ID.", variant: "destructive" });
-      return;
-    }
-    if (!appCreds?.configured && !clientSecret.trim()) {
-      toast({ title: "Missing Client Secret", description: "Enter your Shopify app's Client Secret.", variant: "destructive" });
-      return;
-    }
-    try {
-      await saveCredsMutation.mutateAsync({
-        data: {
-          clientId: id,
-          ...(clientSecret.trim() ? { clientSecret: clientSecret.trim() } : {}),
-          apiVersion: apiVersion.trim() || DEFAULT_API_VERSION,
-        },
-      });
-      setClientSecret("");
-      setShowSecret(false);
-      setShowCredsForm(false);
-      await invalidateCreds();
-      toast({ title: "Credentials saved", description: "Your Shopify app credentials are saved." });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save credentials.";
-      toast({ title: "Could not save", description: message, variant: "destructive" });
-    }
-  }
 
   async function handleConnect() {
     const domain = shopDomain.trim();
@@ -334,99 +281,11 @@ export function ShopifyIntegrationCard() {
               </div>
             )}
 
-            {/* ── App credentials (the tenant's own Shopify app Client ID + Secret) ── */}
-            <div className="space-y-3 pt-1 border-t border-border">
-              <div className="flex items-center justify-between pt-3">
-                <div className="flex items-center gap-2">
-                  <Key className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm font-medium">Shopify app credentials</p>
-                  {!credsLoading && (
-                    appCreds?.configured ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-600">
-                        <CheckCircle2 className="h-3 w-3" /> Configured
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600">
-                        <AlertCircle className="h-3 w-3" /> Required
-                      </span>
-                    )
-                  )}
-                </div>
-                {appCreds?.configured && (
-                  <Button size="sm" variant="ghost" onClick={() => setShowCredsForm((v) => !v)} className="gap-1.5">
-                    {showCredsForm ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                    {showCredsForm ? "Hide" : "Edit"}
-                  </Button>
-                )}
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                Create a custom app in your Shopify Partner / admin account and paste its API key
-                (Client ID) and API secret key (Client Secret) here. These are used to connect your
-                stores below.
-              </p>
-
-              {showCredsForm && (
-                <div className="space-y-2 rounded-lg border border-border p-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="shopify-client-id">Client ID (API key)</Label>
-                    <Input
-                      id="shopify-client-id"
-                      placeholder="e.g. f18484bbc8872f73bfeded9ac8a52a0f"
-                      value={clientId}
-                      onChange={(e) => setClientId(e.target.value)}
-                      autoComplete="off"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="shopify-client-secret">Client Secret (API secret key)</Label>
-                    <div className="relative">
-                      <Input
-                        id="shopify-client-secret"
-                        type={showSecret ? "text" : "password"}
-                        placeholder={appCreds?.configured ? "•••••••• (leave blank to keep current)" : "Your app's secret key"}
-                        value={clientSecret}
-                        onChange={(e) => setClientSecret(e.target.value)}
-                        autoComplete="off"
-                        className="pr-9"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowSecret((v) => !v)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        aria-label={showSecret ? "Hide secret" : "Show secret"}
-                      >
-                        {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="shopify-api-version">Admin API version</Label>
-                    <Input
-                      id="shopify-api-version"
-                      placeholder={DEFAULT_API_VERSION}
-                      value={apiVersion}
-                      onChange={(e) => setApiVersion(e.target.value)}
-                    />
-                  </div>
-                  <Button onClick={handleSaveCreds} disabled={saveCredsMutation.isPending} className="gap-1.5">
-                    {saveCredsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                    Save credentials
-                  </Button>
-                </div>
-              )}
-            </div>
-
             {/* ── Connect a (new) store ── */}
             <div className="space-y-3 pt-1 border-t border-border">
               <p className="text-sm font-medium pt-3">
                 {stores.length > 0 ? "Connect another store" : "Connect your Shopify store"}
               </p>
-              {!appCreds?.configured && (
-                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-2 text-xs text-amber-600">
-                  Save your Shopify app credentials above before connecting a store.
-                </div>
-              )}
               <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
                 <div className="space-y-1.5 flex-1">
                   <Label htmlFor="shopify-domain">Store domain</Label>
@@ -435,11 +294,10 @@ export function ShopifyIntegrationCard() {
                     placeholder="my-store.myshopify.com"
                     value={shopDomain}
                     onChange={(e) => setShopDomain(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && appCreds?.configured) void handleConnect(); }}
-                    disabled={!appCreds?.configured}
+                    onKeyDown={(e) => { if (e.key === "Enter") void handleConnect(); }}
                   />
                 </div>
-                <Button onClick={handleConnect} disabled={startMutation.isPending || !appCreds?.configured} className="gap-1.5">
+                <Button onClick={handleConnect} disabled={startMutation.isPending} className="gap-1.5">
                   {startMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
                   Connect store
                 </Button>
