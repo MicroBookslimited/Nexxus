@@ -6,7 +6,7 @@ import {
   useListProducts,
   type Product,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -45,6 +45,7 @@ import { useColors } from "@/hooks/useColors";
 import { useResponsive } from "@/hooks/useResponsive";
 import { printReceipt, type ReceiptItem, type ReceiptOrder, type ReceiptSettings } from "@/lib/escpos";
 import { formatMoney } from "@/lib/format";
+import { listPaymentMethods, type PaymentMethod } from "@/lib/nexus-api";
 
 function isSimple(p: Product) {
   return !p.hasVariants && !p.hasModifiers && !p.isComposite;
@@ -420,16 +421,103 @@ function CheckoutContent({
   const { config: printerConfig, ready: printerReady } = usePrinter();
   const [printing, setPrinting] = useState(false);
 
-  const [payment, setPayment] = useState<"cash" | "card">("cash");
-  // Debit/credit choice for card payments; persisted on the order and printed on the receipt.
+  // Payment method value matches the web POS: built-in types ("cash", "card",
+  // "split", "credit") use their type as the value; custom methods (e.g.
+  // "Cheque", "Bank Transfer") use their name.
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+  // Debit/credit choice for card payments (or the card portion of a split);
+  // persisted on the order and printed on the receipt. NOT related to the
+  // on-account "credit" payment method.
   const [cardType, setCardType] = useState<"debit" | "credit" | null>(null);
+  const [splitCard, setSplitCard] = useState("");
+  const [splitCash, setSplitCash] = useState("");
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [showCustomers, setShowCustomers] = useState(false);
   const [custSearch, setCustSearch] = useState("");
   const [discountFor, setDiscountFor] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<ReceiptOrder | null>(null);
 
+  const { data: pmData } = useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: listPaymentMethods,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const selectedCustomer = customers?.find((x) => x.id === customerId) ?? null;
+
+  const taxRate = parseFloat(settingsData?.tax_rate || "15") / 100;
+  const taxMode = (settingsData?.tax_mode as "exclusive" | "inclusive") ?? "exclusive";
+
+  // Estimate tax + total client-side. This mirrors the server for the common
+  // mobile case (no order-level discount or service charge). The server stays
+  // authoritative on the saved order; this only drives the on-screen totals and
+  // split-payment validation.
+  const taxableNet = useMemo(
+    () =>
+      cart.lines.reduce(
+        (s, l) =>
+          l.product.isTaxable ? s + Math.max(0, l.unitPrice * l.quantity - l.lineDiscount) : s,
+        0,
+      ),
+    [cart.lines],
+  );
+  const tax =
+    taxMode === "inclusive"
+      ? Math.round(((taxableNet * taxRate) / (1 + taxRate)) * 100) / 100
+      : Math.round(taxableNet * taxRate * 100) / 100;
+  const total =
+    taxMode === "inclusive"
+      ? Math.round(cart.subtotal * 100) / 100
+      : Math.round((cart.subtotal + tax) * 100) / 100;
+
+  const splitCardAmount = parseFloat(splitCard) || 0;
+  const splitCashAmount = parseFloat(splitCash) || 0;
+  const isSplitValid = Math.abs(splitCardAmount + splitCashAmount - total) < 0.01;
+
+  // Tenant-enabled payment methods, falling back to the standard set when none
+  // are configured (matches the web POS defaults).
+  const paymentMethods = useMemo<Array<Pick<PaymentMethod, "id" | "type" | "name" | "isDefault">>>(() => {
+    const enabled = (pmData ?? []).filter((m) => m.isEnabled);
+    if (enabled.length > 0) return enabled;
+    return [
+      { id: -2, type: "cash", name: "Cash", isDefault: true },
+      { id: -1, type: "card", name: "Card", isDefault: false },
+      { id: -4, type: "credit", name: "Credit", isDefault: false },
+      { id: -3, type: "split", name: "Split", isDefault: false },
+    ];
+  }, [pmData]);
+
+  // Resolve the tenant's default method (isDefault, else first enabled). Used to
+  // seed the selection and on reset, matching the web POS.
+  const defaultPaymentMethod = useMemo(() => {
+    const def = paymentMethods.find((m) => m.isDefault) ?? paymentMethods[0];
+    if (!def) return "cash";
+    return def.type === "custom" ? def.name : def.type;
+  }, [paymentMethods]);
+
+  const selectedMethod = paymentMethods.find(
+    (m) => (m.type === "custom" ? m.name : m.type) === paymentMethod,
+  );
+
+  // Keep the selection valid: if the current method isn't in the enabled list
+  // (initial load, or tenant disabled it), fall back to the resolved default.
+  useEffect(() => {
+    if (!selectedMethod) setPaymentMethod(defaultPaymentMethod);
+  }, [selectedMethod, defaultPaymentMethod]);
+  const paymentLabel =
+    paymentMethod === "cash"
+      ? "Cash"
+      : paymentMethod === "card"
+        ? cardType === "debit"
+          ? "Debit Card"
+          : cardType === "credit"
+            ? "Credit Card"
+            : "Card"
+        : paymentMethod === "credit"
+          ? "On Account"
+          : paymentMethod === "split"
+            ? "Split (Card + Cash)"
+            : selectedMethod?.name ?? paymentMethod;
 
   const receiptSettings: ReceiptSettings = {
     business_name: settingsData?.business_name,
@@ -448,18 +536,34 @@ function CheckoutContent({
     return list.filter((x) => x.name.toLowerCase().includes(q) || x.phone?.includes(q)).slice(0, 20);
   }, [customers, custSearch]);
 
-  // Card payments must declare debit vs credit so it can be printed on the receipt.
+  // Card payments (and the card portion of a split) must declare debit vs
+  // credit so it can be printed on the receipt.
   const promptCardType = () => {
     Alert.alert("Card type", "Is this a debit or credit card?", [
-      { text: "Debit Card", onPress: () => { setPayment("card"); setCardType("debit"); } },
-      { text: "Credit Card", onPress: () => { setPayment("card"); setCardType("credit"); } },
+      { text: "Debit Card", onPress: () => setCardType("debit") },
+      { text: "Credit Card", onPress: () => setCardType("credit") },
       { text: "Cancel", style: "cancel" },
     ]);
   };
 
+  // Selecting a payment method. Card/split prompt for debit-vs-credit; other
+  // methods clear any prior card-type choice.
+  const selectPaymentMethod = (m: Pick<PaymentMethod, "type" | "name">) => {
+    const value = m.type === "custom" ? m.name : m.type;
+    setPaymentMethod(value);
+    if (m.type === "card" || m.type === "split") {
+      setCardType(null);
+      promptCardType();
+    } else {
+      setCardType(null);
+    }
+  };
+
   const reset = () => {
-    setPayment("cash");
+    setPaymentMethod(defaultPaymentMethod);
     setCardType(null);
+    setSplitCard("");
+    setSplitCash("");
     setCustomerId(null);
     setShowCustomers(false);
     setCustSearch("");
@@ -478,8 +582,16 @@ function CheckoutContent({
 
   const charge = async () => {
     if (cart.lines.length === 0) return;
-    if (payment === "card" && !cardType) {
+    if ((paymentMethod === "card" || paymentMethod === "split") && !cardType) {
       promptCardType();
+      return;
+    }
+    if (paymentMethod === "credit" && !customerId) {
+      Alert.alert("Customer required", "Select a customer to record an on-account (credit) sale.");
+      return;
+    }
+    if (paymentMethod === "split" && !isSplitValid) {
+      Alert.alert("Split doesn't add up", `Card + Cash must equal ${formatMoney(total)}.`);
       return;
     }
     try {
@@ -496,8 +608,9 @@ function CheckoutContent({
               ...(discount > 0 ? { discountAmount: discount } : {}),
             };
           }),
-          paymentMethod: payment,
-          ...(payment === "card" && cardType ? { cardType } : {}),
+          paymentMethod,
+          ...((paymentMethod === "card" || paymentMethod === "split") && cardType ? { cardType } : {}),
+          ...(paymentMethod === "split" ? { splitCardAmount, splitCashAmount } : {}),
           ...(customerId ? { customerId } : {}),
         },
       });
@@ -520,14 +633,7 @@ function CheckoutContent({
         subtotal: order.subtotal,
         tax: order.tax,
         total: order.total,
-        paymentMethod:
-          payment === "cash"
-            ? "Cash"
-            : cardType === "debit"
-              ? "Debit Card"
-              : cardType === "credit"
-                ? "Credit Card"
-                : "Card",
+        paymentMethod: paymentLabel,
       };
       setReceipt(receiptOrder);
       cart.clear();
@@ -727,14 +833,63 @@ function CheckoutContent({
             <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("medium"), marginTop: 4 }}>
               PAYMENT METHOD
             </Text>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <Chip label="Cash" active={payment === "cash"} onPress={() => { setPayment("cash"); setCardType(null); }} />
-              <Chip
-                label={cardType === "debit" ? "Debit Card" : cardType === "credit" ? "Credit Card" : "Card"}
-                active={payment === "card"}
-                onPress={promptCardType}
-              />
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+              {paymentMethods.map((m) => {
+                const value = m.type === "custom" ? m.name : m.type;
+                const active = paymentMethod === value;
+                const label =
+                  m.type === "card" && active
+                    ? cardType === "debit"
+                      ? "Debit Card"
+                      : cardType === "credit"
+                        ? "Credit Card"
+                        : "Card"
+                    : m.name;
+                return <Chip key={m.id} label={label} active={active} onPress={() => selectPaymentMethod(m)} />;
+              })}
             </View>
+
+            {paymentMethod === "credit" && !customerId ? (
+              <Text style={{ color: "#F59E0B", fontSize: 12, fontFamily: fontFamily("medium") }}>
+                ⚠ Attach a customer above to record an on-account (credit) sale.
+              </Text>
+            ) : null}
+
+            {paymentMethod === "split" ? (
+              <Card style={{ gap: 10 }}>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Field
+                      label="Card amount"
+                      value={splitCard}
+                      onChangeText={setSplitCard}
+                      placeholder="0"
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Field
+                      label="Cash amount"
+                      value={splitCash}
+                      onChangeText={setSplitCash}
+                      placeholder="0"
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                </View>
+                <Text
+                  style={{
+                    color: isSplitValid ? c.mutedForeground : "#F59E0B",
+                    fontSize: 12,
+                    fontFamily: fontFamily("medium"),
+                  }}
+                >
+                  {isSplitValid
+                    ? `Card + Cash = ${formatMoney(total)} ✓`
+                    : `Card + Cash must equal ${formatMoney(total)}`}
+                </Text>
+              </Card>
+            ) : null}
           </ScrollView>
 
           {/* Footer */}
@@ -749,11 +904,11 @@ function CheckoutContent({
             }}
           >
             <Row label="Subtotal" value={formatMoney(cart.subtotal)} />
-            <Text style={{ color: c.mutedForeground, fontSize: 12 }}>
-              Tax is calculated on completion.
-            </Text>
+            <Row label={`Tax${taxMode === "inclusive" ? " (incl.)" : ""}`} value={formatMoney(tax)} />
+            <Divider />
+            <Row label="Total" value={formatMoney(total)} bold />
             <Button
-              label={`Charge ${formatMoney(cart.subtotal)}`}
+              label={`Charge ${formatMoney(total)}`}
               icon="credit-card"
               onPress={charge}
               loading={createOrder.isPending}

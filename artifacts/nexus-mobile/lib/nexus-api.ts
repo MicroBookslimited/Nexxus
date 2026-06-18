@@ -80,6 +80,23 @@ export function login(email: string, password: string): Promise<LoginResponse> {
   });
 }
 
+/* ───────────── Payment methods ───────────── */
+
+export interface PaymentMethod {
+  id: number;
+  tenantId: number;
+  name: string;
+  type: "cash" | "card" | "split" | "credit" | "digital" | "custom";
+  isEnabled: boolean;
+  isDefault: boolean;
+  sortOrder: number;
+}
+
+/** Tenant-configured payment methods (cash, card, credit, split, and custom names like Cheque / Bank Transfer). */
+export function listPaymentMethods(): Promise<PaymentMethod[]> {
+  return request<PaymentMethod[]>("/api/payment-methods");
+}
+
 /* ───────────── Stock counts ───────────── */
 
 export interface StockCountSession {

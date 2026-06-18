@@ -3,10 +3,13 @@ name: POS checkout layout drift
 description: NEXXUS has three independent POS checkout layouts whose createOrder payloads drift; a field added to one is silently missing from the others.
 ---
 
-There are THREE separate POS checkout screens, each with its own `createOrder.mutate` payload:
-`pos.tsx` (standard), `pos-hardware.tsx` (hardware mode), `pos-supermarket.tsx` (scan-only mode).
+There are FOUR separate POS checkout screens, each with its own `createOrder.mutate(Async)` payload:
+`pos.tsx` (standard), `pos-hardware.tsx` (hardware mode), `pos-supermarket.tsx` (scan-only mode) on web,
+and the Expo mobile `artifacts/nexus-mobile/app/(tabs)/index.tsx` `CheckoutContent`. The mobile checkout
+now supports the full payment depth (paymentMethod incl. custom names, cardType for card/split,
+splitCardAmount/splitCashAmount, customerId for credit) — keep it in lockstep with the web payloads.
 
-**Rule:** Any new field added to the order-create payload must be added to ALL THREE layouts (and the Expo `index.tsx` checkout if relevant). Adding it to only one means tenants on the other layouts silently persist NULL/missing for that field.
+**Rule:** Any new field added to the order-create payload must be added to ALL FOUR checkout sites. Adding it to only one means tenants on the other layouts/platform silently persist NULL/missing for that field.
 
 **Why:** The `stationNumber` (per-shift station/till number) feature was wired into `pos.tsx` only. Hardware/supermarket tenants therefore saved `orders.station_number = NULL` on every sale (0 of ~29k orders ever non-null, including 14 orders whose open cash session DID have a station). The receipt's static "Station: #" line never rendered, so the only per-receipt number users saw was the incrementing pickup/order number — reported as "station number is incrementing."
 
