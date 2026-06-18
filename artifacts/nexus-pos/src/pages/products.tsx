@@ -2831,6 +2831,32 @@ function DuplicateMergeDialog({ open, onClose }: { open: boolean; onClose: () =>
   );
 }
 
+/**
+ * Build a toast describing why a product create/update failed. Surfaces the
+ * server's reason instead of a generic message — most importantly the 402
+ * "subscription expired" case, which is a deliberate write-block (not a bug)
+ * and was previously shown as a confusing bare "Create failed".
+ */
+function saveProductErrorToast(
+  err: unknown,
+  fallbackTitle: string,
+): { title: string; description?: string; variant: "destructive" } {
+  const apiErr = err as { status?: number; body?: unknown; data?: unknown; message?: string } | undefined;
+  const payload = (apiErr?.body ?? apiErr?.data) as { error?: string; message?: string } | undefined;
+  if (apiErr?.status === 402 && payload?.error === "SUBSCRIPTION_EXPIRED") {
+    return {
+      title: "Subscription expired",
+      description: payload.message ?? "Renew your subscription to add or edit products.",
+      variant: "destructive",
+    };
+  }
+  return {
+    title: fallbackTitle,
+    ...(payload?.message ? { description: payload.message } : {}),
+    variant: "destructive",
+  };
+}
+
 export function Products() {
   const { can, staff } = useStaff();
   const canManage = can("inventory.manage");
@@ -3569,7 +3595,7 @@ export function Products() {
             queryClient.invalidateQueries({ queryKey: ["/api/products"] });
             if (andClose) { setDialogOpen(false); setEditingProduct(null); setForm(emptyForm()); }
           },
-          onError: () => toast({ title: "Update failed", variant: "destructive" }),
+          onError: (err) => toast(saveProductErrorToast(err, "Update failed")),
         },
       );
     } else {
@@ -3582,7 +3608,7 @@ export function Products() {
             if (andClose) { setDialogOpen(false); setEditingProduct(null); setForm(emptyForm()); }
             else { setEditingProduct(newProduct); setDialogTab("variants"); }
           },
-          onError: () => toast({ title: "Create failed", variant: "destructive" }),
+          onError: (err) => toast(saveProductErrorToast(err, "Create failed")),
         },
       );
     }
