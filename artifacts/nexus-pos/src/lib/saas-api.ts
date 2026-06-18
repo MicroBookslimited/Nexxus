@@ -1184,6 +1184,13 @@ export interface CloseTableResult {
   total: number;
 }
 
+export const activateFreeSubscription = (planSlug: string, billingCycle: "monthly" | "annual") =>
+  api<{ success: boolean; plan: { name: string; slug: string } }>("/billing/free-activate", {
+    method: "POST",
+    body: JSON.stringify({ planSlug, billingCycle }),
+    headers: tenantAuthHeaders(),
+  });
+
 export const closeTable = (
   tableId: number,
   body: { paymentMethod: string; cardType?: string; splitCardAmount?: number; splitCashAmount?: number },

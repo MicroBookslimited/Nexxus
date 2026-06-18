@@ -1022,7 +1022,7 @@ router.get("/superadmin/tenants-lite", async (req, res): Promise<void> => {
 const CreateManualPaymentBody = z.object({
   planId: z.number().int().positive(),
   billingCycle: z.enum(["monthly", "annual"]).default("monthly"),
-  amount: z.number().positive(),
+  amount: z.number().min(0),
   paymentMethod: z.enum(["cash", "bank_transfer", "cheque", "card", "other"]).default("cash"),
   referenceNumber: z.string().optional(),
   notes: z.string().optional(),

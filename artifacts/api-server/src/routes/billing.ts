@@ -393,6 +393,53 @@ router.get("/billing/bank-accounts", async (req, res): Promise<void> => {
   res.json(accounts);
 });
 
+/* ─── Free Plan Activation (price = 0, no payment required) ─── */
+const FreeActivateBody = z.object({
+  planSlug: z.string(),
+  billingCycle: z.enum(["monthly", "annual"]),
+});
+
+router.post("/billing/free-activate", async (req, res): Promise<void> => {
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const parsed = FreeActivateBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+
+  const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.slug, parsed.data.planSlug));
+  if (!plan) { res.status(404).json({ error: "Plan not found" }); return; }
+
+  const price = parsed.data.billingCycle === "annual" ? plan.priceAnnual : plan.priceMonthly;
+  if (price > 0) {
+    res.status(400).json({ error: "This plan requires payment. Please use a payment method." });
+    return;
+  }
+
+  const limitErr = planProductLimitError(plan, await getActiveProductCount(tenant.tenantId));
+  if (limitErr) { res.status(409).json(limitErr); return; }
+
+  const now = new Date();
+  const periodEnd = new Date(now);
+  if (parsed.data.billingCycle === "annual") periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+  else periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+  const [existing] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.tenantId, tenant.tenantId));
+  if (existing) {
+    await db.update(subscriptionsTable).set({
+      planId: plan.id, status: "active", provider: "free", providerOrderId: null,
+      billingCycle: parsed.data.billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd, updatedAt: now,
+    }).where(eq(subscriptionsTable.tenantId, tenant.tenantId));
+  } else {
+    await db.insert(subscriptionsTable).values({
+      tenantId: tenant.tenantId, planId: plan.id, status: "active", provider: "free",
+      billingCycle: parsed.data.billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd,
+    });
+  }
+  await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, tenant.tenantId));
+
+  res.json({ success: true, plan: { name: plan.name, slug: plan.slug } });
+});
+
 /* ─── Submit Bank Transfer Proof ─── */
 const BankTransferBody = z.object({
   planSlug: z.string(),

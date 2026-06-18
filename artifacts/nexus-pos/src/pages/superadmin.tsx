@@ -202,7 +202,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
   async function handleAddPayment(e: React.FormEvent) {
     e.preventDefault();
     if (!paymentForm.planId) { setAddPaymentError("Please select a plan"); return; }
-    if (paymentForm.amount <= 0) { setAddPaymentError("Amount must be greater than 0"); return; }
+    if (paymentForm.amount < 0) { setAddPaymentError("Amount cannot be negative"); return; }
     setAddingPayment(true); setAddPaymentError("");
     try {
       await superadminCreateManualPayment(tenant.id, {

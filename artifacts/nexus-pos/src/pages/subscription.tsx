@@ -7,6 +7,7 @@ import {
 import {
   TENANT_TOKEN_KEY, saasMe, getPlans, createPayPalOrder, capturePayPalOrder,
   initiatePowerTranz, getPowerTranz3dsStatus, getBankAccounts, submitBankTransferProof, getMyBankTransferProofs,
+  activateFreeSubscription,
   type Plan, type Tenant, type Subscription, type BankAccount, type BankTransferProofRow, type NextScheduledPayment,
 } from "@/lib/saas-api";
 import { loadScript } from "@paypal/paypal-js";
@@ -172,6 +173,21 @@ export function SubscriptionPage() {
     }, 3000);
     return () => clearInterval(pollTimer);
   }, [threeDsData]);
+
+  async function handleActivateFree() {
+    if (!selectedPlan) return;
+    setError(""); setIsProcessing(true);
+    try {
+      const res = await activateFreeSubscription(selectedPlan.slug, billingCycle);
+      setSuccess(`Successfully activated ${res.plan.name}!`);
+      setSelectedPlan(null);
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to activate plan.");
+    } finally {
+      setIsProcessing(false);
+    }
+  }
 
   async function handlePowerTranz() {
     if (!selectedPlan) return;
@@ -434,13 +450,23 @@ export function SubscriptionPage() {
             })}
           </div>
 
-          {selectedPlan && (
-            <button onClick={() => { setShowPayment(true); setPaypalRendered(false); setError(""); setProofFile(null); setTransferRef(""); setTransferNotes(""); }}
-              className="w-full bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors">
-              Subscribe to {selectedPlan.name} — ${billingCycle === "annual" ? selectedPlan.priceAnnual : selectedPlan.priceMonthly}/{billingCycle === "annual" ? "yr" : "mo"}
-              <ArrowUpRight size={16} />
-            </button>
-          )}
+          {selectedPlan && (() => {
+            const planPrice = billingCycle === "annual" ? selectedPlan.priceAnnual : selectedPlan.priceMonthly;
+            const isFree = planPrice === 0;
+            return isFree ? (
+              <button onClick={handleActivateFree} disabled={isProcessing}
+                className="w-full bg-[#3b82f6] hover:bg-blue-500 disabled:opacity-60 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors">
+                {isProcessing ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />}
+                Activate {selectedPlan.name} — Free
+              </button>
+            ) : (
+              <button onClick={() => { setShowPayment(true); setPaypalRendered(false); setError(""); setProofFile(null); setTransferRef(""); setTransferNotes(""); }}
+                className="w-full bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors">
+                Subscribe to {selectedPlan.name} — ${billingCycle === "annual" ? selectedPlan.priceAnnual : selectedPlan.priceMonthly}/{billingCycle === "annual" ? "yr" : "mo"}
+                <ArrowUpRight size={16} />
+              </button>
+            );
+          })()}
         </div>
       )}
 
