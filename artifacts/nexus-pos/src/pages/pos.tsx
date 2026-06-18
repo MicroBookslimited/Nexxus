@@ -2458,7 +2458,10 @@ export function POS() {
                           <div className={`absolute top-2 right-2 h-1.5 w-1.5 rounded-full ${palette.dot} opacity-70`} />
                           <div className="pr-3 min-w-0">
                             <p className="text-xs font-bold leading-snug line-clamp-2 text-white break-words">{product.name}</p>
-                            <p className="text-[9px] text-white/50 mt-0.5 truncate">{product.category}</p>
+                            <p className="text-[9px] text-white/50 mt-0.5 truncate">
+                              {product.category}
+                              {product.size ? <span className="ml-1 opacity-80">· {product.size}</span> : null}
+                            </p>
                           </div>
                           {activePromos[product.id] && (
                             <div className="absolute top-1 left-1 px-1 py-0.5 rounded text-[8px] font-bold bg-pink-500/90 text-white shadow leading-none">
