@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect, KeyboardEvent } from "react";
 import nexxusLogoUrl from "@assets/EB8B578F-2602-4DD8-AB97-D02AF59C49D3_1775943434994.png";
 import { CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayMessage } from "@/lib/customer-display-channel";
 import { motion, AnimatePresence } from "framer-motion";
-import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom } from "@/lib/receipt";
+import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom, buildBillHtml } from "@/lib/receipt";
 import { CardTypeDialog, type CardType } from "@/components/card-type-dialog";
 import { printOrderReceipt } from "@/lib/print-receipt";
 import {
@@ -22,6 +22,7 @@ import {
   useGetSettings,
   useListOrders,
   useChargeOrder,
+  useUpdateTable,
   useCreateProduct,
 } from "@workspace/api-client-react";
 import { PinPad } from "@/components/PinPad";
@@ -36,11 +37,11 @@ import {
   Minus, Plus, Percent, DollarSign, SplitSquareHorizontal, SaveAll,
   Download, Printer, CheckCircle2, Settings2, ChefHat,
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
-  ClipboardList, BookOpen, LockKeyhole, ArrowLeftRight, StickyNote, Layers,
+  ClipboardList, BookOpen, LockKeyhole, Unlock, ArrowLeftRight, StickyNote, Layers,
   Tag, PenLine, PackagePlus, Calculator, Delete, RefreshCw,
   ChevronDown, ChevronUp,
 } from "lucide-react";
-import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions, lookupGiftVoucher, type VoucherLookupResult, fetchCustomerByCard } from "@/lib/saas-api";
+import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions, lookupGiftVoucher, type VoucherLookupResult, fetchCustomerByCard, closeTable } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
@@ -807,10 +808,102 @@ export function POS() {
     const all = [...(pendingOrders ?? []), ...(openOrders ?? [])];
     return all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [pendingOrders, openOrders]);
+
+  // Per-table aggregation of all open orders (Approach B: each Send = new order)
+  const tableTicketMap = useMemo(() => {
+    const map = new Map<number, {
+      items: Array<{ productName: string; quantity: number; unitPrice: number }>;
+      subtotal: number; tax: number; serviceCharge: number; total: number;
+    }>();
+    for (const order of openOrders ?? []) {
+      const tid = (order as any).tableId as number | undefined;
+      if (!tid) continue;
+      const orderItems = ((order as any).items ?? []).map((item: any) => ({
+        productName: item.productName ?? "",
+        quantity: Number(item.quantity ?? 0),
+        unitPrice: Number(item.unitPrice ?? item.price ?? 0),
+      }));
+      const existing = map.get(tid);
+      const sc = Number((order as any).serviceCharge ?? 0);
+      if (existing) {
+        existing.items.push(...orderItems);
+        existing.subtotal     += Number((order as any).subtotal ?? 0);
+        existing.tax          += Number((order as any).tax ?? 0);
+        existing.serviceCharge += sc;
+        existing.total        += Number(order.total ?? 0);
+      } else {
+        map.set(tid, {
+          items: orderItems,
+          subtotal:      Number((order as any).subtotal ?? 0),
+          tax:           Number((order as any).tax ?? 0),
+          serviceCharge: sc,
+          total:         Number(order.total ?? 0),
+        });
+      }
+    }
+    return map;
+  }, [openOrders]);
   const chargeOrder = useChargeOrder();
+  const updateTable = useUpdateTable();
   const [kioskChargeOrder, setKioskChargeOrder] = useState<typeof unpaidOrders[0] | null>(null);
   const [kioskPayMethod, setKioskPayMethod] = useState<"card" | "cash">("cash");
   const [kioskPanelOpen, setKioskPanelOpen] = useState(false);
+
+  // ── Table Ticket (open-tab) state ──────────────────────────────────────────
+  const [tableTicketDialog, setTableTicketDialog] = useState<NonNullable<typeof tables>[0] | null>(null);
+  const [tableTicketPayMethod, setTableTicketPayMethod] = useState<"cash" | "card">("cash");
+  const [tableTicketBusy, setTableTicketBusy] = useState(false);
+  const [reopenOverrideOpen, setReopenOverrideOpen] = useState(false);
+
+  const handlePrintBill = () => {
+    if (!tableTicketDialog) return;
+    const ticket = tableTicketMap.get(tableTicketDialog.id);
+    if (!ticket || ticket.items.length === 0) {
+      toast({ title: "No items", description: "There are no items on this table yet.", variant: "destructive" });
+      return;
+    }
+    const billHtml = buildBillHtml(
+      { tableName: tableTicketDialog.name, items: ticket.items, subtotal: ticket.subtotal, tax: ticket.tax, serviceCharge: ticket.serviceCharge, total: ticket.total },
+      settings ?? {},
+    );
+    openReceiptWindow(billHtml);
+    updateTable.mutate(
+      { id: tableTicketDialog.id, data: { status: "billed" } },
+      {
+        onSuccess: () => {
+          toast({ title: "Bill printed", description: `${tableTicketDialog.name} is now locked. Collect payment, then use Pay & Close.` });
+          queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+        },
+        onError: () => toast({ title: "Error", description: "Could not lock the table.", variant: "destructive" }),
+      },
+    );
+  };
+
+  const handlePayAndClose = async () => {
+    if (!tableTicketDialog) return;
+    const ticket = tableTicketMap.get(tableTicketDialog.id);
+    if (!ticket || ticket.items.length === 0) {
+      toast({ title: "No open orders", description: "Nothing to close on this table.", variant: "destructive" });
+      return;
+    }
+    setTableTicketBusy(true);
+    try {
+      await closeTable(tableTicketDialog.id, { paymentMethod: tableTicketPayMethod });
+      const receiptHtml = buildBillHtml(
+        { tableName: tableTicketDialog.name, items: ticket.items, subtotal: ticket.subtotal, tax: ticket.tax, serviceCharge: ticket.serviceCharge, total: ticket.total, isPaid: true, paymentMethod: tableTicketPayMethod },
+        settings ?? {},
+      );
+      openReceiptWindow(receiptHtml);
+      toast({ title: "Table closed!", description: `${tableTicketDialog.name} — payment collected.` });
+      setTableTicketDialog(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+    } catch {
+      toast({ title: "Error closing table", description: "Could not close the table. Please try again.", variant: "destructive" });
+    } finally {
+      setTableTicketBusy(false);
+    }
+  };
 
   const handleAddCustomer = async () => {
     if (!newCustName.trim()) return;
@@ -2014,6 +2107,14 @@ export function POS() {
   const handleSendToKitchen = () => {
     if (cart.length === 0) return;
 
+    if (selectedTableId) {
+      const selectedTable = tables?.find((t) => t.id === selectedTableId);
+      if (selectedTable?.status === "billed") {
+        toast({ title: "Table locked", description: "This table's bill has been printed. Ask a manager to reopen it before adding items.", variant: "destructive" });
+        return;
+      }
+    }
+
     createOrder.mutate(
       {
         data: {
@@ -2911,14 +3012,34 @@ export function POS() {
                 <div>
                   <p className="text-[10px] font-medium text-muted-foreground mb-1">Table</p>
                   <div className="flex flex-wrap gap-1">
-                    {tables.filter((t) => t.isActive && t.status !== "occupied").map((t) => (
-                      <button key={t.id}
-                        className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-all ${selectedTableId === t.id ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}
-                        style={selectedTableId === t.id ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}15` } : {}}
-                        onClick={() => setSelectedTableId(selectedTableId === t.id ? null : t.id)}>
-                        {t.name}
-                      </button>
-                    ))}
+                    {tables.filter((t) => t.isActive).map((t) => {
+                      const isOccupied = t.status === "occupied";
+                      const isBilled   = t.status === "billed";
+                      const isActive   = isOccupied || isBilled;
+                      const ticket     = tableTicketMap.get(t.id);
+                      if (isActive) {
+                        return (
+                          <button key={t.id}
+                            title={isBilled ? "Bill printed — tap to pay or reopen" : "Open tab — tap to view or add items"}
+                            className={`px-2 py-1 rounded text-[10px] font-medium border transition-all text-left leading-tight ${isBilled ? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400" : "border-emerald-600/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}
+                            onClick={() => setTableTicketDialog(t)}>
+                            <div className="flex items-center gap-0.5">
+                              {isBilled && <LockKeyhole className="h-2.5 w-2.5 shrink-0" />}
+                              <span>{t.name}</span>
+                            </div>
+                            {ticket && <div className="font-mono mt-0.5">{formatCurrency(ticket.total, baseCurrency)}</div>}
+                          </button>
+                        );
+                      }
+                      return (
+                        <button key={t.id}
+                          className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-all ${selectedTableId === t.id ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}
+                          style={selectedTableId === t.id ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}15` } : {}}
+                          onClick={() => setSelectedTableId(selectedTableId === t.id ? null : t.id)}>
+                          {t.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -4483,6 +4604,157 @@ export function POS() {
               {chargeOrder.isPending ? "Processing…" : "Confirm & Charge"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Table Ticket Dialog ─────────────────────────────────────────── */}
+      <Dialog open={!!tableTicketDialog} onOpenChange={(o) => !o && setTableTicketDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UtensilsCrossed className="h-4 w-4 text-primary" />
+              {tableTicketDialog?.name}
+              {tableTicketDialog?.status === "billed" && (
+                <Badge variant="outline" className="text-amber-500 border-amber-500/40 text-xs gap-1 ml-1">
+                  <LockKeyhole className="h-3 w-3" />Bill Printed
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          {tableTicketDialog && (() => {
+            const ticket = tableTicketMap.get(tableTicketDialog.id);
+            if (!ticket || ticket.items.length === 0) {
+              return <p className="text-sm text-muted-foreground py-4 text-center">No open items on this table.</p>;
+            }
+            return (
+              <div className="space-y-3">
+                <ScrollArea className="max-h-52">
+                  <div className="space-y-1">
+                    {ticket.items.map((item, i) => (
+                      <div key={i} className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{item.quantity}× {item.productName}</span>
+                        <span className="font-mono text-xs">{formatCurrency(item.quantity * item.unitPrice, baseCurrency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+                <div className="rounded-lg bg-secondary/30 p-3 space-y-1 text-sm">
+                  {ticket.serviceCharge > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Service</span>
+                      <span className="font-mono">{formatCurrency(ticket.serviceCharge, baseCurrency)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Tax</span>
+                    <span className="font-mono">{formatCurrency(ticket.tax, baseCurrency)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold border-t border-border pt-1.5 mt-1">
+                    <span>Total</span>
+                    <span className="font-mono">{formatCurrency(ticket.total, baseCurrency)}</span>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Method</Label>
+                  <RadioGroup
+                    value={tableTicketPayMethod}
+                    onValueChange={(v) => setTableTicketPayMethod(v as "cash" | "card")}
+                    className="flex gap-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="cash" id="tt-cash" />
+                      <Label htmlFor="tt-cash" className="flex items-center gap-1.5 cursor-pointer text-sm">
+                        <Banknote className="h-3.5 w-3.5" />Cash
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="card" id="tt-card" />
+                      <Label htmlFor="tt-card" className="flex items-center gap-1.5 cursor-pointer text-sm">
+                        <CreditCard className="h-3.5 w-3.5" />Card
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+              </div>
+            );
+          })()}
+
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            {tableTicketDialog?.status === "billed" ? (
+              <Button
+                variant="outline"
+                className="w-full gap-2 text-amber-500 border-amber-500/40 hover:bg-amber-500/10"
+                onClick={() => setReopenOverrideOpen(true)}
+              >
+                <Unlock className="h-4 w-4" />Reopen Table (Manager Required)
+              </Button>
+            ) : (
+              <div className="flex gap-2 w-full">
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-1.5"
+                  onClick={() => {
+                    if (!tableTicketDialog) return;
+                    setSelectedTableId(tableTicketDialog.id);
+                    setTableTicketDialog(null);
+                  }}
+                >
+                  <Plus className="h-4 w-4" />Add Items
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-1.5"
+                  onClick={handlePrintBill}
+                >
+                  <Printer className="h-4 w-4" />Print Bill
+                </Button>
+              </div>
+            )}
+            <Button
+              className="w-full gap-2"
+              disabled={tableTicketBusy || !tableTicketMap.has(tableTicketDialog?.id ?? 0)}
+              onClick={handlePayAndClose}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {tableTicketBusy ? "Processing…" : "Pay & Close"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Reopen Table — Manager PIN required ──────────────────────────── */}
+      <Dialog open={reopenOverrideOpen} onOpenChange={(o) => {
+        if (!o) setReopenOverrideOpen(false);
+      }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-400">
+              <Unlock className="h-4 w-4" />Manager Override Required
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground text-center -mt-2 mb-2">
+            Enter a manager PIN to reopen this locked table.
+          </p>
+          <PinPad
+            title=""
+            requiredRoles={["manager", "admin", "supervisor"]}
+            onSuccess={() => {
+              setReopenOverrideOpen(false);
+              if (!tableTicketDialog) return;
+              const tableName = tableTicketDialog.name;
+              updateTable.mutate(
+                { id: tableTicketDialog.id, data: { status: "occupied" } },
+                {
+                  onSuccess: () => {
+                    toast({ title: "Table reopened", description: `${tableName} is now open for new items.` });
+                    queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+                  },
+                  onError: () => toast({ title: "Error", description: "Could not reopen the table.", variant: "destructive" }),
+                },
+              );
+            }}
+          />
         </DialogContent>
       </Dialog>
 

@@ -13,4 +13,5 @@ export const DiningTableStatus = {
   available: "available",
   occupied: "occupied",
   reserved: "reserved",
+  billed: "billed",
 } as const;

@@ -2626,3 +2626,108 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, settings: Receip
     ${data.isReprint ? `<div class="rf-reprint">*** REPRINT ***</div>` : ""}
   </body></html>`;
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * buildBillHtml
+ * Renders an unpaid table bill / check to show the customer before payment.
+ * Pass isPaid = true after collecting payment to print a "RECEIPT — PAID" copy.
+ * ────────────────────────────────────────────────────────────────────────────*/
+export interface BillItem {
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export function buildBillHtml(
+  params: {
+    tableName: string;
+    items: BillItem[];
+    subtotal: number;
+    tax: number;
+    serviceCharge?: number;
+    total: number;
+    isPaid?: boolean;
+    paymentMethod?: string;
+  },
+  settings: ReceiptSettings = {},
+): string {
+  const businessName    = settings.business_name    || "NEXXUS POS";
+  const businessAddress = settings.business_address || "";
+  const businessPhone   = settings.business_phone   || "";
+  const taxName         = settings.tax_name         || "GCT";
+  const baseCurrency    = settings.base_currency    || "JMD";
+  const receiptFooter   = settings.receipt_footer   || "Thank you for your business!";
+
+  const now     = new Date();
+  const dateStr = now.toLocaleString("en-JM", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
+
+  const fmt = (n: number) => {
+    try {
+      return new Intl.NumberFormat("en-US", { style: "currency", currency: baseCurrency }).format(n);
+    } catch {
+      return `${baseCurrency} ${Math.abs(n).toFixed(2)}`;
+    }
+  };
+
+  const itemRows = params.items.map((item) => {
+    const lineTotal = item.quantity * item.unitPrice;
+    return `<tr>
+      <td style="padding:3px 4px">${escHtml(item.productName)}</td>
+      <td style="padding:3px 4px;text-align:center">${item.quantity}</td>
+      <td style="padding:3px 4px;text-align:right">${fmt(item.unitPrice)}</td>
+      <td style="padding:3px 4px;text-align:right">${fmt(lineTotal)}</td>
+    </tr>`;
+  }).join("");
+
+  const isPaid = params.isPaid ?? false;
+  const billLabel   = isPaid ? "RECEIPT" : "BILL";
+  const statusBadge = isPaid
+    ? `<div style="background:#166534;color:#fff;font-weight:700;padding:3px 10px;border-radius:4px;display:inline-block;font-size:11px;letter-spacing:2px;margin-top:4px">PAID${params.paymentMethod ? ` — ${escHtml(params.paymentMethod.toUpperCase())}` : ""}</div>`
+    : `<div style="border:1px dashed #555;color:#555;font-size:10px;padding:4px;letter-spacing:2px;text-align:center;margin-top:10px">* PAYMENT PENDING *</div>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<title>${billLabel} — ${escHtml(params.tableName)}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Courier New',monospace; font-size:12px; padding:16px; max-width:380px; }
+  .hdr { text-align:center; border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:8px; }
+  .biz { font-size:16px; font-weight:bold; }
+  .lbl { font-size:24px; font-weight:bold; letter-spacing:4px; margin:6px 0 2px; }
+  .tbl { font-size:13px; font-weight:bold; }
+  table { width:100%; border-collapse:collapse; }
+  thead th { border-bottom:1px solid #000; padding:2px 4px; font-size:11px; text-align:left; }
+  thead th:nth-child(2) { text-align:center; }
+  thead th:nth-child(3),thead th:nth-child(4) { text-align:right; }
+  .tot { border-top:1px solid #000; margin-top:6px; width:100%; border-collapse:collapse; }
+  .tot td { padding:2px 4px; }
+  .grand td { font-size:14px; font-weight:bold; border-top:2px solid #000; padding-top:4px; }
+  .ftr { text-align:center; font-size:10px; margin-top:10px; color:#555; }
+</style>
+</head><body>
+<div class="hdr">
+  <div class="biz">${escHtml(businessName)}</div>
+  ${businessAddress ? `<div style="font-size:11px">${escHtml(businessAddress)}</div>` : ""}
+  ${businessPhone   ? `<div style="font-size:11px">${escHtml(businessPhone)}</div>`   : ""}
+  <div class="lbl">${billLabel}</div>
+  <div class="tbl">Table: ${escHtml(params.tableName)}</div>
+  <div style="font-size:10px;margin-top:2px">${dateStr}</div>
+</div>
+<table>
+  <thead><tr>
+    <th>Item</th><th>Qty</th><th>Unit</th><th>Total</th>
+  </tr></thead>
+  <tbody>${itemRows}</tbody>
+</table>
+<table class="tot">
+  <tr><td>Subtotal</td><td style="text-align:right">${fmt(params.subtotal)}</td></tr>
+  ${params.serviceCharge && params.serviceCharge > 0 ? `<tr><td>Service</td><td style="text-align:right">${fmt(params.serviceCharge)}</td></tr>` : ""}
+  <tr><td>${escHtml(taxName)}</td><td style="text-align:right">${fmt(params.tax)}</td></tr>
+  <tr class="grand"><td>TOTAL</td><td style="text-align:right">${fmt(params.total)}</td></tr>
+</table>
+${statusBadge}
+<div class="ftr">${escHtml(receiptFooter)}</div>
+</body></html>`;
+}

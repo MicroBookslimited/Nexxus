@@ -1177,3 +1177,19 @@ export const confirmSupplierReturn = (id: number) =>
 
 export const deleteSupplierReturn = (id: number) =>
   api<void>(`/supplier-returns/${id}`, { method: "DELETE", headers: tenantAuthHeaders() });
+
+/* ─── Table Close ─── */
+export interface CloseTableResult {
+  closedOrderIds: number[];
+  total: number;
+}
+
+export const closeTable = (
+  tableId: number,
+  body: { paymentMethod: string; cardType?: string; splitCardAmount?: number; splitCashAmount?: number },
+) =>
+  api<CloseTableResult>(`/tables/${tableId}/close`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: tenantAuthHeaders(),
+  });
