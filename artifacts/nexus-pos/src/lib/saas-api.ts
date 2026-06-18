@@ -537,7 +537,7 @@ export interface Plan {
 
 export interface TenantRow extends Tenant {
   subscriptionStatus?: string; planId?: number; billingCycle?: string;
-  currentPeriodEnd?: string; trialEndsAt?: string; planName?: string;
+  currentPeriodStart?: string; currentPeriodEnd?: string; trialEndsAt?: string; planName?: string;
   createdAt: string; lastLoginAt?: string | null;
 }
 

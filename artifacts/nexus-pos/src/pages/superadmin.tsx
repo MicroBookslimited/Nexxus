@@ -1519,7 +1519,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-[#2a3a55]">
-                          {["Business", "Owner", "Plan", "Subscription", "Account", "Joined", "Last Login", ""].map(h => (
+                          {["Business", "Owner", "Plan", "Subscription", "Sub Start", "Sub End", "Account", "Joined", "Last Login", ""].map(h => (
                             <th key={h} className="text-left text-xs text-[#475569] font-medium uppercase tracking-wide px-4 py-3">{h}</th>
                           ))}
                         </tr>
@@ -1531,6 +1531,18 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                             <td className="px-4 py-3 text-[#94a3b8]">{t.ownerName}</td>
                             <td className="px-4 py-3 text-[#94a3b8]">{t.planName ?? <span className="text-[#475569]">None</span>}</td>
                             <td className="px-4 py-3"><StatusBadge status={t.subscriptionStatus ?? "trial"} /></td>
+                            <td className="px-4 py-3 text-[#475569] text-xs">
+                              {t.currentPeriodStart
+                                ? new Date(t.currentPeriodStart).toLocaleDateString()
+                                : <span className="text-[#334155]">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-[#475569] text-xs">
+                              {t.currentPeriodEnd
+                                ? new Date(t.currentPeriodEnd).toLocaleDateString()
+                                : t.trialEndsAt
+                                  ? <span title="Trial end">{new Date(t.trialEndsAt).toLocaleDateString()}</span>
+                                  : <span className="text-[#334155]">—</span>}
+                            </td>
                             <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
                             <td className="px-4 py-3 text-[#475569]">{new Date(t.createdAt).toLocaleDateString()}</td>
                             <td className="px-4 py-3">

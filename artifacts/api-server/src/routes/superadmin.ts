@@ -151,6 +151,7 @@ router.get("/superadmin/tenants", async (req, res): Promise<void> => {
       subscriptionStatus: subscriptionsTable.status,
       planId: subscriptionsTable.planId,
       billingCycle: subscriptionsTable.billingCycle,
+      currentPeriodStart: subscriptionsTable.currentPeriodStart,
       currentPeriodEnd: subscriptionsTable.currentPeriodEnd,
       trialEndsAt: subscriptionsTable.trialEndsAt,
       planName: subscriptionPlansTable.name,
