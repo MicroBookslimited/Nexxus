@@ -602,6 +602,7 @@ const SyncSettingsBody = z.object({
   syncCustomers: z.boolean().optional(),
   syncDirection: z.enum(["shopify_to_nexus", "nexus_to_shopify", "two_way"]).optional(),
   defaultLocationId: z.number().int().nullable().optional(),
+  apiVersion: z.string().trim().regex(/^\d{4}-\d{2}$/).optional(),
 });
 
 router.patch("/shopify/connections/:id/sync-settings", async (req, res): Promise<void> => {

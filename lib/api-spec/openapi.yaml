@@ -2085,8 +2085,9 @@ paths:
                 $ref: "#/components/schemas/ShopifyAppCredentialsStatus"
     put:
       operationId: saveShopifyAppCredentials
+      deprecated: true
       tags: [shopify]
-      summary: Save the tenant's Shopify app Client ID and Secret (secret stored encrypted, never returned).
+      summary: "Deprecated — Shopify app credentials are platform-managed via env vars (SHOPIFY_API_KEY / SHOPIFY_API_SECRET). Always returns 410."
       requestBody:
         required: true
         content:
@@ -2094,12 +2095,8 @@ paths:
             schema:
               $ref: "#/components/schemas/ShopifyAppCredentialsBody"
       responses:
-        "200":
-          description: Updated app credentials status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ShopifyAppCredentialsStatus"
+        "410":
+          description: Gone — credentials are platform-managed and cannot be set per-tenant
 
   /shopify/connections:
     get:
@@ -2360,6 +2357,9 @@ components:
         defaultLocationId:
           type: integer
           nullable: true
+        apiVersion:
+          type: string
+          description: "Admin API version override for this store, e.g. 2025-01."
     ShopifyShopInfo:
       type: object
       properties:

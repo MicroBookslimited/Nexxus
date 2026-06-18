@@ -9065,6 +9065,9 @@ export const getSaveShopifyAppCredentialsUrl = () => {
   return `/api/shopify/app-credentials`;
 };
 
+/**
+ * @deprecated Shopify app credentials are platform-managed via env vars. This endpoint always returns 410.
+ */
 export const saveShopifyAppCredentials = async (
   shopifyAppCredentialsBody: ShopifyAppCredentialsBody,
   options?: RequestInit,

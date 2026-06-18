@@ -27,6 +27,23 @@ import {
 
 type LocationRow = { id: number; name: string };
 
+/** Controlled input that only fires onCommit on blur/Enter to avoid per-keystroke PATCH calls. */
+function ApiVersionInput({ id, value, onCommit }: { id: string; value: string; onCommit: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const commit = () => onCommit(draft.trim());
+  return (
+    <Input
+      id={id}
+      placeholder="e.g. 2025-01"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
+      className="h-9 text-sm"
+    />
+  );
+}
+
 export function ShopifyIntegrationCard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -249,6 +266,14 @@ export function ShopifyIntegrationCard() {
                                 ))}
                               </SelectContent>
                             </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`shopify-api-ver-${id}`} className="text-xs">Admin API version</Label>
+                            <ApiVersionInput
+                              id={`shopify-api-ver-${id}`}
+                              value={conn.apiVersion ?? ""}
+                              onCommit={(v) => patchSync(id, { apiVersion: v || undefined })}
+                            />
                           </div>
                         </div>
                       </div>

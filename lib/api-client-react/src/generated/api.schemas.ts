@@ -92,6 +92,8 @@ export interface ShopifySyncSettingsBody {
   syncCustomers?: boolean;
   syncDirection?: ShopifySyncSettingsBodySyncDirection;
   defaultLocationId?: number | null;
+  /** Admin API version override for this store, e.g. 2025-01. */
+  apiVersion?: string;
 }
 
 export interface ShopifyShopInfo {
