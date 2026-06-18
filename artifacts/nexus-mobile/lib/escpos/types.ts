@@ -26,6 +26,7 @@ export interface ReceiptItem {
   originalUnitPrice?: number | null;
   variantChoices?: Array<{ optionName: string }> | null;
   modifierChoices?: Array<{ optionName: string }> | null;
+  notes?: string;
 }
 
 export interface ReceiptOrder {

@@ -111,6 +111,7 @@ export function buildReceiptText(
     if (qty > 1 && it.unitPrice != null) {
       lines.push("  @ " + fmt(it.unitPrice) + " each");
     }
+    if (it.notes) wrap(it.notes, W - 2).forEach((l) => lines.push("  " + l));
   }
   lines.push(divider(W));
 

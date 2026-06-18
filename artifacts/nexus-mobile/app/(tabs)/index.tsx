@@ -441,6 +441,9 @@ function CheckoutContent({
   const [showCustomers, setShowCustomers] = useState(false);
   const [custSearch, setCustSearch] = useState("");
   const [discountFor, setDiscountFor] = useState<string | null>(null);
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [orderNote, setOrderNote] = useState("");
+  const [cashTendered, setCashTendered] = useState("");
   const [receipt, setReceipt] = useState<ReceiptOrder | null>(null);
 
   // Order-level discount (manager-PIN gated, mirroring the web POS). The
@@ -522,6 +525,10 @@ function CheckoutContent({
   const splitCashAmount = parseFloat(splitCash) || 0;
   // Split tendering settles the amount due (after any voucher), not the full total.
   const isSplitValid = Math.abs(splitCardAmount + splitCashAmount - amountDue) < 0.01;
+
+  // Cash change-due (display only; never blocks checkout, matching the web POS).
+  const tenderedAmount = parseFloat(cashTendered) || 0;
+  const changeDue = tenderedAmount > 0 ? Math.max(0, Math.round((tenderedAmount - amountDue) * 100) / 100) : 0;
 
   // Tenant-enabled payment methods, falling back to the standard set when none
   // are configured (matches the web POS defaults).
@@ -622,6 +629,9 @@ function CheckoutContent({
     setCustomerId(null);
     setShowCustomers(false);
     setCustSearch("");
+    setOrderNote("");
+    setCashTendered("");
+    setNoteFor(null);
     setDiscountType(null);
     setDiscountAmount(0);
     setDiscountAuthorizedBy(null);
@@ -674,6 +684,7 @@ function CheckoutContent({
               ...(l.variantChoices.length ? { variantChoices: l.variantChoices } : {}),
               ...(l.modifierChoices.length ? { modifierChoices: l.modifierChoices } : {}),
               ...(discount > 0 ? { discountAmount: discount } : {}),
+              ...(l.note ? { notes: l.note } : {}),
             };
           }),
           paymentMethod: effectivePaymentMethod,
@@ -687,6 +698,10 @@ function CheckoutContent({
             ? { loyaltyPointsToRedeem: Math.min(loyaltyPointsToRedeem, maxRedeemable) }
             : {}),
           ...(appliedVoucher ? { giftVoucherCode: appliedVoucher.code } : {}),
+          ...(!voucherCoversAll && paymentMethod === "cash" && tenderedAmount > 0
+            ? { cashTendered: tenderedAmount }
+            : {}),
+          ...(orderNote.trim() ? { notes: orderNote.trim() } : {}),
         },
       });
       const items: ReceiptItem[] = lineSnapshot.map((l) => {
@@ -698,6 +713,7 @@ function CheckoutContent({
           lineTotal: l.unitPrice * l.quantity - discount,
           variantChoices: l.variantChoices.map((v) => ({ optionName: v.optionName })),
           modifierChoices: l.modifierChoices.map((m) => ({ optionName: m.optionName })),
+          ...(l.note ? { notes: l.note } : {}),
         };
       });
       const receiptOrder: ReceiptOrder = {
@@ -708,7 +724,16 @@ function CheckoutContent({
         subtotal: order.subtotal,
         tax: order.tax,
         total: order.total,
+        ...(discountValue > 0 ? { discountValue } : {}),
         paymentMethod: voucherCoversAll ? "Gift Voucher" : paymentLabel,
+        // Only attach tender to the receipt when NO voucher is applied, so the
+        // builder's change calc (tendered - total) equals tendered - amountDue.
+        // With a partial voucher, total > amountDue and the printed change would
+        // be understated, so we omit it (on-screen change display still works).
+        ...(!appliedVoucher && paymentMethod === "cash" && tenderedAmount > 0
+          ? { cashTendered: tenderedAmount }
+          : {}),
+        ...(orderNote.trim() ? { notes: orderNote.trim() } : {}),
       };
       setReceipt(receiptOrder);
       cart.clear();
@@ -842,17 +867,34 @@ function CheckoutContent({
                     </View>
                     <Stepper value={l.quantity} onChange={(v) => cart.setQty(l.lineKey, v)} />
                   </View>
+                  {l.note ? (
+                    <Text style={{ color: c.mutedForeground, fontSize: 12, fontStyle: "italic" }}>
+                      {`“${l.note}”`}
+                    </Text>
+                  ) : null}
                   <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                    <Pressable
-                      onPress={() => setDiscountFor(l.lineKey)}
-                      hitSlop={6}
-                      style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
-                    >
-                      <Feather name="tag" size={14} color={c.mutedForeground} />
-                      <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("medium") }}>
-                        {l.lineDiscount > 0 ? "Edit discount" : "Add discount"}
-                      </Text>
-                    </Pressable>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+                      <Pressable
+                        onPress={() => setDiscountFor(l.lineKey)}
+                        hitSlop={6}
+                        style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+                      >
+                        <Feather name="tag" size={14} color={c.mutedForeground} />
+                        <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("medium") }}>
+                          {l.lineDiscount > 0 ? "Edit discount" : "Add discount"}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setNoteFor(l.lineKey)}
+                        hitSlop={6}
+                        style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+                      >
+                        <Feather name="edit-3" size={14} color={c.mutedForeground} />
+                        <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("medium") }}>
+                          {l.note ? "Edit note" : "Add note"}
+                        </Text>
+                      </Pressable>
+                    </View>
                     <Pressable onPress={() => cart.remove(l.lineKey)} hitSlop={6}>
                       <Feather name="trash-2" size={16} color={c.destructive} />
                     </Pressable>
@@ -1116,6 +1158,40 @@ function CheckoutContent({
                 </Text>
               </Card>
             ) : null}
+
+            {!voucherCoversAll && paymentMethod === "cash" ? (
+              <Card style={{ gap: 10 }}>
+                <Field
+                  label="Amount tendered (optional)"
+                  value={cashTendered}
+                  onChangeText={setCashTendered}
+                  placeholder={String(amountDue)}
+                  keyboardType="decimal-pad"
+                />
+                {tenderedAmount > 0 ? (
+                  <Text
+                    style={{
+                      color: tenderedAmount >= amountDue ? c.accent : "#F59E0B",
+                      fontSize: 14,
+                      fontFamily: fontFamily("semibold"),
+                    }}
+                  >
+                    {tenderedAmount >= amountDue
+                      ? `Change due: ${formatMoney(changeDue)}`
+                      : `Short by ${formatMoney(amountDue - tenderedAmount)}`}
+                  </Text>
+                ) : null}
+              </Card>
+            ) : null}
+
+            <Card style={{ gap: 10 }}>
+              <Field
+                label="Order note (optional)"
+                value={orderNote}
+                onChangeText={setOrderNote}
+                placeholder="e.g. Leave at front desk"
+              />
+            </Card>
           </ScrollView>
 
           {/* Footer */}
@@ -1162,6 +1238,15 @@ function CheckoutContent({
         onSave={(amt) => {
           if (discountFor) cart.setDiscount(discountFor, amt);
           setDiscountFor(null);
+        }}
+      />
+
+      <LineNoteModal
+        line={cart.lines.find((l) => l.lineKey === noteFor) ?? null}
+        onClose={() => setNoteFor(null)}
+        onSave={(note) => {
+          if (noteFor) cart.setNote(noteFor, note);
+          setNoteFor(null);
         }}
       />
 
@@ -1319,6 +1404,50 @@ function LineDiscountModal({
           <View style={{ flexDirection: "row", gap: 10 }}>
             <Button label="Remove" variant="secondary" onPress={() => onSave(0)} style={{ flex: 1 }} />
             <Button label="Save" icon="check" onPress={() => onSave(parseFloat(value) || 0)} style={{ flex: 1 }} />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function LineNoteModal({
+  line,
+  onClose,
+  onSave,
+}: {
+  line: CartLine | null;
+  onClose: () => void;
+  onSave: (note: string) => void;
+}) {
+  const c = useColors();
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    setValue(line?.note ?? "");
+  }, [line]);
+
+  return (
+    <Modal visible={!!line} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}
+      >
+        <Pressable onPress={() => {}} style={{ backgroundColor: c.card, borderRadius: c.radius + 6, padding: 20, gap: 16 }}>
+          <Text style={{ color: c.foreground, fontSize: 18, fontFamily: fontFamily("bold") }} numberOfLines={1}>
+            {line?.product.name}
+          </Text>
+          <Text style={{ color: c.mutedForeground, fontSize: 13 }}>Note prints on the receipt for this line.</Text>
+          <Field
+            label="Line note"
+            value={value}
+            onChangeText={setValue}
+            placeholder="e.g. cut thin"
+            autoFocus
+          />
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Button label="Remove" variant="secondary" onPress={() => onSave("")} style={{ flex: 1 }} />
+            <Button label="Save" icon="check" onPress={() => onSave(value)} style={{ flex: 1 }} />
           </View>
         </Pressable>
       </Pressable>

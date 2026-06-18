@@ -12,6 +12,8 @@ export interface CartLine {
   modifierChoices: ChoiceItem[];
   /** Total discount applied to this line (currency, not per-unit). */
   lineDiscount: number;
+  /** Optional per-line note entered at the POS (e.g. "cut thin"). Printed on the receipt. */
+  note?: string;
 }
 
 export interface AddToCartOptions {
@@ -28,6 +30,7 @@ interface CartState {
   setQty: (lineKey: string, q: number) => void;
   remove: (lineKey: string) => void;
   setDiscount: (lineKey: string, discount: number) => void;
+  setNote: (lineKey: string, note: string) => void;
   clear: () => void;
 }
 
@@ -86,6 +89,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }),
     );
 
+  const setNote = (lineKey: string, note: string) =>
+    setLines((prev) =>
+      prev.map((l) => (l.lineKey === lineKey ? { ...l, note: note.trim() || undefined } : l)),
+    );
+
   const clear = () => setLines([]);
 
   const subtotal = useMemo(
@@ -95,7 +103,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const count = useMemo(() => lines.reduce((s, l) => s + l.quantity, 0), [lines]);
 
   return (
-    <CartCtx.Provider value={{ lines, count, subtotal, add, setQty, remove, setDiscount, clear }}>
+    <CartCtx.Provider value={{ lines, count, subtotal, add, setQty, remove, setDiscount, setNote, clear }}>
       {children}
     </CartCtx.Provider>
   );
