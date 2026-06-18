@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import {
+  useAuthenticateStaff,
   useCreateOrder,
   useGetSettings,
   useListCustomers,
@@ -45,7 +46,12 @@ import { useColors } from "@/hooks/useColors";
 import { useResponsive } from "@/hooks/useResponsive";
 import { printReceipt, type ReceiptItem, type ReceiptOrder, type ReceiptSettings } from "@/lib/escpos";
 import { formatMoney } from "@/lib/format";
-import { listPaymentMethods, type PaymentMethod } from "@/lib/nexus-api";
+import {
+  listPaymentMethods,
+  lookupGiftVoucher,
+  type PaymentMethod,
+  type VoucherLookupResult,
+} from "@/lib/nexus-api";
 
 function isSimple(p: Product) {
   return !p.hasVariants && !p.hasModifiers && !p.isComposite;
@@ -437,6 +443,21 @@ function CheckoutContent({
   const [discountFor, setDiscountFor] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<ReceiptOrder | null>(null);
 
+  // Order-level discount (manager-PIN gated, mirroring the web POS). The
+  // authorizer name is client-only UX (not sent to the server).
+  const [discountType, setDiscountType] = useState<"percent" | "fixed" | null>(null);
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [discountAuthorizedBy, setDiscountAuthorizedBy] = useState<string | null>(null);
+  const [discountOpen, setDiscountOpen] = useState(false);
+  // Loyalty points redeemed against this sale (100 pts = $1).
+  const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState<number>(0);
+  // Gift voucher applied as a tender (pays down the amount due).
+  const [voucherCode, setVoucherCode] = useState("");
+  const [appliedVoucher, setAppliedVoucher] = useState<VoucherLookupResult | null>(null);
+  const [voucherBusy, setVoucherBusy] = useState(false);
+
+  const authStaff = useAuthenticateStaff();
+
   const { data: pmData } = useQuery({
     queryKey: ["payment-methods"],
     queryFn: listPaymentMethods,
@@ -461,18 +482,46 @@ function CheckoutContent({
       ),
     [cart.lines],
   );
+  // Order-level discount + loyalty both reduce the goods subtotal before tax,
+  // mirroring the server (orders.ts): discountValue clamped to subtotal,
+  // loyalty at 100 pts = $1, then applied proportionally to the taxable bucket.
+  const discountValue = useMemo(() => {
+    if (!discountType || discountAmount <= 0) return 0;
+    const v = discountType === "percent" ? cart.subtotal * (discountAmount / 100) : discountAmount;
+    return Math.min(Math.round(v * 100) / 100, cart.subtotal);
+  }, [discountType, discountAmount, cart.subtotal]);
+  const loyaltyDiscount = loyaltyPointsToRedeem > 0 ? Math.round((loyaltyPointsToRedeem / 100) * 100) / 100 : 0;
+
+  const discountedSubtotal = Math.max(0, Math.round((cart.subtotal - discountValue - loyaltyDiscount) * 100) / 100);
+  const taxableFraction = cart.subtotal > 0 ? taxableNet / cart.subtotal : 1;
+  const taxableDiscounted = Math.max(0, taxableNet - (discountValue + loyaltyDiscount) * taxableFraction);
   const tax =
     taxMode === "inclusive"
-      ? Math.round(((taxableNet * taxRate) / (1 + taxRate)) * 100) / 100
-      : Math.round(taxableNet * taxRate * 100) / 100;
+      ? Math.round(((taxableDiscounted * taxRate) / (1 + taxRate)) * 100) / 100
+      : Math.round(taxableDiscounted * taxRate * 100) / 100;
   const total =
     taxMode === "inclusive"
-      ? Math.round(cart.subtotal * 100) / 100
-      : Math.round((cart.subtotal + tax) * 100) / 100;
+      ? discountedSubtotal
+      : Math.round((discountedSubtotal + tax) * 100) / 100;
+
+  // Loyalty: 1 pt = $0.01, capped at the customer's balance and the goods
+  // subtotal (after order discount) so points can't exceed what's owed.
+  const maxRedeemable = selectedCustomer
+    ? Math.min(selectedCustomer.loyaltyPoints, Math.max(0, Math.floor((cart.subtotal - discountValue) * 100)))
+    : 0;
+
+  // A gift voucher is a TENDER: it pays down `voucherApplied` of the total; the
+  // remainder (amountDue) is collected via the chosen payment method.
+  const voucherApplied = appliedVoucher
+    ? Math.round(Math.min(Math.round(appliedVoucher.balance * 100) / 100, total) * 100) / 100
+    : 0;
+  const amountDue = Math.max(0, Math.round((total - voucherApplied) * 100) / 100);
+  const voucherCoversAll = appliedVoucher != null && amountDue <= 0;
 
   const splitCardAmount = parseFloat(splitCard) || 0;
   const splitCashAmount = parseFloat(splitCash) || 0;
-  const isSplitValid = Math.abs(splitCardAmount + splitCashAmount - total) < 0.01;
+  // Split tendering settles the amount due (after any voucher), not the full total.
+  const isSplitValid = Math.abs(splitCardAmount + splitCashAmount - amountDue) < 0.01;
 
   // Tenant-enabled payment methods, falling back to the standard set when none
   // are configured (matches the web POS defaults).
@@ -504,6 +553,12 @@ function CheckoutContent({
   useEffect(() => {
     if (!selectedMethod) setPaymentMethod(defaultPaymentMethod);
   }, [selectedMethod, defaultPaymentMethod]);
+
+  // Keep redeemed loyalty within bounds: if the customer is removed or the
+  // redeemable cap shrinks (cart/discount changes), clamp the requested points.
+  useEffect(() => {
+    setLoyaltyPointsToRedeem((p) => (p > maxRedeemable ? maxRedeemable : p));
+  }, [maxRedeemable]);
   const paymentLabel =
     paymentMethod === "cash"
       ? "Cash"
@@ -567,6 +622,14 @@ function CheckoutContent({
     setCustomerId(null);
     setShowCustomers(false);
     setCustSearch("");
+    setDiscountType(null);
+    setDiscountAmount(0);
+    setDiscountAuthorizedBy(null);
+    setDiscountOpen(false);
+    setLoyaltyPointsToRedeem(0);
+    setVoucherCode("");
+    setAppliedVoucher(null);
+    setVoucherBusy(false);
   };
 
   const doPrint = async (order: ReceiptOrder) => {
@@ -582,18 +645,23 @@ function CheckoutContent({
 
   const charge = async () => {
     if (cart.lines.length === 0) return;
-    if ((paymentMethod === "card" || paymentMethod === "split") && !cardType) {
-      promptCardType();
-      return;
+    // When a voucher covers the whole balance, the server takes a sentinel
+    // payment method and skips the remainder (card/split/credit) validation.
+    if (!voucherCoversAll) {
+      if ((paymentMethod === "card" || paymentMethod === "split") && !cardType) {
+        promptCardType();
+        return;
+      }
+      if (paymentMethod === "credit" && !customerId) {
+        Alert.alert("Customer required", "Select a customer to record an on-account (credit) sale.");
+        return;
+      }
+      if (paymentMethod === "split" && !isSplitValid) {
+        Alert.alert("Split doesn't add up", `Card + Cash must equal ${formatMoney(amountDue)}.`);
+        return;
+      }
     }
-    if (paymentMethod === "credit" && !customerId) {
-      Alert.alert("Customer required", "Select a customer to record an on-account (credit) sale.");
-      return;
-    }
-    if (paymentMethod === "split" && !isSplitValid) {
-      Alert.alert("Split doesn't add up", `Card + Cash must equal ${formatMoney(total)}.`);
-      return;
-    }
+    const effectivePaymentMethod = voucherCoversAll ? "gift_voucher" : paymentMethod;
     try {
       const lineSnapshot = cart.lines;
       const order = await createOrder.mutateAsync({
@@ -608,10 +676,17 @@ function CheckoutContent({
               ...(discount > 0 ? { discountAmount: discount } : {}),
             };
           }),
-          paymentMethod,
-          ...((paymentMethod === "card" || paymentMethod === "split") && cardType ? { cardType } : {}),
-          ...(paymentMethod === "split" ? { splitCardAmount, splitCashAmount } : {}),
+          paymentMethod: effectivePaymentMethod,
+          ...(!voucherCoversAll && (paymentMethod === "card" || paymentMethod === "split") && cardType
+            ? { cardType }
+            : {}),
+          ...(!voucherCoversAll && paymentMethod === "split" ? { splitCardAmount, splitCashAmount } : {}),
           ...(customerId ? { customerId } : {}),
+          ...(discountType && discountValue > 0 ? { discountType, discountAmount } : {}),
+          ...(loyaltyPointsToRedeem > 0
+            ? { loyaltyPointsToRedeem: Math.min(loyaltyPointsToRedeem, maxRedeemable) }
+            : {}),
+          ...(appliedVoucher ? { giftVoucherCode: appliedVoucher.code } : {}),
         },
       });
       const items: ReceiptItem[] = lineSnapshot.map((l) => {
@@ -633,7 +708,7 @@ function CheckoutContent({
         subtotal: order.subtotal,
         tax: order.tax,
         total: order.total,
-        paymentMethod: paymentLabel,
+        paymentMethod: voucherCoversAll ? "Gift Voucher" : paymentLabel,
       };
       setReceipt(receiptOrder);
       cart.clear();
@@ -829,6 +904,157 @@ function CheckoutContent({
               ) : null}
             </Card>
 
+            {/* Order discount (manager-PIN gated) */}
+            <Card style={{ gap: 10 }}>
+              <Pressable
+                onPress={() => setDiscountOpen(true)}
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Feather name="percent" size={18} color={c.accent} />
+                  <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("medium") }}>
+                    {discountValue > 0
+                      ? `Discount: ${
+                          discountType === "percent" ? `${discountAmount}%` : formatMoney(discountAmount)
+                        } (−${formatMoney(discountValue)})`
+                      : "Add order discount"}
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={20} color={c.mutedForeground} />
+              </Pressable>
+              {discountValue > 0 ? (
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  {discountAuthorizedBy ? (
+                    <Text style={{ color: c.mutedForeground, fontSize: 12 }}>
+                      Authorized by {discountAuthorizedBy}
+                    </Text>
+                  ) : (
+                    <View />
+                  )}
+                  <Pressable
+                    onPress={() => {
+                      setDiscountType(null);
+                      setDiscountAmount(0);
+                      setDiscountAuthorizedBy(null);
+                    }}
+                  >
+                    <Text style={{ color: c.destructive, fontSize: 13, fontFamily: fontFamily("medium") }}>
+                      Remove
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </Card>
+
+            {/* Loyalty redemption (only with a customer who has points) */}
+            {selectedCustomer && selectedCustomer.loyaltyPoints > 0 ? (
+              <Card style={{ gap: 10 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Feather name="star" size={18} color={c.accent} />
+                  <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("medium") }}>
+                    Loyalty points
+                  </Text>
+                </View>
+                <Text style={{ color: c.mutedForeground, fontSize: 12 }}>
+                  {selectedCustomer.loyaltyPoints} available · 100 pts = $1
+                </Text>
+                <View style={{ flexDirection: "row", gap: 10, alignItems: "flex-end" }}>
+                  <View style={{ flex: 1 }}>
+                    <Field
+                      label="Points to redeem"
+                      value={loyaltyPointsToRedeem ? String(loyaltyPointsToRedeem) : ""}
+                      onChangeText={(t) => {
+                        const n = Math.floor(parseFloat(t) || 0);
+                        setLoyaltyPointsToRedeem(Math.max(0, Math.min(n, maxRedeemable)));
+                      }}
+                      placeholder="0"
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                  <Button
+                    label="Max"
+                    variant="secondary"
+                    onPress={() => setLoyaltyPointsToRedeem(maxRedeemable)}
+                    style={{ marginBottom: 2 }}
+                  />
+                </View>
+                {loyaltyPointsToRedeem > 0 ? (
+                  <Text style={{ color: c.mutedForeground, fontSize: 12, fontFamily: fontFamily("medium") }}>
+                    Redeeming {loyaltyPointsToRedeem} pts (−{formatMoney(loyaltyDiscount)})
+                  </Text>
+                ) : null}
+              </Card>
+            ) : null}
+
+            {/* Gift voucher tender (online only) */}
+            <Card style={{ gap: 10 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Feather name="gift" size={18} color={c.accent} />
+                <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("medium") }}>
+                  Gift voucher
+                </Text>
+              </View>
+              {appliedVoucher ? (
+                <View style={{ gap: 6 }}>
+                  <Row label={`Voucher ${appliedVoucher.code}`} value={`−${formatMoney(voucherApplied)}`} />
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    <Text style={{ color: c.mutedForeground, fontSize: 12 }}>
+                      Balance {formatMoney(appliedVoucher.balance)}
+                    </Text>
+                    <Pressable
+                      onPress={() => {
+                        setAppliedVoucher(null);
+                        setVoucherCode("");
+                      }}
+                    >
+                      <Text style={{ color: c.destructive, fontSize: 13, fontFamily: fontFamily("medium") }}>
+                        Remove
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <View style={{ flexDirection: "row", gap: 10, alignItems: "flex-end" }}>
+                  <View style={{ flex: 1 }}>
+                    <Field
+                      label="Voucher code"
+                      value={voucherCode}
+                      onChangeText={setVoucherCode}
+                      placeholder="GV-XXXX"
+                      autoCapitalize="characters"
+                    />
+                  </View>
+                  <Button
+                    label="Apply"
+                    variant="secondary"
+                    loading={voucherBusy}
+                    onPress={async () => {
+                      const code = voucherCode.trim();
+                      if (!code) return;
+                      setVoucherBusy(true);
+                      try {
+                        const v = await lookupGiftVoucher(code);
+                        if (v.status !== "active") {
+                          Alert.alert("Voucher unavailable", `This voucher is ${v.status}.`);
+                          return;
+                        }
+                        if (v.balance <= 0) {
+                          Alert.alert("No balance", "This voucher has no remaining balance.");
+                          return;
+                        }
+                        setAppliedVoucher(v);
+                      } catch (e) {
+                        Alert.alert("Voucher not found", e instanceof Error ? e.message : "Could not find that voucher.");
+                      } finally {
+                        setVoucherBusy(false);
+                      }
+                    }}
+                    style={{ marginBottom: 2 }}
+                  />
+                </View>
+              )}
+            </Card>
+
             {/* Payment */}
             <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("medium"), marginTop: 4 }}>
               PAYMENT METHOD
@@ -885,8 +1111,8 @@ function CheckoutContent({
                   }}
                 >
                   {isSplitValid
-                    ? `Card + Cash = ${formatMoney(total)} ✓`
-                    : `Card + Cash must equal ${formatMoney(total)}`}
+                    ? `Card + Cash = ${formatMoney(amountDue)} ✓`
+                    : `Card + Cash must equal ${formatMoney(amountDue)}`}
                 </Text>
               </Card>
             ) : null}
@@ -904,11 +1130,23 @@ function CheckoutContent({
             }}
           >
             <Row label="Subtotal" value={formatMoney(cart.subtotal)} />
+            {discountValue > 0 ? (
+              <Row label="Discount" value={`−${formatMoney(discountValue)}`} />
+            ) : null}
+            {loyaltyDiscount > 0 ? (
+              <Row label={`Loyalty (${loyaltyPointsToRedeem} pts)`} value={`−${formatMoney(loyaltyDiscount)}`} />
+            ) : null}
             <Row label={`Tax${taxMode === "inclusive" ? " (incl.)" : ""}`} value={formatMoney(tax)} />
             <Divider />
             <Row label="Total" value={formatMoney(total)} bold />
+            {voucherApplied > 0 ? (
+              <>
+                <Row label={`Voucher ${appliedVoucher?.code ?? ""}`} value={`−${formatMoney(voucherApplied)}`} />
+                <Row label="Amount due" value={formatMoney(amountDue)} bold />
+              </>
+            ) : null}
             <Button
-              label={`Charge ${formatMoney(total)}`}
+              label={voucherCoversAll ? "Complete sale (paid by voucher)" : `Charge ${formatMoney(amountDue)}`}
               icon="credit-card"
               onPress={charge}
               loading={createOrder.isPending}
@@ -926,7 +1164,120 @@ function CheckoutContent({
           setDiscountFor(null);
         }}
       />
+
+      <OrderDiscountModal
+        visible={discountOpen}
+        subtotal={cart.subtotal}
+        authenticate={async (pin) => {
+          const staff = await authStaff.mutateAsync({
+            data: { pin, requiredRoles: ["manager", "admin", "supervisor"] },
+          });
+          return staff?.name ?? null;
+        }}
+        onClose={() => setDiscountOpen(false)}
+        onApply={(type, amount, authorizedBy) => {
+          setDiscountType(type);
+          setDiscountAmount(amount);
+          setDiscountAuthorizedBy(authorizedBy);
+          setDiscountOpen(false);
+        }}
+      />
     </View>
+  );
+}
+
+function OrderDiscountModal({
+  visible,
+  subtotal,
+  authenticate,
+  onClose,
+  onApply,
+}: {
+  visible: boolean;
+  subtotal: number;
+  authenticate: (pin: string) => Promise<string | null>;
+  onClose: () => void;
+  onApply: (type: "percent" | "fixed", amount: number, authorizedBy: string | null) => void;
+}) {
+  const c = useColors();
+  const [type, setType] = useState<"percent" | "fixed">("percent");
+  const [amount, setAmount] = useState("");
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setType("percent");
+      setAmount("");
+      setPin("");
+      setBusy(false);
+    }
+  }, [visible]);
+
+  const amt = parseFloat(amount) || 0;
+  const preview =
+    amt > 0 ? Math.min(type === "percent" ? subtotal * (amt / 100) : amt, subtotal) : 0;
+
+  const apply = async () => {
+    if (amt <= 0) {
+      Alert.alert("Enter a discount", "Enter a discount amount greater than zero.");
+      return;
+    }
+    if (!pin.trim()) {
+      Alert.alert("Manager PIN required", "Enter a manager PIN to authorize this discount.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const name = await authenticate(pin.trim());
+      onApply(type, amt, name);
+    } catch (e) {
+      Alert.alert("Authorization failed", e instanceof Error ? e.message : "Invalid manager PIN.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}
+      >
+        <Pressable onPress={() => {}} style={{ backgroundColor: c.card, borderRadius: c.radius + 6, padding: 20, gap: 16 }}>
+          <Text style={{ color: c.foreground, fontSize: 18, fontFamily: fontFamily("bold") }}>Order discount</Text>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Chip label="Percent (%)" active={type === "percent"} onPress={() => setType("percent")} />
+            <Chip label="Fixed ($)" active={type === "fixed"} onPress={() => setType("fixed")} />
+          </View>
+          <Field
+            label={type === "percent" ? "Percentage" : "Amount"}
+            value={amount}
+            onChangeText={setAmount}
+            placeholder="0"
+            keyboardType="decimal-pad"
+            autoFocus
+          />
+          {preview > 0 ? (
+            <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("medium") }}>
+              Discount: −{formatMoney(preview)}
+            </Text>
+          ) : null}
+          <Field
+            label="Manager PIN"
+            value={pin}
+            onChangeText={setPin}
+            placeholder="••••"
+            keyboardType="number-pad"
+            secureTextEntry
+          />
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Button label="Cancel" variant="secondary" onPress={onClose} style={{ flex: 1 }} />
+            <Button label="Apply" icon="check" onPress={apply} loading={busy} style={{ flex: 1 }} />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 

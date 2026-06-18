@@ -97,6 +97,26 @@ export function listPaymentMethods(): Promise<PaymentMethod[]> {
   return request<PaymentMethod[]>("/api/payment-methods");
 }
 
+/* ───────────── Gift vouchers ───────────── */
+
+export interface VoucherLookupResult {
+  id: number;
+  code: string;
+  originalValue: number;
+  balance: number;
+  status: string;
+  expiryDate?: string | null;
+  customerName?: string | null;
+}
+
+/** Look up a gift voucher by code for redemption as a tender at checkout. Online only. */
+export function lookupGiftVoucher(code: string): Promise<VoucherLookupResult> {
+  return request<VoucherLookupResult>(
+    `/api/gift-vouchers/lookup/${encodeURIComponent(code.trim().toUpperCase().replace(/\s+/g, ""))}`,
+    { cache: "no-store" },
+  );
+}
+
 /* ───────────── Stock counts ───────────── */
 
 export interface StockCountSession {
