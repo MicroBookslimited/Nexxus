@@ -1200,3 +1200,25 @@ export const closeTable = (
     body: JSON.stringify(body),
     headers: tenantAuthHeaders(),
   });
+
+export interface RecommendedPlan {
+  name: string;
+  slug: string;
+  maxProducts: number | null;
+  priceMonthly: number;
+  priceAnnual: number;
+}
+
+export interface PlanLimitStatus {
+  enforced: boolean;
+  productCount: number;
+  maxProducts: number | null;
+  planName: string | null;
+  planSlug: string | null;
+  atLimit: boolean;
+  overBy: number;
+  recommendedPlan: RecommendedPlan | null;
+}
+
+export const getPlanLimitStatus = () =>
+  api<PlanLimitStatus>("/products/plan-limit", { headers: tenantAuthHeaders() });

@@ -86,7 +86,8 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { Plus, Pencil, Trash2, Search, Package, X, Settings2, Layers, LayoutGrid, List, AlertTriangle, PackagePlus, ShoppingCart, Clock, FileText, CheckCircle2, Eye, ArrowLeft, Truck, ChevronRight, ChevronUp, ChevronDown, MapPin, FileSpreadsheet, Upload, FileDown, Printer, TrendingUp, TrendingDown, History, ChevronsUpDown, Check, Archive, RotateCcw, Copy, GitMerge, ClipboardList, Send, Ban, ArrowRight, Ruler } from "lucide-react";
-import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
+import { TENANT_TOKEN_KEY, getPlanLimitStatus, type PlanLimitStatus } from "@/lib/saas-api";
+import { useLocation } from "wouter";
 import { printPurchaseOrder } from "@/lib/purchase-order-doc";
 import { csvDownload, parseSpreadsheet, type ImportResult } from "@/lib/spreadsheet-import";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -2925,6 +2926,16 @@ export function Products() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState("details");
+  const [, navigate] = useLocation();
+  // Plan product-limit posture (banner + upgrade prompts). Refetched whenever
+  // the product list changes so counts stay accurate after create/archive.
+  const { data: planLimit, refetch: refetchPlanLimit } = useQuery<PlanLimitStatus>({
+    queryKey: ["/api/products/plan-limit"],
+    queryFn: getPlanLimitStatus,
+    staleTime: 30_000,
+  });
+  // Upgrade prompt shown when a create is blocked by the plan limit.
+  const [limitPrompt, setLimitPrompt] = useState<PlanLimitStatus | null>(null);
   const [editingProduct, setEditingProduct] = useState<GetProductResponse | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm());
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -3463,6 +3474,12 @@ export function Products() {
   };
 
   const openAdd = () => {
+    // Block the add flow up-front when the tenant is already at/over their
+    // plan's product limit — show the upgrade prompt instead of the form.
+    if (planLimit?.enforced && planLimit.atLimit) {
+      setLimitPrompt(planLimit);
+      return;
+    }
     setEditingProduct(null);
     setForm({ ...emptyForm(), category: categories[0] ?? "General", markup: defaultMarkupSetting });
     setDialogTab("details");
@@ -3605,10 +3622,33 @@ export function Products() {
           onSuccess: (newProduct) => {
             toast({ title: "Product created" });
             queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+            refetchPlanLimit();
             if (andClose) { setDialogOpen(false); setEditingProduct(null); setForm(emptyForm()); }
             else { setEditingProduct(newProduct); setDialogTab("variants"); }
           },
-          onError: (err) => toast(saveProductErrorToast(err, "Create failed")),
+          onError: (err) => {
+            // Plan product-limit block: surface a dedicated upgrade prompt
+            // instead of a generic toast.
+            const apiErr = err as { status?: number; body?: unknown; data?: unknown } | undefined;
+            const payload = (apiErr?.body ?? apiErr?.data) as
+              | (PlanLimitStatus & { code?: string })
+              | undefined;
+            if (apiErr?.status === 403 && payload?.code === "PLAN_PRODUCT_LIMIT_REACHED") {
+              setDialogOpen(false);
+              setLimitPrompt({
+                enforced: true,
+                productCount: payload.productCount,
+                maxProducts: payload.maxProducts,
+                planName: payload.planName,
+                planSlug: payload.planSlug ?? null,
+                atLimit: true,
+                overBy: payload.overBy ?? 0,
+                recommendedPlan: payload.recommendedPlan ?? null,
+              });
+              return;
+            }
+            toast(saveProductErrorToast(err, "Create failed"));
+          },
         },
       );
     }
@@ -3622,6 +3662,7 @@ export function Products() {
         onSuccess: () => {
           toast({ title: "Product deleted" });
           queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/products/plan-limit"] });
           setDeleteId(null);
         },
         onError: () => toast({ title: "Delete failed", variant: "destructive" }),
@@ -3699,6 +3740,7 @@ export function Products() {
     setBulkConfirmOpen(false);
     const { affected, failed, aborted } = await runBatched("archive", selectedList);
     queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/products/plan-limit"] });
     clearSelection();
     if (failed > 0) {
       toast({ title: `${affected} archived, ${failed} failed`, description: aborted ? "Stopped early after repeated errors — check your connection and retry." : "Some products could not be archived. Please retry.", variant: "destructive" });
@@ -3739,6 +3781,7 @@ export function Products() {
     }
     setBulkProgress(null);
     queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/products/plan-limit"] });
     clearSelection();
     if (deleted > 0 && skipped === 0) {
       toast({ title: `${deleted} product${deleted === 1 ? "" : "s"} permanently deleted` });
@@ -3753,6 +3796,7 @@ export function Products() {
     if (selectedList.length === 0 || bulkProgress) return;
     const { affected, failed, aborted } = await runBatched("restore", selectedList);
     queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/products/plan-limit"] });
     clearSelection();
     if (failed > 0) {
       toast({ title: `${affected} restored, ${failed} failed`, description: aborted ? "Stopped early after repeated errors — check your connection and retry." : "Some products could not be restored. Please retry.", variant: "destructive" });
@@ -3768,6 +3812,7 @@ export function Products() {
         onSuccess: () => {
           toast({ title: "Product restored" });
           queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/products/plan-limit"] });
         },
         onError: () => toast({ title: "Restore failed", variant: "destructive" }),
       },
@@ -3784,6 +3829,7 @@ export function Products() {
         onSuccess: () => {
           toast({ title: "Product permanently deleted" });
           queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/products/plan-limit"] });
           setPermDelete(null);
         },
         onError: (e: any) => {
@@ -3860,6 +3906,43 @@ export function Products() {
           )}
         </div>
       </div>
+
+      {/* Plan product-limit banner — shown when the tenant is at or over their
+          subscription plan's product allowance (e.g. after a downgrade). */}
+      {pageTab === "products" && planLimit?.enforced && planLimit.atLimit && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-semibold text-amber-200">
+                {planLimit.overBy > 0
+                  ? `You're over your ${planLimit.planName} plan's product limit`
+                  : `You've reached your ${planLimit.planName} plan's product limit`}
+              </p>
+              <p className="text-amber-100/80 mt-0.5">
+                Your {planLimit.planName} plan allows{" "}
+                <span className="font-semibold">{planLimit.maxProducts}</span> products. You currently have{" "}
+                <span className="font-semibold">{planLimit.productCount}</span>
+                {planLimit.overBy > 0 ? (
+                  <> — over the limit by <span className="font-semibold">{planLimit.overBy}</span>.</>
+                ) : (
+                  <>.</>
+                )}{" "}
+                {planLimit.recommendedPlan
+                  ? `Upgrade to ${planLimit.recommendedPlan.name} to add more products.`
+                  : "Archive products or contact us about a higher plan to add more."}
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => navigate("/subscription")}
+            className="gap-2 shrink-0 bg-amber-500 hover:bg-amber-400 text-amber-950"
+          >
+            <TrendingUp className="h-4 w-4" />
+            {planLimit.recommendedPlan ? `Upgrade to ${planLimit.recommendedPlan.name}` : "View plans"}
+          </Button>
+        </div>
+      )}
 
       {/* Low stock / out of stock summary buttons (click to reveal details) */}
       {pageTab === "products" && !isLoading && (lowStockProducts.length > 0 || outOfStockProducts.length > 0) && (
@@ -5512,7 +5595,56 @@ export function Products() {
         </DialogContent>
       </Dialog>
 
-      {/* Add / Edit dialog */}
+      {/* Upgrade prompt shown when adding a product is blocked by the plan limit. */}
+      <Dialog open={!!limitPrompt} onOpenChange={(o) => !o && setLimitPrompt(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+              {limitPrompt && limitPrompt.overBy > 0 ? "Product limit exceeded" : "Product limit reached"}
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 pt-1 text-sm">
+                <p>
+                  Your <span className="font-semibold text-foreground">{limitPrompt?.planName}</span> plan allows{" "}
+                  <span className="font-semibold text-foreground">{limitPrompt?.maxProducts}</span> products. You currently
+                  have <span className="font-semibold text-foreground">{limitPrompt?.productCount}</span>
+                  {limitPrompt && limitPrompt.overBy > 0 ? (
+                    <> — over the limit by <span className="font-semibold text-foreground">{limitPrompt.overBy}</span>.</>
+                  ) : (
+                    <>.</>
+                  )}
+                </p>
+                <p>
+                  {limitPrompt?.recommendedPlan ? (
+                    <>
+                      Upgrade to the{" "}
+                      <span className="font-semibold text-foreground">{limitPrompt.recommendedPlan.name}</span> plan
+                      {limitPrompt.recommendedPlan.maxProducts != null && (
+                        <> (up to {limitPrompt.recommendedPlan.maxProducts} products)</>
+                      )}{" "}
+                      to add more.
+                    </>
+                  ) : (
+                    <>Archive products you no longer sell, or contact us about a higher plan, to add more products.</>
+                  )}
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setLimitPrompt(null)}>Not now</Button>
+            <Button
+              onClick={() => { setLimitPrompt(null); navigate("/subscription"); }}
+              className="gap-2 bg-amber-500 hover:bg-amber-400 text-amber-950"
+            >
+              <TrendingUp className="h-4 w-4" />
+              {limitPrompt?.recommendedPlan ? `Upgrade to ${limitPrompt.recommendedPlan.name}` : "View plans"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col">
           <DialogHeader>
@@ -5960,6 +6092,7 @@ export function Products() {
         onImported={(count) => {
           toast({ title: `${count} product${count !== 1 ? "s" : ""} imported successfully` });
           queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/products/plan-limit"] });
         }}
       />
 
@@ -5970,6 +6103,7 @@ export function Products() {
         onImported={(count) => {
           toast({ title: `${count} product${count !== 1 ? "s" : ""} imported from MBPOS` });
           queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/products/plan-limit"] });
         }}
       />
     </motion.div>

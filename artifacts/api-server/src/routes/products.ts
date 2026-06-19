@@ -18,8 +18,15 @@ import {
   MergeProductsBody,
 } from "@workspace/api-zod";
 import { verifyTenantToken } from "./saas-auth";
+import { getPlanLimitStatus } from "../utils/plan-limits";
 
 const router: IRouter = Router();
+
+/** Advisory-lock namespace key for serializing per-tenant product creates. */
+const PRODUCT_CREATE_LOCK = 0x70726f64; // "prod"
+
+/** Sentinel thrown inside the create transaction when the plan limit is hit. */
+class ProductLimitReachedError extends Error {}
 
 /* ─── Auth helper ─── */
 function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
@@ -357,6 +364,16 @@ router.get("/products", async (req, res): Promise<void> => {
   res.json(ListProductsResponse.parse(enriched));
 });
 
+/**
+ * Plan product-limit status for the current tenant. Powers the proactive
+ * at-limit / over-limit banner and upgrade prompts on the Products page.
+ */
+router.get("/products/plan-limit", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  res.json(await getPlanLimitStatus(tenantId));
+});
+
 router.post("/products", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
@@ -364,6 +381,25 @@ router.post("/products", async (req, res): Promise<void> => {
   const parsed = CreateProductBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  // Enforce the subscription plan's product limit. Block creation when the
+  // tenant is at/over their plan's maxProducts and surface the upgrade path.
+  const limitStatus = await getPlanLimitStatus(tenantId);
+  if (limitStatus.enforced && limitStatus.atLimit) {
+    res.status(403).json({
+      error:
+        limitStatus.overBy > 0
+          ? `Your ${limitStatus.planName} plan allows ${limitStatus.maxProducts} products. You currently have ${limitStatus.productCount} — over the limit by ${limitStatus.overBy}.`
+          : `You've reached your ${limitStatus.planName} plan limit of ${limitStatus.maxProducts} products.`,
+      code: "PLAN_PRODUCT_LIMIT_REACHED",
+      productCount: limitStatus.productCount,
+      maxProducts: limitStatus.maxProducts,
+      planName: limitStatus.planName,
+      overBy: limitStatus.overBy,
+      recommendedPlan: limitStatus.recommendedPlan,
+    });
     return;
   }
 
@@ -380,38 +416,78 @@ router.post("/products", async (req, res): Promise<void> => {
     return;
   }
 
-  const [product] = await db
-    .insert(productsTable)
-    .values({
-      tenantId,
-      name: parsed.data.name,
-      description: parsed.data.description,
-      price: parsed.data.price,
-      category: parsed.data.category,
-      imageUrl: parsed.data.imageUrl,
-      barcode: parsed.data.barcode,
-      sku: parsed.data.sku,
-      // Optional free-text size label. Store trimmed non-empty value or NULL.
-      size: parsed.data.size?.trim() ? parsed.data.size.trim() : null,
-      inStock: parsed.data.inStock ?? true,
-      stockCount: isComposite ? 0 : (parsed.data.stockCount ?? 0),
-      soldByWeight: parsed.data.soldByWeight ?? false,
-      // Default a sensible unit when sold-by-weight is enabled but the
-      // caller didn't pick one. Leave NULL when the product is sold by
-      // each so weight-only flows can detect "no scale unit configured".
-      unitOfMeasure: parsed.data.soldByWeight
-        ? (parsed.data.unitOfMeasure ?? "kg")
-        : null,
-      // Optional free-text selling unit / UOM label. Store trimmed non-empty
-      // value or NULL so blank submissions stay "not set".
-      sellingUnit: parsed.data.sellingUnit?.trim() ? parsed.data.sellingUnit.trim() : null,
-      costPrice: parsed.data.costPrice ?? null,
-      structureType: parsed.data.structureType ?? "simple",
-      isTaxable: parsed.data.isTaxable ?? true,
-      trackBatches: parsed.data.trackBatches ?? false,
-      stockMethodOverride: parsed.data.stockMethodOverride ?? null,
-    })
-    .returning();
+  // Insert atomically under a per-tenant advisory lock and re-check the limit
+  // inside the transaction. The early check above is a fast-path for UX; the
+  // in-transaction re-check is what actually guarantees two concurrent creates
+  // can't both slip past `maxProducts` (a race the early check alone allows).
+  // The lock key is namespaced (tenantId, PRODUCT_CREATE_LOCK) so it never
+  // collides with other per-tenant advisory locks (e.g. quotation numbering).
+  let product: typeof productsTable.$inferSelect | undefined;
+  try {
+    product = await db.transaction(async (tx) => {
+      if (limitStatus.enforced && limitStatus.maxProducts != null) {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${tenantId}, ${PRODUCT_CREATE_LOCK})`);
+        const [c] = await tx
+          .select({ n: count() })
+          .from(productsTable)
+          .where(and(eq(productsTable.tenantId, tenantId), isNull(productsTable.archivedAt)));
+        if (Number(c?.n ?? 0) >= limitStatus.maxProducts) {
+          throw new ProductLimitReachedError();
+        }
+      }
+      const [p] = await tx
+        .insert(productsTable)
+        .values({
+          tenantId,
+          name: parsed.data.name,
+          description: parsed.data.description,
+          price: parsed.data.price,
+          category: parsed.data.category,
+          imageUrl: parsed.data.imageUrl,
+          barcode: parsed.data.barcode,
+          sku: parsed.data.sku,
+          // Optional free-text size label. Store trimmed non-empty value or NULL.
+          size: parsed.data.size?.trim() ? parsed.data.size.trim() : null,
+          inStock: parsed.data.inStock ?? true,
+          stockCount: isComposite ? 0 : (parsed.data.stockCount ?? 0),
+          soldByWeight: parsed.data.soldByWeight ?? false,
+          // Default a sensible unit when sold-by-weight is enabled but the
+          // caller didn't pick one. Leave NULL when the product is sold by
+          // each so weight-only flows can detect "no scale unit configured".
+          unitOfMeasure: parsed.data.soldByWeight
+            ? (parsed.data.unitOfMeasure ?? "kg")
+            : null,
+          // Optional free-text selling unit / UOM label. Store trimmed non-empty
+          // value or NULL so blank submissions stay "not set".
+          sellingUnit: parsed.data.sellingUnit?.trim() ? parsed.data.sellingUnit.trim() : null,
+          costPrice: parsed.data.costPrice ?? null,
+          structureType: parsed.data.structureType ?? "simple",
+          isTaxable: parsed.data.isTaxable ?? true,
+          trackBatches: parsed.data.trackBatches ?? false,
+          stockMethodOverride: parsed.data.stockMethodOverride ?? null,
+        })
+        .returning();
+      return p;
+    });
+  } catch (err) {
+    if (err instanceof ProductLimitReachedError) {
+      const fresh = await getPlanLimitStatus(tenantId);
+      res.status(403).json({
+        error:
+          fresh.overBy > 0
+            ? `Your ${fresh.planName} plan allows ${fresh.maxProducts} products. You currently have ${fresh.productCount} — over the limit by ${fresh.overBy}.`
+            : `You've reached your ${fresh.planName} plan limit of ${fresh.maxProducts} products.`,
+        code: "PLAN_PRODUCT_LIMIT_REACHED",
+        productCount: fresh.productCount,
+        maxProducts: fresh.maxProducts,
+        planName: fresh.planName,
+        overBy: fresh.overBy,
+        recommendedPlan: fresh.recommendedPlan,
+      });
+      return;
+    }
+    throw err;
+  }
 
   await logAudit({ tenantId, action: "product.create", entityType: "product", entityId: product?.id, details: { name: parsed.data.name, price: parsed.data.price, structureType: product?.structureType } });
   res.status(201).json(GetProductResponse.parse(await withFlags(product)));

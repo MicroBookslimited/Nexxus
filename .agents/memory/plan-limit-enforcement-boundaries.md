@@ -31,3 +31,13 @@ actual activation.
 - Direct superadmin manual plan assignment / manual-payments are intentional
   admin overrides and are deliberately NOT gated.
 - Count semantics: archived (soft-deleted) products do not consume quota.
+- Add-time enforcement (block product creation at `maxProducts`): an early
+  pre-insert check is UX-only. The ACTUAL guarantee must be an in-transaction
+  recount under a per-tenant `pg_advisory_xact_lock(tenantId, <namespaced-key>)`
+  before the insert, throwing a sentinel → 403, or two concurrent creates both
+  slip past. Pick a lock key that can't equal another per-tenant lock's 2nd arg
+  (quotations use `(tenantId, year)`, so avoid year-like ints).
+- Read-side: any UI banner/prompt backed by a plan-limit query must invalidate
+  that query key on EVERY count-changing op (create, single/bulk
+  archive/restore, permanent delete, imports), not just create, or the banner
+  goes stale after downgrades/cleanups.
