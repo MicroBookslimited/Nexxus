@@ -491,7 +491,8 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
 
   <div class="r-sep"></div>
 
-  ${order.staffName ? `<div class="r-meta">Employee: ${escHtml(order.staffName)}</div>` : ""}
+  ${order.staffName ? `<div class="r-meta">Cashier: ${escHtml(order.staffName)}</div>` : ""}
+  <div class="r-meta">${escHtml(dateStr)}</div>
   ${order.stationNumber != null ? `<div class="r-meta">Station: #${order.stationNumber}</div>` : ""}
   <div class="r-meta">${escHtml(order.orderType || "Sale")}</div>
   ${order.customerName && !order.staffName ? "" : ""}
@@ -1171,7 +1172,7 @@ function buildSupermarketReceiptHtml(
   ${businessPhone ? `<div class="sm-center sm-sub">${escHtml(businessPhone)}</div>` : ""}
   ${addressLines.map(l => `<div class="sm-center sm-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
   ${businessTaxNumber ? `<div class="sm-center sm-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
-  ${order.staffName ? `<div class="sm-center sm-sub">CASHIER ${escHtml(order.staffName.toUpperCase())}</div>` : ""}
+  ${order.staffName ? `<div class="sm-center sm-sub">Cashier: ${escHtml(order.staffName)}</div>` : ""}
   ${order.stationNumber != null ? `<div class="sm-center sm-sub">STATION #${order.stationNumber}</div>` : ""}
 
   ${idRowHtml}
@@ -1464,7 +1465,7 @@ function buildConvenienceReceiptHtml(
   ${addressLines.map(l => `<div class="cv-center cv-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
   ${businessTaxNumber ? `<div class="cv-center cv-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
   ${businessPhone ? `<div class="cv-center cv-sub">${escHtml(businessPhone)}</div>` : ""}
-  ${order.staffName ? `<div class="cv-center cv-sub">CASHIER ${escHtml(order.staffName.toUpperCase())}</div>` : ""}
+  ${order.staffName ? `<div class="cv-center cv-sub">Cashier: ${escHtml(order.staffName)}</div>` : ""}
   ${order.stationNumber != null ? `<div class="cv-center cv-sub">STATION #${order.stationNumber}</div>` : ""}
   <div class="cv-center cv-sub">THANKS FOR SHOPPING</div>
   <div class="cv-center cv-sub">with ${escHtml(businessName)}</div>
@@ -2567,7 +2568,7 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, settings: Receip
       ? `<div class="rf-method"><div class="rf-row"><span>Refund method</span><span>Cash</span></div></div>`
       : "";
 
-  const cashierHtml  = data.staffName ? `<div class="rf-meta"><span>Cashier</span><span>${escHtml(data.staffName)}</span></div>` : "";
+  const cashierHtml  = data.staffName ? `<div class="rf-meta">Cashier: ${escHtml(data.staffName)}</div>` : "";
   const stationHtml  = data.stationNumber != null ? `<div class="rf-meta"><span>Station</span><span>#${data.stationNumber}</span></div>` : "";
   const customerHtml = data.customerName ? `<div class="rf-meta"><span>Customer</span><span>${escHtml(data.customerName)}</span></div>` : "";
   const reasonHtml   = data.reason?.trim()
@@ -2648,6 +2649,7 @@ export function buildBillHtml(
     total: number;
     isPaid?: boolean;
     paymentMethod?: string;
+    staffName?: string | null;
   },
   settings: ReceiptSettings = {},
 ): string {
@@ -2713,6 +2715,7 @@ export function buildBillHtml(
   ${businessPhone   ? `<div style="font-size:11px">${escHtml(businessPhone)}</div>`   : ""}
   <div class="lbl">${billLabel}</div>
   <div class="tbl">Table: ${escHtml(params.tableName)}</div>
+  ${params.staffName ? `<div style="font-size:10px;margin-top:2px">Cashier: ${escHtml(params.staffName)}</div>` : ""}
   <div style="font-size:10px;margin-top:2px">${dateStr}</div>
 </div>
 <table>

@@ -863,7 +863,7 @@ export function POS() {
       return;
     }
     const billHtml = buildBillHtml(
-      { tableName: tableTicketDialog.name, items: ticket.items, subtotal: ticket.subtotal, tax: ticket.tax, serviceCharge: ticket.serviceCharge, total: ticket.total },
+      { tableName: tableTicketDialog.name, items: ticket.items, subtotal: ticket.subtotal, tax: ticket.tax, serviceCharge: ticket.serviceCharge, total: ticket.total, staffName: sessionStaff?.name ?? null },
       settings ?? {},
     );
     openReceiptWindow(billHtml);
@@ -890,7 +890,7 @@ export function POS() {
     try {
       await closeTable(tableTicketDialog.id, { paymentMethod: tableTicketPayMethod });
       const receiptHtml = buildBillHtml(
-        { tableName: tableTicketDialog.name, items: ticket.items, subtotal: ticket.subtotal, tax: ticket.tax, serviceCharge: ticket.serviceCharge, total: ticket.total, isPaid: true, paymentMethod: tableTicketPayMethod },
+        { tableName: tableTicketDialog.name, items: ticket.items, subtotal: ticket.subtotal, tax: ticket.tax, serviceCharge: ticket.serviceCharge, total: ticket.total, isPaid: true, paymentMethod: tableTicketPayMethod, staffName: sessionStaff?.name ?? null },
         settings ?? {},
       );
       openReceiptWindow(receiptHtml);
