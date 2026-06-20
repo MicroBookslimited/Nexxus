@@ -4635,12 +4635,12 @@ export function POS() {
                     <button
                       key={t.id}
                       title={isBilled ? "Bill printed — tap to pay or reopen" : isOccupied ? "Open tab — tap to view or add items" : "Tap to select"}
-                      className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-xs font-medium transition-all min-h-[64px] text-center ${
-                        isBilled ? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                        : isOccupied ? "border-emerald-600/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                        : isSel ? "border-primary bg-primary/10 text-primary"
-                        : "border-border text-foreground hover:border-primary/50"}`}
-                      style={!isActive && isSel ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}15` } : {}}
+                      className={`flex flex-col items-center justify-center gap-1 rounded-lg border-2 p-3 text-xs font-semibold transition-all min-h-[64px] text-center text-white shadow-sm hover:brightness-110 active:scale-[0.97] ${
+                        isSel ? "ring-2 ring-offset-2 ring-offset-background ring-foreground/50" : ""} ${
+                        isBilled ? "bg-amber-500 border-amber-600"
+                        : isOccupied ? "bg-emerald-600 border-emerald-700"
+                        : "border-transparent"}`}
+                      style={!isActive ? { backgroundColor: t.color, borderColor: t.color } : {}}
                       onClick={() => {
                         if (isActive) {
                           setTableTicketDialog(t);
@@ -4650,11 +4650,11 @@ export function POS() {
                         setTableSelectOpen(false);
                       }}
                     >
-                      <span className="flex items-center gap-1 leading-tight">
+                      <span className="flex items-center gap-1 leading-tight drop-shadow-sm">
                         {isBilled && <LockKeyhole className="h-3 w-3 shrink-0" />}
                         {t.name}
                       </span>
-                      {ticket && <span className="font-mono text-[10px]">{formatCurrency(ticket.total, baseCurrency)}</span>}
+                      {ticket && <span className="font-mono text-[10px] text-white/90">{formatCurrency(ticket.total, baseCurrency)}</span>}
                     </button>
                   );
                 })}
