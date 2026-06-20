@@ -39,7 +39,7 @@ import {
   UtensilsCrossed, ShoppingBag, Truck, Mail, AlertTriangle, UserPlus, X, MapPin,
   ClipboardList, BookOpen, LockKeyhole, Unlock, ArrowLeftRight, StickyNote, Layers,
   Tag, PenLine, PackagePlus, Calculator, Delete, RefreshCw,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, LayoutGrid,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions, lookupGiftVoucher, type VoucherLookupResult, fetchCustomerByCard, closeTable } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -851,6 +851,7 @@ export function POS() {
 
   // ── Table Ticket (open-tab) state ──────────────────────────────────────────
   const [tableTicketDialog, setTableTicketDialog] = useState<NonNullable<typeof tables>[0] | null>(null);
+  const [tableSelectOpen, setTableSelectOpen] = useState(false);
   const [tableTicketPayMethod, setTableTicketPayMethod] = useState<"cash" | "card">("cash");
   const [tableTicketBusy, setTableTicketBusy] = useState(false);
   const [reopenOverrideOpen, setReopenOverrideOpen] = useState(false);
@@ -3011,41 +3012,44 @@ export function POS() {
               </div>
 
               {/* Table — restaurant only */}
-              {showTables && orderMode === "dine-in" && tables && tables.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-medium text-muted-foreground mb-1">Table</p>
-                  <div className="flex flex-wrap gap-1">
-                    {tables.filter((t) => t.isActive).map((t) => {
-                      const isOccupied = t.status === "occupied";
-                      const isBilled   = t.status === "billed";
-                      const isActive   = isOccupied || isBilled;
-                      const ticket     = tableTicketMap.get(t.id);
-                      if (isActive) {
-                        return (
-                          <button key={t.id}
-                            title={isBilled ? "Bill printed — tap to pay or reopen" : "Open tab — tap to view or add items"}
-                            className={`px-2 py-1 rounded text-[10px] font-medium border transition-all text-left leading-tight ${isBilled ? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400" : "border-emerald-600/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}
-                            onClick={() => setTableTicketDialog(t)}>
-                            <div className="flex items-center gap-0.5">
-                              {isBilled && <LockKeyhole className="h-2.5 w-2.5 shrink-0" />}
-                              <span>{t.name}</span>
-                            </div>
-                            {ticket && <div className="font-mono mt-0.5">{formatCurrency(ticket.total, baseCurrency)}</div>}
-                          </button>
-                        );
-                      }
-                      return (
-                        <button key={t.id}
-                          className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-all ${selectedTableId === t.id ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}
-                          style={selectedTableId === t.id ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}15` } : {}}
-                          onClick={() => setSelectedTableId(selectedTableId === t.id ? null : t.id)}>
-                          {t.name}
-                        </button>
-                      );
-                    })}
+              {showTables && orderMode === "dine-in" && tables && tables.length > 0 && (() => {
+                const selectedTable = tables.find((t) => t.id === selectedTableId);
+                return (
+                  <div>
+                    <p className="text-[10px] font-medium text-muted-foreground mb-1">Table</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full h-9 justify-between text-xs font-medium"
+                      style={selectedTable && !(selectedTable.status === "occupied" || selectedTable.status === "billed") ? { borderColor: selectedTable.color, color: selectedTable.color } : {}}
+                      onClick={() => setTableSelectOpen(true)}
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <LayoutGrid className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{selectedTable ? selectedTable.name : "Select Table"}</span>
+                      </span>
+                      {selectedTableId != null && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          aria-label="Clear selected table"
+                          className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          onClick={(e) => { e.stopPropagation(); setSelectedTableId(null); }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setSelectedTableId(null);
+                            }
+                          }}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </span>
+                      )}
+                    </Button>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Delivery */}
               {orderMode === "delivery" && (
@@ -4607,6 +4611,58 @@ export function POS() {
               {chargeOrder.isPending ? "Processing…" : "Confirm & Charge"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Select Table Dialog ─────────────────────────────────────────── */}
+      <Dialog open={tableSelectOpen} onOpenChange={(o) => !o && setTableSelectOpen(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LayoutGrid className="h-4 w-4 text-primary" />Select Table
+            </DialogTitle>
+          </DialogHeader>
+          {tables && tables.filter((t) => t.isActive).length > 0 ? (
+            <ScrollArea className="max-h-[60vh]">
+              <div className="grid grid-cols-3 gap-2 p-0.5">
+                {tables.filter((t) => t.isActive).map((t) => {
+                  const isOccupied = t.status === "occupied";
+                  const isBilled   = t.status === "billed";
+                  const isActive   = isOccupied || isBilled;
+                  const ticket     = tableTicketMap.get(t.id);
+                  const isSel      = selectedTableId === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      title={isBilled ? "Bill printed — tap to pay or reopen" : isOccupied ? "Open tab — tap to view or add items" : "Tap to select"}
+                      className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-xs font-medium transition-all min-h-[64px] text-center ${
+                        isBilled ? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                        : isOccupied ? "border-emerald-600/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                        : isSel ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-foreground hover:border-primary/50"}`}
+                      style={!isActive && isSel ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}15` } : {}}
+                      onClick={() => {
+                        if (isActive) {
+                          setTableTicketDialog(t);
+                        } else {
+                          setSelectedTableId(t.id);
+                        }
+                        setTableSelectOpen(false);
+                      }}
+                    >
+                      <span className="flex items-center gap-1 leading-tight">
+                        {isBilled && <LockKeyhole className="h-3 w-3 shrink-0" />}
+                        {t.name}
+                      </span>
+                      {ticket && <span className="font-mono text-[10px]">{formatCurrency(ticket.total, baseCurrency)}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          ) : (
+            <p className="text-sm text-muted-foreground py-6 text-center">No tables configured.</p>
+          )}
         </DialogContent>
       </Dialog>
 
