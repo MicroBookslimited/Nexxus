@@ -3373,7 +3373,7 @@ export function POS() {
             )}
 
             {isRestaurant && orderMode === "dine-in" && (
-              <Button variant="outline" className="w-full h-10 text-sm border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+              <Button className="w-full h-10 text-sm bg-amber-500 text-white hover:bg-amber-600 border border-amber-500"
                 onClick={handleSendToKitchen} disabled={cart.length === 0 || createOrder.isPending}>
                 <ChefHat className="mr-2 h-4 w-4" />Send to Kitchen (Pay Later)
               </Button>
