@@ -1013,6 +1013,7 @@ export const ListOrdersResponseItem = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  tableId: zod.number().nullish(),
   staffName: zod
     .string()
     .nullish()
@@ -1283,6 +1284,7 @@ export const GetOrderResponse = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  tableId: zod.number().nullish(),
   staffName: zod
     .string()
     .nullish()
@@ -1467,6 +1469,7 @@ export const UpdateOrderStatusResponse = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  tableId: zod.number().nullish(),
   staffName: zod
     .string()
     .nullish()
@@ -1666,6 +1669,7 @@ export const RefundOrderItemsResponse = zod.object({
     notes: zod.string().nullish(),
     voidReason: zod.string().nullish(),
     customerId: zod.number().nullish(),
+    tableId: zod.number().nullish(),
     staffName: zod
       .string()
       .nullish()
@@ -1900,6 +1904,7 @@ export const ChargeOrderResponse = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  tableId: zod.number().nullish(),
   staffName: zod
     .string()
     .nullish()

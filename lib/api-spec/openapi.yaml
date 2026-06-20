@@ -2964,6 +2964,10 @@ components:
         customerId:
           type: integer
           nullable: true
+        tableId:
+          type: integer
+          nullable: true
+          description: Dining table this order belongs to (restaurant dine-in). NULL for non-table orders. Used by the POS to aggregate all open orders per table.
         staffName:
           type: string
           nullable: true
