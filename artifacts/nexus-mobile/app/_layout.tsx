@@ -19,6 +19,7 @@ import { LoadingState } from "@/components/ui";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import { PrinterProvider } from "@/context/PrinterContext";
+import { StaffProvider } from "@/context/StaffContext";
 import { getToken } from "@/lib/nexus-api";
 
 // Point the generated API client at the shared proxy domain and let it read the
@@ -86,11 +87,13 @@ export default function RootLayout() {
           <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
               <AuthProvider>
-                <PrinterProvider>
-                  <CartProvider>
-                    <RootLayoutNav />
-                  </CartProvider>
-                </PrinterProvider>
+                <StaffProvider>
+                  <PrinterProvider>
+                    <CartProvider>
+                      <RootLayoutNav />
+                    </CartProvider>
+                  </PrinterProvider>
+                </StaffProvider>
               </AuthProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>

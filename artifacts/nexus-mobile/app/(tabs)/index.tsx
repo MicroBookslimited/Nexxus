@@ -42,6 +42,8 @@ import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { CustomizeSheet } from "@/components/CustomizeSheet";
 import { useCart, type CartLine } from "@/context/CartContext";
 import { usePrinter } from "@/context/PrinterContext";
+import { useStaff } from "@/context/StaffContext";
+import { StaffPinModal } from "@/components/StaffPinModal";
 import { useColors } from "@/hooks/useColors";
 import { useResponsive } from "@/hooks/useResponsive";
 import { printReceipt, type ReceiptItem, type ReceiptOrder, type ReceiptSettings } from "@/lib/escpos";
@@ -105,6 +107,8 @@ export default function SellScreen() {
   const cart = useCart();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { staff, setStaff } = useStaff();
+  const [staffPinOpen, setStaffPinOpen] = useState(false);
 
   const { data: products, isLoading, error, refetch } = useListProducts();
   const [search, setSearch] = useState("");
@@ -357,14 +361,44 @@ export default function SellScreen() {
         onPick={continueWithUnit}
       />
       <BarcodeScannerModal visible={scanOpen} onClose={() => setScanOpen(false)} onScan={handleScan} />
+      <StaffPinModal
+        visible={staffPinOpen}
+        title={staff ? "Switch Staff" : "Sign In Staff"}
+        subtitle="Enter a staff PIN to ring up sales under their name."
+        onSuccess={(s) => {
+          setStaff({ id: s.id, name: s.name, role: s.role });
+          setStaffPinOpen(false);
+        }}
+        onClose={() => setStaffPinOpen(false)}
+      />
     </>
   );
 
   /* ─────────── Tablet: products + persistent cart side-by-side ─────────── */
   const accountButton = (
-    <Pressable onPress={() => router.push("/subscription")} hitSlop={8}>
-      <Feather name="user" size={22} color={c.mutedForeground} />
-    </Pressable>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+      <Pressable
+        onPress={() => setStaffPinOpen(true)}
+        hitSlop={8}
+        style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+      >
+        <Feather name="users" size={18} color={staff ? c.accent : c.mutedForeground} />
+        <Text
+          style={{
+            color: staff ? c.foreground : c.mutedForeground,
+            fontSize: 13,
+            fontFamily: fontFamily(staff ? "semibold" : "regular"),
+            maxWidth: 120,
+          }}
+          numberOfLines={1}
+        >
+          {staff ? staff.name : "Sign in"}
+        </Text>
+      </Pressable>
+      <Pressable onPress={() => router.push("/subscription")} hitSlop={8}>
+        <Feather name="user" size={22} color={c.mutedForeground} />
+      </Pressable>
+    </View>
   );
 
   if (r.isTablet) {
@@ -484,6 +518,7 @@ function CheckoutContent({
   const pad = useScreenPadding();
   const router = useRouter();
   const cart = useCart();
+  const { staff } = useStaff();
   const createOrder = useCreateOrder();
   const { data: customers } = useListCustomers();
   const { data: settingsData } = useGetSettings();
@@ -751,6 +786,7 @@ function CheckoutContent({
             };
           }),
           paymentMethod: effectivePaymentMethod,
+          ...(staff ? { staffId: staff.id } : {}),
           ...(!voucherCoversAll && (paymentMethod === "card" || paymentMethod === "split") && cardType
             ? { cardType }
             : {}),
@@ -786,6 +822,7 @@ function CheckoutContent({
         orderNumber: order.orderNumber,
         createdAt: new Date(),
         customerName: selectedCustomer?.name,
+        ...(order.staffName ?? staff?.name ? { staffName: order.staffName ?? staff?.name } : {}),
         items,
         subtotal: order.subtotal,
         tax: order.tax,

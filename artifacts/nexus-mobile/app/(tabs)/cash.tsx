@@ -21,7 +21,7 @@ import {
   fontFamily,
   useScreenPadding,
 } from "@/components/ui";
-import { useAuth } from "@/context/AuthContext";
+import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
 import { useResponsive } from "@/hooks/useResponsive";
 import { formatMoney } from "@/lib/format";
@@ -35,7 +35,6 @@ export default function CashScreen() {
   const c = useColors();
   const pad = useScreenPadding();
   const lay = useResponsive();
-  const { tenant } = useAuth();
 
   const sessionQuery = useGetCurrentCashSession({
     query: { retry: false, queryKey: ["cash", "current-session"] },
@@ -55,7 +54,7 @@ export default function CashScreen() {
       {sessionQuery.isLoading ? (
         <LoadingState label="Checking shift…" />
       ) : !hasSession ? (
-        <OpenShiftView defaultName={tenant?.businessName ?? "Manager"} onOpened={refresh} pad={pad.bottom} maxWidth={lay.contentMaxWidth} />
+        <OpenShiftView onOpened={refresh} pad={pad.bottom} maxWidth={lay.contentMaxWidth} />
       ) : (
         <ScrollView
           contentContainerStyle={{
@@ -150,24 +149,34 @@ function Line({ label, value, bold }: { label: string; value: string; bold?: boo
   );
 }
 
-function OpenShiftView({ defaultName, onOpened, pad, maxWidth }: { defaultName: string; onOpened: () => void; pad: number; maxWidth?: number }) {
+function OpenShiftView({ onOpened, pad, maxWidth }: { onOpened: () => void; pad: number; maxWidth?: number }) {
   const c = useColors();
   const open = useOpenCashSession();
   const authStaff = useAuthenticateStaff();
+  const { staff: activeStaff, setStaff } = useStaff();
   const [openingCash, setOpeningCash] = useState("");
   const [pin, setPin] = useState("");
 
   const submit = async () => {
-    let staffName = defaultName;
-    let staffId: number | undefined;
+    // A shift must be attributed to a real staff member. Prefer the active
+    // cashier from the Sell screen; otherwise a valid staff PIN is required.
+    let staffName = activeStaff?.name;
+    let staffId = activeStaff?.id;
     try {
       if (pin.trim()) {
         const res = await authStaff.mutateAsync({ data: { pin: pin.trim() } });
         staffName = res.name;
         staffId = res.id;
+        // Keep shift identity and Sell-screen order identity aligned: the staff
+        // who opened the shift becomes the active cashier for subsequent sales.
+        setStaff({ id: res.id, name: res.name, role: res.role });
+      }
+      if (!staffId || !staffName) {
+        Alert.alert("Staff PIN required", "Enter a valid staff PIN to open a shift.");
+        return;
       }
       await open.mutateAsync({
-        data: { staffName, openingCash: toNum(openingCash), ...(staffId ? { staffId } : {}) },
+        data: { staffName, openingCash: toNum(openingCash), staffId },
       });
       onOpened();
     } catch (e) {
@@ -195,11 +204,26 @@ function OpenShiftView({ defaultName, onOpened, pad, maxWidth }: { defaultName: 
           placeholder="0.00"
           keyboardType="decimal-pad"
         />
+        {activeStaff ? (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              paddingVertical: 4,
+            }}
+          >
+            <Feather name="user-check" size={16} color={c.accent} />
+            <Text style={{ color: c.foreground, fontFamily: fontFamily("medium"), fontSize: 14 }}>
+              Opening as {activeStaff.name}
+            </Text>
+          </View>
+        ) : null}
         <Field
-          label="Staff PIN (optional)"
+          label={activeStaff ? "Different staff PIN (optional)" : "Staff PIN (required)"}
           value={pin}
           onChangeText={setPin}
-          placeholder="Attach a cashier"
+          placeholder={activeStaff ? "Override cashier" : "Enter staff PIN"}
           keyboardType="number-pad"
           secureTextEntry
         />
