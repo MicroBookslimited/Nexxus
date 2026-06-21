@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, desc, count, inArray, sql } from "drizzle-orm";
+import { and, eq, ne, desc, count, inArray, sql } from "drizzle-orm";
 import {
   db,
   supplierReturnsTable,
@@ -110,6 +110,11 @@ async function confirmReturnSideEffects(
           inArray(supplierReturnItemsTable.purchaseBillItemId, billLineIds),
           eq(supplierReturnsTable.tenantId, tenantId),
           eq(supplierReturnsTable.status, "confirmed"),
+          // Exclude the current return itself — when "Confirm now" is used on
+          // creation the row is already inserted as "confirmed" before this
+          // check runs, so without this exclusion it counts its own qty as
+          // already-returned and falsely reports available = 0.
+          ne(supplierReturnsTable.id, ret.id),
         ));
       const priorMap = new Map<number, number>();
       for (const p of prior) {
