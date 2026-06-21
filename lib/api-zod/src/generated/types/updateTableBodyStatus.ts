@@ -13,5 +13,4 @@ export const UpdateTableBodyStatus = {
   available: "available",
   occupied: "occupied",
   reserved: "reserved",
-  billed: "billed",
 } as const;

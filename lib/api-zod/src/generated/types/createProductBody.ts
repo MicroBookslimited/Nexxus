@@ -17,6 +17,8 @@ export interface CreateProductBody {
   imageUrl?: string;
   barcode?: string;
   sku?: string;
+  /** Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on. */
+  size?: string | null;
   inStock?: boolean;
   stockCount?: number;
   soldByWeight?: boolean;

@@ -516,6 +516,116 @@ router.post("/purchase-bills/:id/confirm", async (req, res): Promise<void> => {
   res.json({ ...enriched, costChanges });
 });
 
+const UpdatePurchaseBillBody = z.object({
+  billNumber: z.string().min(1).optional(),
+  supplier: z.string().optional(),
+  notes: z.string().optional(),
+  defaultTaxRate: z.number().min(0).max(100).optional(),
+  taxMode: z.enum(["exclusive", "inclusive"]).optional(),
+  items: z.array(CreateBillItemBody).min(1).optional(),
+});
+
+router.patch("/purchase-bills/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  if (Array.isArray(req.params.id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = UpdatePurchaseBillBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const [bill] = await db.select().from(purchaseBillsTable)
+    .where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)));
+  if (!bill) { res.status(404).json({ error: "Bill not found" }); return; }
+  if (bill.status === "confirmed") {
+    res.status(400).json({ error: "Cannot edit a confirmed bill. Confirmed bills have already updated inventory and accounting." });
+    return;
+  }
+
+  const { billNumber, supplier, notes, defaultTaxRate, taxMode, items } = parsed.data;
+  const effectiveTaxMode = taxMode ?? bill.taxMode;
+  const effectiveDefaultRate = defaultTaxRate ?? bill.defaultTaxRate;
+
+  const cents = (n: number) => Math.round(n * 100) / 100;
+
+  let subtotal = bill.subtotal;
+  let taxTotal = bill.taxTotal;
+  let totalCost = bill.totalCost;
+
+  const updated = await db.transaction(async (tx) => {
+    if (items) {
+      // Validate products belong to tenant
+      for (const item of items) {
+        const [product] = await tx.select({
+          id: productsTable.id,
+          trackBatches: productsTable.trackBatches,
+          name: productsTable.name,
+        }).from(productsTable)
+          .where(and(eq(productsTable.id, item.productId), eq(productsTable.tenantId, tenantId)));
+        if (!product) {
+          throw new Error(`Product ${item.productId} not found`);
+        }
+        if (product.trackBatches && !item.batchNumber) {
+          throw new Error(`Product "${product.name}" requires a batch/lot number`);
+        }
+      }
+
+      // Recompute totals from new items
+      const computed = items.map((item) => {
+        const effectiveRate = item.taxRate ?? effectiveDefaultRate;
+        if (effectiveTaxMode === "inclusive") {
+          const lineTotal = cents(item.quantity * item.unitCost);
+          const lineSubtotal = effectiveRate > 0 ? cents(lineTotal / (1 + effectiveRate / 100)) : lineTotal;
+          const lineTax = cents(lineTotal - lineSubtotal);
+          const netUnitCost = item.quantity > 0 ? lineSubtotal / item.quantity : item.unitCost;
+          return { ...item, netUnitCost, lineSubtotal, lineTax, lineTotal };
+        }
+        const netUnitCost = item.unitCost;
+        const lineSubtotal = cents(item.quantity * netUnitCost);
+        const lineTax = cents((lineSubtotal * effectiveRate) / 100);
+        return { ...item, netUnitCost, lineSubtotal, lineTax, lineTotal: cents(lineSubtotal + lineTax) };
+      });
+
+      subtotal = cents(computed.reduce((s, i) => s + i.lineSubtotal, 0));
+      taxTotal = cents(computed.reduce((s, i) => s + i.lineTax, 0));
+      totalCost = cents(subtotal + taxTotal);
+
+      // Replace all items
+      await tx.delete(purchaseBillItemsTable).where(eq(purchaseBillItemsTable.billId, id));
+      await tx.insert(purchaseBillItemsTable).values(
+        computed.map((item) => ({
+          billId: id,
+          productId: item.productId,
+          quantity: item.quantity,
+          unitCost: item.netUnitCost,
+          taxRate: item.taxRate ?? null,
+          taxAmount: item.lineTax,
+          totalCost: item.lineTotal,
+          batchNumber: item.batchNumber ?? null,
+          expiryDate: item.expiryDate ?? null,
+        })),
+      );
+    }
+
+    const [updatedBill] = await tx.update(purchaseBillsTable).set({
+      ...(billNumber !== undefined ? { billNumber } : {}),
+      ...(supplier !== undefined ? { supplier: supplier || null } : {}),
+      ...(notes !== undefined ? { notes: notes || null } : {}),
+      ...(defaultTaxRate !== undefined ? { defaultTaxRate: effectiveDefaultRate } : {}),
+      ...(taxMode !== undefined ? { taxMode: effectiveTaxMode } : {}),
+      ...(items ? { subtotal, taxTotal, totalCost } : {}),
+    }).where(and(eq(purchaseBillsTable.id, id), eq(purchaseBillsTable.tenantId, tenantId)))
+      .returning();
+
+    return updatedBill;
+  });
+
+  const enriched = await enrichBillWithItems(updated);
+  res.json(enriched);
+});
+
 router.delete("/purchase-bills/:id", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }

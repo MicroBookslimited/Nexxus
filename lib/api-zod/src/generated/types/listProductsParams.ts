@@ -13,4 +13,8 @@ export type ListProductsParams = {
    * When true, include soft-deleted (archived) products in the response. Defaults to false.
    */
   includeArchived?: boolean;
+  /**
+   * Optional — when set, each product's price reflects that location's price_override and stock/availability reflect that location's inventory.
+   */
+  locationId?: number;
 };

@@ -30,7 +30,7 @@ export const ListProductsQueryParams = zod.object({
     .number()
     .optional()
     .describe(
-      "Optional — when set, each product's price reflects that location's price_override and stock/availability reflect that location's inventory.",
+      "Optional — when set, each product's price reflects that location's price_override and stock\/availability reflect that location's inventory.",
     ),
 });
 
@@ -47,7 +47,7 @@ export const ListProductsResponseItem = zod.object({
     .string()
     .nullish()
     .describe(
-      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+      'Optional free-text product size label (e.g. \"12 inch\", \"Large\", \"500ml\"). Display-only; surfaced when the tenant show_product_size setting is on. NULL = not set.',
     ),
   inStock: zod.boolean(),
   stockCount: zod.number(),
@@ -123,7 +123,7 @@ export const CreateProductBody = zod.object({
     .string()
     .nullish()
     .describe(
-      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+      'Optional free-text product size label (e.g. \"12 inch\", \"Large\", \"500ml\"). Display-only; surfaced when the tenant show_product_size setting is on.',
     ),
   inStock: zod.boolean().optional(),
   stockCount: zod.number().optional(),
@@ -177,7 +177,7 @@ export const GetProductResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+      'Optional free-text product size label (e.g. \"12 inch\", \"Large\", \"500ml\"). Display-only; surfaced when the tenant show_product_size setting is on. NULL = not set.',
     ),
   inStock: zod.boolean(),
   stockCount: zod.number(),
@@ -256,7 +256,7 @@ export const UpdateProductBody = zod.object({
     .string()
     .nullish()
     .describe(
-      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+      'Optional free-text product size label (e.g. \"12 inch\", \"Large\", \"500ml\"). Display-only; surfaced when the tenant show_product_size setting is on.',
     ),
   inStock: zod.boolean().optional(),
   stockCount: zod.number().optional(),
@@ -303,7 +303,7 @@ export const UpdateProductResponse = zod.object({
     .string()
     .nullish()
     .describe(
-      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+      'Optional free-text product size label (e.g. \"12 inch\", \"Large\", \"500ml\"). Display-only; surfaced when the tenant show_product_size setting is on. NULL = not set.',
     ),
   inStock: zod.boolean(),
   stockCount: zod.number(),
@@ -371,6 +371,21 @@ export const DeleteProductParams = zod.object({
 });
 
 /**
+ * @summary Permanently (hard) delete an archived product that has no sales/purchase/transaction history.
+ */
+export const DeleteProductPermanentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteProductPermanentQueryParams = zod.object({
+  staffId: zod.coerce
+    .number()
+    .describe(
+      "Staff member performing the delete (must be Owner\/Admin or have inventory.manage).",
+    ),
+});
+
+/**
  * @summary Archive (soft-delete) multiple products. History is preserved.
  */
 
@@ -395,12 +410,16 @@ export const BulkRestoreProductsResponse = zod.object({
 });
 
 /**
- * @summary Permanently (hard) delete multiple archived products that have no history. Skips ineligible ids.
+ * @summary Permanently (hard) delete multiple archived products that have no history. Ineligible ids are skipped.
  */
 
 export const BulkPermanentDeleteProductsBody = zod.object({
   ids: zod.array(zod.number()).min(1),
-  staffId: zod.number(),
+  staffId: zod
+    .number()
+    .describe(
+      "Staff member performing the delete (must be Owner\/Admin or have inventory.manage).",
+    ),
 });
 
 export const BulkPermanentDeleteProductsResponse = zod.object({
@@ -1013,7 +1032,12 @@ export const ListOrdersResponseItem = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
-  tableId: zod.number().nullish(),
+  tableId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dining table this order belongs to (restaurant dine-in). NULL for non-table orders. Used by the POS to aggregate all open orders per table.",
+    ),
   staffName: zod
     .string()
     .nullish()
@@ -1284,7 +1308,12 @@ export const GetOrderResponse = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
-  tableId: zod.number().nullish(),
+  tableId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dining table this order belongs to (restaurant dine-in). NULL for non-table orders. Used by the POS to aggregate all open orders per table.",
+    ),
   staffName: zod
     .string()
     .nullish()
@@ -1469,7 +1498,12 @@ export const UpdateOrderStatusResponse = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
-  tableId: zod.number().nullish(),
+  tableId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dining table this order belongs to (restaurant dine-in). NULL for non-table orders. Used by the POS to aggregate all open orders per table.",
+    ),
   staffName: zod
     .string()
     .nullish()
@@ -1669,7 +1703,12 @@ export const RefundOrderItemsResponse = zod.object({
     notes: zod.string().nullish(),
     voidReason: zod.string().nullish(),
     customerId: zod.number().nullish(),
-    tableId: zod.number().nullish(),
+    tableId: zod
+      .number()
+      .nullish()
+      .describe(
+        "Dining table this order belongs to (restaurant dine-in). NULL for non-table orders. Used by the POS to aggregate all open orders per table.",
+      ),
     staffName: zod
       .string()
       .nullish()
@@ -1904,7 +1943,12 @@ export const ChargeOrderResponse = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
-  tableId: zod.number().nullish(),
+  tableId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dining table this order belongs to (restaurant dine-in). NULL for non-table orders. Used by the POS to aggregate all open orders per table.",
+    ),
   staffName: zod
     .string()
     .nullish()
@@ -2600,6 +2644,12 @@ export const GetRecentOrdersResponseItem = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  tableId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dining table this order belongs to (restaurant dine-in). NULL for non-table orders. Used by the POS to aggregate all open orders per table.",
+    ),
   staffName: zod
     .string()
     .nullish()
@@ -2961,6 +3011,12 @@ export const GetCustomerOrdersResponseItem = zod.object({
   notes: zod.string().nullish(),
   voidReason: zod.string().nullish(),
   customerId: zod.number().nullish(),
+  tableId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Dining table this order belongs to (restaurant dine-in). NULL for non-table orders. Used by the POS to aggregate all open orders per table.",
+    ),
   staffName: zod
     .string()
     .nullish()
@@ -3071,7 +3127,7 @@ export const GetLowStockProductsResponseItem = zod.object({
     .string()
     .nullish()
     .describe(
-      'Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on.',
+      'Optional free-text product size label (e.g. \"12 inch\", \"Large\", \"500ml\"). Display-only; surfaced when the tenant show_product_size setting is on. NULL = not set.',
     ),
   inStock: zod.boolean(),
   stockCount: zod.number(),
@@ -3484,6 +3540,101 @@ export const GetPurchaseBillParams = zod.object({
 });
 
 export const GetPurchaseBillResponse = zod.object({
+  id: zod.number(),
+  billNumber: zod.string(),
+  supplier: zod.string().nullish(),
+  status: zod.enum(["draft", "confirmed"]),
+  notes: zod.string().nullish(),
+  defaultTaxRate: zod.number(),
+  taxMode: zod
+    .enum(["exclusive", "inclusive"])
+    .optional()
+    .describe(
+      "Whether entered unit costs are net (exclusive) or tax-inclusive.",
+    ),
+  subtotal: zod.number(),
+  taxTotal: zod.number(),
+  totalCost: zod.number(),
+  itemCount: zod.number(),
+  createdAt: zod.coerce.date(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      billId: zod.number(),
+      productId: zod.number(),
+      productName: zod.string(),
+      quantity: zod.number(),
+      unitCost: zod.number(),
+      taxRate: zod
+        .number()
+        .nullish()
+        .describe(
+          "Line tax rate (%). Null means the line inherits the bill's defaultTaxRate.",
+        ),
+      taxAmount: zod.number(),
+      totalCost: zod.number(),
+    }),
+  ),
+  costChanges: zod
+    .array(
+      zod
+        .object({
+          productId: zod.number(),
+          productName: zod.string(),
+          oldCost: zod.number().nullish(),
+          newCost: zod.number(),
+          currentPrice: zod.number(),
+          suggestedPrice: zod
+            .number()
+            .describe(
+              "New selling price that preserves the previous margin %.",
+            ),
+        })
+        .describe(
+          "A product whose cost increased as a result of confirming this bill.",
+        ),
+    )
+    .optional()
+    .describe(
+      "Populated on create\/confirm responses when product costs increased.",
+    ),
+});
+
+/**
+ * @summary Update a draft purchase bill (draft only)
+ */
+export const UpdatePurchaseBillParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdatePurchaseBillBody = zod
+  .object({
+    billNumber: zod.string().optional(),
+    supplier: zod.string().optional(),
+    notes: zod.string().optional(),
+    defaultTaxRate: zod.number().optional(),
+    taxMode: zod.enum(["exclusive", "inclusive"]).optional(),
+    items: zod
+      .array(
+        zod.object({
+          productId: zod.number(),
+          quantity: zod.number(),
+          unitCost: zod.number().optional(),
+          taxRate: zod
+            .number()
+            .nullish()
+            .describe(
+              "Line tax rate (%). Omit or send null to inherit the bill default.",
+            ),
+        }),
+      )
+      .optional(),
+  })
+  .describe(
+    "Patch a draft purchase bill. All fields optional; items replace all existing lines.",
+  );
+
+export const UpdatePurchaseBillResponse = zod.object({
   id: zod.number(),
   billNumber: zod.string(),
   supplier: zod.string().nullish(),
@@ -4152,7 +4303,8 @@ export const GetShopifyAppCredentialsResponse = zod.object({
 });
 
 /**
- * @summary Save the tenant's Shopify app Client ID and Secret (secret stored encrypted, never returned).
+ * @deprecated
+ * @summary Deprecated — Shopify app credentials are platform-managed via env vars (SHOPIFY_API_KEY / SHOPIFY_API_SECRET). Always returns 410.
  */
 export const saveShopifyAppCredentialsBodyApiVersionRegExp = new RegExp(
   "^\\d{4}-\\d{2}$",
@@ -4178,17 +4330,6 @@ export const SaveShopifyAppCredentialsBody = zod
   .describe(
     "Save the tenant's Shopify app Client ID + Secret. The secret may be omitted on update to keep the stored one.",
   );
-
-export const SaveShopifyAppCredentialsResponse = zod.object({
-  configured: zod
-    .boolean()
-    .describe("Whether the tenant has saved a Client ID + Secret."),
-  clientId: zod
-    .string()
-    .nullish()
-    .describe("The saved Shopify app Client ID \/ API key (public)."),
-  apiVersion: zod.string().describe("Default Admin API version, e.g. 2025-01."),
-});
 
 /**
  * @summary List all of the tenant's connected Shopify stores (tokens redacted).
@@ -4339,6 +4480,10 @@ export const UpdateShopifySyncSettingsBody = zod.object({
     .enum(["shopify_to_nexus", "nexus_to_shopify", "two_way"])
     .optional(),
   defaultLocationId: zod.number().nullish(),
+  apiVersion: zod
+    .string()
+    .optional()
+    .describe("Admin API version override for this store, e.g. 2025-01."),
 });
 
 export const UpdateShopifySyncSettingsResponse = zod.object({

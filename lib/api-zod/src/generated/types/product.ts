@@ -18,6 +18,8 @@ export interface Product {
   imageUrl?: string | null;
   barcode?: string | null;
   sku?: string | null;
+  /** Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on. NULL = not set. */
+  size?: string | null;
   inStock: boolean;
   stockCount: number;
   soldByWeight: boolean;
@@ -38,6 +40,8 @@ export interface Product {
   hasModifiers: boolean;
   /** True when this product has at least one composite component row. */
   isComposite: boolean;
+  /** True only for an archived product with zero sales/purchase/transaction history (eligible for permanent delete). Only meaningful when archived products are included in the list. */
+  deletable?: boolean;
   createdAt: Date;
   /** Soft-delete timestamp. When set the product is archived (hidden from catalog/POS/menu) but its history is preserved. NULL = active. */
   archivedAt?: Date | null;

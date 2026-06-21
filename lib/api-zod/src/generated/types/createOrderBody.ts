@@ -30,4 +30,6 @@ export interface CreateOrderBody {
   loyaltyPointsToRedeem?: number;
   /** Gift voucher code to redeem as a tender against this sale. The server locks the voucher, applies min(balance, total), and records a redeem ledger entry. Does not change subtotal/tax/total. */
   giftVoucherCode?: string;
+  /** Open cash session's location. When set, catalog line prices are resolved against that location's price_override and stock is deducted from that location's inventory. */
+  locationId?: number;
 }

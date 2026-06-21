@@ -25,6 +25,7 @@ import {
   useListPurchaseBills,
   useCreatePurchaseBill,
   useGetPurchaseBill,
+  useUpdatePurchaseBill,
   useConfirmPurchaseBill,
   useDeletePurchaseBill,
   useListPurchaseOrders,
@@ -2918,6 +2919,7 @@ export function Products() {
   const { data: purchases } = useListPurchases();
   const { data: bills, refetch: refetchBills } = useListPurchaseBills();
   const createBill = useCreatePurchaseBill();
+  const updateBill = useUpdatePurchaseBill();
   const confirmBill = useConfirmPurchaseBill();
   const deleteBill = useDeletePurchaseBill();
   const { data: vendors = [] } = useListVendors();
@@ -2956,12 +2958,43 @@ export function Products() {
   const toggleVariantExpand = (id: number) =>
     setExpandedVariants(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [viewBillId, setViewBillId] = useState<number | null>(null);
+  const [editingBillId, setEditingBillId] = useState<number | null>(null);
   const [billSupplierManual, setBillSupplierManual] = useState(false);
   const [billForm, setBillForm] = useState<BillForm>(emptyBillForm());
   const { data: viewBillDetail } = useGetPurchaseBill(
     viewBillId ?? 0,
     { query: { enabled: !!viewBillId } },
   );
+  const { data: editBillDetail } = useGetPurchaseBill(
+    editingBillId ?? 0,
+    { query: { enabled: !!editingBillId && billView === "new", queryKey: ["purchase-bill-edit", editingBillId] } },
+  );
+
+  // Populate the bill form whenever the detail loads for an edit session.
+  React.useEffect(() => {
+    if (!editBillDetail || !editingBillId) return;
+    setBillForm({
+      billNumber: editBillDetail.billNumber,
+      supplier: editBillDetail.supplier ?? "",
+      notes: editBillDetail.notes ?? "",
+      defaultTaxRate: editBillDetail.defaultTaxRate ? String(editBillDetail.defaultTaxRate) : "",
+      // Items are stored with NET unit costs on the server. Load as exclusive
+      // so the preview math is consistent regardless of the original taxMode.
+      taxMode: "exclusive",
+      items: editBillDetail.items.length > 0
+        ? editBillDetail.items.map((it) => ({
+            tempId: makeId(),
+            productId: String(it.productId),
+            quantity: String(it.quantity),
+            unitCost: String(it.unitCost),
+            taxRate: it.taxRate === null || it.taxRate === undefined ? "" : String(it.taxRate),
+            batchNumber: it.batchNumber ?? "",
+            expiryDate: it.expiryDate ?? "",
+          }))
+        : [emptyLineItem()],
+    });
+    setBillSupplierManual(true);
+  }, [editBillDetail, editingBillId]);
 
   // ── Purchase Orders ──
   const { data: purchaseOrders, refetch: refetchPos } = useListPurchaseOrders();
@@ -3375,6 +3408,73 @@ export function Products() {
             variant: "destructive",
           });
         },
+      },
+    );
+  };
+
+  const handleUpdateBill = (action: "save" | "confirm") => {
+    if (!editingBillId) return;
+    const validItems = billForm.items.filter((i) => i.productId && parseInt(i.quantity) > 0);
+    if (!validItems.length) {
+      toast({ title: "Add at least one item with a product and quantity", variant: "destructive" });
+      return;
+    }
+    const defaultTaxRate = parseFloat(billForm.defaultTaxRate) || 0;
+    updateBill.mutate(
+      {
+        id: editingBillId,
+        data: {
+          billNumber: billForm.billNumber.trim(),
+          supplier: billForm.supplier || undefined,
+          notes: billForm.notes || undefined,
+          defaultTaxRate,
+          taxMode: billForm.taxMode,
+          items: validItems.map((i) => ({
+            productId: parseInt(i.productId),
+            quantity: parseInt(i.quantity),
+            unitCost: parseFloat(i.unitCost) || 0,
+            taxRate: i.taxRate.trim() === "" ? null : (parseFloat(i.taxRate) || 0),
+            batchNumber: i.batchNumber.trim() === "" ? null : i.batchNumber.trim(),
+            expiryDate: i.expiryDate.trim() === "" ? null : i.expiryDate,
+          })),
+        },
+      } as never,
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ["/api/purchase-bills"] });
+          refetchBills();
+          if (action === "confirm") {
+            handleConfirmBillById(editingBillId);
+          } else {
+            toast({ title: "Purchase bill updated" });
+          }
+          setBillView("list");
+          setEditingBillId(null);
+          setBillForm(emptyBillForm());
+          setBillSupplierManual(false);
+        },
+        onError: (err: unknown) => {
+          const e = err as { message?: string; data?: { error?: string } } | null;
+          const detail = e?.data?.error ?? e?.message ?? "Please check the form and try again.";
+          toast({ title: "Failed to update bill", description: detail, variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const handleConfirmBillById = (id: number) => {
+    confirmBill.mutate(
+      { id },
+      {
+        onSuccess: (response: unknown) => {
+          toast({ title: "Bill confirmed — inventory updated!" });
+          queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/purchase-bills"] });
+          setViewBillId(null);
+          refetchBills();
+          maybeOpenCostChangeDialog(response);
+        },
+        onError: () => toast({ title: "Confirm failed", variant: "destructive" }),
       },
     );
   };
@@ -4460,6 +4560,15 @@ export function Products() {
                           </Button>
                           {bill.status === "draft" && (
                             <>
+                              <Button size="icon" variant="outline" className="h-7 w-7 text-primary hover:bg-primary/10" title="Edit" onClick={() => {
+                                setEditingBillId(bill.id);
+                                setBillForm(emptyBillForm());
+                                setConvertingPoId(null);
+                                setBillView("new");
+                                refetchProducts();
+                              }}>
+                                <Pencil className="h-3 w-3" />
+                              </Button>
                               <Button size="icon" variant="outline" className="h-7 w-7 text-green-400 border-green-500/40 hover:bg-green-500/10" title="Confirm & Receive" onClick={() => handleConfirmBill(bill.id)}>
                                 <CheckCircle2 className="h-3 w-3" />
                               </Button>
@@ -4480,11 +4589,11 @@ export function Products() {
             <div className="space-y-5">
               {/* Form header */}
               <div className="flex items-center gap-3">
-                <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => { setBillView("list"); setConvertingPoId(null); }}>
+                <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => { setBillView("list"); setConvertingPoId(null); setEditingBillId(null); }}>
                   <ArrowLeft className="h-3.5 w-3.5" />Bills
                 </Button>
                 <span className="text-muted-foreground">/</span>
-                <h3 className="text-lg font-semibold">New Purchase Bill</h3>
+                <h3 className="text-lg font-semibold">{editingBillId ? "Edit Purchase Bill" : "New Purchase Bill"}</h3>
               </div>
 
               {/* Bill Info */}
@@ -4620,7 +4729,7 @@ export function Products() {
                     return (
                     <React.Fragment key={item.tempId}>
                     <div
-                      className="grid grid-cols-[1.5fr_60px_100px_75px_130px_120px_95px_100px_36px] gap-2 px-4 py-2 items-center border-b border-border/40 last:border-0"
+                      className="grid grid-cols-[1.5fr_90px_100px_75px_130px_120px_95px_100px_36px] gap-2 px-4 py-2 items-center border-b border-border/40 last:border-0"
                     >
                       {/* Product picker — searchable combobox (fast for 1000+ products) */}
                       <ProductCombobox
@@ -4773,22 +4882,44 @@ export function Products() {
 
               {/* Action buttons */}
               <div className="flex items-center gap-3 justify-end pt-2 border-t border-border">
-                <Button variant="outline" onClick={() => { setBillView("list"); setConvertingPoId(null); }}>Cancel</Button>
-                <Button
-                  variant="outline"
-                  className="gap-2 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
-                  onClick={() => handleSaveBill("draft")}
-                  disabled={createBill.isPending}
-                >
-                  <Clock className="h-4 w-4" />Save as Draft
-                </Button>
-                <Button
-                  className="gap-2 bg-green-600 hover:bg-green-700 text-white"
-                  onClick={() => handleSaveBill("confirmed")}
-                  disabled={createBill.isPending}
-                >
-                  <CheckCircle2 className="h-4 w-4" />Confirm & Receive Inventory
-                </Button>
+                <Button variant="outline" onClick={() => { setBillView("list"); setConvertingPoId(null); setEditingBillId(null); }}>Cancel</Button>
+                {editingBillId ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      className="gap-2 border-primary/40 text-primary hover:bg-primary/10"
+                      onClick={() => handleUpdateBill("save")}
+                      disabled={updateBill.isPending}
+                    >
+                      <Pencil className="h-4 w-4" />Save Changes
+                    </Button>
+                    <Button
+                      className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => handleUpdateBill("confirm")}
+                      disabled={updateBill.isPending}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />Save & Confirm Inventory
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="outline"
+                      className="gap-2 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
+                      onClick={() => handleSaveBill("draft")}
+                      disabled={createBill.isPending}
+                    >
+                      <Clock className="h-4 w-4" />Save as Draft
+                    </Button>
+                    <Button
+                      className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => handleSaveBill("confirmed")}
+                      disabled={createBill.isPending}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />Confirm & Receive Inventory
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           )}

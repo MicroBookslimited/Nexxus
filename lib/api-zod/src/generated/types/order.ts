@@ -43,6 +43,8 @@ export interface Order {
   notes?: string | null;
   voidReason?: string | null;
   customerId?: number | null;
+  /** Dining table this order belongs to (restaurant dine-in). NULL for non-table orders. Used by the POS to aggregate all open orders per table. */
+  tableId?: number | null;
   /** Display name of the cashier/staff who rang up the sale (joined from staff by staffId). Printed on receipts. */
   staffName?: string | null;
   /** Station/till number assigned to the cashier's open shift, stamped onto the sale and printed on receipts. */

@@ -21,10 +21,10 @@ import type {
   AppSettings,
   AuthenticateStaffBody,
   AvailableComposite,
-  BulkProductIdsBody,
-  BulkProductsResult,
   BulkPermanentDeleteProductsBody,
   BulkPermanentDeleteResult,
+  BulkProductIdsBody,
+  BulkProductsResult,
   CancelGiftVoucherBody,
   CashPayout,
   CashSession,
@@ -50,12 +50,12 @@ import type {
   Customer,
   DailySales,
   DashboardSummary,
+  DeleteProductPermanentParams,
   DeleteProductUnit200,
   DiningTable,
   DuplicateGroup,
   EmailSentResponse,
   ExportOrdersParams,
-  DeleteProductPermanentParams,
   FindDuplicateProductsParams,
   GetAvailableCompositeParams,
   GetDailySalesParams,
@@ -115,6 +115,7 @@ import type {
   UpdateKitchenOrderStatusBody,
   UpdateOrderStatusBody,
   UpdateProductUnitBody,
+  UpdatePurchaseBillBody,
   UpdatePurchaseOrderBody,
   UpdateQuotationBody,
   UpdateStaffBody,
@@ -678,7 +679,7 @@ export const deleteProductPermanent = async (
 };
 
 export const getDeleteProductPermanentMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -719,13 +720,13 @@ export type DeleteProductPermanentMutationResult = NonNullable<
   Awaited<ReturnType<typeof deleteProductPermanent>>
 >;
 
-export type DeleteProductPermanentMutationError = ErrorType<unknown>;
+export type DeleteProductPermanentMutationError = ErrorType<void>;
 
 /**
  * @summary Permanently (hard) delete an archived product that has no sales/purchase/transaction history.
  */
 export const useDeleteProductPermanent = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -927,12 +928,15 @@ export const bulkPermanentDeleteProducts = async (
   bulkPermanentDeleteProductsBody: BulkPermanentDeleteProductsBody,
   options?: RequestInit,
 ): Promise<BulkPermanentDeleteResult> => {
-  return customFetch<BulkPermanentDeleteResult>(getBulkPermanentDeleteProductsUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(bulkPermanentDeleteProductsBody),
-  });
+  return customFetch<BulkPermanentDeleteResult>(
+    getBulkPermanentDeleteProductsUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkPermanentDeleteProductsBody),
+    },
+  );
 };
 
 export const getBulkPermanentDeleteProductsMutationOptions = <
@@ -976,7 +980,8 @@ export const getBulkPermanentDeleteProductsMutationOptions = <
 export type BulkPermanentDeleteProductsMutationResult = NonNullable<
   Awaited<ReturnType<typeof bulkPermanentDeleteProducts>>
 >;
-export type BulkPermanentDeleteProductsMutationBody = BodyType<BulkPermanentDeleteProductsBody>;
+export type BulkPermanentDeleteProductsMutationBody =
+  BodyType<BulkPermanentDeleteProductsBody>;
 export type BulkPermanentDeleteProductsMutationError = ErrorType<unknown>;
 
 /**
@@ -6967,6 +6972,93 @@ export function useGetPurchaseBill<
 }
 
 /**
+ * @summary Update a draft purchase bill (draft only)
+ */
+export const getUpdatePurchaseBillUrl = (id: number) => {
+  return `/api/purchase-bills/${id}`;
+};
+
+export const updatePurchaseBill = async (
+  id: number,
+  updatePurchaseBillBody: UpdatePurchaseBillBody,
+  options?: RequestInit,
+): Promise<PurchaseBillWithItems> => {
+  return customFetch<PurchaseBillWithItems>(getUpdatePurchaseBillUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updatePurchaseBillBody),
+  });
+};
+
+export const getUpdatePurchaseBillMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePurchaseBill>>,
+    TError,
+    { id: number; data: BodyType<UpdatePurchaseBillBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePurchaseBill>>,
+  TError,
+  { id: number; data: BodyType<UpdatePurchaseBillBody> },
+  TContext
+> => {
+  const mutationKey = ["updatePurchaseBill"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePurchaseBill>>,
+    { id: number; data: BodyType<UpdatePurchaseBillBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updatePurchaseBill(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePurchaseBillMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePurchaseBill>>
+>;
+export type UpdatePurchaseBillMutationBody = BodyType<UpdatePurchaseBillBody>;
+export type UpdatePurchaseBillMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a draft purchase bill (draft only)
+ */
+export const useUpdatePurchaseBill = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePurchaseBill>>,
+    TError,
+    { id: number; data: BodyType<UpdatePurchaseBillBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePurchaseBill>>,
+  TError,
+  { id: number; data: BodyType<UpdatePurchaseBillBody> },
+  TContext
+> => {
+  return useMutation(getUpdatePurchaseBillMutationOptions(options));
+};
+
+/**
  * @summary Delete a draft purchase bill
  */
 export const getDeletePurchaseBillUrl = (id: number) => {
@@ -9059,32 +9151,27 @@ export function useGetShopifyAppCredentials<
 }
 
 /**
- * @summary Save the tenant's Shopify app Client ID and Secret (secret stored encrypted, never returned).
+ * @deprecated
+ * @summary Deprecated — Shopify app credentials are platform-managed via env vars (SHOPIFY_API_KEY / SHOPIFY_API_SECRET). Always returns 410.
  */
 export const getSaveShopifyAppCredentialsUrl = () => {
   return `/api/shopify/app-credentials`;
 };
 
-/**
- * @deprecated Shopify app credentials are platform-managed via env vars. This endpoint always returns 410.
- */
 export const saveShopifyAppCredentials = async (
   shopifyAppCredentialsBody: ShopifyAppCredentialsBody,
   options?: RequestInit,
-): Promise<ShopifyAppCredentialsStatus> => {
-  return customFetch<ShopifyAppCredentialsStatus>(
-    getSaveShopifyAppCredentialsUrl(),
-    {
-      ...options,
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(shopifyAppCredentialsBody),
-    },
-  );
+): Promise<unknown> => {
+  return customFetch<unknown>(getSaveShopifyAppCredentialsUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(shopifyAppCredentialsBody),
+  });
 };
 
 export const getSaveShopifyAppCredentialsMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9126,13 +9213,14 @@ export type SaveShopifyAppCredentialsMutationResult = NonNullable<
 >;
 export type SaveShopifyAppCredentialsMutationBody =
   BodyType<ShopifyAppCredentialsBody>;
-export type SaveShopifyAppCredentialsMutationError = ErrorType<unknown>;
+export type SaveShopifyAppCredentialsMutationError = ErrorType<void>;
 
 /**
- * @summary Save the tenant's Shopify app Client ID and Secret (secret stored encrypted, never returned).
+ * @deprecated
+ * @summary Deprecated — Shopify app credentials are platform-managed via env vars (SHOPIFY_API_KEY / SHOPIFY_API_SECRET). Always returns 410.
  */
 export const useSaveShopifyAppCredentials = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<

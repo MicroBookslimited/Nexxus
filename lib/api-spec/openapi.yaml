@@ -1624,6 +1624,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PurchaseBillWithItems"
+    patch:
+      operationId: updatePurchaseBill
+      tags: [purchase-bills]
+      summary: Update a draft purchase bill (draft only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePurchaseBillBody"
+      responses:
+        "200":
+          description: Updated purchase bill
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseBillWithItems"
     delete:
       operationId: deletePurchaseBill
       tags: [purchase-bills]
@@ -4704,6 +4727,27 @@ components:
       required:
         - billNumber
         - items
+
+    UpdatePurchaseBillBody:
+      type: object
+      description: Patch a draft purchase bill. All fields optional; items replace all existing lines.
+      properties:
+        billNumber:
+          type: string
+        supplier:
+          type: string
+        notes:
+          type: string
+        defaultTaxRate:
+          type: number
+          format: float
+        taxMode:
+          type: string
+          enum: [exclusive, inclusive]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreatePurchaseBillItemBody"
 
     PurchaseOrderItem:
       type: object

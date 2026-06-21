@@ -1061,7 +1061,6 @@ export const DiningTableStatus = {
   available: "available",
   occupied: "occupied",
   reserved: "reserved",
-  billed: "billed",
 } as const;
 
 export interface DiningTable {
@@ -1112,7 +1111,6 @@ export const UpdateTableBodyStatus = {
   available: "available",
   occupied: "occupied",
   reserved: "reserved",
-  billed: "billed",
 } as const;
 
 export interface UpdateTableBody {
@@ -1356,6 +1354,26 @@ export interface CreatePurchaseBillBody {
   /** How entered unit costs are interpreted. "exclusive" (default): cost is net, tax added on top. "inclusive": cost already includes tax and the server back-computes the net cost. */
   taxMode?: CreatePurchaseBillBodyTaxMode;
   items: CreatePurchaseBillItemBody[];
+}
+
+export type UpdatePurchaseBillBodyTaxMode =
+  (typeof UpdatePurchaseBillBodyTaxMode)[keyof typeof UpdatePurchaseBillBodyTaxMode];
+
+export const UpdatePurchaseBillBodyTaxMode = {
+  exclusive: "exclusive",
+  inclusive: "inclusive",
+} as const;
+
+/**
+ * Patch a draft purchase bill. All fields optional; items replace all existing lines.
+ */
+export interface UpdatePurchaseBillBody {
+  billNumber?: string;
+  supplier?: string;
+  notes?: string;
+  defaultTaxRate?: number;
+  taxMode?: UpdatePurchaseBillBodyTaxMode;
+  items?: CreatePurchaseBillItemBody[];
 }
 
 export interface PurchaseOrderItem {
@@ -1640,16 +1658,16 @@ export type ListProductsParams = {
   locationId?: number;
 };
 
-export type FindDuplicateProductsParams = {
+export type DeleteProductPermanentParams = {
   /**
-   * Staff member performing the lookup (must be Owner/Admin or have inventory.manage).
+   * Staff member performing the delete (must be Owner/Admin or have inventory.manage).
    */
   staffId: number;
 };
 
-export type DeleteProductPermanentParams = {
+export type FindDuplicateProductsParams = {
   /**
-   * Staff member performing the delete (must be Owner/Admin or have inventory.manage).
+   * Staff member performing the lookup (must be Owner/Admin or have inventory.manage).
    */
   staffId: number;
 };
