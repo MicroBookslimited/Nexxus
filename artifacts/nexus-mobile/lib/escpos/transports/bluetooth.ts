@@ -106,8 +106,13 @@ export async function printBluetooth(bytes: Uint8Array, opts: { deviceId?: strin
     await device.discoverAllServicesAndCharacteristics();
     const { serviceUUID, charUUID, withResponse } = await findWritableCharacteristic(device);
 
-    // BLE writes are MTU-limited; chunk the payload.
-    const chunkSize = 180;
+    // BLE writes are limited by the negotiated ATT MTU (usable payload = MTU − 3).
+    // Generic 58mm printers often ignore the MTU request and stay at the 23-byte
+    // BLE default, where large writes silently drop bytes. Derive the chunk size
+    // from the negotiated MTU and floor it at 20 bytes so low-MTU hardware prints
+    // reliably while capable printers still get larger, faster writes.
+    const negotiatedMtu = typeof device.mtu === "number" && device.mtu > 0 ? device.mtu : 23;
+    const chunkSize = Math.max(20, negotiatedMtu - 3);
     for (let i = 0; i < bytes.length; i += chunkSize) {
       const chunk = bytes.subarray(i, i + chunkSize);
       const b64 = bytesToBase64(chunk);
