@@ -25,6 +25,18 @@ export interface CartLine {
   lineDiscount: number;
   /** Optional per-line note entered at the POS (e.g. "cut thin"). Printed on the receipt. */
   note?: string;
+  /**
+   * Multi-unit selling (mirrors web): when the cashier rings a product up in a
+   * non-base sale unit (e.g. "Case" of 24), `unitFactor` is how many base units
+   * one of that unit equals and `unitLabel` is its display name. `quantity`
+   * always stays in BASE units, so the +/- stepper moves in whole multiples of
+   * `unitFactor` and the row shows "<count> <unitLabel>". `unitId` is the
+   * product-purchase-unit row id, used only to keep the line key stable. These
+   * are display/stepping-only — the server charges base price × base quantity,
+   * so nothing extra is sent at checkout (matches web exactly). */
+  unitId?: number;
+  unitLabel?: string;
+  unitFactor?: number;
 }
 
 /** Internal cart line as stored in state (without the derived effective price). */
@@ -34,6 +46,10 @@ export interface AddToCartOptions {
   unitPrice?: number;
   variantChoices?: ChoiceItem[];
   modifierChoices?: ChoiceItem[];
+  /** Selected non-base sale unit. `unitFactor` must be > 1 for it to take effect. */
+  unitId?: number;
+  unitLabel?: string;
+  unitFactor?: number;
 }
 
 interface CartState {
@@ -50,7 +66,12 @@ interface CartState {
 
 const CartCtx = createContext<CartState | null>(null);
 
-function makeLineKey(productId: number, vc: ChoiceItem[], mc: ChoiceItem[]): string {
+function makeLineKey(
+  productId: number,
+  vc: ChoiceItem[],
+  mc: ChoiceItem[],
+  unit?: { unitId?: number; unitFactor: number },
+): string {
   const v = vc
     .map((c) => c.optionId)
     .sort((a, b) => a - b)
@@ -59,7 +80,11 @@ function makeLineKey(productId: number, vc: ChoiceItem[], mc: ChoiceItem[]): str
     .map((c) => c.optionId)
     .sort((a, b) => a - b)
     .join(".");
-  return `${productId}|v:${v}|m:${m}`;
+  // Different sale units of the same product are distinct lines. Prefer the
+  // stable unit row id so renaming the unit doesn't split/merge lines; fall
+  // back to the factor when no id is available.
+  const u = unit ? `|u:${unit.unitId ?? `f${unit.unitFactor}`}` : "";
+  return `${productId}|v:${v}|m:${m}${u}`;
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
@@ -116,17 +141,39 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const variantChoices = opts?.variantChoices ?? [];
     const modifierChoices = opts?.modifierChoices ?? [];
     const unitPrice = opts?.unitPrice ?? p.price;
-    const lineKey = makeLineKey(p.id, variantChoices, modifierChoices);
+    // A non-base sale unit only takes effect when its factor is > 1; otherwise
+    // it's the base ("Each") unit and we ignore the metadata.
+    const unitFactor = opts?.unitFactor && opts.unitFactor > 1 ? opts.unitFactor : undefined;
+    const unitLabel = unitFactor ? opts?.unitLabel : undefined;
+    const unitId = unitFactor ? opts?.unitId : undefined;
+    const step = unitFactor ?? 1;
+    const lineKey = makeLineKey(
+      p.id,
+      variantChoices,
+      modifierChoices,
+      unitFactor ? { unitId, unitFactor } : undefined,
+    );
     setLines((prev) => {
       const i = prev.findIndex((l) => l.lineKey === lineKey);
       if (i >= 0) {
         const copy = [...prev];
-        copy[i] = { ...copy[i]!, quantity: copy[i]!.quantity + 1 };
+        copy[i] = { ...copy[i]!, quantity: copy[i]!.quantity + step };
         return copy;
       }
       return [
         ...prev,
-        { lineKey, product: p, quantity: 1, unitPrice, variantChoices, modifierChoices, lineDiscount: 0 },
+        {
+          lineKey,
+          product: p,
+          quantity: step,
+          unitPrice,
+          unitId,
+          unitLabel,
+          unitFactor,
+          variantChoices,
+          modifierChoices,
+          lineDiscount: 0,
+        },
       ];
     });
   };

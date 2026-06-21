@@ -9,7 +9,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -47,9 +47,11 @@ import { useResponsive } from "@/hooks/useResponsive";
 import { printReceipt, type ReceiptItem, type ReceiptOrder, type ReceiptSettings } from "@/lib/escpos";
 import { formatMoney } from "@/lib/format";
 import {
+  getPurchaseUnits,
   listPaymentMethods,
   lookupGiftVoucher,
   type PaymentMethod,
+  type PurchaseUnit,
   type VoucherLookupResult,
 } from "@/lib/nexus-api";
 
@@ -109,6 +111,11 @@ export default function SellScreen() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [customizeProduct, setCustomizeProduct] = useState<Product | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
+  // Multi-unit selling: when a tapped product has sale-eligible units (Case,
+  // Dozen, …) we show a picker first. A unit chosen for a customizable product
+  // is stashed here so the customize-confirm flow can apply it.
+  const [unitPicker, setUnitPicker] = useState<{ product: Product; units: PurchaseUnit[] } | null>(null);
+  const [pendingUnit, setPendingUnit] = useState<{ unitId?: number; unitLabel: string; unitFactor: number } | null>(null);
 
   // The phone-only checkout modal must not survive a switch into the tablet
   // split-view (where the cart is always visible) — otherwise rotating back to
@@ -129,12 +136,52 @@ export default function SellScreen() {
     );
   }, [products, search]);
 
-  const onAdd = (p: Product) => {
+  // Monotonic id for the latest tap, so an out-of-order unit lookup from an
+  // earlier tap can't pop a picker for a product the cashier has moved past.
+  const addSeqRef = useRef(0);
+
+  const onAdd = async (p: Product) => {
+    const seq = ++addSeqRef.current;
+    // If the product has sale-eligible units (Case/Dozen/…), let the cashier
+    // pick which one they're ringing up. A lookup failure falls through to the
+    // regular single-unit flow so a flaky network can't block checkout.
+    let saleUnits: PurchaseUnit[] = [];
+    try {
+      const allUnits = await getPurchaseUnits(p.id);
+      saleUnits = allUnits.filter(
+        (u) => u.isSale && Number.isFinite(u.conversionFactor) && u.conversionFactor > 1,
+      );
+    } catch {
+      /* fall through to default single-unit add */
+    }
+    // Only the most recent tap may open the picker. A superseded tap still adds
+    // its product directly (as the base unit) so the tap is never silently lost.
+    if (saleUnits.length > 0 && seq === addSeqRef.current) {
+      setUnitPicker({ product: p, units: saleUnits });
+      return;
+    }
     if (needsCustomization(p)) {
       setCustomizeProduct(p);
       return;
     }
     cart.add(p);
+  };
+
+  // Continue the add flow after a sale unit (or base "Each") is chosen.
+  const continueWithUnit = (unit: PurchaseUnit | null) => {
+    const product = unitPicker?.product;
+    setUnitPicker(null);
+    if (!product) return;
+    const opts =
+      unit && Number.isFinite(unit.conversionFactor) && unit.conversionFactor > 1
+        ? { unitId: unit.id, unitLabel: unit.unitName, unitFactor: unit.conversionFactor }
+        : null;
+    if (needsCustomization(product)) {
+      setPendingUnit(opts);
+      setCustomizeProduct(product);
+      return;
+    }
+    cart.add(product, opts ?? undefined);
   };
 
   // Map each barcode to ALL active products carrying it, so a shared barcode is
@@ -165,7 +212,7 @@ export default function SellScreen() {
     const product = (products ?? []).find((p) => p.id === ids[0]);
     if (!product) return;
     setScanOpen(false);
-    onAdd(product);
+    void onAdd(product);
   };
 
   if (isLoading) {
@@ -210,7 +257,7 @@ export default function SellScreen() {
         const out = !item.inStock || item.stockCount <= 0;
         return (
           <Pressable
-            onPress={() => onAdd(item)}
+            onPress={() => void onAdd(item)}
             style={({ pressed }) => ({
               flex: 1 / gridColumns,
               backgroundColor: c.card,
@@ -286,13 +333,28 @@ export default function SellScreen() {
       <CustomizeSheet
         productId={customizeProduct?.id ?? null}
         visible={customizeProduct != null}
-        onClose={() => setCustomizeProduct(null)}
+        onClose={() => {
+          setCustomizeProduct(null);
+          setPendingUnit(null);
+        }}
         onAdd={({ unitPrice, variantChoices, modifierChoices }) => {
           if (customizeProduct) {
-            cart.add(customizeProduct, { unitPrice, variantChoices, modifierChoices });
+            cart.add(customizeProduct, {
+              unitPrice,
+              variantChoices,
+              modifierChoices,
+              ...(pendingUnit ?? {}),
+            });
           }
           setCustomizeProduct(null);
+          setPendingUnit(null);
         }}
+      />
+      <UnitPickerSheet
+        product={unitPicker?.product ?? null}
+        units={unitPicker?.units ?? []}
+        onClose={() => setUnitPicker(null)}
+        onPick={continueWithUnit}
       />
       <BarcodeScannerModal visible={scanOpen} onClose={() => setScanOpen(false)} onScan={handleScan} />
     </>
@@ -709,7 +771,10 @@ function CheckoutContent({
         const discount = Math.min(Math.max(0, l.lineDiscount), l.effectiveUnitPrice * l.quantity);
         return {
           quantity: l.quantity,
-          productName: l.product.name,
+          productName:
+            l.unitLabel && l.unitFactor && l.unitFactor > 1
+              ? `${l.product.name} (${Math.round(l.quantity / l.unitFactor)} × ${l.unitLabel})`
+              : l.product.name,
           unitPrice: l.effectiveUnitPrice,
           lineTotal: l.effectiveUnitPrice * l.quantity - discount,
           variantChoices: l.variantChoices.map((v) => ({ optionName: v.optionName })),
@@ -848,6 +913,10 @@ function CheckoutContent({
                 .join(" · ");
               const lineTotal = Math.max(0, l.effectiveUnitPrice * l.quantity - l.lineDiscount);
               const tierSavings = l.unitPrice - l.effectiveUnitPrice;
+              // Multi-unit lines step + display in whole units of the chosen
+              // sale unit; quantity itself stays in base units.
+              const unitFactor = l.unitFactor && l.unitFactor > 1 ? l.unitFactor : 1;
+              const displayCount = unitFactor > 1 ? Math.round(l.quantity / unitFactor) : l.quantity;
               return (
                 <Card key={l.lineKey} style={{ gap: 10 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
@@ -855,6 +924,11 @@ function CheckoutContent({
                       <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold") }}>
                         {l.product.name}
                       </Text>
+                      {l.unitLabel && unitFactor > 1 ? (
+                        <Text numberOfLines={1} style={{ color: c.mutedForeground, fontSize: 12, marginTop: 2 }}>
+                          {`${l.unitLabel} · ${unitFactor} units each`}
+                        </Text>
+                      ) : null}
                       {choices ? (
                         <Text numberOfLines={2} style={{ color: c.mutedForeground, fontSize: 12, marginTop: 2 }}>
                           {choices}
@@ -872,7 +946,10 @@ function CheckoutContent({
                         </Text>
                       ) : null}
                     </View>
-                    <Stepper value={l.quantity} onChange={(v) => cart.setQty(l.lineKey, v)} />
+                    <Stepper
+                      value={displayCount}
+                      onChange={(v) => cart.setQty(l.lineKey, unitFactor > 1 ? v * unitFactor : v)}
+                    />
                   </View>
                   {l.note ? (
                     <Text style={{ color: c.mutedForeground, fontSize: 12, fontStyle: "italic" }}>
@@ -1456,6 +1533,64 @@ function LineNoteModal({
             <Button label="Remove" variant="secondary" onPress={() => onSave("")} style={{ flex: 1 }} />
             <Button label="Save" icon="check" onPress={() => onSave(value)} style={{ flex: 1 }} />
           </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function UnitPickerSheet({
+  product,
+  units,
+  onClose,
+  onPick,
+}: {
+  product: Product | null;
+  units: PurchaseUnit[];
+  onClose: () => void;
+  onPick: (unit: PurchaseUnit | null) => void;
+}) {
+  const c = useColors();
+  const base = product?.price ?? 0;
+  return (
+    <Modal visible={!!product} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}
+      >
+        <Pressable onPress={() => {}} style={{ backgroundColor: c.card, borderRadius: c.radius + 6, padding: 20, gap: 14 }}>
+          <Text style={{ color: c.foreground, fontSize: 18, fontFamily: fontFamily("bold") }} numberOfLines={1}>
+            {product?.name}
+          </Text>
+          <Text style={{ color: c.mutedForeground, fontSize: 13 }}>Choose how you're selling this item.</Text>
+          {/* Base "Each" unit + every sale unit. Price shown is per-unit. */}
+          <Pressable
+            onPress={() => onPick(null)}
+            style={{ backgroundColor: c.secondary, borderRadius: c.radius + 4, padding: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+          >
+            <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold") }}>Each</Text>
+            <Text style={{ color: c.accent, fontSize: 14, fontFamily: fontFamily("medium") }}>{formatMoney(base)}</Text>
+          </Pressable>
+          {units.map((u) => (
+            <Pressable
+              key={u.id ?? `${u.unitName}-${u.conversionFactor}`}
+              onPress={() => onPick(u)}
+              style={{ backgroundColor: c.secondary, borderRadius: c.radius + 4, padding: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold") }} numberOfLines={1}>
+                  {u.unitName}
+                </Text>
+                <Text style={{ color: c.mutedForeground, fontSize: 12, marginTop: 2 }}>
+                  {`${u.conversionFactor} units each`}
+                </Text>
+              </View>
+              <Text style={{ color: c.accent, fontSize: 14, fontFamily: fontFamily("medium") }}>
+                {`${formatMoney(base * u.conversionFactor)} / ${u.unitName}`}
+              </Text>
+            </Pressable>
+          ))}
+          <Button label="Cancel" variant="secondary" onPress={onClose} />
         </Pressable>
       </Pressable>
     </Modal>
