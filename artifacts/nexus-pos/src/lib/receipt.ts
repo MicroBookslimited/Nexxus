@@ -956,25 +956,6 @@ function buildSupermarketReceiptHtml(
     return html;
   }).join("");
 
-  // ── Header identifier row: ST# / OP# / TE# / TR# ─────────────────────────
-  // We have no real terminal/operator IDs, so derive from order number and
-  // staff name. The point is to look like a supermarket header — these are
-  // informational only.
-  const orderDigits = orderNum.replace(/\D/g, "").padStart(4, "0");
-  const stNum = orderDigits.slice(-4);
-  const trNum = orderDigits.slice(-4).split("").reverse().join("");
-  const opCode = order.staffName
-    ? hashCode(order.staffName).slice(-8)
-    : "00000000";
-  const teNum = String((parseInt(orderDigits, 10) % 99) + 1).padStart(2, "0");
-
-  const idRowHtml = `
-    <div class="sm-id-row">
-      <span>ST# ${stNum}</span>
-      <span>OP# ${opCode}</span>
-      <span>TE# ${teNum}</span>
-      <span>TR# ${trNum}</span>
-    </div>`;
 
   // ── Tax line(s) — the reference image shows two tax bands but we only have
   // one configured rate, so render a single TAX line matching settings. If
@@ -1174,8 +1155,6 @@ function buildSupermarketReceiptHtml(
   ${businessTaxNumber ? `<div class="sm-center sm-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
   ${order.staffName ? `<div class="sm-center sm-sub">Cashier: ${escHtml(order.staffName)}</div>` : ""}
   ${order.stationNumber != null ? `<div class="sm-center sm-sub">STATION #${order.stationNumber}</div>` : ""}
-
-  ${idRowHtml}
 
   ${itemsHeadHtml}
   ${itemRowsHtml}
