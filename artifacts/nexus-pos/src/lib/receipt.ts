@@ -1150,8 +1150,8 @@ function buildSupermarketReceiptHtml(
 
   ${logoHtml}
   <div class="sm-store-name">${escHtml(businessName.toUpperCase())}</div>
-  ${businessPhone ? `<div class="sm-center sm-sub">${escHtml(businessPhone)}</div>` : ""}
   ${addressLines.map(l => `<div class="sm-center sm-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
+  ${businessPhone ? `<div class="sm-center sm-sub">${escHtml(businessPhone)}</div>` : ""}
   ${businessTaxNumber ? `<div class="sm-center sm-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
   ${order.staffName ? `<div class="sm-center sm-sub">Cashier: ${escHtml(order.staffName)}</div>` : ""}
   ${order.stationNumber != null ? `<div class="sm-center sm-sub">STATION #${order.stationNumber}</div>` : ""}
