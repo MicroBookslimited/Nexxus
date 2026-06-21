@@ -592,7 +592,8 @@ router.post("/supplier-returns", async (req, res): Promise<void> => {
   const taxTotal = cents(computed.reduce((s, i) => s + i.lineTax, 0));
   const totalAmount = cents(subtotal + taxTotal);
 
-  const created = await db.transaction(async (tx) => {
+  type CreateResult = { row: typeof supplierReturnsTable.$inferSelect | null; errorMessage?: string };
+  const result: CreateResult = await db.transaction(async (tx): Promise<CreateResult> => {
     const [row] = await tx
       .insert(supplierReturnsTable)
       .values({
@@ -629,10 +630,18 @@ router.post("/supplier-returns", async (req, res): Promise<void> => {
     if (status === "confirmed") {
       await confirmReturnSideEffects(tx, tenantId, row, insertedItems);
     }
-    return row;
-  });
+    return { row };
+  }).catch((err: unknown): CreateResult => ({
+    row: null,
+    errorMessage: err instanceof Error ? err.message : "Failed to save return",
+  }));
 
-  const enriched = await enrichReturn(created, items.length);
+  if (!result.row) {
+    res.status(400).json({ error: result.errorMessage ?? "Failed to save return" });
+    return;
+  }
+
+  const enriched = await enrichReturn(result.row, items.length);
   res.status(201).json(enriched);
 });
 
