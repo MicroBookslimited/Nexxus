@@ -188,9 +188,10 @@ export default function SellScreen() {
 
   const onCheckoutComplete = () => queryClient.invalidateQueries();
 
-  // Column count for the product grid. In the tablet split-view the grid lives
-  // in the (narrower) left pane, so we use one fewer column than full-width.
-  const gridColumns = r.isTablet ? (r.isWide ? 3 : 2) : 2;
+  // Column count for the product grid. Landscape (and wide tablets) show 3
+  // columns of product cards; portrait phones/tablets stay at 2 to keep the
+  // cards legible in the narrower width.
+  const gridColumns = r.isWide || r.isLandscape ? 3 : 2;
 
   const productGrid = (
     <FlatList
