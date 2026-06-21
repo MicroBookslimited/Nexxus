@@ -4472,7 +4472,7 @@ export function Products() {
                   <Button
                     variant="outline"
                     className="gap-2"
-                    onClick={() => { window.location.href = "/supplier-returns"; }}
+                    onClick={() => navigate("/supplier-returns")}
                   >
                     Supplier Returns
                   </Button>
