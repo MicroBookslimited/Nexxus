@@ -481,7 +481,7 @@ function CheckoutContent({
     () =>
       cart.lines.reduce(
         (s, l) =>
-          l.product.isTaxable ? s + Math.max(0, l.unitPrice * l.quantity - l.lineDiscount) : s,
+          l.product.isTaxable ? s + Math.max(0, l.effectiveUnitPrice * l.quantity - l.lineDiscount) : s,
         0,
       ),
     [cart.lines],
@@ -678,7 +678,7 @@ function CheckoutContent({
       const order = await createOrder.mutateAsync({
         data: {
           items: lineSnapshot.map((l) => {
-            const discount = Math.min(Math.max(0, l.lineDiscount), l.unitPrice * l.quantity);
+            const discount = Math.min(Math.max(0, l.lineDiscount), l.effectiveUnitPrice * l.quantity);
             return {
               productId: l.product.id,
               quantity: l.quantity,
@@ -706,12 +706,12 @@ function CheckoutContent({
         },
       });
       const items: ReceiptItem[] = lineSnapshot.map((l) => {
-        const discount = Math.min(Math.max(0, l.lineDiscount), l.unitPrice * l.quantity);
+        const discount = Math.min(Math.max(0, l.lineDiscount), l.effectiveUnitPrice * l.quantity);
         return {
           quantity: l.quantity,
           productName: l.product.name,
-          unitPrice: l.unitPrice,
-          lineTotal: l.unitPrice * l.quantity - discount,
+          unitPrice: l.effectiveUnitPrice,
+          lineTotal: l.effectiveUnitPrice * l.quantity - discount,
           variantChoices: l.variantChoices.map((v) => ({ optionName: v.optionName })),
           modifierChoices: l.modifierChoices.map((m) => ({ optionName: m.optionName })),
           ...(l.note ? { notes: l.note } : {}),
@@ -846,7 +846,8 @@ function CheckoutContent({
               const choices = [...l.variantChoices, ...l.modifierChoices]
                 .map((ch) => ch.optionName)
                 .join(" · ");
-              const lineTotal = Math.max(0, l.unitPrice * l.quantity - l.lineDiscount);
+              const lineTotal = Math.max(0, l.effectiveUnitPrice * l.quantity - l.lineDiscount);
+              const tierSavings = l.unitPrice - l.effectiveUnitPrice;
               return (
                 <Card key={l.lineKey} style={{ gap: 10 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
@@ -865,6 +866,11 @@ function CheckoutContent({
                           <Text style={{ color: c.mutedForeground, fontSize: 12 }}>{`  (−${formatMoney(l.lineDiscount)})`}</Text>
                         ) : null}
                       </Text>
+                      {tierSavings > 0.0001 ? (
+                        <Text style={{ color: c.primary, fontSize: 12, fontFamily: fontFamily("medium"), marginTop: 2 }}>
+                          {`Volume price ${formatMoney(l.effectiveUnitPrice)} ea · save ${formatMoney(tierSavings * l.quantity)}`}
+                        </Text>
+                      ) : null}
                     </View>
                     <Stepper value={l.quantity} onChange={(v) => cart.setQty(l.lineKey, v)} />
                   </View>
