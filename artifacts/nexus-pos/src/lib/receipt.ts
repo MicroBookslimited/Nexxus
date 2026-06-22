@@ -915,30 +915,25 @@ function buildSupermarketReceiptHtml(
 
 
   // ── Items table ──────────────────────────────────────────────────────────
-  // Five columns: QTY | ITEM | UNIT | EXT | T/N. The trailing flag marks each
-  // line taxable (T) or non-taxable (N) per the product's isTaxable, replacing
-  // the old single global "X". Modifier/variant lines are indented under their
-  // parent. A labelled header row is rendered above the items.
+  // Four columns: QTY | ITEM | UNIT | EXT. T/N flag removed to give more
+  // horizontal space between the Unit price and the EXT (line total) columns.
   const itemsHeadHtml = `
     <div class="sm-item sm-item-head">
       <span class="sm-item-qty">QTY</span>
       <span class="sm-item-name">ITEM</span>
       <span class="sm-item-unit">UNIT</span>
       <span class="sm-item-price">EXT</span>
-      <span class="sm-item-tax">T/N</span>
     </div>`;
   const itemRowsHtml = order.items.map(item => {
     const qtyStr = Number.isInteger(item.quantity) ? String(item.quantity) : String(Math.round(item.quantity * 1000) / 1000);
     const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
-    const taxFlag = item.isTaxable === false ? "N" : "T";
     let html = `
       <div class="sm-item">
         <span class="sm-item-qty">${escHtml(qtyStr)}</span>
         <span class="sm-item-name">${escHtml(item.productName.toUpperCase())}${uomHtml(item, settings)}</span>
         <span class="sm-item-unit">${unit != null ? fmtNum(unit) : ""}</span>
         <span class="sm-item-price">${fmtNum(item.lineTotal)}</span>
-        <span class="sm-item-tax">${taxFlag}</span>
       </div>`;
     if (orig != null && unit != null && orig > unit) {
       const lineSaving = (orig - unit) * item.quantity;
@@ -1024,7 +1019,7 @@ function buildSupermarketReceiptHtml(
     ? `<div class="sm-refunded">★ REFUNDED ★</div>` : "";
 
   const logoHtml = businessLogoUrl
-    ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:90px;max-width:240px;object-fit:contain;" /></div>`
+    ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="width:70mm;height:70mm;object-fit:contain;" /></div>`
     : "";
 
   // Address may contain commas / line breaks — split on commas/newlines so each
@@ -1073,8 +1068,8 @@ function buildSupermarketReceiptHtml(
 
     .sm-item {
       display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto auto auto;
-      gap: 6px;
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+      gap: 8px;
       font-size: ${baseFontSize};
       align-items: baseline;
       margin: 1px 0;
@@ -1083,7 +1078,6 @@ function buildSupermarketReceiptHtml(
     .sm-item-name  { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sm-item-unit  { white-space: nowrap; text-align: right; }
     .sm-item-price { white-space: nowrap; font-weight: 700; text-align: right; }
-    .sm-item-tax   { white-space: nowrap; text-align: center; font-weight: 700; min-width: 1.6em; }
     .sm-item-head span { border-bottom: 1px solid #000; font-weight: 700; }
     .sm-mod        { padding-left: 12px; font-size: ${subFontSize}; color: #444; }
 
