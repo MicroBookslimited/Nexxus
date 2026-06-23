@@ -77,3 +77,9 @@ id = "VvJ5Zt_MSFGmkrv7qztV7"
 uri = "file://NEXXUS_POS_Restaurant_Manual.md"
 type = "text"
 title = "Restaurant Manual (Markdown source)"
+
+[[outputs]]
+id = "q429JeH5GThEThc7gNLI0"
+uri = "file://.local/nexxus_backup_20260623_002215.sql.gz"
+type = "unspecified"
+title = "NEXXUS POS Database Backup — 2026-06-23 (gzip)"
