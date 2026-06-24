@@ -16,6 +16,13 @@ export interface ReceiptSettings {
   receipt_template?: string;   // "classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant" | "hardware"
   receipt_barcode?: string;    // "true" | "false" — print a CODE128 barcode of the receipt number in the footer
   show_product_size?: string;  // "true" | "false" — surface the optional product size label on line items
+  receipt_logo_size?: string;  // logo height in px, e.g. "90" (default). Width scales proportionally.
+}
+
+/** Build a logo <div> for any receipt template using the tenant's logo size setting. */
+function logoHtmlFromSettings(url: string, alt: string, settings: ReceiptSettings, align = "center"): string {
+  const sizePx = Math.max(30, Math.min(300, parseInt(settings.receipt_logo_size ?? "90", 10) || 90));
+  return `<div style="text-align:${align};margin-bottom:4px;"><img src="${url}" alt="${alt}" style="max-height:${sizePx}px;max-width:${sizePx * 3}px;object-fit:contain;" /></div>`;
 }
 
 export interface ReceiptOrderItem {
@@ -346,9 +353,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     const phoneLine = businessPhone
       ? `<div>Tel# ${escHtml(businessPhone)}</div>` : "";
 
-    const logoHtml = businessLogoUrl
-      ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:90px;max-width:240px;object-fit:contain;" /></div>`
-      : "";
+    const logoHtml = businessLogoUrl ? logoHtmlFromSettings(businessLogoUrl, escHtml(businessName), settings) : "";
 
     // Items: name + line total on first row, qty × unitPrice on second row,
     // then a dotted separator after each item (matches the Loyverse layout).
@@ -687,9 +692,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   const infoAlign = tpl.headerAlign === "center" ? "text-align:center;" : "text-align:left;";
   const orderTypeLabel = order.orderType ? escHtml(order.orderType) : "Sale";
 
-  const logoHtml = businessLogoUrl
-    ? `<div style="text-align:${tpl.headerAlign};margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:90px;max-width:240px;object-fit:contain;" /></div>`
-    : "";
+  const logoHtml = businessLogoUrl ? logoHtmlFromSettings(businessLogoUrl, escHtml(businessName), settings, tpl.headerAlign) : "";
 
   const headerHtml = `
     ${logoHtml}
@@ -1018,9 +1021,7 @@ function buildSupermarketReceiptHtml(
   const refundedHtml = order.status === "refunded"
     ? `<div class="sm-refunded">★ REFUNDED ★</div>` : "";
 
-  const logoHtml = businessLogoUrl
-    ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="width:70mm;height:70mm;object-fit:contain;" /></div>`
-    : "";
+  const logoHtml = businessLogoUrl ? logoHtmlFromSettings(businessLogoUrl, escHtml(businessName), settings) : "";
 
   // Address may contain commas / line breaks — split on commas/newlines so each
   // chunk renders on its own centered line like the reference image.
@@ -1244,9 +1245,7 @@ function buildConvenienceReceiptHtml(
     .filter(Boolean);
 
   // Logo
-  const logoHtml = businessLogoUrl
-    ? `<div class="cv-center"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:80px;max-width:210px;object-fit:contain;margin-bottom:3px;" /></div>`
-    : "";
+  const logoHtml = businessLogoUrl ? logoHtmlFromSettings(businessLogoUrl, escHtml(businessName), settings) : "";
 
   // Items — each line: QTY  Name @ unit  Price T/B
   const itemRowsHtml = order.items.map(item => {
@@ -1522,9 +1521,7 @@ function buildStapleReceiptHtml(
   // Tax indicator — "N" means non-exempt taxable (reference shows N on all items)
   const taxInd = order.tax > 0 ? " N" : "";
 
-  const logoHtml = businessLogoUrl
-    ? `<div class="st-center"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:90px;max-width:240px;object-fit:contain;margin-bottom:4px;" /></div>`
-    : "";
+  const logoHtml = businessLogoUrl ? logoHtmlFromSettings(businessLogoUrl, escHtml(businessName), settings) : "";
 
   const addressLines = (businessAddress || "")
     .split(/\r?\n|,/).map(s => s.trim()).filter(Boolean);
@@ -1808,9 +1805,7 @@ function buildHardwareReceiptHtml(
   const addressLines = (businessAddress || "")
     .split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
-  const logoHtml = businessLogoUrl
-    ? `<div style="text-align:center;margin-bottom:4px;"><img src="${businessLogoUrl}" alt="${escHtml(businessName)}" style="max-height:80px;max-width:300px;object-fit:contain;" /></div>`
-    : "";
+  const logoHtml = businessLogoUrl ? logoHtmlFromSettings(businessLogoUrl, escHtml(businessName), settings) : "";
 
   // Choices → comma-joined text for the Attribute / Size columns.
   const joinChoices = (

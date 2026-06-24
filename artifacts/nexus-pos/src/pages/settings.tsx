@@ -69,6 +69,7 @@ export function AdminSettings() {
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
   const [showProductSize, setShowProductSize] = useState(false);
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
+  const [receiptLogoSize, setReceiptLogoSize] = useState("90");
   const [sendingTest, setSendingTest] = useState(false);
   const [sendingLowStockTest, setSendingLowStockTest] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -127,6 +128,7 @@ export function AdminSettings() {
     setKioskLockEnabled(settings.kiosk_lock_enabled === "true");
     setShowProductSize(settings.show_product_size === "true");
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
+    setReceiptLogoSize(settings.receipt_logo_size ?? "90");
     setDirty(false);
   }, [settings]);
 
@@ -179,6 +181,7 @@ export function AdminSettings() {
           kiosk_lock_enabled: kioskLockEnabled ? "true" : "false",
           show_product_size: showProductSize ? "true" : "false",
           stock_method: stockMethod,
+          receipt_logo_size: receiptLogoSize,
         },
       },
       {
@@ -413,6 +416,27 @@ export function AdminSettings() {
                     Remove Logo
                   </button>
                 )}
+              </div>
+            </div>
+            {/* Logo size on receipts */}
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="logo-size-slider">Logo size on receipts</Label>
+                <span className="text-sm text-muted-foreground w-16 text-right">{receiptLogoSize} px</span>
+              </div>
+              <input
+                id="logo-size-slider"
+                type="range"
+                min={40}
+                max={250}
+                step={5}
+                value={receiptLogoSize}
+                onChange={(e) => { setReceiptLogoSize(e.target.value); markDirty(); }}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Small (40 px)</span>
+                <span>Large (250 px)</span>
               </div>
             </div>
           </div>
