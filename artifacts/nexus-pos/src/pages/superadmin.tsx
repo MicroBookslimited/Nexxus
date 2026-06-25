@@ -6,10 +6,12 @@ import {
   LayoutDashboard, Settings, Pencil, Trash2, Download, ChevronRight,
   LogIn, KeyRound, Check, Package, ToggleLeft, ToggleRight, Mail,
   Cpu, Globe, ShoppingBag, ClipboardList, Megaphone, Wrench,
+  BarChart3,
 } from "lucide-react";
 import { EmailTab } from "./superadmin-email-tab";
 import { SuperadminMarketingTab } from "./superadmin-marketing-tab";
 import { SuperadminStoreTab } from "./superadmin-store-tab";
+import { SuperadminAnalyticsTab } from "./superadmin-analytics-tab";
 import { TechniciansTab } from "./superadmin-technicians-tab";
 import {
   SUPERADMIN_TOKEN_KEY, TENANT_TOKEN_KEY,
@@ -31,7 +33,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "users" | "tenants" | "technicians" | "payments" | "plans" | "email" | "marketing" | "gateway" | "settings" | "store" | "impersonation-logs";
+type Tab = "overview" | "analytics" | "users" | "tenants" | "technicians" | "payments" | "plans" | "email" | "marketing" | "gateway" | "settings" | "store" | "impersonation-logs";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -1214,6 +1216,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
 
   const tabs: { id: Tab; label: string; icon: React.ElementType; badge?: number }[] = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "users", label: "Users", icon: Users, badge: stats?.totalTenants },
     { id: "tenants", label: "Businesses", icon: Building2 },
     { id: "technicians", label: "Technicians", icon: Wrench },
@@ -1736,6 +1739,8 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
 
         {/* ── EMAIL ── */}
         {tab === "technicians" && <TechniciansTab />}
+
+        {tab === "analytics" && <SuperadminAnalyticsTab />}
 
         {tab === "email" && <EmailTab />}
 

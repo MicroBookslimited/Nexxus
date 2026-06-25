@@ -31,3 +31,4 @@ export * from "./supplier-returns";
 export * from "./override-cards";
 export * from "./gift-vouchers";
 export * from "./shopify";
+export * from "./analytics";

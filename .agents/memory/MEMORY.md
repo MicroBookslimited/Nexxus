@@ -41,3 +41,4 @@
 - [Pre-filled default + bulk save trap](prefilled-default-inherit-trap.md) — pre-filling an override field with a default + plain Save converts untouched inherit-rows into explicit overrides; need per-row dirty tracking.
 - [Product list enrichment must be batched](product-list-enrichment-nplus1.md) — GET /products maps over the whole catalog (no paging); never put a per-product query (counts) or array.find() in that loop — batch with inArray+groupBy into Maps/Sets.
 - [Multi-unit selling is client-side only](mobile-units-client-side.md) — POS unit selling (Case/Dozen) sends NO unit fields to the order API; cart holds base quantity, server charges base×qty; only quotations persist units.
+- [Super-admin analytics single-tenant reuse](superadmin-analytics-detail-query.md) — detail path reuses batched usage-list compute with an optional tenantId filter (no all-tenant scan); analytics JWT fail-fasts on missing SESSION_SECRET; activeToday = daysSinceActivity===0.

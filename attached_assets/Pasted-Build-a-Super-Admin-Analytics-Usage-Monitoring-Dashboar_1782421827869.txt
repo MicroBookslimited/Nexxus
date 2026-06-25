@@ -1,0 +1,647 @@
+Build a Super Admin Analytics & Usage Monitoring Dashboard for NEXXUS POS.
+
+GOAL:
+Allow MicroBooks/NEXXUS super admins to monitor client activity, resource usage, subscription health, plan limits, feature adoption, and Supabase cost risk before migration.
+
+This module must answer:
+- Which clients are active?
+- Which clients are dormant?
+- Which clients are using the most system resources?
+- Which clients are close to plan limits?
+- Which clients should be upgraded?
+- Which clients may increase Supabase costs?
+- Which features are actually being used?
+
+--------------------------------------------------
+1. ACCESS CONTROL
+--------------------------------------------------
+
+Create a Super Admin-only module.
+
+Allowed:
+- platform_super_admin only
+
+Denied:
+- tenant admin
+- manager
+- cashier
+- staff
+- reseller
+
+Middleware:
+authorizePlatformRole(['platform_super_admin'])
+
+If unauthorized:
+Return 403:
+{
+  "error": "ACCESS_DENIED",
+  "message": "This dashboard is only available to platform super admins."
+}
+
+--------------------------------------------------
+2. SUPER ADMIN DASHBOARD
+--------------------------------------------------
+
+Create page:
+Super Admin → Analytics
+
+Top KPI cards:
+- Total Tenants
+- Active Tenants Today
+- Daily Active Users
+- Weekly Active Users
+- Monthly Active Users
+- Total Sales Today
+- Total Sales This Month
+- Total Products Across System
+- Total Customers Across System
+- Total Staff Users
+- Total Locations
+- Total Storage Used
+- High Usage Tenants
+- Dormant Tenants
+- Expired Subscriptions
+- Trial Tenants
+- Estimated Supabase Cost Risk
+
+--------------------------------------------------
+3. TENANT ACTIVITY TRACKING
+--------------------------------------------------
+
+Track activity per tenant:
+
+- last_login_at
+- last_sale_at
+- last_inventory_update_at
+- last_report_generated_at
+- active_users_today
+- active_users_7_days
+- active_users_30_days
+- total_logins
+- sales_today
+- sales_7_days
+- sales_30_days
+- active_pos_sessions
+- active_staff_clock_ins
+- last_sync_at
+- last_api_activity_at
+
+Tenant labels:
+- Active
+- Dormant
+- At Risk
+- Trial
+- Expired
+- High Usage
+- Needs Upgrade
+
+Suggested rules:
+- Active = login or sale within last 3 days
+- Dormant = no login or sale in 14 days
+- At Risk = declining activity or trial ending soon
+- High Usage = exceeds defined usage thresholds
+- Needs Upgrade = tenant exceeds or is close to plan limits
+
+--------------------------------------------------
+4. RESOURCE USAGE TRACKING
+--------------------------------------------------
+
+Track resource usage per tenant:
+
+- product_count
+- customer_count
+- staff_count
+- location_count
+- sales_count
+- sale_line_count
+- inventory_movement_count
+- stock_count_session_count
+- variance_report_count
+- report_generation_count
+- receipt_print_count
+- api_request_count
+- uploaded_file_count
+- storage_used_mb
+- offline_sync_queue_count
+- webhook_event_count
+- auth_user_count
+- database_row_estimate
+
+--------------------------------------------------
+5. DATABASE TABLES
+--------------------------------------------------
+
+Create table: tenant_activity_events
+
+Fields:
+- id
+- tenant_id
+- user_id nullable
+- event_type
+- event_reference_id nullable
+- metadata_json
+- ip_address
+- device_info
+- created_at
+
+Event types:
+- login
+- logout
+- sale_created
+- product_created
+- product_updated
+- customer_created
+- inventory_adjusted
+- stock_count_completed
+- variance_report_viewed
+- report_generated
+- receipt_printed
+- staff_clock_in
+- staff_clock_out
+- api_request
+- file_uploaded
+- sync_completed
+- webhook_received
+- subscription_updated
+
+Create table: tenant_usage_snapshots
+
+Fields:
+- id
+- tenant_id
+- snapshot_date
+- active_users_daily
+- active_users_weekly
+- active_users_monthly
+- product_count
+- customer_count
+- staff_count
+- location_count
+- sales_count
+- sale_line_count
+- inventory_movement_count
+- stock_count_session_count
+- report_generation_count
+- receipt_print_count
+- api_request_count
+- uploaded_file_count
+- storage_used_mb
+- estimated_row_count
+- auth_user_count
+- webhook_event_count
+- offline_sync_queue_count
+- activity_score
+- resource_risk_score
+- created_at
+
+Create table: tenant_usage_alerts
+
+Fields:
+- id
+- tenant_id
+- alert_type
+- severity ENUM('low','medium','high','critical')
+- title
+- message
+- status ENUM('open','resolved','dismissed')
+- created_at
+- resolved_at nullable
+
+--------------------------------------------------
+6. ACTIVITY SCORE
+--------------------------------------------------
+
+Calculate tenant_activity_score from 0 to 100.
+
+Formula:
+- Sales activity: 30%
+- Login activity: 20%
+- Inventory activity: 20%
+- Report usage: 10%
+- Staff usage: 10%
+- Advanced feature usage: 10%
+
+Labels:
+- 80–100 = Very Active
+- 50–79 = Active
+- 25–49 = Low Activity
+- 0–24 = Dormant
+
+Advanced feature usage includes:
+- multiple units
+- volume pricing
+- composite products
+- sell by weight
+- stock count
+- stock variance reports
+- staff clock-in
+- Shopify integration
+- Ding top-up
+- online store
+
+--------------------------------------------------
+7. SUPABASE COST RISK SCORE
+--------------------------------------------------
+
+Calculate resource_risk_score from 0 to 100.
+
+Factors:
+- estimated database rows
+- storage_used_mb
+- api_request_count
+- realtime event volume
+- auth_user_count
+- file upload count
+- sync volume
+- webhook volume
+
+Labels:
+- 0–24 = Low
+- 25–49 = Normal
+- 50–69 = Watch
+- 70–84 = High Usage
+- 85–100 = Cost Risk
+
+--------------------------------------------------
+8. TENANT LIST VIEW
+--------------------------------------------------
+
+Create a searchable Super Admin tenant table.
+
+Columns:
+- Business Name
+- Owner
+- Plan
+- Subscription Status
+- Tenant Status
+- Activity Score
+- Resource Risk Score
+- Last Active
+- Staff Count
+- Product Count
+- Customer Count
+- Sales This Month
+- Storage Used
+- API Requests
+- Monthly Revenue
+- Recommended Action
+
+Filters:
+- Plan
+- Tenant Status
+- Subscription Status
+- Activity Level
+- Resource Risk
+- Date Created
+- Last Active Date
+- Feature Usage
+
+Sorting:
+- Most Active
+- Highest Resource Usage
+- Most Products
+- Most Sales
+- Highest Storage
+- Dormant First
+- Needs Upgrade First
+
+--------------------------------------------------
+9. TENANT DETAIL PAGE
+--------------------------------------------------
+
+Create page:
+Super Admin → Analytics → Tenant Detail
+
+Sections:
+
+A. Business Overview
+- business name
+- owner name
+- owner email
+- phone
+- plan
+- subscription status
+- trial status
+- renewal date
+- created date
+- last active date
+
+B. Usage Summary
+- DAU
+- WAU
+- MAU
+- product count
+- customer count
+- staff count
+- location count
+- sales count
+- sale line count
+- inventory movements
+- storage used
+- API usage
+
+C. Activity Timeline
+Show recent activity:
+- logins
+- sales
+- inventory updates
+- report generation
+- stock counts
+- staff clock-ins
+- file uploads
+- sync events
+
+D. Feature Adoption
+Show whether tenant uses:
+- POS sales
+- reports
+- inventory
+- customers
+- loyalty
+- multiple units
+- volume pricing
+- composite products
+- sell by weight
+- multi-location stock
+- stock count
+- variance report
+- staff clock-in
+- Shopify integration
+- Ding top-up
+- online store
+- QuickBooks sync
+
+E. Recommendations
+Automatically show:
+- Upgrade plan recommendation
+- Dormant account follow-up
+- High storage warning
+- High API usage warning
+- Trial conversion follow-up
+- Expired subscription follow-up
+
+--------------------------------------------------
+10. PLAN LIMIT MONITORING
+--------------------------------------------------
+
+Compare tenant usage against plan limits.
+
+Track:
+- max staff users
+- max products
+- max locations
+- max monthly sales/orders
+- storage allowance
+- advanced feature access
+
+Alert if:
+- Tenant reaches 80% of plan limit
+- Tenant exceeds plan limit
+- Tenant uses premium features on lower plan
+- Tenant has high usage but low subscription tier
+
+Recommended actions:
+- Upgrade to Professional
+- Upgrade to Premium
+- Upgrade to Enterprise
+- Contact customer
+- Review usage
+
+--------------------------------------------------
+11. SUBSCRIPTION HEALTH
+--------------------------------------------------
+
+Track:
+- plan_name
+- monthly_recurring_revenue
+- trial_start_date
+- trial_end_date
+- subscription_status
+- billing_status
+- renewal_date
+- payment_failed_count
+- days_overdue
+
+Alerts:
+- Trial ending in 3 days
+- Trial expired
+- Payment overdue
+- Subscription expired
+- Dormant paid customer
+- High usage low plan customer
+
+--------------------------------------------------
+12. SUPER ADMIN REPORTS
+--------------------------------------------------
+
+Create reports:
+
+1. Tenant Activity Report
+2. Resource Usage Report
+3. Subscription Health Report
+4. High Usage Tenants Report
+5. Dormant Tenants Report
+6. Supabase Cost Risk Report
+7. Feature Adoption Report
+8. Plan Limit Report
+
+Export:
+- CSV
+- Excel
+- PDF
+
+--------------------------------------------------
+13. EVENT TRACKING SERVICE
+--------------------------------------------------
+
+Create reusable service:
+
+trackTenantEvent({
+  tenant_id,
+  user_id,
+  event_type,
+  event_reference_id,
+  metadata_json,
+  ip_address,
+  device_info
+})
+
+Use this service across:
+- login
+- sale creation
+- product creation/update
+- inventory adjustment
+- stock count completion
+- report generation
+- receipt printing
+- staff clock-in/out
+- Shopify webhook
+- Ding transaction
+- file upload
+- API request
+- sync completion
+
+--------------------------------------------------
+14. BACKGROUND SNAPSHOT JOB
+--------------------------------------------------
+
+Create daily background job:
+
+generateTenantUsageSnapshots()
+
+Runs once per day.
+
+Job tasks:
+- calculate tenant counts
+- calculate DAU/WAU/MAU
+- calculate activity score
+- calculate resource risk score
+- check plan limits
+- create alerts
+- store daily snapshot
+
+Also allow manual run by platform super admin.
+
+--------------------------------------------------
+15. API ENDPOINTS
+--------------------------------------------------
+
+Create endpoints:
+
+GET /super-admin/analytics/overview
+GET /super-admin/analytics/tenants
+GET /super-admin/analytics/tenants/:tenantId
+GET /super-admin/analytics/tenants/:tenantId/events
+GET /super-admin/analytics/resource-usage
+GET /super-admin/analytics/feature-adoption
+GET /super-admin/analytics/subscriptions
+GET /super-admin/analytics/alerts
+POST /super-admin/analytics/snapshots/run
+GET /super-admin/analytics/export
+
+All endpoints must require platform_super_admin access.
+
+--------------------------------------------------
+16. UI REQUIREMENTS
+--------------------------------------------------
+
+Use NEXXUS dark navy, blue, and teal branding.
+
+Pages:
+- Super Admin Analytics Dashboard
+- Tenant List
+- Tenant Detail
+- Resource Usage Report
+- Feature Adoption Report
+- Subscription Health Report
+- Alerts Center
+
+UI components:
+- KPI cards
+- status badges
+- risk indicators
+- charts
+- searchable tables
+- filters
+- export buttons
+- recommendation panels
+
+--------------------------------------------------
+17. ALERT CENTER
+--------------------------------------------------
+
+Create Super Admin Alerts Center.
+
+Alert types:
+- DORMANT_TENANT
+- TRIAL_ENDING
+- SUBSCRIPTION_EXPIRED
+- PAYMENT_FAILED
+- HIGH_RESOURCE_USAGE
+- PLAN_LIMIT_REACHED
+- NEEDS_UPGRADE
+- HIGH_API_USAGE
+- HIGH_STORAGE_USAGE
+- FEATURE_ERROR_SPIKE
+
+Actions:
+- Mark resolved
+- Dismiss
+- Open tenant
+- Add note
+
+--------------------------------------------------
+18. SECURITY REQUIREMENTS
+--------------------------------------------------
+
+- Strict platform_super_admin access only
+- Never expose cross-tenant data to tenant users
+- Never expose raw sensitive customer data unnecessarily
+- Encrypt or mask sensitive fields where appropriate
+- Audit log all Super Admin report access
+- Ensure queries are optimized and safe
+
+Audit actions:
+- VIEW_SUPER_ADMIN_DASHBOARD
+- VIEW_TENANT_USAGE
+- EXPORT_USAGE_REPORT
+- RUN_USAGE_SNAPSHOT
+- DISMISS_USAGE_ALERT
+
+--------------------------------------------------
+19. SUPABASE MIGRATION READINESS
+--------------------------------------------------
+
+Add a Supabase Readiness panel showing:
+
+- estimated database size
+- estimated table row counts
+- file storage usage
+- auth user count
+- realtime usage estimate
+- API request volume
+- top 10 resource-heavy tenants
+- projected cost risk category
+
+Do not calculate actual billing unless pricing configuration is added later.
+Instead, provide risk scoring and usage classification.
+
+--------------------------------------------------
+20. TEST CASES
+--------------------------------------------------
+
+Test:
+- platform super admin can access dashboard
+- tenant admin cannot access dashboard
+- cashier cannot access dashboard
+- activity events are logged
+- daily snapshot is generated
+- activity score calculates correctly
+- resource risk score calculates correctly
+- tenant list filters work
+- tenant detail page loads
+- alerts are created for high usage
+- alerts are created for dormant tenants
+- exports work
+- cross-tenant data is not leaked
+
+--------------------------------------------------
+21. OUTPUT REQUIRED
+--------------------------------------------------
+
+Provide:
+- database migrations
+- backend models
+- event tracking service
+- background snapshot job
+- Super Admin API endpoints
+- frontend dashboard
+- tenant list UI
+- tenant detail UI
+- reports and exports
+- alerts center
+- access control middleware
+- audit logging
+- test cases
+
+Build this as a scalable SaaS analytics layer for NEXXUS POS before migration to Supabase.

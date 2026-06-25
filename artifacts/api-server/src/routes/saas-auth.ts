@@ -7,6 +7,7 @@ import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { SendMailClient } from "zeptomail";
 import crypto from "crypto";
+import { trackTenantEvent, TenantEventType, clientIp } from "../lib/tenant-events";
 
 const router: IRouter = Router();
 
@@ -236,6 +237,14 @@ router.post("/saas/login", async (req, res): Promise<void> => {
 
     await db.update(tenantsTable).set({ lastLoginAt: new Date() }).where(eq(tenantsTable.id, tenant.id));
 
+    trackTenantEvent({
+      tenantId: tenant.id,
+      userId: adminUser.id,
+      eventType: TenantEventType.LOGIN,
+      metadata: { email: adminUser.email },
+      ipAddress: clientIp(req.headers, req.ip),
+    });
+
     const token = signToken(tenant.id, adminUser.email, adminUser.id, adminUser.isPrimary);
     res.json({
       token,
@@ -293,6 +302,14 @@ router.post("/saas/login", async (req, res): Promise<void> => {
     .where(eq(subscriptionsTable.tenantId, tenant.id));
 
   await db.update(tenantsTable).set({ lastLoginAt: new Date() }).where(eq(tenantsTable.id, tenant.id));
+
+  trackTenantEvent({
+    tenantId: tenant.id,
+    userId: primaryAdmin?.id,
+    eventType: TenantEventType.LOGIN,
+    metadata: { email: tenant.email, legacy: true },
+    ipAddress: clientIp(req.headers, req.ip),
+  });
 
   const token = signToken(tenant.id, tenant.email, primaryAdmin?.id, true);
   res.json({

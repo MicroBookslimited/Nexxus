@@ -56,6 +56,7 @@ import supplierReturnsRouter from "./supplier-returns";
 import overrideCardsRouter from "./override-cards";
 import giftVouchersRouter from "./gift-vouchers";
 import shopifyRouter from "./shopify";
+import superadminAnalyticsRouter from "./superadmin-analytics";
 
 const router: IRouter = Router();
 
@@ -83,6 +84,7 @@ router.use(saasAuthRouter);
 router.use(plansRouter);
 router.use(billingRouter);
 router.use(superadminRouter);
+router.use(superadminAnalyticsRouter);
 router.use(rolesRouter);
 router.use(locationsRouter);
 router.use(accountingRouter);

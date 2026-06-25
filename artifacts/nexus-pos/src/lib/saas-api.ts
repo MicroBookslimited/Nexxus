@@ -215,6 +215,124 @@ export const superadminUpdateGatewaySettings = (data: Partial<GatewaySettings>) 
     method: "PATCH", body: JSON.stringify(data), headers: superadminAuthHeaders(),
   });
 
+/* ─── Superadmin Analytics & Usage Monitoring ─── */
+export type AnalyticsActivityLabel = "active" | "moderate" | "low" | "dormant";
+export type AnalyticsRiskLabel = "low" | "medium" | "high";
+
+export interface AnalyticsOverview {
+  totals: { tenants: number; activeSubscriptions: number; trialSubscriptions: number; pastDue: number; cancelled: number };
+  activity: { activeToday: number; active7d: number; active30d: number; dormant: number; avgActivityScore: number };
+  resource: {
+    totalEstimatedRows: number;
+    totalEstimatedStorageMb: number;
+    avgResourceRiskScore: number;
+    costRisk: { low: number; medium: number; high: number };
+    topResourceTenants: { tenantId: number; businessName: string; estimatedRowCount: number; resourceRiskScore: number; costRiskCategory: AnalyticsRiskLabel }[];
+  };
+  plans: { planName: string | null; count: number }[];
+  alerts: { dormant: number; trialEnding: number; pastDue: number; nearLimit: number };
+  generatedAt: string;
+}
+
+export interface AnalyticsTenantRow {
+  tenantId: number;
+  businessName: string;
+  ownerName: string;
+  email: string;
+  country: string | null;
+  status: string;
+  createdAt: string;
+  lastLoginAt: string | null;
+  subscriptionStatus: string | null;
+  planId: number | null;
+  planName: string | null;
+  billingCycle: string | null;
+  trialEndsAt: string | null;
+  currentPeriodEnd: string | null;
+  maxProducts: number | null;
+  maxStaff: number | null;
+  maxLocations: number | null;
+  productCount: number;
+  customerCount: number;
+  staffCount: number;
+  locationCount: number;
+  salesCount: number;
+  salesTotal: number;
+  salesCount30d: number;
+  salesTotal30d: number;
+  orderItemCount: number;
+  inventoryMovementCount: number;
+  lastActivityAt: string | null;
+  daysSinceActivity: number | null;
+  estimatedRowCount: number;
+  estimatedStorageMb: number;
+  activityScore: number;
+  resourceRiskScore: number;
+  activityLabel: AnalyticsActivityLabel;
+  riskLabel: AnalyticsRiskLabel;
+  costRiskCategory: AnalyticsRiskLabel;
+  limitUsage: { products: number | null; staff: number | null; locations: number | null };
+  recommendations: string[];
+}
+
+export interface AnalyticsTenantDetail {
+  tenant: AnalyticsTenantRow;
+  featureAdoption: { key: string; label: string; adopted: boolean }[];
+  salesTrend: { date: string; count: number; total: number }[];
+  recentEvents: { id: number; eventType: string; createdAt: string; metadata: unknown }[];
+}
+
+export interface AnalyticsEvent {
+  id: number;
+  tenantId: number;
+  userId: number | null;
+  eventType: string;
+  eventReferenceId: number | null;
+  metadata: unknown;
+  ipAddress: string | null;
+  createdAt: string;
+}
+
+export interface AnalyticsTenantsQuery {
+  search?: string;
+  activity?: AnalyticsActivityLabel;
+  risk?: AnalyticsRiskLabel;
+  subscriptionStatus?: string;
+  sort?: "activityScore" | "resourceRiskScore" | "salesTotal" | "salesCount30d" | "createdAt";
+  dir?: "asc" | "desc";
+}
+
+export const superadminAnalyticsOverview = () =>
+  api<AnalyticsOverview>("/superadmin/analytics/overview", { headers: superadminAuthHeaders(), cache: "no-store" });
+
+export const superadminAnalyticsTenants = (params?: AnalyticsTenantsQuery) => {
+  const qs = params
+    ? Object.entries(params)
+        .filter(([, v]) => v !== undefined && v !== "")
+        .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+        .join("&")
+    : "";
+  return api<{ tenants: AnalyticsTenantRow[]; count: number }>(`/superadmin/analytics/tenants${qs ? `?${qs}` : ""}`, {
+    headers: superadminAuthHeaders(),
+    cache: "no-store",
+  });
+};
+
+export const superadminAnalyticsTenantDetail = (tenantId: number) =>
+  api<AnalyticsTenantDetail>(`/superadmin/analytics/tenants/${tenantId}`, { headers: superadminAuthHeaders(), cache: "no-store" });
+
+export const superadminAnalyticsTenantEvents = (tenantId: number, limit = 100) =>
+  api<{ events: AnalyticsEvent[] }>(`/superadmin/analytics/tenants/${tenantId}/events?limit=${limit}`, {
+    headers: superadminAuthHeaders(),
+    cache: "no-store",
+  });
+
+export const superadminAnalyticsRunSnapshots = () =>
+  api<{ success: boolean; tenants: number; snapshotDate: string }>("/superadmin/analytics/snapshots/run", {
+    method: "POST",
+    headers: superadminAuthHeaders(),
+  });
+
 /* ─── Password Reset ─── */
 export const saasForgotPassword = (email: string) =>
   api<{ success: boolean }>("/saas/forgot-password", { method: "POST", body: JSON.stringify({ email }) });

@@ -7,6 +7,7 @@ import { applyVolumePricing } from "../lib/pricing";
 import { getSetting } from "./settings";
 import { logger } from "../lib/logger";
 import { sendTemplateEmail } from "./email-templates";
+import { trackTenantEvent, TenantEventType } from "../lib/tenant-events";
 
 /**
  * Thrown inside the order transaction when an item cannot be sold because
@@ -1382,6 +1383,15 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   const fullOrder = await getOrderWithItems(order.id);
+
+  trackTenantEvent({
+    tenantId,
+    userId: order.staffId ?? undefined,
+    eventType: TenantEventType.SALE_CREATED,
+    eventReferenceId: order.id,
+    metadata: { orderNumber: order.orderNumber, total: order.total, salesChannel: order.salesChannel },
+  });
+
   res.status(201).json(GetOrderResponse.parse(fullOrder));
 });
 
