@@ -24,6 +24,7 @@ import { PinPad } from "@/components/PinPad";
 import { ShiftClockButton } from "@/components/ShiftClockButton";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { isTechnicianRestricted, TECHNICIAN_ALLOWED_PATHS } from "@/lib/tenant-token";
+import { useGetSettings } from "@workspace/api-client-react";
 
 type NavItem = {
   alwaysShowLabel?: boolean;
@@ -196,6 +197,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { theme, toggleTheme } = useTheme();
   const { staff, setStaff, can, clearStaff } = useStaff();
   const { headerHidden } = usePosChrome();
+  const { data: tenantSettings } = useGetSettings();
   const [switchUserOpen, setSwitchUserOpen] = useState(false);
 
   // Tracks which group labels are expanded (desktop dropdown & mobile accordion)
@@ -326,9 +328,14 @@ export function Layout({ children }: { children: ReactNode }) {
       {!(headerHidden && location === "/pos") && (
       <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-border px-3 sm:px-5 py-1 bg-card gap-2">
 
-        {/* Logo */}
-        <div className="flex items-center shrink-0">
+        {/* Logo + tenant business name */}
+        <div className="flex items-center shrink-0 gap-3">
           <img src={logoUrl} alt="NEXXUS POS" className="h-8 w-auto" />
+          {tenantSettings?.business_name && (
+            <span className="hidden sm:block text-sm font-semibold text-foreground/80 border-l border-border pl-3 leading-tight max-w-[200px] truncate">
+              {tenantSettings.business_name}
+            </span>
+          )}
         </div>
 
         {/* ── DESKTOP NAV (≥1280px): dynamic — active shows label, inactive icon-only ── */}
