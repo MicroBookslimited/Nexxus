@@ -216,8 +216,18 @@ function CategoryManagerDialog({ open, onClose, categories, onSave }: {
 }
 const LOW_STOCK_THRESHOLD = 10;
 
-type RestockForm = { quantity: string; unitCost: string; notes: string };
-const emptyRestockForm = (): RestockForm => ({ quantity: "", unitCost: "", notes: "" });
+type RestockForm = {
+  quantity: string;
+  unitCost: string;
+  notes: string;
+  // Case-cost calculator: enter cost per case + units per case to derive unitCost.
+  casePrice: string;
+  unitsPerCase: string;
+  // When the new unit cost is higher than the current cost, keep the existing
+  // markup % by raising the selling price (instead of letting markup erode).
+  keepMarkup: boolean;
+};
+const emptyRestockForm = (): RestockForm => ({ quantity: "", unitCost: "", notes: "", casePrice: "", unitsPerCase: "", keepMarkup: true });
 
 // taxRate is a string so an empty value means "inherit bill default".
 // Anything else parses as a percentage.
@@ -2164,7 +2174,7 @@ function CompositeEditor({
     if (pp.structureType === "composite") return false;
     if (!pickerQuery.trim()) return true;
     const q = pickerQuery.toLowerCase();
-    return p.name.toLowerCase().includes(q) || (p.barcode ?? "").toLowerCase().includes(q);
+    return p.name.toLowerCase().includes(q) || (p.barcode ?? "").toLowerCase().includes(q) || ((p as { sku?: string | null }).sku ?? "").toLowerCase().includes(q);
   }).slice(0, 50);
 
   const addComponent = (p: GetProductResponse) => {
@@ -2940,6 +2950,9 @@ export function Products() {
   const [limitPrompt, setLimitPrompt] = useState<PlanLimitStatus | null>(null);
   const [editingProduct, setEditingProduct] = useState<GetProductResponse | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm());
+  // Product-form case-cost calculator (transient, not persisted on the product).
+  const [formCasePrice, setFormCasePrice] = useState("");
+  const [formUnitsPerCase, setFormUnitsPerCase] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [permDelete, setPermDelete] = useState<{ id: number; name: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Record<number, boolean>>({});
@@ -3021,11 +3034,13 @@ export function Products() {
     if (!products) return undefined;
     const q = deferredSearch.trim().toLowerCase();
     if (!q) return products;
-    // Pre-lowercase once per product per filter pass; also search barcode.
+    // Pre-lowercase once per product per filter pass; also search barcode + SKU.
     return products.filter((p) => {
       if (p.name.toLowerCase().includes(q)) return true;
       const bc = p.barcode;
-      return !!bc && bc.toLowerCase().includes(q);
+      if (!!bc && bc.toLowerCase().includes(q)) return true;
+      const sk = (p as { sku?: string | null }).sku;
+      return !!sk && sk.toLowerCase().includes(q);
     });
   }, [products, deferredSearch]);
 
@@ -3066,18 +3081,68 @@ export function Products() {
       toast({ title: "Enter a valid quantity", variant: "destructive" });
       return;
     }
+    const enteredCost = parseFloat(restockForm.unitCost);
+    const hasCost = !isNaN(enteredCost) && enteredCost > 0;
+    const currentCost = Number((restockProduct as { costPrice?: number | null }).costPrice ?? 0);
+    const currentPrice = restockProduct.price;
+    // Only bump the stored cost when the new cost is higher (matches the
+    // purchase-bill flow — a one-off cheap buy shouldn't lower the cost basis).
+    const costGoingUp = hasCost && enteredCost > currentCost;
+    // Markup-on-cost derived from the current cost/price. When cost rises and
+    // "keep markup" is on, raise the selling price so the markup % is preserved
+    // instead of silently eroding.
+    const currentMarkup = currentCost > 0 ? calcMarkupFromPrice(currentCost, currentPrice) : NaN;
+    const newPrice =
+      costGoingUp && restockForm.keepMarkup && !isNaN(currentMarkup) && currentMarkup > 0
+        ? Number(round2(calcPriceFromMarkup(enteredCost, currentMarkup)))
+        : null;
     createPurchase.mutate(
       {
         data: {
           productId: restockProduct.id,
           quantity: qty,
-          unitCost: parseFloat(restockForm.unitCost) || 0,
+          unitCost: hasCost ? enteredCost : 0,
           notes: restockForm.notes || undefined,
         },
       },
       {
-        onSuccess: () => {
-          toast({ title: `Restocked ${qty} units of ${restockProduct.name}` });
+        onSuccess: async () => {
+          // The stock was added by the purchase. Now (only when the cost rose)
+          // update the product's cost/price. We await this so the success
+          // message only claims a cost/price change once it actually persisted.
+          let costUpdated = false;
+          if (costGoingUp) {
+            try {
+              // The generated update body type requires name + category, but the
+              // server skips undefined fields (Drizzle .set), so only cost/price
+              // are actually changed.
+              await updateProduct.mutateAsync({
+                id: restockProduct.id,
+                data: {
+                  name: restockProduct.name,
+                  category: restockProduct.category,
+                  costPrice: enteredCost,
+                  price: newPrice != null ? newPrice : currentPrice,
+                },
+              });
+              costUpdated = true;
+            } catch {
+              toast({
+                title: "Stock added, but cost update failed",
+                description: "The new units were recorded, but the product cost/price could not be updated. Please update it manually.",
+                variant: "destructive",
+              });
+            }
+          }
+          toast({
+            title: `Restocked ${qty} units of ${restockProduct.name}`,
+            description:
+              costUpdated && newPrice != null
+                ? `Cost updated to ${enteredCost.toFixed(2)}; selling price raised to ${newPrice.toFixed(2)} to keep your markup.`
+                : costUpdated
+                ? `Cost updated to ${enteredCost.toFixed(2)}.`
+                : undefined,
+          });
           queryClient.invalidateQueries({ queryKey: ["/api/products"] });
           queryClient.invalidateQueries({ queryKey: ["/api/purchases"] });
           setRestockProduct(null);
@@ -3582,6 +3647,8 @@ export function Products() {
     }
     setEditingProduct(null);
     setForm({ ...emptyForm(), category: categories[0] ?? "General", markup: defaultMarkupSetting });
+    setFormCasePrice("");
+    setFormUnitsPerCase("");
     setDialogTab("details");
     setDialogOpen(true);
   };
@@ -3632,6 +3699,59 @@ export function Products() {
       stockMethodOverride: pp.stockMethodOverride === "fifo" || pp.stockMethodOverride === "lifo" ? pp.stockMethodOverride : "",
       markup: editMarkup,
     });
+    setFormCasePrice("");
+    setFormUnitsPerCase("");
+    setDialogTab("details");
+    setDialogOpen(true);
+  };
+
+  // Clone: open the New Product form pre-filled with an existing product's
+  // pricing (cost, markup, selling price), category, units and flags — but
+  // with name, barcode, SKU and stock cleared so the clerk only types the new
+  // flavour's name + barcode (+ quantity). Same-line-pricing, different
+  // flavour/barcode workflow requested by high-volume supermarket users.
+  const openClone = (p: GetProductResponse) => {
+    const pp = p as GetProductResponse & {
+      soldByWeight?: boolean;
+      unitOfMeasure?: WeightUnit | string | null;
+      sellingUnit?: string | null;
+      costPrice?: number | null;
+      structureType?: StructureType | string;
+      isTaxable?: boolean;
+      trackBatches?: boolean;
+      stockMethodOverride?: "fifo" | "lifo" | null;
+    };
+    const unit: WeightUnit =
+      pp.unitOfMeasure === "lb" || pp.unitOfMeasure === "oz" || pp.unitOfMeasure === "g"
+        ? pp.unitOfMeasure
+        : "kg";
+    const struct: StructureType = pp.structureType === "composite" ? "composite" : "simple";
+    const cloneCost = pp.costPrice != null ? Number(pp.costPrice) : NaN;
+    const cloneMarkup =
+      !isNaN(cloneCost) && cloneCost > 0 ? round2(calcMarkupFromPrice(cloneCost, p.price)) : defaultMarkupSetting;
+    setEditingProduct(null);
+    setForm({
+      name: "",
+      description: p.description ?? "",
+      price: p.price.toString(),
+      category: p.category,
+      barcode: "",
+      sku: "",
+      size: p.size ?? "",
+      inStock: true,
+      stockCount: "0",
+      soldByWeight: !!pp.soldByWeight,
+      unitOfMeasure: unit,
+      sellingUnit: pp.sellingUnit ?? "",
+      costPrice: pp.costPrice != null ? String(pp.costPrice) : "",
+      structureType: struct,
+      isTaxable: pp.isTaxable !== false,
+      trackBatches: !!pp.trackBatches,
+      stockMethodOverride: pp.stockMethodOverride === "fifo" || pp.stockMethodOverride === "lifo" ? pp.stockMethodOverride : "",
+      markup: cloneMarkup,
+    });
+    setFormCasePrice("");
+    setFormUnitsPerCase("");
     setDialogTab("details");
     setDialogOpen(true);
   };
@@ -4100,7 +4220,7 @@ export function Products() {
       <div className="flex gap-3 flex-wrap items-center">
         <div className="relative flex-1 min-w-[160px] sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9 w-full" placeholder="Search products…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <Input className="pl-9 w-full" placeholder="Search by name, barcode or SKU…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
         <div className="flex gap-2 flex-wrap flex-1">
           <Button size="sm" variant={!categoryFilter ? "default" : "outline"} onClick={() => setCategoryFilter(null)}>All</Button>
@@ -4239,6 +4359,11 @@ export function Products() {
                       {canManage && (
                         <Button size="sm" variant="outline" className="h-9 text-sm px-3 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" onClick={() => openRestock(product)}>
                           <PackagePlus className="h-4 w-4 mr-1.5" />Restock
+                        </Button>
+                      )}
+                      {canManage && (
+                        <Button size="sm" variant="outline" className="h-9 px-3 text-sm" title="Clone product" onClick={() => openClone(product)}>
+                          <Copy className="h-4 w-4 mr-1.5" />Clone
                         </Button>
                       )}
                       {canManage && (
@@ -4381,6 +4506,11 @@ export function Products() {
                     {canManage && (
                       <Button size="icon" variant="outline" className="h-9 w-9 text-blue-400 border-blue-400/40 hover:bg-blue-400/10" title="Restock" onClick={() => openRestock(product)}>
                         <PackagePlus className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button size="icon" variant="outline" className="h-9 w-9" title="Clone product" onClick={() => openClone(product)}>
+                        <Copy className="h-4 w-4" />
                       </Button>
                     )}
                     {canManage && (
@@ -5690,6 +5820,55 @@ export function Products() {
                   onChange={(e) => setRestockForm((f) => ({ ...f, quantity: e.target.value }))}
                 />
               </div>
+              {/* Case-cost calculator: enter cost per case + units per case to
+                  auto-fill the unit cost below. */}
+              <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 space-y-2">
+                <div className="text-xs font-medium text-muted-foreground">Cost by the case <span className="font-normal">(optional)</span></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Cost per case</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={restockForm.casePrice}
+                      onChange={(e) => {
+                        const casePrice = e.target.value;
+                        setRestockForm((f) => {
+                          const cp = parseFloat(casePrice);
+                          const upc = parseFloat(f.unitsPerCase);
+                          const unitCost = cp > 0 && upc > 0 ? round2(cp / upc) : f.unitCost;
+                          return { ...f, casePrice, unitCost };
+                        });
+                      }}
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Units per case</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="e.g. 24"
+                      value={restockForm.unitsPerCase}
+                      onChange={(e) => {
+                        const unitsPerCase = e.target.value;
+                        setRestockForm((f) => {
+                          const cp = parseFloat(f.casePrice);
+                          const upc = parseFloat(unitsPerCase);
+                          const unitCost = cp > 0 && upc > 0 ? round2(cp / upc) : f.unitCost;
+                          return { ...f, unitsPerCase, unitCost };
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+                {parseFloat(restockForm.casePrice) > 0 && parseFloat(restockForm.unitsPerCase) > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    = <span className="font-semibold text-foreground">{round2(parseFloat(restockForm.casePrice) / parseFloat(restockForm.unitsPerCase))}</span> per unit
+                  </div>
+                )}
+              </div>
               <div className="grid gap-1.5">
                 <Label>Unit cost <span className="text-muted-foreground text-xs">(optional)</span></Label>
                 <Input
@@ -5698,9 +5877,56 @@ export function Products() {
                   min="0"
                   placeholder="0.00"
                   value={restockForm.unitCost}
-                  onChange={(e) => setRestockForm((f) => ({ ...f, unitCost: e.target.value }))}
+                  onChange={(e) => setRestockForm((f) => ({ ...f, unitCost: e.target.value, casePrice: "", unitsPerCase: "" }))}
                 />
               </div>
+              {/* Markup preservation: when the new unit cost is higher than the
+                  current cost, offer to raise the selling price to keep markup. */}
+              {(() => {
+                const enteredCost = parseFloat(restockForm.unitCost);
+                const currentCost = Number((restockProduct as { costPrice?: number | null }).costPrice ?? 0);
+                const currentPrice = restockProduct.price;
+                const costGoingUp = !isNaN(enteredCost) && enteredCost > 0 && enteredCost > currentCost;
+                if (!costGoingUp) return null;
+                const currentMarkup = currentCost > 0 ? calcMarkupFromPrice(currentCost, currentPrice) : NaN;
+                const canKeep = !isNaN(currentMarkup) && currentMarkup > 0;
+                const newPrice = canKeep ? Number(round2(calcPriceFromMarkup(enteredCost, currentMarkup))) : null;
+                const erodedMarkup = currentCost >= 0 ? calcMarkupFromPrice(enteredCost, currentPrice) : NaN;
+                return (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 space-y-2 text-sm">
+                    <div className="flex items-center gap-2 text-amber-300 font-medium">
+                      <TrendingUp className="h-4 w-4" />Cost is going up
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Current: cost {currentCost.toFixed(2)} · price {currentPrice.toFixed(2)}
+                      {canKeep ? ` · markup ${currentMarkup.toFixed(1)}%` : ""}
+                    </div>
+                    {canKeep ? (
+                      <>
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 accent-amber-500"
+                            checked={restockForm.keepMarkup}
+                            onChange={(e) => setRestockForm((f) => ({ ...f, keepMarkup: e.target.checked }))}
+                          />
+                          <span className="text-xs">
+                            Keep my <span className="font-semibold">{currentMarkup.toFixed(1)}%</span> markup — raise selling price to{" "}
+                            <span className="font-semibold text-foreground">{newPrice?.toFixed(2)}</span>
+                          </span>
+                        </label>
+                        {!restockForm.keepMarkup && !isNaN(erodedMarkup) && (
+                          <div className="text-xs text-amber-300/80">
+                            Leaving price at {currentPrice.toFixed(2)} drops markup to {erodedMarkup.toFixed(1)}%.
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">Cost will be updated to {enteredCost.toFixed(2)}.</div>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="grid gap-1.5">
                 <Label>Notes <span className="text-muted-foreground text-xs">(optional)</span></Label>
                 <Input
@@ -5776,7 +6002,7 @@ export function Products() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) { setFormCasePrice(""); setFormUnitsPerCase(""); } }}>
         <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{editingProduct ? "Edit Product" : "Add Product"}</DialogTitle>
@@ -5974,30 +6200,77 @@ export function Products() {
                     and is the per-unit basis for composites. Hidden on
                     composites because the cost is derived. */}
                 {form.structureType === "simple" && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="grid gap-1.5">
-                      <Label>Cost price <span className="text-muted-foreground text-[11px]">(optional, for margin reports)</span></Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        value={form.costPrice}
-                        onChange={(e) => handleFormCostChange(e.target.value)}
-                      />
+                  <>
+                    {/* Case-cost calculator: cost per case ÷ units per case fills
+                        the cost price below (which keeps the markup in sync). */}
+                    <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">Cost by the case <span className="font-normal">(optional helper)</span></div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="grid gap-1">
+                          <Label className="text-xs">Cost per case</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={formCasePrice}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setFormCasePrice(v);
+                              const cp = parseFloat(v);
+                              const upc = parseFloat(formUnitsPerCase);
+                              if (cp > 0 && upc > 0) handleFormCostChange(round2(cp / upc));
+                            }}
+                          />
+                        </div>
+                        <div className="grid gap-1">
+                          <Label className="text-xs">Units per case</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="e.g. 24"
+                            value={formUnitsPerCase}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setFormUnitsPerCase(v);
+                              const cp = parseFloat(formCasePrice);
+                              const upc = parseFloat(v);
+                              if (cp > 0 && upc > 0) handleFormCostChange(round2(cp / upc));
+                            }}
+                          />
+                        </div>
+                      </div>
+                      {parseFloat(formCasePrice) > 0 && parseFloat(formUnitsPerCase) > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          = <span className="font-semibold text-foreground">{round2(parseFloat(formCasePrice) / parseFloat(formUnitsPerCase))}</span> per unit (filled in below)
+                        </div>
+                      )}
                     </div>
-                    <div className="grid gap-1.5">
-                      <Label>Markup <span className="text-muted-foreground text-[11px]">(% on cost)</span></Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="e.g. 50"
-                        value={form.markup}
-                        onChange={(e) => handleFormMarkupChange(e.target.value)}
-                      />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="grid gap-1.5">
+                        <Label>Cost price <span className="text-muted-foreground text-[11px]">(optional, for margin reports)</span></Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          value={form.costPrice}
+                          onChange={(e) => { handleFormCostChange(e.target.value); setFormCasePrice(""); setFormUnitsPerCase(""); }}
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label>Markup <span className="text-muted-foreground text-[11px]">(% on cost)</span></Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="e.g. 50"
+                          value={form.markup}
+                          onChange={(e) => handleFormMarkupChange(e.target.value)}
+                        />
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
                 <Separator />
                 {/* Sold-by-weight: when on, the cashier is prompted for a
