@@ -333,6 +333,60 @@ export const superadminAnalyticsRunSnapshots = () =>
     headers: superadminAuthHeaders(),
   });
 
+/* ─── Alerts Center ─── */
+export type AlertSeverity = "low" | "medium" | "high" | "critical";
+export type AlertStatus = "open" | "resolved" | "dismissed";
+
+export interface AnalyticsAlert {
+  id: number;
+  tenantId: number;
+  businessName: string | null;
+  alertType: string;
+  severity: string;
+  title: string;
+  message: string;
+  status: string;
+  note: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface AnalyticsAlertsResult {
+  alerts: AnalyticsAlert[];
+  summary: {
+    open: number;
+    resolved: number;
+    dismissed: number;
+    bySeverity: Record<AlertSeverity, number>;
+  };
+}
+
+export const superadminAnalyticsAlerts = (params?: { status?: string; severity?: string }) => {
+  const qs = params
+    ? Object.entries(params)
+        .filter(([, v]) => v !== undefined && v !== "")
+        .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+        .join("&")
+    : "";
+  return api<AnalyticsAlertsResult>(`/superadmin/analytics/alerts${qs ? `?${qs}` : ""}`, {
+    headers: superadminAuthHeaders(),
+    cache: "no-store",
+  });
+};
+
+export const superadminAnalyticsGenerateAlerts = () =>
+  api<{ success: boolean; created: number; resolved: number; refreshed: number; openTotal: number }>(
+    "/superadmin/analytics/alerts/generate",
+    { method: "POST", headers: superadminAuthHeaders() },
+  );
+
+export const superadminAnalyticsUpdateAlert = (id: number, patch: { status?: AlertStatus; note?: string | null }) =>
+  api<AnalyticsAlert>(`/superadmin/analytics/alerts/${id}`, {
+    method: "PATCH",
+    headers: { ...superadminAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+
 /* ─── Password Reset ─── */
 export const saasForgotPassword = (email: string) =>
   api<{ success: boolean }>("/saas/forgot-password", { method: "POST", body: JSON.stringify({ email }) });

@@ -2,18 +2,25 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Activity, AlertTriangle, ArrowLeft, BarChart3, Database, RefreshCw,
   Search, TrendingUp, Users, Zap, HardDrive, Clock, ChevronRight,
+  Bell, CheckCircle2, XCircle, RotateCcw,
 } from "lucide-react";
 import {
   superadminAnalyticsOverview,
   superadminAnalyticsTenants,
   superadminAnalyticsTenantDetail,
   superadminAnalyticsRunSnapshots,
+  superadminAnalyticsAlerts,
+  superadminAnalyticsGenerateAlerts,
+  superadminAnalyticsUpdateAlert,
   type AnalyticsOverview,
   type AnalyticsTenantRow,
   type AnalyticsTenantDetail,
   type AnalyticsActivityLabel,
   type AnalyticsRiskLabel,
   type AnalyticsTenantsQuery,
+  type AnalyticsAlert,
+  type AnalyticsAlertsResult,
+  type AlertSeverity,
 } from "../lib/saas-api";
 
 const card = "bg-[#1a2332] border border-[#2a3a55] rounded-xl";
@@ -31,6 +38,14 @@ function riskColor(label: AnalyticsRiskLabel): string {
     case "high": return "text-rose-400 bg-rose-500/10 border-rose-500/30";
     case "medium": return "text-amber-400 bg-amber-500/10 border-amber-500/30";
     default: return "text-emerald-400 bg-emerald-500/10 border-emerald-500/30";
+  }
+}
+function severityColor(sev: string): string {
+  switch (sev) {
+    case "critical": return "text-rose-400 bg-rose-500/10 border-rose-500/30";
+    case "high": return "text-orange-400 bg-orange-500/10 border-orange-500/30";
+    case "medium": return "text-amber-400 bg-amber-500/10 border-amber-500/30";
+    default: return "text-blue-400 bg-blue-500/10 border-blue-500/30";
   }
 }
 function scoreBarColor(score: number): string {
@@ -233,6 +248,175 @@ function TenantDetailView({ tenantId, onBack }: { tenantId: number; onBack: () =
   );
 }
 
+function AlertsCenter({ onSelectTenant }: { onSelectTenant: (tenantId: number) => void }) {
+  const [data, setData] = useState<AnalyticsAlertsResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"open" | "resolved" | "dismissed" | "all">("open");
+  const [severityFilter, setSeverityFilter] = useState<AlertSeverity | "">("");
+  const [generating, setGenerating] = useState(false);
+  const [genMsg, setGenMsg] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await superadminAnalyticsAlerts({ status: statusFilter, severity: severityFilter });
+      setData(res);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load alerts");
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, severityFilter]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const generate = async () => {
+    setGenerating(true);
+    setGenMsg(null);
+    try {
+      const r = await superadminAnalyticsGenerateAlerts();
+      setGenMsg(`${r.created} new · ${r.refreshed} updated · ${r.resolved} auto-resolved · ${r.openTotal} open.`);
+      await load();
+    } catch (e) {
+      setGenMsg(e instanceof Error ? e.message : "Generation failed");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const setStatus = async (a: AnalyticsAlert, status: "open" | "resolved" | "dismissed") => {
+    setBusyId(a.id);
+    try {
+      await superadminAnalyticsUpdateAlert(a.id, { status });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update alert");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const summary = data?.summary;
+  const statusTabs: { key: "open" | "resolved" | "dismissed" | "all"; label: string; count?: number }[] = [
+    { key: "open", label: "Open", count: summary?.open },
+    { key: "resolved", label: "Resolved", count: summary?.resolved },
+    { key: "dismissed", label: "Dismissed", count: summary?.dismissed },
+    { key: "all", label: "All" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {statusTabs.map((t) => (
+            <button key={t.key} onClick={() => setStatusFilter(t.key)}
+              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                statusFilter === t.key
+                  ? "bg-[#3b82f6]/15 border-[#3b82f6]/50 text-white"
+                  : "bg-[#1a2332] border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/40"
+              }`}>
+              {t.label}{t.count != null ? ` (${t.count})` : ""}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          {genMsg && <span className="text-xs text-[#94a3b8]">{genMsg}</span>}
+          <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value as AlertSeverity | "")}
+            className="bg-[#0f1623] border border-[#2a3a55] rounded-lg px-3 py-2 text-sm text-[#cbd5e1] focus:outline-none focus:border-[#3b82f6]">
+            <option value="">All severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <button onClick={generate} disabled={generating}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#3b82f6] hover:bg-[#2563eb] text-sm text-white disabled:opacity-50">
+            <RefreshCw className={`w-4 h-4 ${generating ? "animate-spin" : ""}`} /> {generating ? "Generating…" : "Generate alerts now"}
+          </button>
+        </div>
+      </div>
+
+      {summary && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {(["critical", "high", "medium", "low"] as AlertSeverity[]).map((sev) => (
+            <div key={sev} className={`${card} p-4`}>
+              <div className="flex items-center justify-between">
+                <span className={`px-2 py-0.5 rounded text-xs border capitalize ${severityColor(sev)}`}>{sev}</span>
+                <span className="text-2xl font-bold text-white tabular-nums">{summary.bySeverity[sev]}</span>
+              </div>
+              <div className="text-xs text-[#64748b] mt-2">open</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-[#94a3b8] py-12 text-center">Loading alerts…</div>
+      ) : error ? (
+        <div className="text-rose-400 py-12 text-center">{error}</div>
+      ) : !data || data.alerts.length === 0 ? (
+        <div className={`${card} p-10 text-center`}>
+          <Bell className="w-8 h-8 text-[#64748b] mx-auto mb-3" />
+          <p className="text-[#94a3b8]">No {statusFilter !== "all" ? statusFilter : ""} alerts.</p>
+          <p className="text-[#64748b] text-xs mt-1">Run “Generate alerts now” to scan all tenants for current issues.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {data.alerts.map((a) => (
+            <div key={a.id} className={`${card} p-4 flex items-start gap-3`}>
+              <span className={`px-2 py-0.5 rounded text-xs border capitalize shrink-0 mt-0.5 ${severityColor(a.severity)}`}>
+                {a.severity}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-white font-semibold">{a.title}</span>
+                  <button onClick={() => onSelectTenant(a.tenantId)}
+                    className="text-[#3b82f6] hover:underline text-sm truncate">
+                    {a.businessName ?? `Tenant #${a.tenantId}`}
+                  </button>
+                  {a.status !== "open" && (
+                    <span className="text-[10px] uppercase tracking-wide text-[#64748b] border border-[#2a3a55] rounded px-1.5 py-0.5">
+                      {a.status}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-[#cbd5e1] mt-1">{a.message}</p>
+                <div className="text-xs text-[#64748b] mt-1.5">
+                  Raised {new Date(a.createdAt).toLocaleString()}
+                  {a.resolvedAt ? ` · closed ${new Date(a.resolvedAt).toLocaleString()}` : ""}
+                  {a.note ? ` · ${a.note}` : ""}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {a.status === "open" ? (
+                  <>
+                    <button onClick={() => setStatus(a, "resolved")} disabled={busyId === a.id}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Resolve
+                    </button>
+                    <button onClick={() => setStatus(a, "dismissed")} disabled={busyId === a.id}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-slate-500/10 border border-slate-500/30 text-slate-300 hover:bg-slate-500/20 disabled:opacity-50">
+                      <XCircle className="w-3.5 h-3.5" /> Dismiss
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => setStatus(a, "open")} disabled={busyId === a.id}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-[#1a2332] border border-[#2a3a55] text-[#cbd5e1] hover:border-[#3b82f6]/50 disabled:opacity-50">
+                    <RotateCcw className="w-3.5 h-3.5" /> Reopen
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SuperadminAnalyticsTab() {
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [tenants, setTenants] = useState<AnalyticsTenantRow[]>([]);
@@ -241,6 +425,7 @@ export function SuperadminAnalyticsTab() {
   const [selected, setSelected] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
   const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null);
+  const [view, setView] = useState<"dashboard" | "alerts">("dashboard");
 
   const [search, setSearch] = useState("");
   const [activityFilter, setActivityFilter] = useState<AnalyticsActivityLabel | "">("");
@@ -293,9 +478,6 @@ export function SuperadminAnalyticsTab() {
     return <TenantDetailView tenantId={selected} onBack={() => setSelected(null)} />;
   }
 
-  if (loading) return <div className="text-[#94a3b8] py-12 text-center">Loading analytics…</div>;
-  if (error) return <div className="text-rose-400 py-12 text-center">{error}</div>;
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -308,18 +490,54 @@ export function SuperadminAnalyticsTab() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {snapshotMsg && <span className="text-xs text-[#94a3b8]">{snapshotMsg}</span>}
-          <button onClick={runSnapshots} disabled={running}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a2332] border border-[#2a3a55] hover:border-[#3b82f6]/50 text-sm text-[#cbd5e1] disabled:opacity-50">
-            <Database className={`w-4 h-4 ${running ? "animate-pulse" : ""}`} /> {running ? "Saving…" : "Save Snapshot"}
-          </button>
-          <button onClick={() => void loadAll()}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a2332] border border-[#2a3a55] hover:border-[#3b82f6]/50 text-sm text-[#cbd5e1]">
-            <RefreshCw className="w-4 h-4" /> Refresh
-          </button>
+          {view === "dashboard" && snapshotMsg && <span className="text-xs text-[#94a3b8]">{snapshotMsg}</span>}
+          {view === "dashboard" && (
+            <>
+              <button onClick={runSnapshots} disabled={running}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a2332] border border-[#2a3a55] hover:border-[#3b82f6]/50 text-sm text-[#cbd5e1] disabled:opacity-50">
+                <Database className={`w-4 h-4 ${running ? "animate-pulse" : ""}`} /> {running ? "Saving…" : "Save Snapshot"}
+              </button>
+              <button onClick={() => void loadAll()}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a2332] border border-[#2a3a55] hover:border-[#3b82f6]/50 text-sm text-[#cbd5e1]">
+                <RefreshCw className="w-4 h-4" /> Refresh
+              </button>
+            </>
+          )}
         </div>
       </div>
 
+      <div className="flex items-center gap-2">
+        <button onClick={() => setView("dashboard")}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+            view === "dashboard"
+              ? "bg-[#3b82f6]/15 border-[#3b82f6]/50 text-white"
+              : "bg-[#1a2332] border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/40"
+          }`}>
+          <BarChart3 className="w-4 h-4" /> Dashboard
+        </button>
+        <button onClick={() => setView("alerts")}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+            view === "alerts"
+              ? "bg-[#3b82f6]/15 border-[#3b82f6]/50 text-white"
+              : "bg-[#1a2332] border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/40"
+          }`}>
+          <Bell className="w-4 h-4" /> Alerts Center
+          {overview && overview.alerts && (overview.alerts.pastDue + overview.alerts.dormant + overview.alerts.trialEnding + overview.alerts.nearLimit) > 0 && (
+            <span className="text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full px-1.5 py-0.5 tabular-nums">
+              {overview.alerts.pastDue + overview.alerts.dormant + overview.alerts.trialEnding + overview.alerts.nearLimit}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {view === "alerts" ? (
+        <AlertsCenter onSelectTenant={(id) => setSelected(id)} />
+      ) : loading ? (
+        <div className="text-[#94a3b8] py-12 text-center">Loading analytics…</div>
+      ) : error ? (
+        <div className="text-rose-400 py-12 text-center">{error}</div>
+      ) : (
+      <>
       {overview && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -463,6 +681,8 @@ export function SuperadminAnalyticsTab() {
           </table>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

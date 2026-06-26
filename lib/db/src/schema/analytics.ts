@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { pgTable, serial, text, integer, real, timestamp, jsonb, date, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 /**
@@ -80,5 +81,10 @@ export const tenantUsageAlertsTable = pgTable("tenant_usage_alerts", {
 }, (t) => [
   index("tenant_usage_alerts_status_idx").on(t.status),
   index("tenant_usage_alerts_tenant_idx").on(t.tenantId),
+  // At most one OPEN alert per (tenant, alertType). Enforces dedup at the DB
+  // level so concurrent generation runs cannot create duplicate open alerts.
+  uniqueIndex("tenant_usage_alerts_open_unique_idx")
+    .on(t.tenantId, t.alertType)
+    .where(sql`${t.status} = 'open'`),
 ]);
 export type TenantUsageAlert = typeof tenantUsageAlertsTable.$inferSelect;

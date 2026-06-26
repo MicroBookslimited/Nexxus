@@ -7,6 +7,12 @@ import {
 } from "../lib/tenant-usage";
 import { db, tenantActivityEventsTable } from "@workspace/db";
 import { generateTenantUsageSnapshots } from "../lib/tenant-usage";
+import {
+  generateTenantAlerts,
+  listTenantAlerts,
+  updateTenantAlert,
+  type AlertStatus,
+} from "../lib/tenant-alerts";
 import { eq, desc } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -151,6 +157,63 @@ router.post("/superadmin/analytics/snapshots/run", async (req, res): Promise<voi
   } catch (err) {
     req.log.error({ err }, "snapshot run failed");
     res.status(500).json({ error: "Failed to run snapshots" });
+  }
+});
+
+/* ─── Alerts Center: list ─── */
+router.get("/superadmin/analytics/alerts", async (req, res): Promise<void> => {
+  if (!requirePlatformSuperAdmin(req, res)) return;
+  try {
+    const status = req.query["status"] as string | undefined; // open|resolved|dismissed|all
+    const severity = req.query["severity"] as string | undefined; // low|medium|high|critical
+    const result = await listTenantAlerts({ status, severity });
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "alerts list failed");
+    res.status(500).json({ error: "Failed to load alerts" });
+  }
+});
+
+/* ─── Alerts Center: (re)generate ─── */
+router.post("/superadmin/analytics/alerts/generate", async (req, res): Promise<void> => {
+  if (!requirePlatformSuperAdmin(req, res)) return;
+  try {
+    const result = await generateTenantAlerts();
+    req.log.info({ result }, "alert generation run");
+    res.json({ success: true, ...result });
+  } catch (err) {
+    req.log.error({ err }, "alert generation failed");
+    res.status(500).json({ error: "Failed to generate alerts" });
+  }
+});
+
+/* ─── Alerts Center: update status / note ─── */
+router.patch("/superadmin/analytics/alerts/:id", async (req, res): Promise<void> => {
+  if (!requirePlatformSuperAdmin(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: "Invalid alert id" });
+    return;
+  }
+  const body = (req.body ?? {}) as { status?: string; note?: string | null };
+  const allowed = ["open", "resolved", "dismissed"] as const;
+  if (body.status !== undefined && !allowed.includes(body.status as AlertStatus)) {
+    res.status(400).json({ error: "Invalid status" });
+    return;
+  }
+  try {
+    const patch: { status?: AlertStatus; note?: string | null } = {};
+    if (body.status !== undefined) patch.status = body.status as AlertStatus;
+    if (body.note !== undefined) patch.note = body.note;
+    const updated = await updateTenantAlert(id, patch);
+    if (!updated) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    res.json(updated);
+  } catch (err) {
+    req.log.error({ err }, "alert update failed");
+    res.status(500).json({ error: "Failed to update alert" });
   }
 });
 
