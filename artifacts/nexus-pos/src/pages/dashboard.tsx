@@ -14,7 +14,9 @@ import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import { useStaff } from "@/contexts/StaffContext";
 import { PinPad } from "@/components/PinPad";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, ShoppingCart } from "lucide-react";
+import { useLocation } from "wouter";
+import { Button } from "@/components/ui/button";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -99,6 +101,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 const DASHBOARD_PIN_ROLES = ["admin", "manager", "supervisor"];
 
 function DashboardPinGate({ onUnlock }: { onUnlock: () => void }) {
+  const [, setLocation] = useLocation();
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] px-4">
       <motion.div
@@ -115,6 +118,13 @@ function DashboardPinGate({ onUnlock }: { onUnlock: () => void }) {
           requiredRoles={DASHBOARD_PIN_ROLES}
           onSuccess={onUnlock}
         />
+        <Button
+          onClick={() => setLocation("/pos")}
+          className="w-52 h-12 mt-5 rounded-2xl text-base font-semibold gap-2 bg-emerald-600 hover:bg-emerald-500 text-white"
+        >
+          <ShoppingCart className="h-5 w-5" />
+          Go to POS
+        </Button>
       </motion.div>
     </div>
   );
