@@ -1168,6 +1168,9 @@ function buildSupermarketReceiptHtml(
     ${order.paymentMethod === "split" ? `
     <div class="sm-tot-row"><span class="sm-tot-label">${order.cardType === "debit" ? "DEBIT CARD" : order.cardType === "credit" ? "CREDIT CARD" : "CARD"}</span><span class="sm-tot-val">${fmtNum(order.splitCardAmount ?? 0)}</span></div>
     <div class="sm-tot-row"><span class="sm-tot-label">CASH</span><span class="sm-tot-val">${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}
+    ${(order.paymentMethod === "card") ? `
+    <div class="sm-tot-row"><span class="sm-tot-label">${order.cardType === "debit" ? "DEBIT CARD TEND" : order.cardType === "credit" ? "CREDIT CARD TEND" : "CARD TEND"}</span><span class="sm-tot-val">${fmtNum(amountDue)}</span></div>
+    <div class="sm-tot-row"><span class="sm-tot-label">CHANGE DUE</span><span class="sm-tot-val">${fmtNum(0)}</span></div>` : ""}
   </div>
 
   ${notesLineHtml}
@@ -1572,9 +1575,10 @@ function buildStapleReceiptHtml(
   const isCard  = order.paymentMethod === "card" || order.paymentMethod === "credit";
   const isSplit = order.paymentMethod === "split";
   const isCash  = order.paymentMethod === "cash";
+  const cardKindSt = order.cardType === "debit" ? "DEBIT CARD" : order.cardType === "credit" ? "CREDIT CARD" : "CARD";
   const payLabel = (() => {
     if (isCash)  return "CASH";
-    if (isCard)  return "CREDIT";
+    if (isCard)  return cardKindSt;
     if (isSplit) return "SPLIT";
     if (order.paymentMethod === "topup") return "TOPUP";
     if (order.paymentMethod === "loyalty") return "LOYALTY";
@@ -1583,7 +1587,7 @@ function buildStapleReceiptHtml(
   const paymentBlockHtml = `
     <div class="st-pay-label">${escHtml(payLabel)}</div>
     ${isSplit ? `
-    <div class="st-pay-row"><span>CARD</span><span>$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
+    <div class="st-pay-row"><span>${escHtml(cardKindSt)}</span><span>$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
     <div class="st-pay-row"><span>CASH</span><span>$${fmtNum(order.splitCashAmount ?? 0)}</span></div>` : ""}
     ${(isCash && order.cashTendered && order.cashTendered > 0) ? `
     <div class="st-pay-row"><span>CASH TENDERED</span><span>$${fmtNum(order.cashTendered)}</span></div>
@@ -1847,9 +1851,10 @@ function buildHardwareReceiptHtml(
   // when the customer tendered more than the total.
   const isCash  = order.paymentMethod === "cash";
   const isSplit = order.paymentMethod === "split";
+  const cardKindHw = order.cardType === "debit" ? "Debit Card" : order.cardType === "credit" ? "Credit Card" : "Card";
   const payLabel = (() => {
     if (isCash)  return "Cash";
-    if (order.paymentMethod === "card" || order.paymentMethod === "credit") return "Card";
+    if (order.paymentMethod === "card" || order.paymentMethod === "credit") return cardKindHw;
     if (isSplit) return "Split";
     if (order.paymentMethod === "topup")   return "Top-up";
     if (order.paymentMethod === "loyalty") return "Loyalty";
@@ -1860,7 +1865,7 @@ function buildHardwareReceiptHtml(
   // Tendered + Change Due only rendered when cashier entered the cash received.
   const paymentBlockHtml = isSplit
     ? `
-      <div class="hw-tot-row"><span class="hw-tot-label">Card</span><span class="hw-tot-val">$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
+      <div class="hw-tot-row"><span class="hw-tot-label">${escHtml(cardKindHw)}</span><span class="hw-tot-val">$${fmtNum(order.splitCardAmount ?? 0)}</span></div>
       <div class="hw-tot-row"><span class="hw-tot-label">Cash</span><span class="hw-tot-val">$${fmtNum(order.splitCashAmount ?? 0)}</span></div>`
     : `
       <div class="hw-tot-row"><span class="hw-tot-label">${escHtml(payLabel)}</span><span class="hw-tot-val">$${fmtNum(order.total)}</span></div>
@@ -2130,10 +2135,13 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   lines.push(`*Total:     ${fmt(order.total)}*`);
   lines.push(`─────────────────────`);
 
+  const cardKindWa = order.cardType === "debit" ? "DEBIT CARD" : order.cardType === "credit" ? "CREDIT CARD" : "CARD";
   if (order.paymentMethod === "split") {
     lines.push(`Payment:   SPLIT`);
-    lines.push(`  Card:    ${fmtNum(order.splitCardAmount ?? 0)}`);
+    lines.push(`  ${cardKindWa}: ${fmtNum(order.splitCardAmount ?? 0)}`);
     lines.push(`  Cash:    ${fmtNum(order.splitCashAmount ?? 0)}`);
+  } else if (order.paymentMethod === "card") {
+    lines.push(`Payment:   ${cardKindWa}`);
   } else {
     lines.push(`Payment:   ${(order.paymentMethod ?? "—").toUpperCase()}`);
   }
@@ -2246,11 +2254,14 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
       row(`Gift Voucher${order.giftVoucherCode ? ` (${escHtml(order.giftVoucherCode)})` : ""}`, `-${fmtNum(giftAmt)}`, "sub") +
       row("Amount Due", fmtNum(amountDue), "sub");
   }
+  const cardKindPl = order.cardType === "debit" ? "DEBIT CARD" : order.cardType === "credit" ? "CREDIT CARD" : "CARD";
   if (order.paymentMethod === "split") {
     paymentHtml +=
       row("Payment", "SPLIT", "sub") +
-      row("&nbsp;&nbsp;Card", fmtNum(order.splitCardAmount ?? 0), "sub") +
+      row(`&nbsp;&nbsp;${escHtml(cardKindPl)}`, fmtNum(order.splitCardAmount ?? 0), "sub") +
       row("&nbsp;&nbsp;Cash", fmtNum(order.splitCashAmount ?? 0), "sub");
+  } else if (order.paymentMethod === "card") {
+    paymentHtml += row("Payment", escHtml(cardKindPl), "sub");
   } else if (order.paymentMethod !== "gift_voucher") {
     paymentHtml += row("Payment", escHtml((order.paymentMethod ?? "—").toUpperCase()), "sub");
   }
