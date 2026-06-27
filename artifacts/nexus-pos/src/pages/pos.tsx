@@ -3308,7 +3308,7 @@ export function POS() {
               // keep their special icons + special-input UI flows. Custom
               // methods just record their name; they have no extra UI.
               const visibleMethods = paymentMethods.length > 0
-                ? paymentMethods.filter(m => m.type !== "split" || showSplitBills)
+                ? paymentMethods  // already filtered to isEnabled; honour settings as-is
                 : [
                     { id: -1, type: "card",   name: "Card",   isDefault: false },
                     { id: -2, type: "cash",   name: "Cash",   isDefault: true  },
