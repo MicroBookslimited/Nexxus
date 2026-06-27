@@ -13,6 +13,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import { useStaff } from "@/contexts/StaffContext";
+import { PinPad } from "@/components/PinPad";
+import { ShieldCheck } from "lucide-react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -94,7 +96,41 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+const DASHBOARD_PIN_ROLES = ["admin", "manager", "supervisor"];
+
+function DashboardPinGate({ onUnlock }: { onUnlock: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[70vh] px-4">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm bg-card border border-border rounded-2xl p-6 sm:p-8 shadow-lg flex flex-col items-center"
+      >
+        <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+          <ShieldCheck className="h-7 w-7 text-primary" />
+        </div>
+        <PinPad
+          title="Manager PIN Required"
+          subtitle="The dashboard contains sensitive business information. Enter a manager or admin PIN to continue."
+          requiredRoles={DASHBOARD_PIN_ROLES}
+          onSuccess={onUnlock}
+        />
+      </motion.div>
+    </div>
+  );
+}
+
 export function Dashboard() {
+  const [unlocked, setUnlocked] = React.useState(false);
+
+  if (!unlocked) {
+    return <DashboardPinGate onUnlock={() => setUnlocked(true)} />;
+  }
+
+  return <DashboardContent />;
+}
+
+function DashboardContent() {
   const { can } = useStaff();
   const canViewReports = can("reports.view");
 
