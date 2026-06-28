@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import {
   Check, CreditCard, Zap, Calendar, AlertTriangle,
   ArrowUpRight, RefreshCw, Upload, Banknote, X, FileCheck, Clock, Shield,
+  Users, Package, MapPin, FileText,
 } from "lucide-react";
 import {
   TENANT_TOKEN_KEY, saasMe, getPlans, createPayPalOrder, capturePayPalOrder,
@@ -413,39 +414,91 @@ export function SubscriptionPage() {
             </div>
           </div>
 
-          <div className="space-y-3 mb-6">
+          <div className="space-y-4 mb-6">
             {plans.map((plan) => {
               const isCurrent = currentPlan?.id === plan.id;
               const isSelected = selectedPlan?.id === plan.id;
+              const displayPrice = billingCycle === "annual" ? Math.round(plan.priceAnnual / 12) : plan.priceMonthly;
+              const isFreePrice = (billingCycle === "annual" ? plan.priceAnnual : plan.priceMonthly) === 0;
+              const accentClass = planAccents[plan.slug] ?? "bg-[#3b82f6]/10 text-[#3b82f6]";
+              const borderClass = isCurrent
+                ? "border-green-500/40 bg-green-500/5 cursor-default"
+                : isSelected
+                  ? "border-[#3b82f6] bg-[#3b82f6]/10 cursor-pointer"
+                  : (planColors[plan.slug] ?? "border-[#2a3a55] hover:border-[#3b82f6]") + " cursor-pointer";
+
               return (
-                <button key={plan.id} onClick={() => setSelectedPlan(isSelected ? null : plan)} disabled={isCurrent}
-                  className={`w-full text-left border rounded-xl p-5 transition-all ${
-                    isCurrent ? "border-[#2a3a55] opacity-60 cursor-not-allowed" :
-                    isSelected ? "border-[#3b82f6] bg-[#3b82f6]/10" :
-                    (planColors[plan.slug] ?? "border-[#2a3a55] hover:border-[#3b82f6]")
-                  }`}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${planAccents[plan.slug] ?? "bg-[#3b82f6]/10 text-[#3b82f6]"}`}>{plan.name}</span>
-                        {isCurrent && <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full">Current Plan</span>}
-                        {plan.slug === "professional" && !isCurrent && <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full">Most Popular</span>}
+                <div key={plan.id}
+                  onClick={() => { if (!isCurrent) setSelectedPlan(isSelected ? null : plan); }}
+                  role="button" tabIndex={isCurrent ? -1 : 0}
+                  onKeyDown={e => { if (!isCurrent && (e.key === "Enter" || e.key === " ")) setSelectedPlan(isSelected ? null : plan); }}
+                  className={`border rounded-xl transition-all ${borderClass}`}
+                >
+                  {/* ── Card Header ── */}
+                  <div className="p-5 pb-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        {/* Badges */}
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${accentClass}`}>{plan.name}</span>
+                          {isCurrent && <span className="text-xs bg-green-500/15 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full flex items-center gap-1"><Check size={9} /> Current Plan</span>}
+                          {plan.isPromotional && <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full">Promo</span>}
+                          {plan.slug === "professional" && !isCurrent && <span className="text-xs bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded-full">Most Popular</span>}
+                          {isSelected && !isCurrent && <span className="text-xs bg-[#3b82f6]/15 text-[#3b82f6] border border-[#3b82f6]/30 px-2 py-0.5 rounded-full flex items-center gap-1"><Check size={9} /> Selected</span>}
+                        </div>
+                        <p className="text-[#94a3b8] text-sm leading-relaxed">{plan.description}</p>
                       </div>
-                      <p className="text-[#94a3b8] text-xs mb-2">{plan.description}</p>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1">
-                        {plan.features.slice(0, 4).map((f) => (
-                          <span key={f} className="text-xs text-[#64748b] flex items-center gap-1"><Check size={10} className="text-green-500/60" />{f}</span>
-                        ))}
+
+                      {/* Price */}
+                      <div className="text-right flex-shrink-0">
+                        {isFreePrice ? (
+                          <>
+                            <div className="text-3xl font-bold text-green-400">$0</div>
+                            <div className="text-xs text-[#475569]">/month</div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-3xl font-bold text-white">${displayPrice}</div>
+                            <div className="text-xs text-[#475569]">/month</div>
+                            {billingCycle === "annual" && (
+                              <div className="text-xs text-green-400 mt-0.5">${plan.priceAnnual}/yr</div>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-2xl font-bold text-white">${billingCycle === "annual" ? Math.round(plan.priceAnnual / 12) : plan.priceMonthly}</div>
-                      <div className="text-xs text-[#475569]">/month</div>
-                      {billingCycle === "annual" && <div className="text-xs text-green-400">${plan.priceAnnual}/yr</div>}
+
+                    {/* Limits row */}
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      {[
+                        { icon: Users, label: plan.maxStaff === 9999 ? "Unlimited Staff" : `${plan.maxStaff} Staff` },
+                        { icon: Package, label: plan.maxProducts === 9999 ? "Unlimited Products" : `${plan.maxProducts} Products` },
+                        { icon: MapPin, label: plan.maxLocations === 9999 ? "Unlimited Locations" : `${plan.maxLocations} Location${plan.maxLocations === 1 ? "" : "s"}` },
+                        ...(plan.maxInvoices !== 9999 ? [{ icon: FileText, label: `${plan.maxInvoices} Invoices/mo` }] : []),
+                      ].map(({ icon: Icon, label }) => (
+                        <span key={label} className="inline-flex items-center gap-1.5 text-xs bg-[#0f1729] border border-[#2a3a55] rounded-full px-3 py-1 text-[#94a3b8]">
+                          <Icon size={11} className="text-[#475569]" /> {label}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                  {isSelected && !isCurrent && <div className="flex items-center gap-1 mt-3 text-[#3b82f6] text-xs font-medium"><Check size={12} /> Selected</div>}
-                </button>
+
+                  {/* ── Divider ── */}
+                  <div className="border-t border-[#2a3a55] mx-5" />
+
+                  {/* ── Feature checklist ── */}
+                  <div className="p-5 pt-4">
+                    <p className="text-xs font-semibold text-[#475569] uppercase tracking-wide mb-3">What's included</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                      {plan.features.map((f) => (
+                        <div key={f} className="flex items-start gap-2 text-sm text-[#94a3b8]">
+                          <Check size={14} className="text-green-400 shrink-0 mt-0.5" />
+                          <span>{f}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               );
             })}
           </div>
