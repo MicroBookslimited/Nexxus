@@ -26,6 +26,10 @@ export const ordersTable = pgTable("orders", {
   cardType: text("card_type"),
   splitCardAmount: real("split_card_amount"),
   splitCashAmount: real("split_cash_amount"),
+  // On-account (store credit) leg of a SPLIT payment: the leftover after the
+  // card + cash portions. Posts an A/R entry against the customer. Distinct
+  // from the standalone "credit" paymentMethod.
+  splitCreditAmount: real("split_credit_amount"),
   cashTendered: real("cash_tendered"),
   // Gift voucher applied as a TENDER on this sale (not a discount): the
   // sale's subtotal/tax/total are unchanged; giftVoucherAmount is the portion

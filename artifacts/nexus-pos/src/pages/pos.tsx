@@ -4,6 +4,7 @@ import { CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayMessage } from "@/lib/cus
 import { motion, AnimatePresence } from "framer-motion";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom, buildBillHtml } from "@/lib/receipt";
 import { CardTypeDialog, type CardType } from "@/components/card-type-dialog";
+import { SplitPaymentDialog } from "@/components/split-payment-dialog";
 import { printOrderReceipt } from "@/lib/print-receipt";
 import {
   useListProducts,
@@ -438,6 +439,7 @@ function printReceiptWindow(
     cardType: order.cardType,
     splitCardAmount: order.splitCardAmount,
     splitCashAmount: order.splitCashAmount,
+    splitCreditAmount: order.splitCreditAmount,
     cashTendered: order.cashTendered,
     notes: order.notes,
     status: order.status,
@@ -754,6 +756,7 @@ export function POS() {
 
   const [splitCardAmount, setSplitCardAmount] = useState<number>(0);
   const [splitCashAmount, setSplitCashAmount] = useState<number>(0);
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState<GetOrderResponse | null>(null);
   const [receiptCustomerInfo, setReceiptCustomerInfo] = useState<CustomerReceiptInfo | null>(null);
   const [receiptEmailOpen, setReceiptEmailOpen] = useState(false);
@@ -1617,14 +1620,20 @@ export function POS() {
   // not the full total — otherwise a partial voucher would force over-collection.
   const handleSplitClick = () => {
     setPaymentMethod("split");
-    setSplitCardAmount(Number((amountDue / 2).toFixed(2)));
-    setSplitCashAmount(Number((amountDue - Number((amountDue / 2).toFixed(2))).toFixed(2)));
-    // A split always involves a card portion, so prompt for the card type.
+    // The single split popup collects card type + card + cash; the leftover
+    // becomes an on-account credit leg. Reset prior values so it opens fresh.
+    setSplitCardAmount(0);
+    setSplitCashAmount(0);
     setCardType(null);
-    setCardTypeDialogOpen(true);
+    setSplitDialogOpen(true);
   };
 
-  const isSplitValid = Math.abs(splitCardAmount + splitCashAmount - amountDue) < 0.01;
+  // The on-account leg is whatever remains after the card + cash portions.
+  const splitCreditAmount = Math.max(0, Math.round((amountDue - splitCardAmount - splitCashAmount) * 100) / 100);
+  const isSplitValid =
+    splitCardAmount + splitCashAmount <= amountDue + 0.01 &&
+    (splitCreditAmount < 0.005 || !!selectedCustomerId) &&
+    (splitCardAmount < 0.005 || !!cardType);
 
   const resetCart = () => {
     setCart([]);
@@ -1651,6 +1660,7 @@ export function POS() {
     setCardTypeDialogOpen(false);
     setSplitCardAmount(0);
     setSplitCashAmount(0);
+    setSplitDialogOpen(false);
     setSelectedCustomerId(null);
     setSelectedCustomerOverride(null);
     setAddingCustomer(false);
@@ -1785,17 +1795,24 @@ export function POS() {
     // send the "gift_voucher" sentinel and skip remainder-method validation.
     const effectivePaymentMethod = voucherCoversAll ? "gift_voucher" : paymentMethod;
     if (!voucherCoversAll && paymentMethod === "split" && !isSplitValid) {
-      toast({ title: "Invalid Split", description: "Card and cash amounts must equal total.", variant: "destructive" });
+      setSplitDialogOpen(true);
+      toast({ title: "Finish the split", description: "Card + cash can't exceed the total, and any on-account leftover needs a customer.", variant: "destructive" });
       return;
     }
     if (!voucherCoversAll && paymentMethod === "credit" && !selectedCustomerId) {
       toast({ title: "Customer required", description: "Select a customer to process a credit sale.", variant: "destructive" });
       return;
     }
-    // A card is involved (pure card or the card portion of a split): require the
-    // debit/credit choice so it can be printed on the receipt.
-    if (!voucherCoversAll && (paymentMethod === "card" || paymentMethod === "split") && !cardType) {
-      setCardTypeDialogOpen(true);
+    // A card is involved (pure card, or the card portion of a split): require
+    // the debit/credit choice so it prints on the receipt. For a split the card
+    // type is only needed when there is actually a card portion.
+    const cardTypeNeeded = !voucherCoversAll && (
+      paymentMethod === "card" ||
+      (paymentMethod === "split" && splitCardAmount > 0.005)
+    );
+    if (cardTypeNeeded && !cardType) {
+      if (paymentMethod === "split") setSplitDialogOpen(true);
+      else setCardTypeDialogOpen(true);
       toast({ title: "Card type required", description: "Choose Debit or Credit to continue.", variant: "destructive" });
       return;
     }
@@ -1822,6 +1839,7 @@ export function POS() {
         })),
         splitCardAmount: paymentMethod === "split" ? splitCardAmount : undefined,
         splitCashAmount: paymentMethod === "split" ? splitCashAmount : undefined,
+        splitCreditAmount: paymentMethod === "split" ? splitCreditAmount : undefined,
         cashTendered: paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0
           ? parseFloat(numpadValue) : undefined,
         discountType: discountType ?? undefined,
@@ -1859,6 +1877,7 @@ export function POS() {
             ? parseFloat(numpadValue) : undefined,
           splitCardAmount: paymentMethod === "split" ? splitCardAmount : undefined,
           splitCashAmount: paymentMethod === "split" ? splitCashAmount : undefined,
+          splitCreditAmount: paymentMethod === "split" ? splitCreditAmount : undefined,
         },
       });
       const cashTendered = paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0
@@ -1904,6 +1923,7 @@ export function POS() {
         cashTendered: cashTendered ?? null,
         splitCardAmount: paymentMethod === "split" ? splitCardAmount : null,
         splitCashAmount: paymentMethod === "split" ? splitCashAmount : null,
+        splitCreditAmount: paymentMethod === "split" ? splitCreditAmount : null,
         notes: buildOrderNotes() ?? null,
         customerId: selectedCustomerId,
         tableId: orderMode === "dine-in" ? selectedTableId : null,
@@ -1960,6 +1980,7 @@ export function POS() {
           })),
           splitCardAmount: !voucherCoversAll && paymentMethod === "split" ? splitCardAmount : undefined,
           splitCashAmount: !voucherCoversAll && paymentMethod === "split" ? splitCashAmount : undefined,
+          splitCreditAmount: !voucherCoversAll && paymentMethod === "split" ? splitCreditAmount : undefined,
           cashTendered: !voucherCoversAll && paymentMethod === "cash" && numpadValue && parseFloat(numpadValue) > 0
             ? parseFloat(numpadValue)
             : undefined,
@@ -3361,19 +3382,34 @@ export function POS() {
             )}
 
             {paymentMethod === "split" && (
-              <div className="flex gap-2 bg-secondary/50 p-2 rounded-md">
-                <div className="flex-1 space-y-1">
-                  <label className="text-xs text-muted-foreground">Card $</label>
-                  <Input type="number" value={splitCardAmount} onChange={(e) => setSplitCardAmount(Number(e.target.value))} className="h-8 font-mono text-sm" />
+              <button
+                type="button"
+                onClick={() => setSplitDialogOpen(true)}
+                className="w-full text-left bg-secondary/50 p-2 rounded-md space-y-0.5 hover:bg-secondary transition-colors"
+              >
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Card{cardType ? ` (${cardType})` : ""}</span>
+                  <span className="font-mono">{formatCurrency(splitCardAmount, baseCurrency)}</span>
                 </div>
-                <div className="flex-1 space-y-1">
-                  <label className="text-xs text-muted-foreground">Cash $</label>
-                  <Input type="number" value={splitCashAmount} onChange={(e) => setSplitCashAmount(Number(e.target.value))} className="h-8 font-mono text-sm" />
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Cash</span>
+                  <span className="font-mono">{formatCurrency(splitCashAmount, baseCurrency)}</span>
                 </div>
-              </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-amber-500">On account</span>
+                  <span className="font-mono">{formatCurrency(splitCreditAmount, baseCurrency)}</span>
+                </div>
+                <div className="text-[10px] text-primary pt-0.5">Tap to edit split</div>
+              </button>
             )}
             {paymentMethod === "split" && !isSplitValid && (
-              <p className="text-amber-500 text-xs font-medium">Must equal {formatCurrency(amountDue, baseCurrency)}</p>
+              <p className="text-amber-500 text-xs font-medium">
+                {splitCardAmount + splitCashAmount > amountDue + 0.01
+                  ? `Card + cash exceed ${formatCurrency(amountDue, baseCurrency)}`
+                  : splitCreditAmount > 0.005 && !selectedCustomerId
+                    ? `Select a customer for the ${formatCurrency(splitCreditAmount, baseCurrency)} on-account amount`
+                    : "Choose the card type"}
+              </p>
             )}
 
             {isRestaurant && orderMode === "dine-in" && (
@@ -3406,11 +3442,33 @@ export function POS() {
         />
       )}
 
-      {/* Debit / Credit card-type prompt (card payments + split card portion) */}
+      {/* Debit / Credit card-type prompt (pure card payments) */}
       <CardTypeDialog
         open={cardTypeDialogOpen}
         onSelect={(t) => { setCardType(t); setCardTypeDialogOpen(false); }}
         onCancel={() => setCardTypeDialogOpen(false)}
+      />
+
+      {/* Single split-payment popup: card type + card + cash; leftover → on account */}
+      <SplitPaymentDialog
+        open={splitDialogOpen}
+        amountDue={amountDue}
+        baseCurrency={baseCurrency}
+        hasCustomer={!!selectedCustomerId}
+        initialCardType={cardType}
+        initialCardAmount={splitCardAmount}
+        initialCashAmount={splitCashAmount}
+        formatCurrency={formatCurrency}
+        onConfirm={(r) => {
+          setSplitCardAmount(r.cardAmount);
+          setSplitCashAmount(r.cashAmount);
+          setCardType(r.cardType);
+          setSplitDialogOpen(false);
+        }}
+        onCancel={() => {
+          setSplitDialogOpen(false);
+          if (!isSplitValid) setPaymentMethod(defaultPaymentMethod);
+        }}
       />
 
       {/* Quick-add product dialog (admin/manager only) */}
@@ -4266,6 +4324,12 @@ export function POS() {
                       <span>Cash</span>
                       <span className="font-mono">{fmtNum(receiptOrder.splitCashAmount ?? 0)}</span>
                     </div>
+                    {(receiptOrder.splitCreditAmount ?? 0) > 0 && (
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>On Account</span>
+                        <span className="font-mono">{fmtNum(receiptOrder.splitCreditAmount ?? 0)}</span>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="flex justify-between text-xs text-muted-foreground">

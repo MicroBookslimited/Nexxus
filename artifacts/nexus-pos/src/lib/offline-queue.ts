@@ -22,6 +22,7 @@ export interface OfflineOrderDisplayData {
   cashTendered?: number;
   splitCardAmount?: number;
   splitCashAmount?: number;
+  splitCreditAmount?: number;
 }
 
 export interface QueuedRequest {

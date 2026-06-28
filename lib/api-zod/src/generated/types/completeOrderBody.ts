@@ -10,4 +10,5 @@ export interface CompleteOrderBody {
   paymentMethod: string;
   splitCardAmount?: number;
   splitCashAmount?: number;
+  splitCreditAmount?: number;
 }

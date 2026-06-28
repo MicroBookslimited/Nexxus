@@ -2960,6 +2960,11 @@ components:
           type: number
           format: float
           nullable: true
+        splitCreditAmount:
+          type: number
+          format: float
+          nullable: true
+          description: On-account (store credit) leg of a SPLIT payment — the leftover after the card + cash portions. Posts an A/R entry against the customer. NULL/0 = no credit leg. Distinct from the standalone "credit" paymentMethod.
         cashTendered:
           type: number
           format: float
@@ -3139,6 +3144,10 @@ components:
         splitCashAmount:
           type: number
           format: float
+        splitCreditAmount:
+          type: number
+          format: float
+          description: On-account (store credit) leg of a SPLIT payment — the leftover after card + cash. Requires customerId. Posts an A/R entry. Distinct from the "credit" paymentMethod.
         cashTendered:
           type: number
           format: float
@@ -3183,6 +3192,9 @@ components:
           type: number
           format: float
         splitCashAmount:
+          type: number
+          format: float
+        splitCreditAmount:
           type: number
           format: float
       required:

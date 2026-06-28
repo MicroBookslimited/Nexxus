@@ -42,3 +42,4 @@
 - [Product list enrichment must be batched](product-list-enrichment-nplus1.md) — GET /products maps over the whole catalog (no paging); never put a per-product query (counts) or array.find() in that loop — batch with inArray+groupBy into Maps/Sets.
 - [Multi-unit selling is client-side only](mobile-units-client-side.md) — POS unit selling (Case/Dozen) sends NO unit fields to the order API; cart holds base quantity, server charges base×qty; only quotations persist units.
 - [Super-admin analytics single-tenant reuse](superadmin-analytics-detail-query.md) — detail path reuses batched usage-list compute with an optional tenantId filter (no all-tenant scan); analytics JWT fail-fasts on missing SESSION_SECRET; activeToday = daysSinceActivity===0.
+- [Split-credit A/R dual path](split-credit-ar-dual-path.md) — split leftover→on-account; the credit-leg A/R insert + customer-required guard must exist in BOTH create AND charge order handlers.

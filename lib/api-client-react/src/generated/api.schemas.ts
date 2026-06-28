@@ -466,6 +466,7 @@ export interface Order {
   cardType?: string | null;
   splitCardAmount?: number | null;
   splitCashAmount?: number | null;
+  splitCreditAmount?: number | null;
   /** Cash amount tendered by the customer (cash payments). Used to display change due on the POS popup and printed receipt. NULL = not recorded. */
   cashTendered?: number | null;
   /** Id of the gift voucher redeemed as a tender on this sale, if any. */
@@ -528,6 +529,7 @@ export interface CreateOrderBody {
   cardType?: string;
   splitCardAmount?: number;
   splitCashAmount?: number;
+  splitCreditAmount?: number;
   /** Cash amount tendered by the customer for cash payments. */
   cashTendered?: number;
   discountType?: CreateOrderBodyDiscountType;
@@ -550,6 +552,7 @@ export interface CompleteOrderBody {
   paymentMethod: string;
   splitCardAmount?: number;
   splitCashAmount?: number;
+  splitCreditAmount?: number;
 }
 
 export type UpdateOrderStatusBodyStatus =

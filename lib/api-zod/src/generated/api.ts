@@ -1005,6 +1005,7 @@ export const ListOrdersResponseItem = zod.object({
     ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  splitCreditAmount: zod.number().nullish(),
   cashTendered: zod
     .number()
     .nullish()
@@ -1191,6 +1192,7 @@ export const CreateOrderBody = zod.object({
     ),
   splitCardAmount: zod.number().optional(),
   splitCashAmount: zod.number().optional(),
+  splitCreditAmount: zod.number().optional(),
   cashTendered: zod
     .number()
     .optional()
@@ -1281,6 +1283,7 @@ export const GetOrderResponse = zod.object({
     ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  splitCreditAmount: zod.number().nullish(),
   cashTendered: zod
     .number()
     .nullish()
@@ -1471,6 +1474,7 @@ export const UpdateOrderStatusResponse = zod.object({
     ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  splitCreditAmount: zod.number().nullish(),
   cashTendered: zod
     .number()
     .nullish()
@@ -1676,6 +1680,7 @@ export const RefundOrderItemsResponse = zod.object({
       ),
     splitCardAmount: zod.number().nullish(),
     splitCashAmount: zod.number().nullish(),
+    splitCreditAmount: zod.number().nullish(),
     cashTendered: zod
       .number()
       .nullish()
@@ -1863,6 +1868,7 @@ export const ChargeOrderBody = zod.object({
   paymentMethod: zod.string(),
   splitCardAmount: zod.number().optional(),
   splitCashAmount: zod.number().optional(),
+  splitCreditAmount: zod.number().optional(),
 });
 
 export const ChargeOrderResponse = zod.object({
@@ -1916,6 +1922,7 @@ export const ChargeOrderResponse = zod.object({
     ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  splitCreditAmount: zod.number().nullish(),
   cashTendered: zod
     .number()
     .nullish()
@@ -2617,6 +2624,7 @@ export const GetRecentOrdersResponseItem = zod.object({
     ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  splitCreditAmount: zod.number().nullish(),
   cashTendered: zod
     .number()
     .nullish()
@@ -2984,6 +2992,7 @@ export const GetCustomerOrdersResponseItem = zod.object({
     ),
   splitCardAmount: zod.number().nullish(),
   splitCashAmount: zod.number().nullish(),
+  splitCreditAmount: zod.number().nullish(),
   cashTendered: zod
     .number()
     .nullish()

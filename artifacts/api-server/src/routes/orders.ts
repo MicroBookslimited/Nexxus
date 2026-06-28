@@ -314,6 +314,20 @@ router.post("/orders", async (req, res): Promise<void> => {
     }
   }
 
+  // Split payments with an on-account (credit) leg require a customer to bill
+  // the receivable to — never trust the client to have enforced this.
+  if (
+    parsed.data.paymentMethod === "split" &&
+    (parsed.data.splitCreditAmount ?? 0) > 0.005 &&
+    parsed.data.customerId == null
+  ) {
+    res.status(400).json({
+      error: "CUSTOMER_REQUIRED",
+      message: "A customer is required for the on-account portion of a split payment",
+    });
+    return;
+  }
+
   // Validate payment method is enabled for this tenant (when one is given).
   // Built-in types (cash, card, split, credit) are always permitted if no
   // payment_methods rows exist at all (back-compat for tenants pre-config).
@@ -1092,6 +1106,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           cardType: parsed.data.cardType,
           splitCardAmount: parsed.data.splitCardAmount,
           splitCashAmount: parsed.data.splitCashAmount,
+          splitCreditAmount: parsed.data.splitCreditAmount,
           cashTendered: parsed.data.cashTendered,
           giftVoucherId: voucherRow ? voucherRow.id : undefined,
           giftVoucherCode: voucherRow ? voucherRow.code : undefined,
@@ -1376,6 +1391,34 @@ router.post("/orders", async (req, res): Promise<void> => {
         // A gift voucher is a tender, so the receivable is only the UNPAID
         // remainder (total minus the amount the voucher covered).
         amount: Math.max(0, Math.round((order.total - (order.giftVoucherAmount ?? 0)) * 100) / 100),
+        amountPaid: 0,
+        status: "open",
+      });
+    }
+  }
+
+  // SPLIT payment with an on-account leg: the leftover after card + cash is
+  // owed by the customer, so post a receivable for just that credit portion.
+  if (
+    parsed.data.paymentMethod === "split" &&
+    parsed.data.customerId &&
+    (parsed.data.splitCreditAmount ?? 0) > 0
+  ) {
+    const [cust] = await db
+      .select({ name: customersTable.name })
+      .from(customersTable)
+      .where(and(
+        eq(customersTable.id, parsed.data.customerId),
+        eq(customersTable.tenantId, tenantId),
+      ));
+    if (cust) {
+      await db.insert(accountsReceivableTable).values({
+        tenantId,
+        customerId: parsed.data.customerId,
+        customerName: cust.name,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        amount: Math.max(0, Math.round((parsed.data.splitCreditAmount ?? 0) * 100) / 100),
         amountPaid: 0,
         status: "open",
       });
@@ -1768,6 +1811,20 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
     }
   }
 
+  // Split payments with an on-account (credit) leg require a customer to bill
+  // the receivable to — mirror the create-order invariant.
+  if (
+    parsed.data.paymentMethod === "split" &&
+    (parsed.data.splitCreditAmount ?? 0) > 0.005 &&
+    !existing.customerId
+  ) {
+    res.status(400).json({
+      error: "CUSTOMER_REQUIRED",
+      message: "A customer is required for the on-account portion of a split payment",
+    });
+    return;
+  }
+
   const [order] = await db
     .update(ordersTable)
     .set({
@@ -1777,9 +1834,38 @@ router.post("/orders/:id/charge", async (req, res): Promise<void> => {
       cardType: parsed.data.cardType,
       splitCardAmount: parsed.data.splitCardAmount,
       splitCashAmount: parsed.data.splitCashAmount,
+      splitCreditAmount: parsed.data.splitCreditAmount,
     })
     .where(and(eq(ordersTable.id, params.data.id), eq(ordersTable.tenantId, tenantId)))
     .returning();
+
+  // SPLIT payment with an on-account leg: post a receivable for just the credit
+  // portion, mirroring the create-order path.
+  if (
+    parsed.data.paymentMethod === "split" &&
+    existing.customerId &&
+    (parsed.data.splitCreditAmount ?? 0) > 0
+  ) {
+    const [cust] = await db
+      .select({ name: customersTable.name })
+      .from(customersTable)
+      .where(and(
+        eq(customersTable.id, existing.customerId),
+        eq(customersTable.tenantId, tenantId),
+      ));
+    if (cust) {
+      await db.insert(accountsReceivableTable).values({
+        tenantId,
+        customerId: existing.customerId,
+        customerName: cust.name,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        amount: Math.max(0, Math.round((parsed.data.splitCreditAmount ?? 0) * 100) / 100),
+        amountPaid: 0,
+        status: "open",
+      });
+    }
+  }
 
   if (existing.customerId) {
     const LOYALTY_EARN_RATE = 10;
