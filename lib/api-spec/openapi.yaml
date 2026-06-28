@@ -2490,6 +2490,10 @@ components:
         sku:
           type: string
           nullable: true
+        brand:
+          type: string
+          nullable: true
+          description: Optional brand / manufacturer name.
         size:
           type: string
           nullable: true
@@ -2722,6 +2726,10 @@ components:
           type: string
         sku:
           type: string
+        brand:
+          type: string
+          nullable: true
+          description: Optional brand / manufacturer name.
         size:
           type: string
           nullable: true

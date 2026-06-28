@@ -309,6 +309,9 @@ type ProductForm = {
   // Keeps Cost / Markup / Selling Price in sync; pre-filled from the tenant
   // default_markup_percentage setting. price = cost * (1 + markup/100).
   markup: string;
+  // Optional brand / manufacturer name. Empty string = "not set" — sent as
+  // null to the API so the column stays NULL.
+  brand: string;
 };
 
 const emptyForm = (): ProductForm => ({
@@ -318,6 +321,7 @@ const emptyForm = (): ProductForm => ({
   category: "Beverages",
   barcode: "",
   sku: "",
+  brand: "",
   size: "",
   inStock: true,
   stockCount: "0",
@@ -1214,16 +1218,17 @@ const IMPORT_FIELDS = [
   { key: "description", label: "Description",           required: false },
   { key: "barcode",     label: "Barcode",               required: false },
   { key: "sku",         label: "SKU",                   required: false },
+  { key: "brand",       label: "Brand",                 required: false },
   { key: "stockCount",  label: "Stock Quantity",        required: false },
   { key: "inStock",     label: "In Stock (yes/no/1/0)", required: false },
   { key: "sellingUnit", label: "Unit of Measure (each/case/...)", required: false },
 ];
 
 const TEMPLATE_ROWS = [
-  ["Name", "Price", "Category", "Description", "Barcode", "SKU", "Stock Quantity", "In Stock", "Unit of Measure", "Size"],
-  ["Jerk Chicken",  "850.00", "Food",       "Seasoned jerk chicken",   "1234567890123", "JC001", "50",  "yes", "each", "Large"],
-  ["Ting Soda",     "120.00", "Beverages",  "Grapefruit flavour soda", "1234567890124", "TS001", "100", "yes", "case", "500ml"],
-  ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "1234567890125", "RC001", "30",  "yes", "each", "12 inch"],
+  ["Name", "Price", "Category", "Description", "Barcode", "SKU", "Brand", "Stock Quantity", "In Stock", "Unit of Measure", "Size"],
+  ["Jerk Chicken",  "850.00", "Food",       "Seasoned jerk chicken",   "1234567890123", "JC001", "Island Grill", "50",  "yes", "each", "Large"],
+  ["Ting Soda",     "120.00", "Beverages",  "Grapefruit flavour soda", "1234567890124", "TS001", "D&G",          "100", "yes", "case", "500ml"],
+  ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "1234567890125", "RC001", "",             "30",  "yes", "each", "12 inch"],
 ];
 
 /**
@@ -1322,6 +1327,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         else if (l === "description")                                   auto[h] = "description";
         else if (l === "barcode")                                       auto[h] = "barcode";
         else if (l === "sku")                                           auto[h] = "sku";
+        else if (l === "brand" || l === "manufacturer" || l === "make" || l === "vendor brand") auto[h] = "brand";
         else if (l === "stock quantity" || l === "quantity" || l === "qty") auto[h] = "stockCount"; // numeric qty
         else if (l === "in stock" || l === "track stock" || l === "available for sale") auto[h] = "inStock"; // boolean Y/N
         else if (l === "unit of measure" || l === "uom" || l === "selling unit" || l === "sold as" || l === "sell by" || l === "unit") auto[h] = "sellingUnit"; // free-text UOM
@@ -1340,6 +1346,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         else if (/desc/i.test(l))                                       auto[h] = "description";
         else if (/barcode/i.test(l))                                    auto[h] = "barcode";
         else if (/sku/i.test(l))                                        auto[h] = "sku";
+        else if (/brand|manufacturer|make\b/i.test(l))                  auto[h] = "brand";
         // "code" historically meant the scannable barcode — keep it mapping
         // to barcode for backward compatibility with older import files.
         else if (/code/i.test(l))                                       auto[h] = "barcode";
@@ -1384,7 +1391,7 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       const category   = d.category?.trim() || "General";
       try {
         await new Promise<void>((resolve, reject) => {
-          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, sku: d.sku?.trim() || undefined, size: d.size?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false, sellingUnit: d.sellingUnit?.trim() || undefined } },
+          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, sku: d.sku?.trim() || undefined, brand: d.brand?.trim() || undefined, size: d.size?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false, sellingUnit: d.sellingUnit?.trim() || undefined } },
             { onSuccess: () => resolve(), onError: (e) => reject(e) });
         });
         out.push({ row: i + 2, name: d.name, status: "ok" });
@@ -3698,6 +3705,7 @@ export function Products() {
       trackBatches: !!pp.trackBatches,
       stockMethodOverride: pp.stockMethodOverride === "fifo" || pp.stockMethodOverride === "lifo" ? pp.stockMethodOverride : "",
       markup: editMarkup,
+      brand: (pp as { brand?: string | null }).brand ?? "",
     });
     setFormCasePrice("");
     setFormUnitsPerCase("");
@@ -3749,6 +3757,7 @@ export function Products() {
       trackBatches: !!pp.trackBatches,
       stockMethodOverride: pp.stockMethodOverride === "fifo" || pp.stockMethodOverride === "lifo" ? pp.stockMethodOverride : "",
       markup: cloneMarkup,
+      brand: "",
     });
     setFormCasePrice("");
     setFormUnitsPerCase("");
@@ -3808,6 +3817,7 @@ export function Products() {
       category: form.category,
       barcode: form.barcode || undefined,
       sku: form.sku || undefined,
+      brand: form.brand.trim() === "" ? null : form.brand.trim(),
       // Only send size when the feature is on, so a tenant with it off never
       // overwrites an existing size (undefined = no write on update).
       size: showProductSize ? (form.size.trim() === "" ? null : form.size.trim()) : undefined,
@@ -6066,6 +6076,13 @@ export function Products() {
                     <Label>SKU</Label>
                     <Input value={form.sku} onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))} placeholder="e.g. JC001" />
                   </div>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>
+                    Brand{" "}
+                    <span className="text-muted-foreground text-[11px]">(optional — manufacturer or brand name)</span>
+                  </Label>
+                  <Input value={form.brand} onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))} placeholder="e.g. Nestlé, Samsung, Nike" />
                 </div>
                 {showProductSize && (
                   <div className="grid gap-1.5">

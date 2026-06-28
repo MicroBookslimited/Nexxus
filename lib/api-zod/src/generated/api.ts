@@ -119,6 +119,7 @@ export const CreateProductBody = zod.object({
   imageUrl: zod.string().optional(),
   barcode: zod.string().optional(),
   sku: zod.string().optional(),
+  brand: zod.string().nullish().describe("Optional brand / manufacturer name."),
   size: zod
     .string()
     .nullish()
@@ -173,6 +174,7 @@ export const GetProductResponse = zod.object({
   imageUrl: zod.string().nullish(),
   barcode: zod.string().nullish(),
   sku: zod.string().nullish(),
+  brand: zod.string().nullish().describe("Optional brand / manufacturer name."),
   size: zod
     .string()
     .nullish()
@@ -252,6 +254,7 @@ export const UpdateProductBody = zod.object({
   imageUrl: zod.string().optional(),
   barcode: zod.string().optional(),
   sku: zod.string().optional(),
+  brand: zod.string().nullish().describe("Optional brand / manufacturer name."),
   size: zod
     .string()
     .nullish()
@@ -299,6 +302,7 @@ export const UpdateProductResponse = zod.object({
   imageUrl: zod.string().nullish(),
   barcode: zod.string().nullish(),
   sku: zod.string().nullish(),
+  brand: zod.string().nullish().describe("Optional brand / manufacturer name."),
   size: zod
     .string()
     .nullish()

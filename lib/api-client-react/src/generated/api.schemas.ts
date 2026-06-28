@@ -177,6 +177,8 @@ export interface Product {
   imageUrl?: string | null;
   barcode?: string | null;
   sku?: string | null;
+  /** Optional brand / manufacturer name. */
+  brand?: string | null;
   /** Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on. NULL = not set. */
   size?: string | null;
   inStock: boolean;
@@ -314,6 +316,8 @@ export interface CreateProductBody {
   imageUrl?: string;
   barcode?: string;
   sku?: string;
+  /** Optional brand / manufacturer name. */
+  brand?: string | null;
   /** Optional free-text product size label (e.g. "12 inch", "Large", "500ml"). Display-only; surfaced when the tenant show_product_size setting is on. */
   size?: string | null;
   inStock?: boolean;

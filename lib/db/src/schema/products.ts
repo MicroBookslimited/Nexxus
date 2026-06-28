@@ -61,6 +61,9 @@ export const productsTable = pgTable("products", {
   // Optional per-product override of the tenant-wide stock method.
   // 'fifo' | 'lifo' | null (inherit from app_settings.stock_method).
   stockMethodOverride: text("stock_method_override"),
+  // Optional brand / manufacturer name. Free-text label displayed alongside
+  // the product in the catalog and on receipts. NULL = not set.
+  brand: text("brand"),
   // Soft-delete / archive timestamp. When set, the product is hidden from
   // the catalog, POS, online menu, and bulk-pricing tools, but all of its
   // historical records (orders, purchase bills, accounting links) remain

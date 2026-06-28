@@ -446,6 +446,8 @@ router.post("/products", async (req, res): Promise<void> => {
           imageUrl: parsed.data.imageUrl,
           barcode: parsed.data.barcode,
           sku: parsed.data.sku,
+          // Optional brand / manufacturer name. Store trimmed non-empty value or NULL.
+          brand: parsed.data.brand?.trim() ? parsed.data.brand.trim() : null,
           // Optional free-text size label. Store trimmed non-empty value or NULL.
           size: parsed.data.size?.trim() ? parsed.data.size.trim() : null,
           inStock: parsed.data.inStock ?? true,
@@ -948,6 +950,11 @@ router.put("/products/:id", async (req, res): Promise<void> => {
   if (parsed.data.size !== undefined) {
     const sz = parsed.data.size?.trim();
     updates["size"] = sz ? sz : null;
+  }
+  // Optional brand / manufacturer name. Only write when present in the body.
+  if (parsed.data.brand !== undefined) {
+    const br = parsed.data.brand?.trim();
+    updates["brand"] = br ? br : null;
   }
 
   // Cost basis & structure type. costPrice null is meaningful ("not yet
