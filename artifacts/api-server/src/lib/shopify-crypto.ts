@@ -75,30 +75,48 @@ export function decryptToken(payload: string): string {
  * a base64 digest in a header, whereas OAuth signs the query string.
  *
  * Algorithm (per Shopify docs): take all query params EXCEPT `hmac` and
- * `signature`, sort them lexicographically by key, join as `key=value` pairs with
- * `&`, compute a hex SHA-256 HMAC with the app's Client Secret, and
+ * `signature`, sort them lexicographically by key, join as `key=value` pairs
+ * with `&`, compute a hex SHA-256 HMAC with the app's Client Secret, and
  * timing-safe-compare it to the supplied `hmac` param.
+ *
+ * IMPORTANT: this function operates on the *raw* (URL-encoded) query string,
+ * not on decoded Express `req.query` values. Shopify signs the bytes it sends
+ * over the wire; if we decode first (e.g. `%2F` → `/`) and then recompute, the
+ * digest will not match for any param value that contains percent-encoded chars
+ * (e.g. `host` values with embedded `/`).
+ *
+ * @param rawQueryString The raw query string portion of the callback URL
+ *   (everything after the first `?`, *before* any URL decoding). Express
+ *   exposes this via `req.url.split("?", 2)[1] ?? ""`.
  */
 export function verifyOAuthHmac(
-  query: Record<string, unknown>,
+  rawQueryString: string,
   secret: string,
 ): boolean {
-  const provided = query["hmac"];
-  if (typeof provided !== "string" || provided.length === 0) return false;
+  // Split on literal `&` — no URL-decoding. Each element is a raw "key=value"
+  // token exactly as Shopify constructed it.
+  const pairs = rawQueryString.split("&");
 
-  const message = Object.keys(query)
-    .filter((k) => k !== "hmac" && k !== "signature")
+  // Extract the raw hmac value (everything after "hmac=").
+  const hmacPair = pairs.find((p) => p === "hmac" || p.startsWith("hmac="));
+  if (!hmacPair) return false;
+  const provided = hmacPair.startsWith("hmac=") ? hmacPair.slice(5) : "";
+  if (provided.length === 0) return false;
+
+  // Build the message from every pair whose key is NOT hmac or signature.
+  // Keys are already sorted after the split, but Shopify requires us to sort
+  // the pairs ourselves — do it over the raw strings.
+  const message = pairs
+    .filter((p) => !p.startsWith("hmac=") && !p.startsWith("signature="))
     .sort()
-    .map((k) => {
-      const v = query[k];
-      const value = Array.isArray(v) ? v.join(",") : String(v);
-      return `${k}=${value}`;
-    })
     .join("&");
 
   const digest = crypto.createHmac("sha256", secret).update(message).digest("hex");
-  const a = Buffer.from(digest);
-  const b = Buffer.from(provided);
+
+  // Timing-safe comparison. Both sides are hex strings, so length mismatch is
+  // a valid early-exit (not a timing oracle here).
+  const a = Buffer.from(digest, "utf8");
+  const b = Buffer.from(provided, "utf8");
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
 }

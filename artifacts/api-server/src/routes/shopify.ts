@@ -442,7 +442,10 @@ router.get("/shopify/oauth/callback", async (req, res): Promise<void> => {
   const clientId = appCreds.clientId;
   const clientSecret = appCreds.clientSecret;
 
-  if (!verifyOAuthHmac(query, clientSecret)) {
+  // Pass the *raw* query string (not the decoded req.query object) so the HMAC
+  // computation uses the same URL-encoded bytes that Shopify signed.
+  const rawQuery = (req.url ?? "").split("?", 2)[1] ?? "";
+  if (!verifyOAuthHmac(rawQuery, clientSecret)) {
     fail("Could not verify the Shopify response signature.");
     return;
   }
