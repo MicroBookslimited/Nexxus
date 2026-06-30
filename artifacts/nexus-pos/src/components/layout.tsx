@@ -359,6 +359,24 @@ export function Layout({ children }: { children: ReactNode }) {
             }
             const isActive = location.startsWith(entry.href);
             const showLabel = isActive || entry.alwaysShowLabel;
+            // POS gets a large filled emerald block so cashiers can tap it easily.
+            if (entry.href === "/pos") {
+              return (
+                <Link
+                  key={entry.href}
+                  href={entry.href}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-0.5 rounded-lg px-5 py-2 shrink-0 font-bold transition-all shadow-lg",
+                    isActive
+                      ? "bg-emerald-500 text-white shadow-emerald-500/40 ring-2 ring-emerald-400/50"
+                      : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-700/30",
+                  )}
+                >
+                  <entry.icon className="h-6 w-6 drop-shadow-sm" />
+                  <span className="text-[10px] leading-none tracking-widest uppercase">POS</span>
+                </Link>
+              );
+            }
             return (
               <Link
                 key={entry.href}
@@ -400,6 +418,24 @@ export function Layout({ children }: { children: ReactNode }) {
             }
             const isActive = location.startsWith(entry.href);
             const showLabel = entry.alwaysShowLabel;
+            // POS gets a large filled emerald block on tablet too.
+            if (entry.href === "/pos") {
+              return (
+                <Link
+                  key={entry.href}
+                  href={entry.href}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-0.5 rounded-lg px-3.5 py-1.5 shrink-0 font-bold transition-all shadow-lg",
+                    isActive
+                      ? "bg-emerald-500 text-white shadow-emerald-500/40 ring-2 ring-emerald-400/50"
+                      : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-700/30",
+                  )}
+                >
+                  <entry.icon className="h-5 w-5 drop-shadow-sm" />
+                  <span className="text-[10px] leading-none tracking-widest uppercase">POS</span>
+                </Link>
+              );
+            }
             return (
               <Link
                 key={entry.href}
@@ -611,6 +647,24 @@ export function Layout({ children }: { children: ReactNode }) {
                 }
                 // Flat item
                 const isActive = location.startsWith(entry.href);
+                // POS gets a prominent filled emerald block in the drawer too.
+                if (entry.href === "/pos") {
+                  return (
+                    <Link
+                      key={entry.href}
+                      href={entry.href}
+                      className={cn(
+                        "flex items-center gap-3 px-4 py-3 rounded-xl text-base font-bold transition-all mb-1.5 shadow-lg",
+                        isActive
+                          ? "bg-emerald-500 text-white shadow-emerald-500/40 ring-2 ring-emerald-400/50"
+                          : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-700/30",
+                      )}
+                    >
+                      <entry.icon className="h-6 w-6 drop-shadow-sm shrink-0" />
+                      <span className="tracking-widest uppercase">POS</span>
+                    </Link>
+                  );
+                }
                 return (
                   <Link
                     key={entry.href}
