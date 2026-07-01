@@ -1,8 +1,10 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, supportTicketsTable } from "@workspace/db";
+import { eq, desc, ilike, or, and } from "drizzle-orm";
+import { db, supportTicketsTable, appSettingsTable } from "@workspace/db";
 import { verifyTenantToken } from "./saas-auth";
 import { getFromDetails, sendMail } from "../lib/mail";
+import jwt from "jsonwebtoken";
+import { getSetting } from "./settings";
 
 const router: IRouter = Router();
 
@@ -116,6 +118,120 @@ function buildTicketEmailHtml(t: {
     </div>
   </div>`;
 }
+
+/* ─── Superadmin auth helper ─── */
+function requireSuperAdmin(
+  req: { headers: { authorization?: string } },
+  res: { status: (n: number) => { json: (b: object) => void } },
+): boolean {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
+  }
+  try {
+    const secret = process.env["JWT_SECRET"];
+    if (!secret) { res.status(500).json({ error: "Server misconfigured" }); return false; }
+    const p = jwt.verify(auth.slice(7), secret) as { type?: string };
+    if (p.type !== "superadmin") { res.status(403).json({ error: "Forbidden" }); return false; }
+    return true;
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+    return false;
+  }
+}
+
+const SUPPORT_INBOX_KEY = "support_inbox_email";
+const DEFAULT_SUPPORT_INBOX = "support@microbooks.com";
+
+/** Resolves the current support inbox — DB setting takes precedence over constant. */
+async function getSupportInbox(): Promise<string> {
+  const saved = await getSetting(SUPPORT_INBOX_KEY, 0);
+  return saved || DEFAULT_SUPPORT_INBOX;
+}
+
+/* ─── Superadmin: list all support tickets ─── */
+router.get("/superadmin/support/tickets", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res as never)) return;
+
+  const status = (req.query["status"] as string | undefined)?.trim();
+  const priority = (req.query["priority"] as string | undefined)?.trim().toUpperCase();
+  const q = (req.query["q"] as string | undefined)?.trim();
+
+  const conditions = [];
+  if (status && status !== "all") conditions.push(eq(supportTicketsTable.status, status));
+  if (priority && priority !== "ALL") conditions.push(eq(supportTicketsTable.priority, priority));
+  if (q) {
+    const like = `%${q}%`;
+    conditions.push(
+      or(
+        ilike(supportTicketsTable.ticketRef, like),
+        ilike(supportTicketsTable.businessName, like),
+        ilike(supportTicketsTable.category, like),
+        ilike(supportTicketsTable.subCategory, like),
+      ),
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(supportTicketsTable)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(supportTicketsTable.createdAt))
+    .limit(200);
+
+  res.json(rows);
+});
+
+/* ─── Superadmin: update ticket status / add admin notes ─── */
+router.patch("/superadmin/support/tickets/:id", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res as never)) return;
+
+  const id = parseInt(req.params["id"] ?? "", 10);
+  if (!id || isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const updates: Partial<typeof supportTicketsTable.$inferInsert> & { updatedAt?: Date } = {
+    updatedAt: new Date(),
+  };
+  if (typeof b["status"] === "string" && b["status"].trim()) {
+    updates.status = b["status"].trim().slice(0, 50);
+  }
+  if (typeof b["adminNotes"] === "string") {
+    updates.adminNotes = b["adminNotes"].slice(0, 4000) || null;
+  }
+
+  const [updated] = await db
+    .update(supportTicketsTable)
+    .set(updates)
+    .where(eq(supportTicketsTable.id, id))
+    .returning();
+
+  if (!updated) { res.status(404).json({ error: "Ticket not found" }); return; }
+  res.json(updated);
+});
+
+/* ─── Superadmin: get support settings (inbox email) ─── */
+router.get("/superadmin/support/settings", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res as never)) return;
+  const email = await getSupportInbox();
+  res.json({ supportInboxEmail: email });
+});
+
+/* ─── Superadmin: update support settings ─── */
+router.patch("/superadmin/support/settings", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res as never)) return;
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const email = typeof b["supportInboxEmail"] === "string" ? b["supportInboxEmail"].trim().slice(0, 200) : null;
+  if (!email || !email.includes("@")) { res.status(400).json({ error: "Valid email required" }); return; }
+
+  await db
+    .insert(appSettingsTable)
+    .values({ key: `0:${SUPPORT_INBOX_KEY}`, tenantId: 0, value: email, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: appSettingsTable.key, set: { value: email, updatedAt: new Date() } });
+
+  res.json({ supportInboxEmail: email });
+});
 
 /* ─── Create a support ticket ─── */
 router.post("/support/tickets", async (req, res) => {

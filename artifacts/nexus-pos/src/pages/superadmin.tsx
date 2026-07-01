@@ -6,13 +6,14 @@ import {
   LayoutDashboard, Settings, Pencil, Trash2, Download, ChevronRight,
   LogIn, KeyRound, Check, Package, ToggleLeft, ToggleRight, Mail,
   Cpu, Globe, ShoppingBag, ClipboardList, Megaphone, Wrench,
-  BarChart3,
+  BarChart3, LifeBuoy,
 } from "lucide-react";
 import { EmailTab } from "./superadmin-email-tab";
 import { SuperadminMarketingTab } from "./superadmin-marketing-tab";
 import { SuperadminStoreTab } from "./superadmin-store-tab";
 import { SuperadminAnalyticsTab } from "./superadmin-analytics-tab";
 import { TechniciansTab } from "./superadmin-technicians-tab";
+import { SuperadminSupportTab } from "./superadmin-support-tab";
 import {
   SUPERADMIN_TOKEN_KEY, TENANT_TOKEN_KEY,
   superadminLogin, superadminStats, superadminTenants,
@@ -33,7 +34,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "analytics" | "users" | "tenants" | "technicians" | "payments" | "plans" | "email" | "marketing" | "gateway" | "settings" | "store" | "impersonation-logs";
+type Tab = "overview" | "analytics" | "users" | "tenants" | "technicians" | "payments" | "plans" | "email" | "marketing" | "gateway" | "settings" | "store" | "support" | "impersonation-logs";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -1227,6 +1228,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     { id: "gateway", label: "Gateway", icon: CreditCard },
     { id: "store", label: "Store", icon: ShoppingBag },
     { id: "settings", label: "Settings", icon: Settings },
+    { id: "support", label: "Support", icon: LifeBuoy },
     { id: "impersonation-logs", label: "Access Logs", icon: ClipboardList },
   ];
 
@@ -1980,6 +1982,8 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
             )}
           </>
         )}
+
+        {tab === "support" && <SuperadminSupportTab />}
 
         {tab === "impersonation-logs" && (
           <div>

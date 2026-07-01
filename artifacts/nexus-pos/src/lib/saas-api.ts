@@ -1396,6 +1396,58 @@ export const getPlanLimitStatus = () =>
   api<PlanLimitStatus>("/products/plan-limit", { headers: tenantAuthHeaders() });
 
 /* ─── Support Tickets ─── */
+export interface SupportTicketRow {
+  id: number;
+  ticketRef: string;
+  tenantId: number;
+  businessName: string;
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  category: string;
+  subCategory: string;
+  impact: string | null;
+  priority: "CRITICAL" | "HIGH" | "NORMAL" | "LOW";
+  startedWhen: string | null;
+  stepsTaken: string[];
+  additionalNotes: string | null;
+  resolutionType: string | null;
+  status: string;
+  adminNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const superadminGetSupportTickets = (params?: { status?: string; priority?: string; q?: string }) => {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.priority) qs.set("priority", params.priority);
+  if (params?.q) qs.set("q", params.q);
+  const query = qs.toString();
+  return api<SupportTicketRow[]>(`/superadmin/support/tickets${query ? `?${query}` : ""}`, {
+    headers: superadminAuthHeaders(),
+  });
+};
+
+export const superadminUpdateSupportTicket = (id: number, data: { status?: string; adminNotes?: string }) =>
+  api<SupportTicketRow>(`/superadmin/support/tickets/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+    headers: superadminAuthHeaders(),
+  });
+
+export const superadminGetSupportSettings = () =>
+  api<{ supportInboxEmail: string }>("/superadmin/support/settings", {
+    headers: superadminAuthHeaders(),
+  });
+
+export const superadminUpdateSupportSettings = (data: { supportInboxEmail: string }) =>
+  api<{ supportInboxEmail: string }>("/superadmin/support/settings", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+    headers: superadminAuthHeaders(),
+  });
+
 export interface CreateSupportTicketInput {
   businessName: string;
   contactName?: string;

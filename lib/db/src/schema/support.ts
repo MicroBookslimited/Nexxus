@@ -24,6 +24,7 @@ export const supportTicketsTable = pgTable("support_tickets", {
   /** 'self_resolved' when the user fixed it via the smart FAQ; null for a real ticket. */
   resolutionType: text("resolution_type"),
   status: text("status").notNull().default("open"),
+  adminNotes: text("admin_notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
