@@ -1,0 +1,502 @@
+Perfect. Here's the full Replit prompt — ready to paste:
+
+---
+
+```
+Build a Support Section for the NEXXUS POS PWA. This is a 
+guided, low-friction support ticket system gated behind a 
+Manager PIN. The goal is to help clients self-diagnose issues 
+through a step-by-step guided flow before a ticket is submitted.
+Users should type as little as possible — almost everything is 
+tap-to-select.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- NEXXUS POS is a React PWA
+- Styling matches the existing dark navy design system
+- The support section is accessed from the main navigation
+- Manager PIN gates entry — same PIN system already used in the app
+- MicroBooks Limited is the vendor receiving support tickets
+- Notification email: support@microbooks.com
+- Business hours note: Mon–Fri, 8 AM – 6 PM EST
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NAVIGATION ENTRY POINT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Add a "Support" item to the main navigation sidebar/menu.
+Icon: a headset or life ring icon (use lucide-react: 
+Headphones or LifeBuoy icon).
+Label: "Support"
+Color: distinct — use amber/yellow to make it stand out
+from other nav items so it is easy to find in an emergency.
+
+When tapped — before showing anything else — show a 
+Manager PIN entry modal:
+
+PIN GATE MODAL:
+- Title: "Manager Access Required"
+- Subtitle: "Enter your Manager PIN to access Support"
+- PIN input: 4-dot obscured entry (same style as existing 
+  PIN components in the app)
+- If correct PIN: proceed to Support Home
+- If wrong PIN: show "Incorrect PIN" shake animation, 
+  allow retry
+- Cancel button: returns to previous screen
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SCREEN 1 — SUPPORT HOME
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Header:
+- Large "SUPPORT" heading with headset icon
+- Subtitle: "Powered by MicroBooks Limited"
+- Green status badge: "● Support Available  Mon–Fri 8AM–6PM"
+- Business hours note in muted text
+
+Two prominent action cards side by side:
+
+CARD 1 — "Browse FAQs"
+- Icon: BookOpen
+- Description: "Find instant answers to common questions"
+- Color: Blue
+- Tap → goes to FAQ Screen
+
+CARD 2 — "Submit a Ticket"  
+- Icon: TicketIcon (or Send)
+- Description: "Can't find your answer? We'll help you"
+- Color: Amber
+- Tap → starts the Guided Flow (Screen 3)
+
+Below the cards — Contact bar:
+- WhatsApp icon + "Chat on WhatsApp" 
+  (opens: https://wa.me/[YOUR_WHATSAPP_NUMBER])
+- Phone icon + "[YOUR_PHONE_NUMBER]"
+- Email icon + "support@microbooks.com"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SCREEN 2 — FAQ SCREEN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Header: "Frequently Asked Questions"
+Back button to Support Home.
+
+Accordion-style FAQ list organised by category.
+Each category has a colored icon and expands on tap.
+User types nothing on this screen.
+
+Categories and FAQ content:
+
+─── 🖥 POS & PAYMENTS ───
+Q: The POS screen is frozen or not responding
+A: Try refreshing the browser tab first. If that doesn't 
+   work, close the browser and reopen it. If the issue 
+   persists, check your internet connection. A solid 
+   connection is required for NEXXUS POS to function.
+
+Q: A payment went through but the order didn't save
+A: Check the Orders page for the transaction — it may have 
+   saved successfully. If you cannot find it, do not 
+   re-process the payment. Submit a support ticket and our 
+   team will investigate.
+
+Q: The receipt won't print
+A: Check that the printer is powered on and connected. 
+   For Bluetooth printers, verify the printer is paired 
+   in your device's Bluetooth settings. Restart the ESC 
+   POS Print Service app on the tablet and try again.
+
+Q: The barcode scanner isn't working
+A: Ensure the scanner is connected via USB. Try unplugging 
+   and replugging. If it still doesn't scan, check that 
+   the cursor is active in the product search field before 
+   scanning.
+
+─── 📦 INVENTORY ───
+Q: A product's stock count is wrong
+A: Stock is automatically adjusted with every sale, void, 
+   and refund. If the count seems incorrect, check the 
+   Order History for any missed voids. If unexplained, 
+   submit a support ticket with the product name and 
+   expected vs actual count.
+
+Q: I can't find a product at the POS
+A: Check that the product is set to Active in the Product 
+   Catalogue. Also verify it has been assigned to a 
+   category. Products marked inactive will not appear 
+   at the POS.
+
+Q: How do I transfer stock between locations?
+A: Go to Inventory → Stock Transfers → New Transfer. 
+   Select the source location, destination, products, 
+   and quantities. Confirm the transfer to move stock.
+
+─── 👥 STAFF & LOGIN ───
+Q: A staff member forgot their PIN
+A: A Manager or Admin can reset a staff PIN from 
+   Settings → Staff Accounts → select the staff member 
+   → Reset PIN.
+
+Q: A staff member is locked out
+A: PINs do not auto-lock in NEXXUS POS. If a staff 
+   member cannot log in, verify they are entering the 
+   correct PIN. Reset via Settings → Staff Accounts 
+   if needed.
+
+Q: How do I add a new staff member?
+A: Go to Settings → Staff Accounts → Add Staff. 
+   Enter their name, assign a role, and set a PIN. 
+   They can log in immediately.
+
+─── 📊 REPORTS & BILLING ───
+Q: My report shows incorrect totals
+A: Reports pull live data. Verify the date range is 
+   correct and that any voided orders are reflected. 
+   If totals still seem wrong, export the CSV and 
+   submit a ticket with the file attached.
+
+Q: How do I export a report?
+A: On any Report page, select your date range and 
+   click the CSV Export button at the top right. 
+   The file will download to your device.
+
+Q: My subscription trial is ending — how do I pay?
+A: Contact MicroBooks Limited directly via WhatsApp 
+   or email to arrange payment and plan activation. 
+   We will extend your trial if payment is in process.
+
+Q: I was charged incorrectly
+A: Contact support@microbooks.com with your account 
+   details and the invoice in question. Our team will 
+   review and resolve within 24 hours.
+
+At the bottom of the FAQ screen:
+Banner: "Didn't find your answer?"
+Button: "Submit a Support Ticket →" 
+(amber button → starts the Guided Flow)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SCREEN 3 — GUIDED TICKET FLOW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This is a multi-step wizard. Each step is a full screen 
+with a progress bar at the top showing current step 
+out of total steps.
+
+The user taps options — almost no typing required.
+A "Back" button is always visible.
+A step counter shows "Step X of Y" at the top.
+
+── STEP 1: CATEGORY SELECTION ──
+Title: "What area is the issue in?"
+Subtitle: "Tap to select — we'll guide you from here"
+
+Show 4 large tap cards in a 2x2 grid:
+
+┌─────────────────┐  ┌─────────────────┐
+│  🖥              │  │  📦              │
+│  POS &          │  │  Inventory &     │
+│  Payments       │  │  Stock           │
+└─────────────────┘  └─────────────────┘
+┌─────────────────┐  ┌─────────────────┐
+│  👥              │  │  📊              │
+│  Staff &        │  │  Reports &       │
+│  Login          │  │  Billing         │
+└─────────────────┘  └─────────────────┘
+
+── STEP 2: SUB-CATEGORY ──
+Based on Step 1 selection, show relevant sub-options.
+Title: "What specifically is the problem?"
+
+IF POS & Payments selected:
+  - Screen frozen / not responding
+  - Payment processed but order missing
+  - Receipt not printing
+  - Barcode scanner not working
+  - Wrong price showing
+  - Other POS issue
+
+IF Inventory & Stock selected:
+  - Stock count is wrong
+  - Product not showing at POS
+  - Stock transfer not working
+  - Product showing out of stock incorrectly
+  - Category not showing
+  - Other inventory issue
+
+IF Staff & Login selected:
+  - Staff forgot PIN
+  - Staff cannot log in
+  - Wrong permissions for staff member
+  - Need to add new staff
+  - Need to remove staff access
+  - Other staff issue
+
+IF Reports & Billing selected:
+  - Report totals incorrect
+  - Cannot export CSV
+  - Subscription / trial question
+  - Incorrect charge
+  - Cannot access reports
+  - Other billing issue
+
+── STEP 3: SMART FAQ CHECK ──
+Title: "Have you tried this?"
+Show the most relevant FAQ answer for the selected 
+sub-category as a card.
+
+Example: if "Receipt not printing" selected:
+Show: "Check that your printer is powered on and 
+connected. For Bluetooth printers, verify the printer 
+is paired in your device's Bluetooth settings. Restart 
+the ESC POS Print Service app and try again."
+
+Two buttons:
+[ This fixed it — I'm good ✓ ]  →  goes to Resolution Screen
+[ Still not working ]            →  continues to Step 4
+
+── STEP 4: IMPACT ASSESSMENT ──
+Title: "How is this affecting you right now?"
+
+Single-select options (large tap cards):
+- 🔴 Cannot process any sales — business is stopped
+- 🟠 Sales work but something important isn't functioning
+- 🟡 Minor issue — not blocking sales
+- 🔵 Just a question — no active problem
+
+This sets the ticket priority:
+  Red → Priority: CRITICAL
+  Orange → Priority: HIGH
+  Yellow → Priority: NORMAL
+  Blue → Priority: LOW
+
+── STEP 5: HOW LONG ──
+Title: "When did this start?"
+
+Single-select:
+- Just now (within the last hour)
+- Today
+- Yesterday
+- A few days ago
+- More than a week ago
+
+── STEP 6: DEVICE CHECK ──
+Title: "Quick device check — tap all that apply"
+
+Multi-select checkboxes:
+□ I have restarted the app / browser
+□ I have checked my internet connection
+□ I have restarted the tablet
+□ I have tried on a different device
+□ None of these helped
+
+── STEP 7: ADDITIONAL DETAILS ──
+Title: "Anything else we should know?"
+Subtitle: "Optional — skip if nothing to add"
+
+Single text area — max 280 characters
+Placeholder: "e.g. error message you saw, product name 
+affected, order reference number..."
+Character counter shown.
+
+Large "Skip" button and "Continue" button.
+
+── STEP 8: CONTACT CONFIRMATION ──
+Title: "Who should we contact?"
+Pre-fill with current tenant's business name and 
+email from the database.
+
+Fields (pre-filled, editable):
+- Business Name (pre-filled from tenant record)
+- Contact Name (pre-filled from active staff name)
+- Phone number (text input)
+- Email address (pre-filled from tenant record)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SCREEN 4 — TICKET REVIEW & SUBMIT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Title: "Review Your Ticket"
+Show a clean summary card of everything selected:
+
+  Business:     [Business Name]
+  Contact:      [Name] | [Phone] | [Email]
+  Category:     [Selected Category]
+  Issue:        [Selected Sub-category]
+  Impact:       [Selected Impact]
+  Started:      [When it started]
+  Steps taken:  [Checked items from device check]
+  Notes:        [Additional details or "None"]
+  Priority:     [CRITICAL / HIGH / NORMAL / LOW]
+                shown as colored badge
+
+Auto-generated Ticket ID at the bottom:
+  Format: TKT-YYYYMMDD-XXXX (random 4-digit suffix)
+  e.g. TKT-20260630-4821
+
+Two buttons:
+[ ← Edit ]     [ Submit Ticket → ]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TICKET SUBMISSION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+On Submit — do two things simultaneously:
+
+1. SAVE TO DATABASE
+   Save ticket to a support_tickets table with columns:
+   id, ticket_ref, tenant_id, business_name, 
+   contact_name, contact_phone, contact_email,
+   category, sub_category, impact, priority,
+   started_when, steps_taken (json array), 
+   additional_notes, status (default: 'open'),
+   created_at, updated_at
+
+2. SEND EMAIL NOTIFICATION
+   Send an email to support@microbooks.com using 
+   the existing email service in the app (or fetch 
+   to the send-receipt-email Edge Function adapted 
+   for tickets).
+
+   Email subject:
+   [PRIORITY] NEXXUS Support Ticket TKT-XXXXXX — 
+   {Category}: {Sub-category} — {Business Name}
+
+   Email body (plain text formatted):
+   ══════════════════════════════════
+   NEXXUS POS SUPPORT TICKET
+   ══════════════════════════════════
+   Ticket Ref:   {ticket_ref}
+   Priority:     {priority}
+   Status:       OPEN
+   Submitted:    {timestamp}
+   ──────────────────────────────────
+   BUSINESS DETAILS
+   ──────────────────────────────────
+   Business:     {business_name}
+   Contact:      {contact_name}
+   Phone:        {contact_phone}
+   Email:        {contact_email}
+   ──────────────────────────────────
+   ISSUE DETAILS
+   ──────────────────────────────────
+   Category:     {category}
+   Issue:        {sub_category}
+   Impact:       {impact}
+   Started:      {started_when}
+   ──────────────────────────────────
+   STEPS ALREADY TAKEN
+   ──────────────────────────────────
+   {steps_taken list, one per line with checkmarks}
+   ──────────────────────────────────
+   ADDITIONAL NOTES
+   ──────────────────────────────────
+   {additional_notes or "None provided"}
+   ══════════════════════════════════
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SCREEN 5 — SUCCESS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Large green checkmark animation.
+Title: "Ticket Submitted!"
+Subtitle: "MicroBooks will respond within:"
+
+Response time by priority:
+  CRITICAL → Within 2 hours
+  HIGH     → Within 4 hours
+  NORMAL   → Within 24 hours
+  LOW      → Within 48 hours
+
+Show ticket reference number prominently:
+  TKT-20260630-4821
+
+Message: "A confirmation has been sent to {email}"
+
+Two buttons:
+[ Back to Support Home ]   [ Back to POS ]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DESIGN RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Match existing NEXXUS POS dark navy design system
+- Progress bar at top of guided flow — 
+  accent color fills left to right as steps complete
+- All tap cards: minimum 80px tall, 
+  clear selected state (border + background highlight)
+- Back button always visible in top left
+- No step should require more than one text input
+- Step 7 (additional details) is the ONLY free-text field
+- On mobile/tablet: single column layout
+- Font sizes must be readable on a 15" tablet 
+  at arm's length
+- Amber/yellow used consistently for support 
+  throughout — distinguishes it from blue 
+  (navigation) and green (success states)
+- Error states: show inline, never alert() popups
+- Loading state on Submit button while email sends
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILES TO CREATE / MODIFY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Create:
+- src/pages/Support/SupportHome.jsx
+- src/pages/Support/FAQScreen.jsx
+- src/pages/Support/GuidedFlow.jsx
+- src/pages/Support/TicketReview.jsx
+- src/pages/Support/TicketSuccess.jsx
+- src/components/Support/PinGate.jsx
+- src/components/Support/CategoryCard.jsx
+- src/components/Support/ProgressBar.jsx
+- src/utils/submitTicket.js  (handles DB save + email)
+- src/data/faqData.js        (all FAQ content)
+- src/data/flowData.js       (all step options and 
+                              smart FAQ mappings)
+
+Modify:
+- Main navigation — add Support nav item with 
+  Headphones icon in amber
+- Routing — add /support route gated by PIN check
+- Database schema — add support_tickets table 
+  (provide the SQL to run in Supabase)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL NOTES FOR THE AI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. The PIN gate must check against the manager role 
+   in the existing staff/auth system — do NOT create 
+   a separate hardcoded PIN
+2. Ticket ID must be unique — use timestamp + 
+   random 4-digit number, check for collision
+3. The guided flow state must persist if the user 
+   accidentally navigates back — use React state 
+   lifted to the parent GuidedFlow component
+4. The "This fixed it" path on Step 3 should log a 
+   resolution_type: 'self_resolved' to the DB 
+   even though no ticket email is sent — useful 
+   for tracking which FAQs are solving problems
+5. Email sending must be non-blocking — if email 
+   fails, the ticket still saves to DB and 
+   success screen still shows. Log the email 
+   failure separately
+6. Priority badge colors:
+   CRITICAL → red   (#DC2626)
+   HIGH     → orange (#EA580C)
+   NORMAL   → blue  (#2563EB)
+   LOW      → grey  (#6B7280)
+7. Do NOT change any existing POS functionality — 
+   this is additive only
+8. Show me all files you plan to create or modify 
+   BEFORE making any changes and wait for my 
+   confirmation
+9. The support_tickets Supabase table needs RLS — 
+   tenants can only see their own tickets, 
+   service role can see all
+10. All FAQ content lives in src/data/faqData.js 
+    so it can be updated without touching components
+```
+
+---
+
+**After Agent runs — four things to verify:**
+
+1. **PIN gate** — test with a wrong PIN, confirm it rejects cleanly
+2. **Step 3 smart FAQ** — tap a sub-category and confirm the right FAQ appears
+3. **Email** — submit a test ticket and confirm the formatted email arrives at support@microbooks.com
+4. **Self-resolved logging** — tap "This fixed it" and confirm a row appears in `support_tickets` with `resolution_type: self_resolved`
+
+This is a genuinely strong feature for NEXXUS POS — most small business POS systems have no built-in support system at all. It also gives you data on which issues your clients hit most, which directly informs your product roadmap.
