@@ -57,6 +57,7 @@ import overrideCardsRouter from "./override-cards";
 import giftVouchersRouter from "./gift-vouchers";
 import shopifyRouter from "./shopify";
 import superadminAnalyticsRouter from "./superadmin-analytics";
+import supportTicketsRouter from "./support-tickets";
 
 const router: IRouter = Router();
 
@@ -118,5 +119,6 @@ router.use(productBatchesRouter);
 router.use(supplierReturnsRouter);
 router.use(overrideCardsRouter);
 router.use(shopifyRouter);
+router.use(supportTicketsRouter);
 
 export default router;

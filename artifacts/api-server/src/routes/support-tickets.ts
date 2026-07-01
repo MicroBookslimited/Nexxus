@@ -1,0 +1,251 @@
+import { Router, type IRouter } from "express";
+import { eq } from "drizzle-orm";
+import { db, supportTicketsTable } from "@workspace/db";
+import { verifyTenantToken } from "./saas-auth";
+import { getFromDetails, sendMail } from "../lib/mail";
+
+const router: IRouter = Router();
+
+/** Fixed destination inbox for all support tickets. */
+const SUPPORT_INBOX = "support@microbooks.com";
+
+const PRIORITIES = ["CRITICAL", "HIGH", "NORMAL", "LOW"] as const;
+type Priority = (typeof PRIORITIES)[number];
+
+const PRIORITY_RESPONSE: Record<Priority, string> = {
+  CRITICAL: "Within 2 hours",
+  HIGH: "Within 4 hours",
+  NORMAL: "Within 24 hours",
+  LOW: "Within 48 hours",
+};
+const PRIORITY_COLOR: Record<Priority, string> = {
+  CRITICAL: "#DC2626",
+  HIGH: "#EA580C",
+  NORMAL: "#2563EB",
+  LOW: "#6B7280",
+};
+
+/* ─── Auth helper ─── */
+function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
+  const auth = req.headers["authorization"];
+  if (!auth?.startsWith("Bearer ")) return null;
+  const p = verifyTenantToken(auth.slice(7));
+  return p ? p.tenantId : null;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: string }).code === "23505";
+}
+
+/** TKT-YYYYMMDD-XXXX (4 random uppercase alphanumerics). */
+function generateTicketRef(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let suffix = "";
+  for (let i = 0; i < 4; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
+  return `TKT-${y}${m}${d}-${suffix}`;
+}
+
+function s(v: unknown, max = 2000): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (!t) return null;
+  return t.slice(0, max);
+}
+
+function normalizePriority(v: unknown): Priority {
+  const up = typeof v === "string" ? v.trim().toUpperCase() : "";
+  return (PRIORITIES as readonly string[]).includes(up) ? (up as Priority) : "NORMAL";
+}
+
+function esc(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildTicketEmailHtml(t: {
+  ticketRef: string;
+  priority: Priority;
+  businessName: string;
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  category: string;
+  subCategory: string;
+  impact: string | null;
+  startedWhen: string | null;
+  stepsTaken: string[];
+  additionalNotes: string | null;
+  createdAt: Date;
+}): string {
+  const color = PRIORITY_COLOR[t.priority];
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:6px 12px;color:#64748b;font-size:13px;white-space:nowrap;vertical-align:top">${esc(label)}</td><td style="padding:6px 12px;color:#0f172a;font-size:14px;font-weight:500">${esc(value)}</td></tr>`;
+  const steps = t.stepsTaken.length
+    ? `<ul style="margin:4px 0 0;padding-left:18px;color:#0f172a;font-size:14px">${t.stepsTaken.map((x) => `<li style="margin:2px 0">${esc(x)}</li>`).join("")}</ul>`
+    : "<span style=\"color:#94a3b8\">None recorded</span>";
+
+  return `
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f1f5f9;padding:24px">
+    <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
+      <div style="background:${color};padding:18px 24px">
+        <div style="color:#fff;font-size:13px;letter-spacing:1px;opacity:.85">NEXXUS POS SUPPORT · ${esc(t.priority)}</div>
+        <div style="color:#fff;font-size:22px;font-weight:700;margin-top:2px">${esc(t.ticketRef)}</div>
+        <div style="color:#fff;font-size:13px;opacity:.9;margin-top:2px">Target response: ${esc(PRIORITY_RESPONSE[t.priority])}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0">
+        ${row("Business", t.businessName)}
+        ${t.contactName ? row("Contact", t.contactName) : ""}
+        ${t.contactPhone ? row("Phone", t.contactPhone) : ""}
+        ${t.contactEmail ? row("Email", t.contactEmail) : ""}
+        ${row("Category", t.category)}
+        ${row("Sub-category", t.subCategory)}
+        ${t.impact ? row("Impact", t.impact) : ""}
+        ${t.startedWhen ? row("Started", t.startedWhen) : ""}
+        <tr><td style="padding:6px 12px;color:#64748b;font-size:13px;vertical-align:top">Steps taken</td><td style="padding:6px 12px">${steps}</td></tr>
+        ${t.additionalNotes ? `<tr><td style="padding:6px 12px;color:#64748b;font-size:13px;vertical-align:top">Notes</td><td style="padding:6px 12px;color:#0f172a;font-size:14px;white-space:pre-wrap">${esc(t.additionalNotes)}</td></tr>` : ""}
+        ${row("Submitted", t.createdAt.toLocaleString("en-JM", { day: "2-digit", month: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }))}
+      </table>
+    </div>
+  </div>`;
+}
+
+/* ─── Create a support ticket ─── */
+router.post("/support/tickets", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const businessName = s(b["businessName"], 200);
+  const category = s(b["category"], 120);
+  const subCategory = s(b["subCategory"], 200);
+  if (!businessName || !category || !subCategory) {
+    return res.status(400).json({ error: "businessName, category and subCategory are required" });
+  }
+
+  const priority = normalizePriority(b["priority"]);
+  const stepsTaken = Array.isArray(b["stepsTaken"])
+    ? (b["stepsTaken"] as unknown[]).map((x) => String(x).slice(0, 300)).filter(Boolean).slice(0, 30)
+    : [];
+
+  const record = {
+    tenantId,
+    businessName,
+    contactName: s(b["contactName"], 200),
+    contactPhone: s(b["contactPhone"], 60),
+    contactEmail: s(b["contactEmail"], 200),
+    category,
+    subCategory,
+    impact: s(b["impact"], 400),
+    priority,
+    startedWhen: s(b["startedWhen"], 200),
+    stepsTaken,
+    additionalNotes: s(b["additionalNotes"], 4000),
+    resolutionType: null as string | null,
+    status: "open",
+  };
+
+  // Insert with a short collision-retry loop on the unique ticket_ref.
+  let inserted: typeof supportTicketsTable.$inferSelect | null = null;
+  for (let attempt = 0; attempt < 5 && !inserted; attempt++) {
+    const ticketRef = generateTicketRef();
+    try {
+      const [row] = await db
+        .insert(supportTicketsTable)
+        .values({ ...record, ticketRef })
+        .returning();
+      inserted = row ?? null;
+    } catch (err) {
+      if (isUniqueViolation(err)) continue;
+      req.log.error({ err }, "support ticket insert failed");
+      return res.status(500).json({ error: "Could not save your ticket. Please try again." });
+    }
+  }
+  if (!inserted) {
+    return res.status(500).json({ error: "Could not generate a ticket reference. Please try again." });
+  }
+
+  // Email the support inbox — non-blocking: the ticket is already saved.
+  void (async () => {
+    try {
+      const { fromAddress, fromName } = await getFromDetails(tenantId);
+      await sendMail({
+        to: SUPPORT_INBOX,
+        subject: `[${priority}] ${inserted!.ticketRef} — ${businessName}: ${subCategory}`,
+        html: buildTicketEmailHtml({
+          ticketRef: inserted!.ticketRef,
+          priority,
+          businessName,
+          contactName: record.contactName,
+          contactPhone: record.contactPhone,
+          contactEmail: record.contactEmail,
+          category,
+          subCategory,
+          impact: record.impact,
+          startedWhen: record.startedWhen,
+          stepsTaken,
+          additionalNotes: record.additionalNotes,
+          createdAt: inserted!.createdAt,
+        }),
+        fromName,
+        fromAddress,
+        tenantId,
+      });
+    } catch (err) {
+      req.log.error({ err, ticketRef: inserted!.ticketRef }, "support ticket email failed");
+    }
+  })();
+
+  return res.status(201).json({
+    id: inserted.id,
+    ticketRef: inserted.ticketRef,
+    priority,
+    responseTarget: PRIORITY_RESPONSE[priority],
+  });
+});
+
+/* ─── Log a self-resolved FAQ hit (no email) ─── */
+router.post("/support/self-resolved", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const businessName = s(b["businessName"], 200) ?? "Unknown";
+  const category = s(b["category"], 120);
+  const subCategory = s(b["subCategory"], 200);
+  if (!category || !subCategory) {
+    return res.status(400).json({ error: "category and subCategory are required" });
+  }
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const ticketRef = generateTicketRef();
+    try {
+      await db.insert(supportTicketsTable).values({
+        tenantId,
+        ticketRef,
+        businessName,
+        category,
+        subCategory,
+        priority: "LOW",
+        resolutionType: "self_resolved",
+        status: "resolved",
+      });
+      return res.status(201).json({ success: true });
+    } catch (err) {
+      if (isUniqueViolation(err)) continue;
+      req.log.error({ err }, "self-resolved log failed");
+      // Non-critical analytics write — don't surface an error to the user.
+      return res.status(200).json({ success: false });
+    }
+  }
+  return res.status(200).json({ success: false });
+});
+
+export default router;

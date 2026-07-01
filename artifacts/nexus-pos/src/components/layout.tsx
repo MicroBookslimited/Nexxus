@@ -6,7 +6,7 @@ import {
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
   FlaskConical, Factory, Store, Cpu, Landmark, Banknote, ClipboardList, Smartphone,
-  Scale, CheckCircle, Tag, FileText, Ticket,
+  Scale, CheckCircle, Tag, FileText, Ticket, LifeBuoy,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -79,6 +79,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/store",        label: "Store",           icon: Store,           color: "text-fuchsia-400", permission: null },
   { href: "/subscription", label: "Plan",            icon: CreditCard,      color: "text-green-400",   permission: "settings.manage" },
   { href: "/audit",        label: "Audit Trail",     icon: ClipboardList,   color: "text-slate-400",   permission: "reports.view" },
+  { href: "/support",      label: "Support",         icon: LifeBuoy,        color: "text-amber-400",   permission: null },
 ];
 
 const MOBILE_PRIMARY = ["/dashboard", "/pos", "/orders", "/customers"];

@@ -49,6 +49,7 @@ const SupplierReturns = lazy(() => import("@/pages/supplier-returns"));
 const Quotations = lazy(() => import("@/pages/quotations"));
 const GiftVouchers = lazy(() => import("@/pages/gift-vouchers"));
 const Account = lazy(() => import("@/pages/account"));
+const Support = lazy(() => import("@/pages/support/support"));
 import { ClockPage } from "@/pages/clock";
 import { ScalePage } from "@/pages/scale";
 import { TechnicianRegister } from "@/pages/technician-register";
@@ -198,6 +199,7 @@ function POSRouter() {
       <Route path="/production"><ProtectedRoute component={Production} permission="inventory.manage" /></Route>
       <Route path="/hardware"><ProtectedRoute component={MyHardware} permission="settings.view" /></Route>
       <Route path="/audit"><ProtectedRoute component={AuditTrail} permission="reports.view" /></Route>
+      <Route path="/support"><ProtectedRoute component={Support} /></Route>
       <Route path="/cash"><ProtectedRoute component={CashManagement} permission="cash.open_session" /></Route>
       <Route path="/clock"><ProtectedRoute component={ClockPage} /></Route>
       <Route path="/register"><ProtectedRoute component={Register} permission="reports.view" /></Route>

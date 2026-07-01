@@ -1394,3 +1394,39 @@ export interface PlanLimitStatus {
 
 export const getPlanLimitStatus = () =>
   api<PlanLimitStatus>("/products/plan-limit", { headers: tenantAuthHeaders() });
+
+/* ─── Support Tickets ─── */
+export interface CreateSupportTicketInput {
+  businessName: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  category: string;
+  subCategory: string;
+  impact?: string;
+  priority: "CRITICAL" | "HIGH" | "NORMAL" | "LOW";
+  startedWhen?: string;
+  stepsTaken: string[];
+  additionalNotes?: string;
+}
+
+export interface CreateSupportTicketResult {
+  id: number;
+  ticketRef: string;
+  priority: "CRITICAL" | "HIGH" | "NORMAL" | "LOW";
+  responseTarget: string;
+}
+
+export const submitSupportTicket = (data: CreateSupportTicketInput) =>
+  api<CreateSupportTicketResult>("/support/tickets", {
+    method: "POST",
+    body: JSON.stringify(data),
+    headers: tenantAuthHeaders(),
+  });
+
+export const logSupportSelfResolved = (data: { businessName: string; category: string; subCategory: string }) =>
+  api<{ success: boolean }>("/support/self-resolved", {
+    method: "POST",
+    body: JSON.stringify(data),
+    headers: tenantAuthHeaders(),
+  });
