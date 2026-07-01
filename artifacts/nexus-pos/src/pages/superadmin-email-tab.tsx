@@ -178,7 +178,7 @@ function TestEmailModal({
           )}
         </div>
         <div className="flex gap-3 p-5 border-t border-[#2a3a55]">
-          <button onClick={onClose} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2 rounded-lg text-sm transition-colors">
+          <button onClick={onClose} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg text-sm transition-colors">
             Close
           </button>
           <button onClick={handleSend} disabled={!to || sending}
@@ -300,7 +300,7 @@ function ConnectionTestModal({ onClose }: { onClose: () => void }) {
           )}
         </div>
         <div className="flex gap-3 p-5 border-t border-[#2a3a55]">
-          <button onClick={onClose} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2 rounded-lg text-sm transition-colors">
+          <button onClick={onClose} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg text-sm transition-colors">
             Close
           </button>
           <button onClick={handleSend} disabled={!to || sending}
@@ -456,7 +456,7 @@ function TemplateEditor({
       )}
 
       <div className="flex gap-3 pt-2">
-        <button onClick={onCancel} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2.5 rounded-lg text-sm transition-colors">
+        <button onClick={onCancel} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg text-sm transition-colors">
           Cancel
         </button>
         <button onClick={() => onSave(form)} disabled={saving || !form.name || !form.subject || !form.htmlBody}
@@ -687,15 +687,15 @@ export function EmailTab() {
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <button onClick={() => setView("logs")}
-            className="flex items-center gap-2 border border-[#2a3a55] text-[#94a3b8] hover:text-white hover:border-[#3b82f6]/50 px-3 py-2 rounded-lg text-sm transition-colors">
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg text-sm transition-colors">
             <FileText size={14} /> Logs
           </button>
           <button onClick={() => setShowConnectionTest(true)}
-            className="flex items-center gap-2 border border-[#2a3a55] text-[#94a3b8] hover:text-[#3b82f6] hover:border-[#3b82f6]/50 px-3 py-2 rounded-lg text-sm transition-colors">
+            className="flex items-center gap-2 bg-[#3b82f6] hover:bg-blue-500 text-white px-3 py-2 rounded-lg text-sm transition-colors">
             <Wifi size={14} /> Send Test
           </button>
           <button onClick={() => void handleSeed(false)} disabled={seeding}
-            className="flex items-center gap-2 border border-[#2a3a55] text-[#94a3b8] hover:text-amber-400 hover:border-amber-500/30 px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-50">
+            className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-50">
             {seeding ? <RefreshCw size={14} className="animate-spin" /> : <Database size={14} />}
             {seeding ? "Seeding…" : "Seed Defaults"}
           </button>
@@ -797,7 +797,7 @@ export function EmailTab() {
                               Confirm
                             </button>
                             <button onClick={() => setDeleteConfirm(null)}
-                              className="text-xs border border-[#2a3a55] text-[#94a3b8] px-2 py-0.5 rounded transition-colors">
+                              className="text-xs bg-slate-700 hover:bg-slate-600 text-white px-2 py-0.5 rounded transition-colors">
                               Cancel
                             </button>
                           </div>

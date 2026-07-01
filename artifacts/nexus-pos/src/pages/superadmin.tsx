@@ -414,7 +414,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
 
                   <div className="flex gap-2 pt-1">
                     <button type="button" onClick={() => { setShowAddPayment(false); setAddPaymentError(""); }}
-                      className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2 rounded-lg text-sm transition-colors">
+                      className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg text-sm transition-colors">
                       Cancel
                     </button>
                     <button type="submit" disabled={addingPayment}
@@ -425,7 +425,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
                 </form>
               ) : (
                 <button onClick={() => setShowAddPayment(true)}
-                  className="w-full flex items-center justify-center gap-2 border border-dashed border-[#3b82f6]/40 hover:border-[#3b82f6] text-[#3b82f6] hover:bg-[#3b82f6]/5 py-2.5 rounded-xl text-sm font-medium transition-colors">
+                  className="w-full flex items-center justify-center gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white py-2.5 rounded-xl text-sm font-medium transition-colors">
                   <Plus size={15} /> Record Offline Payment
                 </button>
               )}
@@ -483,7 +483,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
         {/* Footer */}
         {innerTab === "settings" && (
           <div className="flex gap-3 p-6 border-t border-[#2a3a55] shrink-0">
-            <button onClick={onClose} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Cancel</button>
+            <button onClick={onClose} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Cancel</button>
             <button onClick={handleSave} disabled={saving}
               className="flex-1 bg-[#3b82f6] hover:bg-blue-500 text-white py-2.5 rounded-lg transition-colors text-sm font-medium disabled:opacity-60">
               {saving ? "Saving…" : saved ? "Saved ✓" : "Save Changes"}
@@ -492,7 +492,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
         )}
         {innerTab === "payments" && (
           <div className="px-6 py-4 border-t border-[#2a3a55] shrink-0">
-            <button onClick={onClose} className="w-full border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Close</button>
+            <button onClick={onClose} className="w-full bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Close</button>
           </div>
         )}
       </div>
@@ -599,7 +599,7 @@ function CreateTenantModal({ plans, onClose, onCreated }: { plans: Plan[]; onClo
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Cancel</button>
+            <button type="button" onClick={onClose} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Cancel</button>
             <button type="submit" disabled={loading}
               className="flex-1 bg-[#3b82f6] hover:bg-blue-500 text-white py-2.5 rounded-lg transition-colors text-sm font-medium disabled:opacity-60">
               {loading ? "Creating…" : "Create Account"}
@@ -681,7 +681,7 @@ function BankAccountForm({ account, onSave, onCancel }: { account?: BankAccount;
         </div>
       )}
       <div className="col-span-2 flex gap-3">
-        <button type="button" onClick={onCancel} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2 rounded-lg text-sm transition-colors">Cancel</button>
+        <button type="button" onClick={onCancel} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg text-sm transition-colors">Cancel</button>
         <button type="button" disabled={saving} onClick={async () => {
           if ((form.accountHolder ?? "").trim().length < 2) { setFormError("Account Holder is required (min 2 characters)."); return; }
           if ((form.bankName ?? "").trim().length < 2) { setFormError("Bank Name is required (min 2 characters)."); return; }
@@ -772,7 +772,7 @@ function ProofModal({ proof, onClose, onReview }: { proof: TransferProofRow; onC
               {done && <div className="bg-green-500/10 border border-green-500/30 rounded-lg px-4 py-3 text-green-400 text-sm text-center">Done! Subscription updated.</div>}
               <div className="flex gap-3">
                 <button onClick={() => review("rejected")} disabled={loading}
-                  className="flex-1 border border-red-500/30 text-red-400 hover:bg-red-500/10 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
+                  className="flex-1 bg-red-600 hover:bg-red-500 text-white py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
                   Reject
                 </button>
                 <button onClick={() => review("approved")} disabled={loading}
@@ -861,7 +861,7 @@ function ResetPasswordModal({ user, onClose }: { user: UserRow; onClose: () => v
                 {error && <p className="text-sm text-red-400 flex items-center gap-1.5"><AlertTriangle size={13} />{error}</p>}
               </div>
               <div className="flex gap-3 mt-5">
-                <button onClick={onClose} className="flex-1 border border-[#2a3a55] text-[#94a3b8] hover:text-white py-2.5 rounded-lg text-sm font-medium transition-colors">Cancel</button>
+                <button onClick={onClose} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg text-sm font-medium transition-colors">Cancel</button>
                 <button onClick={handleReset} disabled={loading || !newPassword}
                   className="flex-1 bg-amber-500 hover:bg-amber-400 text-white py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
                   {loading ? "Resetting…" : "Reset Password"}
@@ -1015,7 +1015,7 @@ function PlanFormModal({
                 const on = form.modules.includes(m.key);
                 return (
                   <button key={m.key} type="button" onClick={() => toggleModule(m.key)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors ${on ? "border-[#3b82f6] bg-[#3b82f6]/10 text-[#3b82f6]" : "border-[#2a3a55] text-[#475569] hover:border-[#3b82f6]/50"}`}>
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors ${on ? "border-[#3b82f6] bg-[#3b82f6] text-white" : "border-[#2a3a55] text-[#475569] hover:border-[#3b82f6]/50"}`}>
                     {on ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
                     {m.label}
                   </button>
@@ -1058,7 +1058,7 @@ function PlanFormModal({
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
-              className="flex-1 px-4 py-2 border border-[#2a3a55] text-[#94a3b8] rounded-lg text-sm hover:border-[#3b82f6] hover:text-white transition-colors">
+              className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors">
               Cancel
             </button>
             <button type="submit" disabled={saving}
@@ -1413,7 +1413,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
                             }
                           }}
                           title="Login as this user"
-                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#3b82f6]/10 border border-[#3b82f6]/30 hover:bg-[#3b82f6] text-[#3b82f6] hover:text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#3b82f6] hover:bg-[#2563eb] text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
                           {impersonating === u.id ? <RefreshCw size={12} className="animate-spin" /> : <LogIn size={12} />}
                           Login As
                         </button>

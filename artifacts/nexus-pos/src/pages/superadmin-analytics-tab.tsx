@@ -315,7 +315,7 @@ function AlertsCenter({ onSelectTenant }: { onSelectTenant: (tenantId: number) =
             <button key={t.key} onClick={() => setStatusFilter(t.key)}
               className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                 statusFilter === t.key
-                  ? "bg-[#3b82f6]/15 border-[#3b82f6]/50 text-white"
+                  ? "bg-[#3b82f6] border-transparent text-white"
                   : "bg-[#1a2332] border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/40"
               }`}>
               {t.label}{t.count != null ? ` (${t.count})` : ""}
@@ -394,17 +394,17 @@ function AlertsCenter({ onSelectTenant }: { onSelectTenant: (tenantId: number) =
                 {a.status === "open" ? (
                   <>
                     <button onClick={() => setStatus(a, "resolved")} disabled={busyId === a.id}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">
                       <CheckCircle2 className="w-3.5 h-3.5" /> Resolve
                     </button>
                     <button onClick={() => setStatus(a, "dismissed")} disabled={busyId === a.id}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-slate-500/10 border border-slate-500/30 text-slate-300 hover:bg-slate-500/20 disabled:opacity-50">
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-slate-600 hover:bg-slate-500 text-white disabled:opacity-50">
                       <XCircle className="w-3.5 h-3.5" /> Dismiss
                     </button>
                   </>
                 ) : (
                   <button onClick={() => setStatus(a, "open")} disabled={busyId === a.id}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-[#1a2332] border border-[#2a3a55] text-[#cbd5e1] hover:border-[#3b82f6]/50 disabled:opacity-50">
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
                     <RotateCcw className="w-3.5 h-3.5" /> Reopen
                   </button>
                 )}
@@ -494,11 +494,11 @@ export function SuperadminAnalyticsTab() {
           {view === "dashboard" && (
             <>
               <button onClick={runSnapshots} disabled={running}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a2332] border border-[#2a3a55] hover:border-[#3b82f6]/50 text-sm text-[#cbd5e1] disabled:opacity-50">
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm disabled:opacity-50">
                 <Database className={`w-4 h-4 ${running ? "animate-pulse" : ""}`} /> {running ? "Saving…" : "Save Snapshot"}
               </button>
               <button onClick={() => void loadAll()}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a2332] border border-[#2a3a55] hover:border-[#3b82f6]/50 text-sm text-[#cbd5e1]">
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm">
                 <RefreshCw className="w-4 h-4" /> Refresh
               </button>
             </>
@@ -510,7 +510,7 @@ export function SuperadminAnalyticsTab() {
         <button onClick={() => setView("dashboard")}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
             view === "dashboard"
-              ? "bg-[#3b82f6]/15 border-[#3b82f6]/50 text-white"
+              ? "bg-[#3b82f6] border-transparent text-white"
               : "bg-[#1a2332] border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/40"
           }`}>
           <BarChart3 className="w-4 h-4" /> Dashboard
@@ -518,7 +518,7 @@ export function SuperadminAnalyticsTab() {
         <button onClick={() => setView("alerts")}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
             view === "alerts"
-              ? "bg-[#3b82f6]/15 border-[#3b82f6]/50 text-white"
+              ? "bg-[#3b82f6] border-transparent text-white"
               : "bg-[#1a2332] border-[#2a3a55] text-[#94a3b8] hover:border-[#3b82f6]/40"
           }`}>
           <Bell className="w-4 h-4" /> Alerts Center

@@ -489,7 +489,7 @@ export function SuperadminMarketingTab() {
                       showToast("err", "Could not copy — select and copy manually");
                     }
                   }}
-                  className="bg-[#0f1729] border border-[#3b82f6]/40 text-[#3b82f6] hover:bg-[#3b82f6]/10 px-3 py-2 rounded-md text-xs font-medium flex items-center gap-1.5"
+                  className="bg-[#3b82f6] hover:bg-[#2563eb] text-white px-3 py-2 rounded-md text-xs font-medium flex items-center gap-1.5"
                 >
                   <Copy className="h-3.5 w-3.5" />
                   Copy
@@ -519,7 +519,7 @@ export function SuperadminMarketingTab() {
             <div className="flex flex-wrap gap-2">
               {STARTER_TEMPLATES.map(t => (
                 <button key={t.name} onClick={() => applyTemplate(t)}
-                  className="text-xs px-3 py-1.5 rounded-md bg-[#0f1729] border border-[#2a3a55] text-[#cbd5e1] hover:bg-[#3b82f6]/10 hover:border-[#3b82f6]/40 hover:text-white transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-white transition-colors">
                   {t.name}
                 </button>
               ))}
@@ -569,7 +569,7 @@ export function SuperadminMarketingTab() {
               <input value={testTo} onChange={e => setTestTo(e.target.value)} placeholder="your@email.com"
                 className="flex-1 bg-[#0f1729] border border-[#2a3a55] rounded-md px-3 py-2 text-sm text-white placeholder:text-[#475569] focus:border-[#3b82f6] focus:outline-none" />
               <button onClick={handleSendTest} disabled={testing || !status?.configured}
-                className="bg-[#0f1729] border border-[#3b82f6]/40 text-[#3b82f6] hover:bg-[#3b82f6]/10 px-4 py-2 rounded-md text-sm font-medium flex items-center gap-1.5 disabled:opacity-40">
+                className="bg-[#3b82f6] hover:bg-[#2563eb] text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-1.5 disabled:opacity-40">
                 {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                 Test
               </button>
@@ -589,12 +589,12 @@ export function SuperadminMarketingTab() {
               <button key={opt.value} onClick={() => setAudience(opt.value)}
                 className={`w-full text-left p-3 rounded-lg border transition-colors ${
                   audience === opt.value
-                    ? "bg-[#3b82f6]/10 border-[#3b82f6] text-white"
+                    ? "bg-[#3b82f6] border-[#3b82f6] text-white"
                     : "bg-[#0f1729] border-[#2a3a55] text-[#cbd5e1] hover:border-[#3b82f6]/40"
                 }`}>
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-sm">{opt.label}</span>
-                  {audience === opt.value && <CheckCircle2 className="h-4 w-4 text-[#3b82f6]" />}
+                  {audience === opt.value && <CheckCircle2 className="h-4 w-4 text-white" />}
                 </div>
                 <p className="text-xs text-[#94a3b8] mt-0.5">{opt.description}</p>
               </button>
@@ -670,7 +670,7 @@ export function SuperadminMarketingTab() {
                 setUnsubscribesExporting(false);
               }}
               disabled={unsubscribesExporting}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#0f1729] border border-[#2a3a55] hover:border-[#3b82f6] text-xs text-white disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-white text-xs disabled:opacity-50"
               title="Export full opt-out list as CSV"
             >
               {unsubscribesExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}

@@ -359,7 +359,7 @@ function ProductModal({
             className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] text-white font-semibold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50">
             {saving ? "Saving…" : product ? "Save Changes" : "Create Product"}
           </button>
-          <button onClick={onClose} className="px-4 py-2.5 rounded-xl border border-[#2a3a55] text-[#94a3b8] hover:text-white text-sm transition-colors">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-sm transition-colors">Cancel</button>
         </div>
       </div>
     </div>
@@ -433,7 +433,7 @@ function StockAdjustModal({ product, onClose, onDone }: { product: Product; onCl
             className="flex-1 bg-[#3b82f6] hover:bg-[#2563eb] text-white font-semibold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50">
             {saving ? "Saving…" : "Apply Adjustment"}
           </button>
-          <button onClick={onClose} className="px-4 py-2.5 rounded-xl border border-[#2a3a55] text-[#94a3b8] hover:text-white text-sm transition-colors">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-sm transition-colors">Cancel</button>
         </div>
       </div>
     </div>
@@ -530,7 +530,7 @@ function ProductsSection({ suppliers }: { suppliers: Supplier[] }) {
           <option value="low">Low Stock</option>
           <option value="out">Out of Stock</option>
         </select>
-        <button onClick={load} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#1a2332] border border-[#2a3a55] text-[#94a3b8] text-xs hover:text-white hover:border-[#3b82f6] transition-colors">
+        <button onClick={load} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs transition-colors">
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
         </button>
         <button onClick={() => setEditModal("new")}
@@ -815,7 +815,7 @@ function OrdersSection() {
           <option value="all">All Payments</option>
           {PAYMENT_STATUSES.map(s => <option key={s} value={s} className="capitalize">{s}</option>)}
         </select>
-        <button onClick={load} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#1a2332] border border-[#2a3a55] text-[#94a3b8] text-xs hover:text-white transition-colors">
+        <button onClick={load} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs transition-colors">
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
         </button>
       </div>
@@ -1010,7 +1010,7 @@ function SuppliersSection({ onSuppliersChange }: { onSuppliersChange: (suppliers
               className="px-4 py-2 rounded-lg bg-[#3b82f6] text-white text-sm font-semibold disabled:opacity-50 hover:bg-[#2563eb] transition-colors">
               {saving ? "Saving…" : "Save Supplier"}
             </button>
-            <button onClick={() => setEditId(null)} className="px-4 py-2 rounded-lg border border-[#2a3a55] text-[#94a3b8] hover:text-white text-sm transition-colors">Cancel</button>
+            <button onClick={() => setEditId(null)} className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm transition-colors">Cancel</button>
           </div>
         </div>
       )}
