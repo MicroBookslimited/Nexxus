@@ -1212,23 +1212,25 @@ function PrintLabelDialog({ product, onClose, businessName }: { product: LabelPr
 
 /* ─── Import Products Dialog ─── */
 const IMPORT_FIELDS = [
-  { key: "name",        label: "Product Name",          required: true  },
-  { key: "price",       label: "Price",                 required: true  },
-  { key: "category",    label: "Category",              required: false },
-  { key: "description", label: "Description",           required: false },
-  { key: "barcode",     label: "Barcode",               required: false },
-  { key: "sku",         label: "SKU",                   required: false },
-  { key: "brand",       label: "Brand",                 required: false },
-  { key: "stockCount",  label: "Stock Quantity",        required: false },
-  { key: "inStock",     label: "In Stock (yes/no/1/0)", required: false },
-  { key: "sellingUnit", label: "Unit of Measure (each/case/...)", required: false },
+  { key: "name",        label: "Product Name",                   required: true  },
+  { key: "price",       label: "Selling Price",                  required: true  },
+  { key: "costPrice",   label: "Cost / Purchase Price",          required: false },
+  { key: "category",    label: "Category",                       required: false },
+  { key: "description", label: "Description",                    required: false },
+  { key: "barcode",     label: "Barcode",                        required: false },
+  { key: "sku",         label: "SKU",                            required: false },
+  { key: "brand",       label: "Brand",                          required: false },
+  { key: "stockCount",  label: "Stock Quantity",                 required: false },
+  { key: "inStock",     label: "In Stock (yes/no/1/0)",          required: false },
+  { key: "sellingUnit", label: "Unit of Measure (each/case/...)",required: false },
+  { key: "imageUrl",    label: "Image URL",                      required: false },
 ];
 
 const TEMPLATE_ROWS = [
-  ["Name", "Price", "Category", "Description", "Barcode", "SKU", "Brand", "Stock Quantity", "In Stock", "Unit of Measure", "Size"],
-  ["Jerk Chicken",  "850.00", "Food",       "Seasoned jerk chicken",   "1234567890123", "JC001", "Island Grill", "50",  "yes", "each", "Large"],
-  ["Ting Soda",     "120.00", "Beverages",  "Grapefruit flavour soda", "1234567890124", "TS001", "D&G",          "100", "yes", "case", "500ml"],
-  ["Rum Cake Slice","350.00", "Bakery",     "Moist spiced rum cake",   "1234567890125", "RC001", "",             "30",  "yes", "each", "12 inch"],
+  ["Name", "Selling Price", "Cost / Purchase Price", "Category", "Description", "Barcode", "SKU", "Brand", "Stock Quantity", "In Stock", "Unit of Measure", "Size"],
+  ["Jerk Chicken",   "850.00", "450.00", "Food",       "Seasoned jerk chicken",   "1234567890123", "JC001", "Island Grill", "50",  "yes", "each", "Large"],
+  ["Ting Soda",      "120.00", "60.00",  "Beverages",  "Grapefruit flavour soda", "1234567890124", "TS001", "D&G",          "100", "yes", "case", "500ml"],
+  ["Rum Cake Slice", "350.00", "180.00", "Bakery",     "Moist spiced rum cake",   "1234567890125", "RC001", "",             "30",  "yes", "each", "12 inch"],
 ];
 
 /**
@@ -1322,7 +1324,8 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         const l = h.toLowerCase().replace(/\s*\[[^\]]*\]\s*$/, "").trim();
         // ── Loyverse / NEXUS exact-header matches ──
         if      (l === "name")                                          auto[h] = "name";
-        else if (l === "default price" || l === "price")                auto[h] = "price";
+        else if (l === "default price" || l === "price" || l === "selling price" || l === "sale price") auto[h] = "price";
+        else if (l === "cost" || l === "cost price" || l === "cost / purchase price" || l === "purchase price" || l === "purchase cost" || l === "buying price" || l === "buy price") auto[h] = "costPrice";
         else if (l === "category")                                      auto[h] = "category";
         else if (l === "description")                                   auto[h] = "description";
         else if (l === "barcode")                                       auto[h] = "barcode";
@@ -1339,8 +1342,11 @@ function ImportProductsDialog({ open, onClose, onImported }: {
         else if (l === "upc")                                           auto[h] = "barcode";      // QBPOS barcode
         else if (l === "item number" || l === "item #" || l === "item no" || l === "alternate lookup") auto[h] = "sku"; // QBPOS sku/lookup
         else if (l === "on hand quantity" || l === "on hand qty" || l === "qty on hand" || l === "on hand") auto[h] = "stockCount"; // QBPOS stock
-        // ── Generic fuzzy fallbacks (skip Loyverse "Cost" column) ──
+        else if (l === "average unit cost" || l === "unit cost")        auto[h] = "costPrice";    // QBPOS cost
+        else if (l === "image url" || l === "image" || l === "photo url" || l === "photo") auto[h] = "imageUrl";
+        // ── Generic fuzzy fallbacks ──
         else if (/name|product/i.test(l))                               auto[h] = "name";
+        else if (/\bcost\b|purchase.?price|buy.?price/i.test(l) && !/sell|sale/i.test(l)) auto[h] = "costPrice";
         else if (/price|amount/i.test(l) && !/cost/i.test(l))           auto[h] = "price";
         else if (/categ/i.test(l))                                      auto[h] = "category";
         else if (/desc/i.test(l))                                       auto[h] = "description";
@@ -1389,10 +1395,27 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       const inStockRaw = (d.inStock ?? "yes").toLowerCase().trim();
       const inStock    = ["yes", "y", "true", "1"].includes(inStockRaw);
       const category   = d.category?.trim() || "General";
+      const costPriceStr = d.costPrice?.replace(/[^0-9.-]/g, "");
+      const costPrice = costPriceStr ? parseFloat(costPriceStr) : undefined;
       try {
         await new Promise<void>((resolve, reject) => {
-          createProduct.mutate({ data: { name: d.name.trim(), price, category, description: d.description?.trim() || undefined, barcode: d.barcode?.trim() || undefined, sku: d.sku?.trim() || undefined, brand: d.brand?.trim() || undefined, size: d.size?.trim() || undefined, stockCount, inStock: stockCount > 0 ? inStock : false, sellingUnit: d.sellingUnit?.trim() || undefined } },
-            { onSuccess: () => resolve(), onError: (e) => reject(e) });
+          createProduct.mutate({
+            data: {
+              name: d.name.trim(),
+              price,
+              category,
+              description: d.description?.trim() || undefined,
+              barcode: d.barcode?.trim() || undefined,
+              sku: d.sku?.trim() || undefined,
+              brand: d.brand?.trim() || undefined,
+              size: d.size?.trim() || undefined,
+              stockCount,
+              inStock: stockCount > 0 ? inStock : false,
+              sellingUnit: d.sellingUnit?.trim() || undefined,
+              costPrice: costPrice !== undefined && !isNaN(costPrice) && costPrice >= 0 ? costPrice : undefined,
+              imageUrl: d.imageUrl?.trim() || undefined,
+            },
+          }, { onSuccess: () => resolve(), onError: (e) => reject(e) });
         });
         out.push({ row: i + 2, name: d.name, status: "ok" });
       } catch { out.push({ row: i + 2, name: d.name, status: "error", error: "Server error" }); }
@@ -1644,14 +1667,17 @@ function ImportProductsDialog({ open, onClose, onImported }: {
 
 // Fixed MBPOS column indices (0-based)
 const MBPOS_COL = {
-  name:        0,   // Product Name
-  category:    3,   // Category
-  sku:         5,   // SKU
-  manageStock: 7,   // Manage Stock (1/0)
-  sellingPrice: 20, // Selling Price
-  openingStock: 21, // Opening Stock
-  imageUrl:    29,  // Image
-  description: 30,  // Product Description
+  name:          0,   // Product Name
+  brand:         1,   // Brand
+  unit:          2,   // Unit (selling unit / UOM)
+  category:      3,   // Category
+  sku:           5,   // SKU
+  manageStock:   7,   // Manage Stock (1/0)
+  purchasePrice: 18,  // Purchase Price (Excluding Tax)
+  sellingPrice:  20,  // Selling Price
+  openingStock:  21,  // Opening Stock
+  imageUrl:      29,  // Image
+  description:   30,  // Product Description
 } as const;
 
 const MBPOS_TEMPLATE_HEADERS = [
@@ -1746,7 +1772,10 @@ type MBPOSPreviewRow = {
   name: string;
   category: string;
   sku: string;
+  brand: string;
+  sellingUnit: string;
   price: number | null;
+  costPrice: number | null;
   stockCount: number;
   inStock: boolean;
   imageUrl: string;
@@ -1762,8 +1791,11 @@ function parseMBPOSRow(raw: (string | number | boolean | null | undefined)[], ro
   const name        = get(MBPOS_COL.name);
   const category    = get(MBPOS_COL.category) || "General";
   const sku         = get(MBPOS_COL.sku);
+  const brand       = get(MBPOS_COL.brand);
+  const sellingUnit = get(MBPOS_COL.unit);
   const manageStock = get(MBPOS_COL.manageStock);
   const priceStr    = get(MBPOS_COL.sellingPrice);
+  const costStr     = get(MBPOS_COL.purchasePrice);
   const stockStr    = get(MBPOS_COL.openingStock);
   const imageUrl    = get(MBPOS_COL.imageUrl);
   const description = get(MBPOS_COL.description);
@@ -1776,12 +1808,16 @@ function parseMBPOSRow(raw: (string | number | boolean | null | undefined)[], ro
     else errors.push("Selling Price must be a valid number");
   }
 
+  const costPriceRaw = costStr ? parseFloat(costStr.replace(/[^0-9.-]/g, "")) : NaN;
+  const costPrice = !isNaN(costPriceRaw) && costPriceRaw >= 0 ? costPriceRaw : null;
+
   const stockCount = parseInt(stockStr) || 0;
   const inStock = manageStock === "1" ? stockCount > 0 : true;
 
   return {
-    rowNum, name, category, sku,
+    rowNum, name, category, sku, brand, sellingUnit,
     price: isNaN(price) ? null : price,
+    costPrice,
     stockCount, inStock,
     imageUrl: imageUrl.startsWith("http") ? imageUrl : "",
     description,
@@ -1865,9 +1901,12 @@ function MBPOSImportDialog({ open, onClose, onImported }: {
               category: r.category,
               description: r.description || undefined,
               barcode: r.sku || undefined,
+              brand: r.brand || undefined,
+              sellingUnit: r.sellingUnit || undefined,
               stockCount: r.stockCount,
               inStock: r.inStock,
               imageUrl: r.imageUrl || undefined,
+              costPrice: r.costPrice !== null ? r.costPrice : undefined,
             },
           }, { onSuccess: () => resolve(), onError: (e) => reject(e) });
         });
@@ -1891,14 +1930,17 @@ function MBPOSImportDialog({ open, onClose, onImported }: {
   };
 
   const MAPPED_FIELDS = [
-    { col: "1 — Product Name",        maps: "Name",             required: true  },
-    { col: "4 — Category",            maps: "Category",         required: false },
-    { col: "6 — SKU",                 maps: "Barcode / SKU",    required: false },
-    { col: "8 — Manage Stock (1/0)",  maps: "In Stock",         required: false },
-    { col: "21 — Selling Price",      maps: "Price",            required: true  },
-    { col: "22 — Opening Stock",      maps: "Opening Stock",    required: false },
-    { col: "30 — Image (URL)",        maps: "Image URL",        required: false },
-    { col: "31 — Product Description",maps: "Description",      required: false },
+    { col: "1 — Product Name",                 maps: "Name",             required: true  },
+    { col: "2 — Brand",                        maps: "Brand",            required: false },
+    { col: "3 — Unit",                         maps: "Unit of Measure",  required: false },
+    { col: "4 — Category",                     maps: "Category",         required: false },
+    { col: "6 — SKU",                          maps: "Barcode / SKU",    required: false },
+    { col: "8 — Manage Stock (1/0)",           maps: "In Stock",         required: false },
+    { col: "19 — Purchase Price (Excl. Tax)",  maps: "Cost Price",       required: false },
+    { col: "21 — Selling Price",               maps: "Selling Price",    required: true  },
+    { col: "22 — Opening Stock",               maps: "Stock Quantity",   required: false },
+    { col: "30 — Image (URL)",                 maps: "Image URL",        required: false },
+    { col: "31 — Product Description",         maps: "Description",      required: false },
   ];
 
   return (
