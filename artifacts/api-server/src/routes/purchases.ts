@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { and, eq, desc } from "drizzle-orm";
-import { db, purchasesTable, productsTable, stockMovementsTable, productPurchaseUnitsTable } from "@workspace/db";
+import { and, eq, desc, sql } from "drizzle-orm";
+import { db, purchasesTable, productsTable, stockMovementsTable, productPurchaseUnitsTable, locationInventoryTable, locationsTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { convertToBaseUnit } from "../lib/pricing";
@@ -122,6 +122,29 @@ router.post("/purchases", async (req, res): Promise<void> => {
     .update(productsTable)
     .set({ stockCount: newStockCount, inStock: newStockCount > 0 })
     .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+
+  // If this tenant uses location-based inventory, also increment the dominant
+  // location's row so the product list (which prefers location sums over the
+  // global stockCount) reflects the received goods immediately.
+  const [primaryLocInv] = await db
+    .select({ id: locationInventoryTable.id })
+    .from(locationInventoryTable)
+    .innerJoin(locationsTable, eq(locationsTable.id, locationInventoryTable.locationId))
+    .where(and(
+      eq(locationsTable.tenantId, tenantId),
+      eq(locationInventoryTable.productId, productId),
+    ))
+    .orderBy(desc(locationInventoryTable.stockCount))
+    .limit(1);
+  if (primaryLocInv) {
+    await db
+      .update(locationInventoryTable)
+      .set({
+        stockCount: sql`${locationInventoryTable.stockCount} + ${baseQtyRounded}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(locationInventoryTable.id, primaryLocInv.id));
+  }
 
   await db.insert(stockMovementsTable).values({
     tenantId,
