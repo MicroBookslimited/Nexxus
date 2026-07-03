@@ -3,6 +3,8 @@ import { useLocation } from "wouter";
 import nexxusLogoUrl from "@assets/EB8B578F-2602-4DD8-AB97-D02AF59C49D3_1775943434994.png";
 import {
   useListProducts,
+  useCreateProduct,
+  getListProductsQueryKey,
   useCreateOrder,
   useListCustomers,
   useCreateCustomer,
@@ -57,6 +59,7 @@ import {
   ChevronUp,
   PauseCircle,
   PlayCircle,
+  PackagePlus,
 } from "lucide-react";
 import { buildReceiptHtml, receiptOrderFrom } from "@/lib/receipt";
 import { CardTypeDialog, type CardType } from "@/components/card-type-dialog";
@@ -131,7 +134,7 @@ export function PosSupermarket({
   // suggestion dropdown has room to open freely.
   const nameSearch = enableNameSearch || retailLayout;
   const [, navigate] = useLocation();
-  const { staff: sessionStaff, setStaff, clearStaff } = useStaff();
+  const { staff: sessionStaff, setStaff, clearStaff, can } = useStaff();
   const [locked, setLocked] = useState(() => !sessionStaff);
 
   const { data: settings } = useGetSettings();
@@ -388,6 +391,101 @@ export function PosSupermarket({
     setLocked(false);
   };
 
+  /* ── Quick-add product (inline, no leaving the lane) ────────────────────────
+     Lets the cashier create a not-yet-catalogued product and drop it straight
+     into the cart. Staff without the "manage products" privilege must clear a
+     manager-PIN override first. */
+  const createProduct = useCreateProduct();
+  const canAddProduct = can("inventory.manage");
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddAuthOpen, setQuickAddAuthOpen] = useState(false);
+  const [quickAddForm, setQuickAddForm] = useState({
+    name: "",
+    price: "",
+    category: "",
+    barcode: "",
+    stockCount: "",
+    inStock: true,
+  });
+
+  const quickAddCategories = useMemo(
+    () => Array.from(new Set(productList.map((p) => p.category).filter(Boolean))).sort(),
+    [productList],
+  );
+
+  const resetQuickAddForm = () =>
+    setQuickAddForm({ name: "", price: "", category: "", barcode: "", stockCount: "", inStock: true });
+
+  // Open the dialog pre-filled from the scan/search box: a purely-numeric code
+  // is treated as a barcode, anything else seeds the product name.
+  const openQuickAdd = (prefill: string) => {
+    const code = prefill.trim();
+    const isNumeric = code.length > 0 && /^[0-9]+$/.test(code);
+    setQuickAddForm({
+      name: isNumeric ? "" : code,
+      price: "",
+      category: "",
+      barcode: isNumeric ? code : "",
+      stockCount: "",
+      inStock: true,
+    });
+    setSearchTerm("");
+    setQuickAddOpen(true);
+  };
+
+  const doCreateProduct = () => {
+    const price = parseFloat(quickAddForm.price);
+    const stockCount = quickAddForm.stockCount !== "" ? parseInt(quickAddForm.stockCount, 10) : undefined;
+    createProduct.mutate(
+      {
+        data: {
+          name: quickAddForm.name.trim(),
+          price,
+          category: quickAddForm.category.trim() || "General",
+          barcode: quickAddForm.barcode.trim() || undefined,
+          stockCount: stockCount ?? 0,
+          inStock: quickAddForm.inStock,
+        },
+      },
+      {
+        onSuccess: (created) => {
+          queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
+          setCart((prev) => [
+            ...prev,
+            {
+              cartKey: `${created.id}:${Date.now()}`,
+              productId: created.id,
+              productName: created.name,
+              barcode: created.barcode ?? null,
+              price: created.price,
+              quantity: 1,
+              isTaxable: created.isTaxable,
+            },
+          ]);
+          toast({ title: "Product added", description: `${created.name} added to the cart.` });
+          setQuickAddOpen(false);
+          resetQuickAddForm();
+          focusScanInput();
+        },
+        onError: () => toast({ title: "Failed to add product", variant: "destructive" }),
+      },
+    );
+  };
+
+  const handleQuickAddSubmit = () => {
+    const price = parseFloat(quickAddForm.price);
+    if (!quickAddForm.name.trim() || isNaN(price) || price < 0) {
+      toast({ title: "Please enter a valid name and price", variant: "destructive" });
+      return;
+    }
+    // Cashiers without the manage-products privilege need a manager override.
+    if (!canAddProduct) {
+      setQuickAddAuthOpen(true);
+      return;
+    }
+    doCreateProduct();
+  };
+
   /* ── Add / change cart lines ──────────────────────────────────────────── */
   const addToCart = (productId: number, qty: number) => {
     const p = productList.find((x) => x.id === productId);
@@ -602,6 +700,10 @@ export function PosSupermarket({
         return;
       }
       if (searchResults.length > 1) return;
+      // No matches at all — offer an inline quick-add for this code instead of
+      // sending the cashier off to the Products page.
+      openQuickAdd(code);
+      return;
     }
     toast({
       title: "No product found",
@@ -655,6 +757,21 @@ export function PosSupermarket({
               <span className="text-sm font-bold text-gray-900 shrink-0">{formatCurrency(p.price, baseCurrency)}</span>
             </button>
           ))}
+        </div>
+      )}
+      {nameSearch && searchTerm.trim().length > 0 && searchResults.length === 0 && (
+        <div className="absolute left-0 right-0 top-full z-50 mt-1.5 rounded-xl border border-emerald-500/40 bg-white shadow-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => openQuickAdd(searchTerm)}
+            className="w-full flex items-center gap-2.5 px-3 py-3 text-left hover:bg-emerald-50 transition"
+          >
+            <PackagePlus className="h-5 w-5 text-emerald-600 shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-gray-900 truncate">Add “{searchTerm.trim()}” as a new product</span>
+              <span className="block text-xs text-gray-500">Create it and add to the cart without leaving this screen</span>
+            </span>
+          </button>
         </div>
       )}
     </div>
@@ -1496,6 +1613,120 @@ export function PosSupermarket({
               setPendingSupermarketAction(null);
               if (action) executeSupermarketAction(action);
               toast({ title: "Override approved", description: `Authorized by ${staff.name}` });
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Quick-add product (inline, no leaving the lane) ─────────────── */}
+      <Dialog open={quickAddOpen} onOpenChange={(o) => { if (!o) { setQuickAddOpen(false); focusScanInput(); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PackagePlus className="h-5 w-5 text-emerald-500" />
+              Add Product
+            </DialogTitle>
+            <DialogDescription>
+              {canAddProduct
+                ? "Create a product and drop it straight into the cart. Add full details later from the Products page."
+                : "You don't have permission to add products — a manager PIN will be required to save."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="sm-qa-name">Product name <span className="text-destructive">*</span></Label>
+              <Input
+                id="sm-qa-name"
+                autoFocus
+                placeholder="e.g. Bottled Water"
+                value={quickAddForm.name}
+                onChange={(e) => setQuickAddForm((f) => ({ ...f, name: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); document.getElementById("sm-qa-price")?.focus(); } }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="sm-qa-price">Price ({baseCurrency}) <span className="text-destructive">*</span></Label>
+              <Input
+                id="sm-qa-price"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={quickAddForm.price}
+                onChange={(e) => setQuickAddForm((f) => ({ ...f, price: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); document.getElementById("sm-qa-category")?.focus(); } }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="sm-qa-category">Category</Label>
+              <Input
+                id="sm-qa-category"
+                placeholder="e.g. Beverages (or pick below)"
+                list="sm-qa-category-list"
+                value={quickAddForm.category}
+                onChange={(e) => setQuickAddForm((f) => ({ ...f, category: e.target.value }))}
+              />
+              <datalist id="sm-qa-category-list">
+                {quickAddCategories.map((c) => <option key={c} value={c} />)}
+              </datalist>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="sm-qa-barcode">Barcode</Label>
+                <Input
+                  id="sm-qa-barcode"
+                  placeholder="Scan or type…"
+                  value={quickAddForm.barcode}
+                  onChange={(e) => setQuickAddForm((f) => ({ ...f, barcode: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="sm-qa-stock">Qty in stock</Label>
+                <Input
+                  id="sm-qa-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="0"
+                  value={quickAddForm.stockCount}
+                  onChange={(e) => setQuickAddForm((f) => ({ ...f, stockCount: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleQuickAddSubmit(); }}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setQuickAddOpen(false); focusScanInput(); }}>Cancel</Button>
+            <Button
+              onClick={handleQuickAddSubmit}
+              disabled={createProduct.isPending || !quickAddForm.name.trim() || !quickAddForm.price}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white"
+            >
+              {createProduct.isPending ? "Adding…" : canAddProduct ? "Add to cart" : "Manager approve & add"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manager override for staff who lack the manage-products privilege. */}
+      <Dialog open={quickAddAuthOpen} onOpenChange={setQuickAddAuthOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-center gap-2">
+              <PackagePlus className="h-4 w-4" />
+              Manager Override Required
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground text-center -mt-2 mb-2">
+            A manager or supervisor PIN is required to add a new product.
+          </p>
+          <PinPad
+            title=""
+            requiredRoles={["manager", "admin", "supervisor"]}
+            onSuccess={(staff) => {
+              setQuickAddAuthOpen(false);
+              toast({ title: "Override approved", description: `Authorized by ${staff.name}` });
+              doCreateProduct();
             }}
           />
         </DialogContent>
