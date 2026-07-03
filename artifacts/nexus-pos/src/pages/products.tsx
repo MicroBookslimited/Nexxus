@@ -4272,7 +4272,7 @@ export function Products() {
       <div className="flex gap-3 flex-wrap items-center">
         <div className="relative flex-1 min-w-[160px] sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9 w-full" placeholder="Search by name, barcode or SKU…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <Input className="pl-9 w-full bg-white text-gray-900 placeholder:text-gray-400 border-gray-300" placeholder="Search by name, barcode or SKU…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
         <div className="flex gap-2 flex-wrap flex-1">
           <Button size="sm" variant={!categoryFilter ? "default" : "outline"} onClick={() => setCategoryFilter(null)}>All</Button>
