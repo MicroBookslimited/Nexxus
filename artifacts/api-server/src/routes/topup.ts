@@ -174,6 +174,32 @@ router.get("/topup/diagnostics", async (req, res): Promise<void> => {
   }
 });
 
+/* Public network diagnostic: reports this server's outbound IP (needed to
+   whitelist the server in the DingConnect dashboard) and, only when ?ding=1,
+   whether the configured key authenticates. Returns no secrets. */
+router.get("/topup/net-check", async (req, res): Promise<void> => {
+  let outboundIp: string | null = null;
+  try {
+    const r = await fetch("https://api.ipify.org?format=json");
+    const d = await r.json() as { ip?: string };
+    outboundIp = d.ip ?? null;
+  } catch { /* ignore */ }
+
+  let dingAuth: { ok: boolean; httpStatus?: number; error?: string | null } | null = null;
+  if (req.query.ding === "1" && getDingKey()) {
+    try {
+      const r = await dingFetch("/GetBalance");
+      const d = await r.json() as unknown;
+      const err = extractDingError(r.status, d);
+      dingAuth = { ok: !err, httpStatus: r.status, error: err };
+    } catch (e) {
+      dingAuth = { ok: false, error: String(e) };
+    }
+  }
+
+  res.json({ outboundIp, dingConfigured: !!getDingKey(), dingAuth });
+});
+
 /* ─── SEND TOP-UP ─── */
 
 router.post("/topup/send", async (req, res): Promise<void> => {
