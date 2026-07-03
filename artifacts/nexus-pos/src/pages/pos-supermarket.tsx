@@ -122,7 +122,7 @@ type CartLine = {
 /* Main component                                                             */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-export function PosSupermarket() {
+export function PosSupermarket({ enableNameSearch = false }: { enableNameSearch?: boolean } = {}) {
   const [, navigate] = useLocation();
   const { staff: sessionStaff, setStaff, clearStaff } = useStaff();
   const [locked, setLocked] = useState(() => !sessionStaff);
@@ -310,6 +310,23 @@ export function PosSupermarket() {
   }, [cart.length]);
 
   const productList = products ?? [];
+
+  // Item-name search results (only when the "with item name search" mode is on).
+  // Matches product name, SKU, or barcode by substring so a cashier can find a
+  // product without an exact scan. Capped so the dropdown stays fast/readable.
+  const searchResults = useMemo(() => {
+    if (!enableNameSearch) return [];
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return [];
+    return productList
+      .filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          (p.sku ?? "").toLowerCase().includes(q) ||
+          (p.barcode ?? "").toLowerCase().includes(q),
+      )
+      .slice(0, 8);
+  }, [enableNameSearch, searchTerm, productList]);
 
   /* ── Supermarket Mode gate (decrease / remove / clear when a cashier is on) ── */
   const isCashierUser = sessionStaff
@@ -540,6 +557,15 @@ export function PosSupermarket() {
     setQtyInput("");
   };
 
+  // Add a product (respecting the numeric quantity keypad) and reset the scan box.
+  const addFromSearch = (productId: number) => {
+    const qty = parseInt(qtyInput, 10);
+    addToCart(productId, Number.isFinite(qty) ? qty : 1);
+    setSearchTerm("");
+    setQtyInput("");
+    focusScanInput();
+  };
+
   /* ── Scanner: Enter on a code adds the matching product ───────────────── */
   const handleSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
@@ -549,12 +575,8 @@ export function PosSupermarket() {
     const matches = productList.filter(
       (p) => (p.barcode ?? "").toLowerCase() === norm || (p.sku ?? "").toLowerCase() === norm,
     );
-    if (matches.length === 0) {
-      toast({
-        title: "No product found",
-        description: `Nothing matches “${code}”.`,
-        variant: "destructive",
-      });
+    if (matches.length === 1) {
+      addFromSearch(matches[0]!.id);
       return;
     }
     if (matches.length > 1) {
@@ -565,10 +587,20 @@ export function PosSupermarket() {
       });
       return;
     }
-    const qty = parseInt(qtyInput, 10);
-    addToCart(matches[0]!.id, Number.isFinite(qty) ? qty : 1);
-    setSearchTerm("");
-    setQtyInput("");
+    // No exact barcode/SKU match. With item-name search on, add the single result
+    // outright, or leave the dropdown open for the cashier to pick from several.
+    if (enableNameSearch) {
+      if (searchResults.length === 1) {
+        addFromSearch(searchResults[0]!.id);
+        return;
+      }
+      if (searchResults.length > 1) return;
+    }
+    toast({
+      title: "No product found",
+      description: `Nothing matches “${code}”.`,
+      variant: "destructive",
+    });
   };
 
   /* ── Customer selection ────────────────────────────────────────────────── */
@@ -1139,9 +1171,11 @@ export function PosSupermarket() {
         {/* ── MIDDLE/RIGHT: scan + keypad + customer + payment ──────── */}
         <div className="w-[440px] shrink-0 flex flex-col bg-card border-l border-border min-h-0 overflow-y-auto">
           <div className="p-4 space-y-4">
-            {/* Scan box */}
+            {/* Scan / search box */}
             <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Scan or type SKU / barcode</Label>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                {enableNameSearch ? "Search by name, SKU, or barcode" : "Scan or type SKU / barcode"}
+              </Label>
               <div className="relative">
                 <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-cyan-500 pointer-events-none" />
                 <Input
@@ -1150,7 +1184,7 @@ export function PosSupermarket() {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyDown={handleSearchKey}
-                  placeholder="Scan a barcode…"
+                  placeholder={enableNameSearch ? "Search or scan a product…" : "Scan a barcode…"}
                   className="pl-11 pr-10 h-14 text-lg bg-white border-cyan-500/40 focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20 text-gray-900 placeholder:text-gray-400 rounded-xl"
                   autoComplete="off"
                 />
@@ -1163,6 +1197,24 @@ export function PosSupermarket() {
                   </button>
                 )}
               </div>
+              {enableNameSearch && searchResults.length > 0 && (
+                <div className="mt-1.5 rounded-xl border border-cyan-500/40 bg-white shadow-lg overflow-hidden divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                  {searchResults.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => addFromSearch(p.id)}
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-cyan-50 transition"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-gray-900 truncate">{p.name}</span>
+                        <span className="block text-xs text-gray-500 truncate">{p.barcode ?? p.sku ?? `#${p.id}`}</span>
+                      </span>
+                      <span className="text-sm font-bold text-gray-900 shrink-0">{formatCurrency(p.price, baseCurrency)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Price Check — lookup only, no sale / no stock change */}

@@ -66,6 +66,7 @@ export function AdminSettings() {
   const [supermarketMode, setSupermarketMode] = useState(false);
   const [hardwareUiMode, setHardwareUiMode] = useState(false);
   const [supermarketUiMode, setSupermarketUiMode] = useState(false);
+  const [supermarketSearchMode, setSupermarketSearchMode] = useState(false);
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
   const [showProductSize, setShowProductSize] = useState(false);
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
@@ -125,6 +126,7 @@ export function AdminSettings() {
     setSupermarketMode(settings.supermarket_mode === "true");
     setHardwareUiMode(settings.hardware_ui_mode === "true");
     setSupermarketUiMode(settings.supermarket_ui_mode === "true");
+    setSupermarketSearchMode(settings.supermarket_search_mode === "true");
     setKioskLockEnabled(settings.kiosk_lock_enabled === "true");
     setShowProductSize(settings.show_product_size === "true");
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
@@ -178,6 +180,7 @@ export function AdminSettings() {
           supermarket_mode: supermarketMode ? "true" : "false",
           hardware_ui_mode: hardwareUiMode ? "true" : "false",
           supermarket_ui_mode: supermarketUiMode ? "true" : "false",
+          supermarket_search_mode: supermarketSearchMode ? "true" : "false",
           kiosk_lock_enabled: kioskLockEnabled ? "true" : "false",
           show_product_size: showProductSize ? "true" : "false",
           stock_method: stockMethod,
@@ -1513,7 +1516,7 @@ export function AdminSettings() {
               onClick={() => {
                 const next = !hardwareUiMode;
                 setHardwareUiMode(next);
-                if (next) setSupermarketUiMode(false);
+                if (next) { setSupermarketUiMode(false); setSupermarketSearchMode(false); }
                 markDirty();
               }}
               className={cn(
@@ -1553,7 +1556,7 @@ export function AdminSettings() {
               onClick={() => {
                 const next = !supermarketUiMode;
                 setSupermarketUiMode(next);
-                if (next) setHardwareUiMode(false);
+                if (next) { setHardwareUiMode(false); setSupermarketSearchMode(false); }
                 markDirty();
               }}
               className={cn(
@@ -1574,6 +1577,47 @@ export function AdminSettings() {
                 <li>• /pos now opens the scan-only supermarket layout</li>
                 <li>• Items are added only by barcode scan — no product grid</li>
                 <li>• Large bill preview on the left; scan box + quantity keypad + checkout on the right</li>
+                <li>• Variant/modifier products fall back to the standard POS</li>
+                <li>• Disable this toggle to return to the standard POS layout</li>
+              </ul>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Supermarket Mode (with item name search)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Same high-speed supermarket layout, but the cashier can also find products by typing a product name — not just scanning. Search matches by barcode, product name, or SKU and shows a pick list to add from. Ideal for lanes that sell items without barcodes. Off by default.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={supermarketSearchMode}
+              onClick={() => {
+                const next = !supermarketSearchMode;
+                setSupermarketSearchMode(next);
+                if (next) { setHardwareUiMode(false); setSupermarketUiMode(false); }
+                markDirty();
+              }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                supermarketSearchMode ? "bg-cyan-500" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                supermarketSearchMode ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+          {supermarketSearchMode && (
+            <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/20 p-3 text-xs text-cyan-700 dark:text-cyan-400 space-y-1">
+              <p className="font-medium">Supermarket Mode (with item name search) is active</p>
+              <ul className="space-y-0.5 ml-2">
+                <li>• /pos opens the supermarket layout with a searchable scan box</li>
+                <li>• Search by barcode, product name, or SKU — results appear as a pick list</li>
+                <li>• Scanning still auto-adds on an exact barcode/SKU match</li>
                 <li>• Variant/modifier products fall back to the standard POS</li>
                 <li>• Disable this toggle to return to the standard POS layout</li>
               </ul>
