@@ -122,7 +122,14 @@ type CartLine = {
 /* Main component                                                             */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-export function PosSupermarket({ enableNameSearch = false }: { enableNameSearch?: boolean } = {}) {
+export function PosSupermarket({
+  enableNameSearch = false,
+  retailLayout = false,
+}: { enableNameSearch?: boolean; retailLayout?: boolean } = {}) {
+  // Retail Store Mode is the supermarket layout + item-name search, with the
+  // scan box moved into the wide left area (larger, centered) so the product
+  // suggestion dropdown has room to open freely.
+  const nameSearch = enableNameSearch || retailLayout;
   const [, navigate] = useLocation();
   const { staff: sessionStaff, setStaff, clearStaff } = useStaff();
   const [locked, setLocked] = useState(() => !sessionStaff);
@@ -315,7 +322,7 @@ export function PosSupermarket({ enableNameSearch = false }: { enableNameSearch?
   // Matches product name, SKU, or barcode by substring so a cashier can find a
   // product without an exact scan. Capped so the dropdown stays fast/readable.
   const searchResults = useMemo(() => {
-    if (!enableNameSearch) return [];
+    if (!nameSearch) return [];
     const q = searchTerm.trim().toLowerCase();
     if (!q) return [];
     return productList
@@ -326,7 +333,7 @@ export function PosSupermarket({ enableNameSearch = false }: { enableNameSearch?
           (p.barcode ?? "").toLowerCase().includes(q),
       )
       .slice(0, 8);
-  }, [enableNameSearch, searchTerm, productList]);
+  }, [nameSearch, searchTerm, productList]);
 
   /* ── Supermarket Mode gate (decrease / remove / clear when a cashier is on) ── */
   const isCashierUser = sessionStaff
@@ -589,7 +596,7 @@ export function PosSupermarket({ enableNameSearch = false }: { enableNameSearch?
     }
     // No exact barcode/SKU match. With item-name search on, add the single result
     // outright, or leave the dropdown open for the cashier to pick from several.
-    if (enableNameSearch) {
+    if (nameSearch) {
       if (searchResults.length === 1) {
         addFromSearch(searchResults[0]!.id);
         return;
@@ -602,6 +609,56 @@ export function PosSupermarket({ enableNameSearch = false }: { enableNameSearch?
       variant: "destructive",
     });
   };
+
+  // Shared scan / search box (with optional name-search dropdown). Rendered in
+  // ONE place at a time — the right panel (supermarket) or the wide left area
+  // (retail, `large`) — so `searchInputRef` stays unique.
+  const renderScanBox = (large = false) => (
+    <div className={large ? "w-full max-w-2xl" : ""}>
+      <Label className="text-xs text-muted-foreground mb-1.5 block">
+        {nameSearch ? "Search by name, SKU, or barcode" : "Scan or type SKU / barcode"}
+      </Label>
+      <div className="relative">
+        <ScanBarcode className={`absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500 pointer-events-none ${large ? "h-6 w-6" : "h-5 w-5"}`} />
+        <Input
+          ref={searchInputRef}
+          autoFocus
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          onKeyDown={handleSearchKey}
+          placeholder={nameSearch ? "Search or scan a product…" : "Scan a barcode…"}
+          className={`bg-white border-cyan-500/40 focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20 text-gray-900 placeholder:text-gray-400 rounded-xl ${large ? "pl-12 pr-11 h-16 text-xl" : "pl-11 pr-10 h-14 text-lg"}`}
+          autoComplete="off"
+        />
+        {searchTerm && (
+          <button
+            onClick={() => { setSearchTerm(""); searchInputRef.current?.focus(); }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {nameSearch && searchResults.length > 0 && (
+        <div className="mt-1.5 rounded-xl border border-cyan-500/40 bg-white shadow-lg overflow-hidden divide-y divide-gray-100 max-h-72 overflow-y-auto">
+          {searchResults.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => addFromSearch(p.id)}
+              className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-cyan-50 transition"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-gray-900 truncate">{p.name}</span>
+                <span className="block text-xs text-gray-500 truncate">{p.barcode ?? p.sku ?? `#${p.id}`}</span>
+              </span>
+              <span className="text-sm font-bold text-gray-900 shrink-0">{formatCurrency(p.price, baseCurrency)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   /* ── Customer selection ────────────────────────────────────────────────── */
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
@@ -1005,6 +1062,11 @@ export function PosSupermarket({ enableNameSearch = false }: { enableNameSearch?
       <div className="flex flex-1 min-h-0">
         {/* ── LEFT: bold bill preview ───────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+          {retailLayout && (
+            <div className="shrink-0 px-6 py-4 border-b border-border bg-muted/40 flex justify-center">
+              {renderScanBox(true)}
+            </div>
+          )}
           <div className="shrink-0 px-6 py-4 border-b border-border flex items-center justify-between bg-muted/40">
             <h2 className="text-lg font-extrabold text-foreground tracking-wide flex items-center gap-2">
               <ShoppingCart className="h-5 w-5 text-cyan-500" />
@@ -1171,51 +1233,8 @@ export function PosSupermarket({ enableNameSearch = false }: { enableNameSearch?
         {/* ── MIDDLE/RIGHT: scan + keypad + customer + payment ──────── */}
         <div className="w-[440px] shrink-0 flex flex-col bg-card border-l border-border min-h-0 overflow-y-auto">
           <div className="p-4 space-y-4">
-            {/* Scan / search box */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">
-                {enableNameSearch ? "Search by name, SKU, or barcode" : "Scan or type SKU / barcode"}
-              </Label>
-              <div className="relative">
-                <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-cyan-500 pointer-events-none" />
-                <Input
-                  ref={searchInputRef}
-                  autoFocus
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onKeyDown={handleSearchKey}
-                  placeholder={enableNameSearch ? "Search or scan a product…" : "Scan a barcode…"}
-                  className="pl-11 pr-10 h-14 text-lg bg-white border-cyan-500/40 focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20 text-gray-900 placeholder:text-gray-400 rounded-xl"
-                  autoComplete="off"
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => { setSearchTerm(""); searchInputRef.current?.focus(); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-              {enableNameSearch && searchResults.length > 0 && (
-                <div className="mt-1.5 rounded-xl border border-cyan-500/40 bg-white shadow-lg overflow-hidden divide-y divide-gray-100 max-h-72 overflow-y-auto">
-                  {searchResults.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => addFromSearch(p.id)}
-                      className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-cyan-50 transition"
-                    >
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium text-gray-900 truncate">{p.name}</span>
-                        <span className="block text-xs text-gray-500 truncate">{p.barcode ?? p.sku ?? `#${p.id}`}</span>
-                      </span>
-                      <span className="text-sm font-bold text-gray-900 shrink-0">{formatCurrency(p.price, baseCurrency)}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Scan / search box — hidden in retail (moved to the left area) */}
+            {!retailLayout && renderScanBox()}
 
             {/* Price Check — lookup only, no sale / no stock change */}
             <button

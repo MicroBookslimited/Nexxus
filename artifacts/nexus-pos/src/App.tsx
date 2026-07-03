@@ -164,6 +164,7 @@ function PosModeDispatcher() {
       </div>
     );
   }
+  if (settings?.retail_ui_mode === "true") return <PosSupermarket enableNameSearch retailLayout />;
   if (settings?.supermarket_search_mode === "true") return <PosSupermarket enableNameSearch />;
   if (settings?.supermarket_ui_mode === "true") return <PosSupermarket />;
   if (settings?.hardware_ui_mode === "true") return <PosHardware />;
