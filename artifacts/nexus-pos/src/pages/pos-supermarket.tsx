@@ -614,7 +614,7 @@ export function PosSupermarket({
   // ONE place at a time — the right panel (supermarket) or the wide left area
   // (retail, `large`) — so `searchInputRef` stays unique.
   const renderScanBox = (large = false) => (
-    <div className={large ? "w-full max-w-2xl" : ""}>
+    <div className={`relative ${large ? "w-full max-w-2xl" : ""}`}>
       <Label className="text-xs text-muted-foreground mb-1.5 block">
         {nameSearch ? "Search by name, SKU, or barcode" : "Scan or type SKU / barcode"}
       </Label>
@@ -640,7 +640,7 @@ export function PosSupermarket({
         )}
       </div>
       {nameSearch && searchResults.length > 0 && (
-        <div className="mt-1.5 rounded-xl border border-cyan-500/40 bg-white shadow-lg overflow-hidden divide-y divide-gray-100 max-h-72 overflow-y-auto">
+        <div className="absolute left-0 right-0 top-full z-50 mt-1.5 rounded-xl border border-cyan-500/40 bg-white shadow-xl overflow-hidden divide-y divide-gray-100 max-h-72 overflow-y-auto">
           {searchResults.map((p) => (
             <button
               key={p.id}
