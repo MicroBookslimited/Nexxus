@@ -72,7 +72,7 @@ async function debitWallet(tenantId: number, amount: number, description: string
   return newBalance;
 }
 
-async function creditWallet(tenantId: number, amount: number, description: string, referenceId?: string): Promise<number> {
+export async function creditWallet(tenantId: number, amount: number, description: string, referenceId?: string): Promise<number> {
   const wallet = await getOrCreateWallet(tenantId);
   const newBalance = wallet.balance + amount;
   await db.update(topupWalletsTable)
@@ -330,15 +330,13 @@ router.get("/topup/wallet/ledger", async (req, res): Promise<void> => {
   res.json(ledger);
 });
 
-router.post("/topup/wallet/fund", async (req, res): Promise<void> => {
-  if (!requireFullTenant(req as never, res as never)) return;
-  const tenantId = getTenantId(req as never);
-  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  const { amount, description } = req.body as { amount: number; description?: string };
-  if (!amount || amount <= 0) { res.status(400).json({ error: "Amount must be positive" }); return; }
-  const newBalance = await creditWallet(tenantId, amount, description ?? "Wallet top-up");
-  await logAudit({ tenantId, action: "topup.wallet.fund", entityType: "topup_wallet", entityId: tenantId, newValue: { amount, newBalance } });
-  res.json({ success: true, balance: newBalance });
+// DISABLED: this endpoint previously credited the wallet for free from a
+// client-supplied amount (any authenticated tenant could mint unlimited credit).
+// Real funding now goes through the paid flows in billing.ts
+// (/billing/topup-wallet/{paypal,powertranz}/…). A superadmin-approved manual
+// funding flow (bank transfer / cash) is planned for Phase 2.
+router.post("/topup/wallet/fund", (_req, res): void => {
+  res.status(403).json({ error: "Direct wallet funding is disabled. Use card or PayPal to add credit." });
 });
 
 

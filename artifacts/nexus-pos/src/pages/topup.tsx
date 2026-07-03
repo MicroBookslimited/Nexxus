@@ -16,6 +16,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import { FundWalletDialog } from "@/components/topup/fund-wallet-dialog";
 import { format } from "date-fns";
 
 /* ── Types ──────────────────────────────────────────────────────────── */
@@ -136,9 +137,6 @@ export function TopUp() {
 
   // Fund wallet dialog (admin)
   const [fundOpen, setFundOpen] = useState(false);
-  const [fundAmount, setFundAmount] = useState("");
-  const [fundDesc, setFundDesc] = useState("");
-  const [funding, setFunding] = useState(false);
 
   /* ── Load wallet + summary ── */
   const loadWallet = useCallback(async () => {
@@ -811,51 +809,14 @@ export function TopUp() {
       </Dialog>
 
       {/* ── Fund wallet dialog ── */}
-      <Dialog open={fundOpen} onOpenChange={setFundOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Wallet className="h-5 w-5 text-primary" />Fund Wallet
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Add credit to your top-up wallet. Contact your account manager to arrange a transfer.</p>
-            <div className="space-y-2">
-              <Label>Amount (JMD)</Label>
-              <Input type="number" placeholder="e.g. 10000" value={fundAmount} onChange={e => setFundAmount(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Description (optional)</Label>
-              <Input placeholder="e.g. Bank transfer ref #1234" value={fundDesc} onChange={e => setFundDesc(e.target.value)} />
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setFundOpen(false)}>Cancel</Button>
-            <Button
-              onClick={async () => {
-                if (!fundAmount || parseFloat(fundAmount) <= 0) return;
-                setFunding(true);
-                try {
-                  const r = await apiFetch<{ success: boolean; balance: number }>("/api/topup/wallet/fund", {
-                    method: "POST",
-                    body: JSON.stringify({ amount: parseFloat(fundAmount), description: fundDesc || "Manual wallet top-up" }),
-                  });
-                  if (wallet) setWallet({ ...wallet, balance: r.balance });
-                  toast({ title: "Wallet funded", description: `Balance: ${JMD(r.balance)}` });
-                  setFundOpen(false); setFundAmount(""); setFundDesc("");
-                } catch (err) {
-                  toast({ title: "Failed", description: err instanceof Error ? err.message : "Error", variant: "destructive" });
-                }
-                setFunding(false);
-              }}
-              disabled={funding || !fundAmount || parseFloat(fundAmount) <= 0}
-              className="gap-2"
-            >
-              {funding ? <><Loader2 className="h-4 w-4 animate-spin" />Adding…</> : "Add Funds"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FundWalletDialog
+        open={fundOpen}
+        onOpenChange={setFundOpen}
+        onFunded={(balance) => {
+          if (balance >= 0 && wallet) setWallet({ ...wallet, balance });
+          else void loadWallet();
+        }}
+      />
     </>
   );
 }

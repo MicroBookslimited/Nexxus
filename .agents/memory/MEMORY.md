@@ -43,4 +43,5 @@
 - [Multi-unit selling is client-side only](mobile-units-client-side.md) — POS unit selling (Case/Dozen) sends NO unit fields to the order API; cart holds base quantity, server charges base×qty; only quotations persist units.
 - [Super-admin analytics single-tenant reuse](superadmin-analytics-detail-query.md) — detail path reuses batched usage-list compute with an optional tenantId filter (no all-tenant scan); analytics JWT fail-fasts on missing SESSION_SECRET; activeToday = daysSinceActivity===0.
 - [Split-credit A/R dual path](split-credit-ar-dual-path.md) — split leftover→on-account; the credit-leg A/R insert + customer-required guard must exist in BOTH create AND charge order handlers.
+- [Top-up wallet funding](topup-wallet-funding.md) — wallet is JMD, gateways charge USD via configurable topup_jmd_per_usd; credit server-side, bind PayPal capture to the tenant/order that created it; pending3DS needs a kind discriminator.
 - [Wizard step state must be lifted](wizard-step-state-remount.md) — a multi-step wizard rendered as one of several sibling screens loses its step index on remount; lift step + branch flags to the parent, not the child's useState.

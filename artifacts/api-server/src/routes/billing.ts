@@ -4,6 +4,7 @@ import {
   bankAccountSettingsTable, bankTransferProofsTable,
 } from "@workspace/db";
 import { recordResellerCommission } from "./reseller";
+import { creditWallet as creditTopupWallet } from "./topup";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
@@ -51,6 +52,24 @@ function getTenantFromAuth(req: { headers: { authorization?: string } }) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) return null;
   return verifyTenantToken(auth.slice(7));
+}
+
+/* ─── Top-Up wallet funding helpers ───
+   The top-up wallet is denominated in JMD, but the payment gateways charge in
+   USD (matching the proven subscription config). The tenant enters the JMD
+   credit they want; we convert to a USD charge via a superadmin-configurable
+   rate and credit the wallet in JMD on success. */
+const TOPUP_MIN_JMD = 100;
+const TOPUP_MAX_JMD = 5_000_000;
+
+async function getTopupJmdPerUsd(): Promise<number> {
+  const raw = await getSetting("topup_jmd_per_usd", 0);
+  const n = Number(raw);
+  return n > 0 ? n : 158;
+}
+
+function jmdToUsd(jmd: number, rate: number): number {
+  return Math.round((jmd / rate) * 100) / 100;
 }
 
 /* ─── PayPal: Create Order ─── */
@@ -165,9 +184,11 @@ router.post("/billing/paypal/capture-order", async (req, res): Promise<void> => 
 
 /* ─── PowerTranz: Pending 3DS Store (in-memory, 10-min TTL) ─── */
 interface Pending3DS {
+  kind: "subscription" | "wallet";
   tenantId: number; planId: number; billingCycle: string; amount: number; planName: string;
   status: "pending" | "approved" | "declined";
   txId?: string; rrn?: string; message?: string;
+  fundJmd?: number;
 }
 const pending3DS = new Map<string, Pending3DS>();
 
@@ -283,6 +304,7 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
     // SP4 = 3DS flow initiated — return SpiToken + RedirectData to frontend
     if (isoCode === "SP4" && spiToken && data.RedirectData) {
       pending3DS.set(spiToken, {
+        kind: "subscription",
         tenantId: tenant.tenantId, planId: plan.id,
         billingCycle: parsed.data.billingCycle, amount: Number(amount),
         planName: plan.name, status: "pending",
@@ -328,14 +350,17 @@ router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> 
 
   // Final product-limit recheck BEFORE capturing the payment — the tenant may
   // have added products during the 3DS challenge. Abandoning here (not calling
-  // /api/spi/payment) means the card is never charged.
-  const [pendingPlan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, pending.planId));
-  if (pendingPlan) {
-    const limitErr = planProductLimitError(pendingPlan, await getActiveProductCount(pending.tenantId));
-    if (limitErr) {
-      pending3DS.set(spiToken, { ...pending, status: "declined", message: limitErr.error });
-      res.send(closeScript("declined", limitErr.error));
-      return;
+  // /api/spi/payment) means the card is never charged. (Subscription only —
+  // wallet funding is not gated by the product limit.)
+  if (pending.kind === "subscription") {
+    const [pendingPlan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, pending.planId));
+    if (pendingPlan) {
+      const limitErr = planProductLimitError(pendingPlan, await getActiveProductCount(pending.tenantId));
+      if (limitErr) {
+        pending3DS.set(spiToken, { ...pending, status: "declined", message: limitErr.error });
+        res.send(closeScript("declined", limitErr.error));
+        return;
+      }
     }
   }
 
@@ -344,12 +369,19 @@ router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> 
     const { data } = await callPowerTranz("/api/spi/payment", spiToken);
 
     if (data.Approved) {
-      await activateSubscription(pending.tenantId, pending.planId, pending.billingCycle, data.TransactionIdentifier as string);
-      await recordResellerCommission(pending.tenantId, pending.planId, pending.amount);
-      pending3DS.set(spiToken, { ...pending, status: "approved", txId: data.TransactionIdentifier as string, rrn: data.RrN as string });
-      setTimeout(() => pending3DS.delete(spiToken), 5 * 60 * 1000);
       const rrn = data.RrN ? ` · RRN: ${data.RrN}` : "";
-      res.send(closeScript("approved", `Payment approved!${rrn}`, `,planName:${JSON.stringify(pending.planName)}`));
+      if (pending.kind === "wallet") {
+        await creditTopupWallet(pending.tenantId, pending.fundJmd ?? 0, "Wallet funding (card)", data.TransactionIdentifier as string);
+        pending3DS.set(spiToken, { ...pending, status: "approved", txId: data.TransactionIdentifier as string, rrn: data.RrN as string });
+        setTimeout(() => pending3DS.delete(spiToken), 5 * 60 * 1000);
+        res.send(closeScript("approved", `Wallet funded!${rrn}`, `,fundJmd:${JSON.stringify(pending.fundJmd ?? 0)}`));
+      } else {
+        await activateSubscription(pending.tenantId, pending.planId, pending.billingCycle, data.TransactionIdentifier as string);
+        await recordResellerCommission(pending.tenantId, pending.planId, pending.amount);
+        pending3DS.set(spiToken, { ...pending, status: "approved", txId: data.TransactionIdentifier as string, rrn: data.RrN as string });
+        setTimeout(() => pending3DS.delete(spiToken), 5 * 60 * 1000);
+        res.send(closeScript("approved", `Payment approved!${rrn}`, `,planName:${JSON.stringify(pending.planName)}`));
+      }
     } else {
       const msg = (data.ResponseMessage as string) ?? "Payment was declined";
       pending3DS.set(spiToken, { ...pending, status: "declined", message: msg });
@@ -367,7 +399,200 @@ router.get("/billing/powertranz/3ds-status", (req, res) => {
   const spiToken = req.query.spiToken as string;
   const p = pending3DS.get(spiToken);
   if (!p) { res.json({ status: "not_found" }); return; }
-  res.json({ status: p.status, planName: p.planName, rrn: p.rrn, message: p.message });
+  res.json({ status: p.status, planName: p.planName, rrn: p.rrn, message: p.message, fundJmd: p.fundJmd });
+});
+
+/* ─── Top-Up Wallet Funding ─── */
+
+// FX rate so the frontend can show the tenant the USD they will be charged.
+router.get("/billing/topup-wallet/fx", async (req, res): Promise<void> => {
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const jmdPerUsd = await getTopupJmdPerUsd();
+  res.json({ jmdPerUsd, minJmd: TOPUP_MIN_JMD, maxJmd: TOPUP_MAX_JMD });
+});
+
+// Pending PayPal wallet-funding orders (in-memory, 30-min TTL). Binds each
+// order to the tenant that created it + the JMD credit that was quoted, so the
+// capture step credits the correct wallet by the quoted amount (immune to the
+// client swapping order IDs or the FX rate drifting between create and capture).
+interface PendingPayPalFund { tenantId: number; jmdAmount: number; }
+const pendingPayPalFunds = new Map<string, PendingPayPalFund>();
+
+const FundJmdBody = z.object({ jmdAmount: z.number().positive() });
+
+function validateFundJmd(jmdAmount: number): string | null {
+  if (!Number.isFinite(jmdAmount)) return "Invalid amount.";
+  if (jmdAmount < TOPUP_MIN_JMD) return `Minimum funding amount is J$${TOPUP_MIN_JMD}.`;
+  if (jmdAmount > TOPUP_MAX_JMD) return `Maximum funding amount is J$${TOPUP_MAX_JMD.toLocaleString()}.`;
+  return null;
+}
+
+// PayPal: create order (charged in USD, converted from the requested JMD).
+router.post("/billing/topup-wallet/paypal/create-order", async (req, res): Promise<void> => {
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const parsed = FundJmdBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+  const jmdAmount = Math.round(parsed.data.jmdAmount);
+  const err = validateFundJmd(jmdAmount);
+  if (err) { res.status(400).json({ error: err }); return; }
+
+  const rate = await getTopupJmdPerUsd();
+  const usd = jmdToUsd(jmdAmount, rate);
+  if (usd <= 0) { res.status(400).json({ error: "Amount too small to charge." }); return; }
+
+  try {
+    const token = await getPayPalToken();
+    const resp = await fetch(`${PAYPAL_BASE}/v2/checkout/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        intent: "CAPTURE",
+        purchase_units: [{
+          description: `NEXXUS Top-Up wallet funding — J$${jmdAmount.toLocaleString()}`,
+          amount: { currency_code: "USD", value: usd.toFixed(2) },
+          custom_id: `topup:${tenant.tenantId}:${jmdAmount}`,
+        }],
+        application_context: { brand_name: "NEXXUS POS", user_action: "PAY_NOW" },
+      }),
+    });
+    if (!resp.ok) { const e = await resp.text(); throw new Error(`PayPal error: ${e}`); }
+    const order = await resp.json() as { id: string };
+    pendingPayPalFunds.set(order.id, { tenantId: tenant.tenantId, jmdAmount });
+    setTimeout(() => pendingPayPalFunds.delete(order.id), 30 * 60 * 1000);
+    res.json({ orderId: order.id, jmdAmount, usd });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to create PayPal order", details: String(e) });
+  }
+});
+
+// PayPal: capture order. Wallet is credited from the ACTUAL captured USD × rate
+// (server-authoritative — the client-supplied amount is never trusted).
+const CaptureFundBody = z.object({ orderId: z.string() });
+
+router.post("/billing/topup-wallet/paypal/capture-order", async (req, res): Promise<void> => {
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const parsed = CaptureFundBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+
+  // The order must have been created by THIS tenant via create-order (never trust
+  // a raw orderId). This binds the capture to the quoted tenant + JMD amount.
+  const intent = pendingPayPalFunds.get(parsed.data.orderId);
+  if (!intent || intent.tenantId !== tenant.tenantId) {
+    res.status(400).json({ error: "Unknown or expired funding order. Please start again." });
+    return;
+  }
+
+  try {
+    const ppToken = await getPayPalToken();
+    const resp = await fetch(`${PAYPAL_BASE}/v2/checkout/orders/${parsed.data.orderId}/capture`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ppToken}` },
+    });
+    if (!resp.ok) { const e = await resp.text(); throw new Error(`PayPal capture error: ${e}`); }
+    const captured = await resp.json() as { id: string; status: string };
+
+    if (captured.status === "COMPLETED") {
+      pendingPayPalFunds.delete(parsed.data.orderId);
+      const balance = await creditTopupWallet(intent.tenantId, intent.jmdAmount, "Wallet funding (PayPal)", captured.id);
+      res.json({ status: captured.status, orderId: captured.id, jmdCredited: intent.jmdAmount, balance });
+      return;
+    }
+    res.json({ status: captured.status, orderId: captured.id });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to capture PayPal payment", details: String(e) });
+  }
+});
+
+// PowerTranz (FAC) 3DS: initiate a wallet-funding charge (USD, converted from JMD).
+const PowerTranzFundBody = z.object({
+  jmdAmount: z.number().positive(),
+  cardNumber: z.string(),
+  cardExpiry: z.string(),
+  cardCvv: z.string(),
+  cardholderName: z.string(),
+  returnUrl: z.string().url(),
+});
+
+router.post("/billing/topup-wallet/powertranz/initiate", async (req, res): Promise<void> => {
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const parsed = PowerTranzFundBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request", details: parsed.error.issues }); return; }
+
+  const jmdAmount = Math.round(parsed.data.jmdAmount);
+  const vErr = validateFundJmd(jmdAmount);
+  if (vErr) { res.status(400).json({ error: vErr }); return; }
+
+  const { spId, spPassword, enabled } = await getPowerTranzConfig();
+  if (!spId || !spPassword) { res.status(503).json({ error: "PowerTranz not configured. Add credentials in Superadmin → Gateway Settings." }); return; }
+  if (!enabled) { res.status(503).json({ error: "PowerTranz card payments are currently disabled." }); return; }
+
+  const rate = await getTopupJmdPerUsd();
+  const usd = jmdToUsd(jmdAmount, rate);
+  if (usd <= 0) { res.status(400).json({ error: "Amount too small to charge." }); return; }
+
+  const [mm, yy] = parsed.data.cardExpiry.split("/").map((s) => s.trim());
+  const cardExpiration = `${yy}${mm}`;
+  const origin = new URL(parsed.data.returnUrl).origin;
+  const merchantResponseUrl = `${origin}/api/billing/powertranz/3ds-callback`;
+
+  try {
+    const txId = crypto.randomUUID();
+    const { data } = await callPowerTranz("/api/spi/sale", {
+      TransactionIdentifier: txId,
+      TotalAmount: Number(usd.toFixed(2)),
+      CurrencyCode: "840",
+      ThreeDSecure: true,
+      Source: {
+        CardPan: parsed.data.cardNumber.replace(/\s/g, ""),
+        CardCvv: parsed.data.cardCvv,
+        CardExpiration: cardExpiration,
+        CardholderName: parsed.data.cardholderName,
+      },
+      OrderIdentifier: `NXTOPUP-${tenant.tenantId}-${Date.now()}`,
+      ExtendedData: {
+        ThreeDSecure: { ChallengeWindowSize: "05", ChallengeIndicator: "01" },
+        MerchantResponseUrl: merchantResponseUrl,
+      },
+    });
+
+    const isoCode = data.IsoResponseCode as string | undefined;
+    const spiToken = data.SpiToken as string | undefined;
+
+    if (isoCode === "SP4" && spiToken && data.RedirectData) {
+      pending3DS.set(spiToken, {
+        kind: "wallet",
+        tenantId: tenant.tenantId, planId: 0, billingCycle: "",
+        amount: usd, planName: "Wallet funding", status: "pending",
+        fundJmd: jmdAmount,
+      });
+      setTimeout(() => pending3DS.delete(spiToken!), 10 * 60 * 1000);
+      res.json({ step: "3ds", spiToken, redirectData: data.RedirectData });
+      return;
+    }
+
+    if (data.Approved) {
+      const balance = await creditTopupWallet(tenant.tenantId, jmdAmount, "Wallet funding (card)", data.TransactionIdentifier as string);
+      res.json({ step: "approved", approved: true, transactionId: data.TransactionIdentifier, rrn: data.RrN, jmdCredited: jmdAmount, balance });
+      return;
+    }
+
+    const errors = data.Errors as Array<{ Code: string; Message: string }> | undefined;
+    res.json({
+      step: "declined", approved: false,
+      responseCode: isoCode ?? data.ResponseCode ?? "unknown",
+      responseMessage: (data.ResponseMessage as string) ?? errors?.[0]?.Message ?? "Payment declined",
+    });
+  } catch (err) {
+    console.error("[PowerTranz] topup initiate error:", err);
+    res.status(500).json({ error: "PowerTranz request failed", details: String(err) });
+  }
 });
 
 /* ─── Bank Accounts (public for tenants) ─── */
