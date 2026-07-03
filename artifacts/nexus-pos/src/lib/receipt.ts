@@ -901,15 +901,6 @@ function buildSupermarketReceiptHtml(
     secondaryCurrency, exchangeRate,
   } = ctx;
 
-  // Stable 12-digit numeric code from a string — used as a derived "barcode"
-  // when an item has no productId / barcode of its own. djb2-ish hash so the
-  // same product always gets the same code on every reprint.
-  const hashCode = (s: string): string => {
-    let h = 5381;
-    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-    return String(h).padStart(12, "0").slice(-12);
-  };
-
   // Map our internal payment method onto a supermarket-style TEND label.
 
   const totalQty = order.items.reduce((s, i) => s + (i.quantity || 0), 0);
@@ -1007,10 +998,6 @@ function buildSupermarketReceiptHtml(
   const customerOutstandingHtml = (order.customerName && order.customerOutstandingBalance != null && order.customerOutstandingBalance > 0) ? `
     <div class="sm-balance-due">ACCOUNT BALANCE DUE: ${fmt(order.customerOutstandingBalance)}</div>` : "";
 
-  // ── Big TC# transaction code (groups of 4 digits) ────────────────────────
-  const tcRaw = (hashCode(orderNum + "tc") + hashCode(dateStr + "tc")).slice(0, 20);
-  const tcGrouped = tcRaw.match(/.{1,4}/g)?.join(" ") ?? tcRaw;
-
   // ── CSS stripe barcode (deterministic widths from order number) ──────────
   // Generates ~50 vertical bars with widths driven by char codes in orderNum
   // so reprints render the same pattern.
@@ -1027,7 +1014,7 @@ function buildSupermarketReceiptHtml(
     : `
     <div class="sm-barcode-wrap">
       <div class="sm-barcode">${bars.join("")}</div>
-      <div class="sm-barcode-num">${escHtml(tcGrouped.slice(0, 19))}</div>
+      <div class="sm-barcode-num">${escHtml(orderNum)}</div>
     </div>`;
 
   const refundedHtml = order.status === "refunded"
@@ -1192,7 +1179,7 @@ function buildSupermarketReceiptHtml(
   ${refundedHtml}
 
   <div class="sm-items-sold"># ITEMS SOLD ${itemsSold}</div>
-  <div class="sm-tc">TC# ${escHtml(tcGrouped)}</div>
+  <div class="sm-tc">ORDER # ${escHtml(orderNum)}</div>
 
   ${barcodeHtml}
 
