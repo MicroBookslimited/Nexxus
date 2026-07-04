@@ -59,11 +59,18 @@ async function requireTechnician(
 }
 
 /* ─── Public: register ─── */
+// Authoritative Terms & Conditions version stamped at acceptance time. Keep in
+// lockstep with TERMS_VERSION in the nexus-pos client (src/lib/terms.ts).
+const TERMS_VERSION = "1.0";
+
 const RegisterBody = z.object({
   name: z.string().min(2).max(120),
   email: z.string().email().max(255),
   password: z.string().min(8).max(128),
   phone: z.string().max(40).optional(),
+  acceptedTerms: z.boolean().refine((v) => v === true, {
+    message: "You must accept the Terms & Conditions to register",
+  }),
 });
 
 router.post("/technician/register", async (req, res): Promise<void> => {
@@ -89,6 +96,8 @@ router.post("/technician/register", async (req, res): Promise<void> => {
     passwordHash,
     phone,
     status: "pending",
+    termsAcceptedAt: new Date(),
+    termsVersion: TERMS_VERSION,
   }).returning({ id: techniciansTable.id });
 
   res.status(201).json({ id: created?.id, status: "pending" });

@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { Check, ChevronRight, CreditCard, Zap, ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck, ShoppingBag, Cpu, Code2 } from "lucide-react";
 import { TENANT_TOKEN_KEY, saasRegister, saasMe, saasUpdateOnboarding, createFirstStaff, getPlans, createPayPalOrder, capturePayPalOrder, initiatePowerTranz, type Plan } from "@/lib/saas-api";
 import { loadScript } from "@paypal/paypal-js";
+import { TermsDialog } from "@/components/TermsDialog";
 
 const STEPS = ["Account", "Business", "Plan", "Payment", "Setup", "Hardware", "Launch"] as const;
 const HARDWARE_CHOICE_KEY = "nexxus.onboarding.hardwareChoice";
@@ -37,6 +38,9 @@ export function Onboarding() {
   const [confirmPin, setConfirmPin] = useState("");
   const [showPin, setShowPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
+
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   // On mount: if there's an existing token, check whether onboarding is already
   // complete. If yes → send to dashboard. If no → resume from the saved step so
@@ -118,6 +122,7 @@ export function Onboarding() {
       setError("Please fill in all fields."); return;
     }
     if (form.password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (!acceptedTerms) { setError("Please accept the Terms & Conditions to continue."); return; }
     setError(""); setIsLoading(true);
     try {
       const res = await saasRegister({
@@ -126,6 +131,7 @@ export function Onboarding() {
         email: form.email,
         password: form.password,
         country: form.country,
+        acceptedTerms,
       });
       localStorage.setItem(TENANT_TOKEN_KEY, res.token);
       setStep(2);
@@ -330,7 +336,22 @@ export function Onboarding() {
                   </div>
                 </div>
               </div>
-              <button type="submit" disabled={isLoading}
+              <label className="mt-5 flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#2a3a55] bg-[#0f1729] accent-[#3b82f6]"
+                />
+                <span className="text-sm text-[#94a3b8]">
+                  I agree to the{" "}
+                  <button type="button" onClick={() => setTermsOpen(true)} className="text-[#3b82f6] hover:text-blue-400 underline underline-offset-2">
+                    Terms &amp; Conditions
+                  </button>
+                  .
+                </span>
+              </label>
+              <button type="submit" disabled={isLoading || !acceptedTerms}
                 className="mt-6 w-full bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
                 {isLoading ? "Creating account…" : <>Create Account <ArrowRight size={16} /></>}
               </button>
@@ -737,6 +758,7 @@ export function Onboarding() {
           )}
         </div>
       </div>
+      <TermsDialog open={termsOpen} onOpenChange={setTermsOpen} />
     </div>
   );
 }

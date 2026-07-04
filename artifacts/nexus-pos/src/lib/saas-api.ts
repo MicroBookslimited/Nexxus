@@ -37,7 +37,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 /* ─── Tenant Auth ─── */
-export const saasRegister = (data: { businessName: string; ownerName: string; email: string; password: string; phone?: string; country?: string }) =>
+export const saasRegister = (data: { businessName: string; ownerName: string; email: string; password: string; phone?: string; country?: string; acceptedTerms: boolean }) =>
   api<{ token: string; tenant: Tenant }>("/saas/register", { method: "POST", body: JSON.stringify(data) });
 
 export const saasLogin = (email: string, password: string) =>
@@ -1020,7 +1020,7 @@ export interface TechnicianAssignedTenant {
   assignedAt: string;
 }
 
-export const technicianRegister = (data: { name: string; email: string; password: string; phone?: string }) =>
+export const technicianRegister = (data: { name: string; email: string; password: string; phone?: string; acceptedTerms: boolean }) =>
   api<{ id: number; status: string }>("/technician/register", {
     method: "POST", body: JSON.stringify(data),
   });

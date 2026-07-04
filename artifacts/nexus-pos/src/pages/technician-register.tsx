@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { technicianRegister } from "@/lib/saas-api";
+import { TermsDialog } from "@/components/TermsDialog";
 
 export function TechnicianRegister() {
   const [, setLocation] = useLocation();
@@ -18,15 +19,18 @@ export function TechnicianRegister() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
     if (password !== confirm) { setError("Passwords do not match"); return; }
+    if (!acceptedTerms) { setError("Please accept the Terms & Conditions to register"); return; }
     setLoading(true);
     try {
-      await technicianRegister({ name, email, password, phone: phone || undefined });
+      await technicianRegister({ name, email, password, phone: phone || undefined, acceptedTerms });
       setDone(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -91,6 +95,22 @@ export function TechnicianRegister() {
                     <Input id="t-pw2" type="password" required minLength={8} value={confirm} onChange={e => setConfirm(e.target.value)} className="bg-background/50" />
                   </div>
 
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none pt-1">
+                    <input
+                      type="checkbox"
+                      checked={acceptedTerms}
+                      onChange={(e) => setAcceptedTerms(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-primary"
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      I agree to the{" "}
+                      <button type="button" onClick={() => setTermsOpen(true)} className="text-primary hover:text-primary/80 underline underline-offset-2 font-medium">
+                        Terms &amp; Conditions
+                      </button>
+                      .
+                    </span>
+                  </label>
+
                   {error && (
                     <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
                       <AlertCircle className="h-4 w-4 shrink-0" />
@@ -98,7 +118,7 @@ export function TechnicianRegister() {
                     </div>
                   )}
 
-                  <Button type="submit" className="w-full mt-2 h-11" disabled={loading}>
+                  <Button type="submit" className="w-full mt-2 h-11" disabled={loading || !acceptedTerms}>
                     {loading ? "Creating account…" : (<>Create account<ArrowRight className="ml-2 h-4 w-4" /></>)}
                   </Button>
                 </form>
@@ -117,6 +137,7 @@ export function TechnicianRegister() {
       <footer className="shrink-0 py-4 text-center text-xs text-muted-foreground relative z-10">
         Powered by MicroBooks
       </footer>
+      <TermsDialog open={termsOpen} onOpenChange={setTermsOpen} />
     </div>
   );
 }

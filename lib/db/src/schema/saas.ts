@@ -40,6 +40,10 @@ export const tenantsTable = pgTable("tenants", {
   emailVerificationToken: text("email_verification_token"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   sessionsInvalidatedAt: timestamp("sessions_invalidated_at", { withTimezone: true }),
+  // Proof of consent: when the account accepted the Terms & Conditions at signup,
+  // and which version was in effect at that time.
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  termsVersion: text("terms_version"),
   // Industry / experience type. Drives which POS surface and feature flags load.
   // Values: restaurant | retail | wholesale | hybrid.
   businessType: text("business_type").notNull().default("restaurant"),

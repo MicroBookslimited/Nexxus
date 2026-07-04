@@ -99,6 +99,10 @@ async function sendVerificationEmail(email: string, token: string, businessName:
   }
 }
 
+// Authoritative Terms & Conditions version stamped at acceptance time. Keep in
+// lockstep with TERMS_VERSION in the nexus-pos client (src/lib/terms.ts).
+const TERMS_VERSION = "1.0";
+
 const RegisterBody = z.object({
   businessName: z.string().min(2),
   ownerName: z.string().min(2),
@@ -107,6 +111,9 @@ const RegisterBody = z.object({
   phone: z.string().optional(),
   country: z.string().optional(),
   referralCode: z.string().optional(),
+  acceptedTerms: z.boolean().refine((v) => v === true, {
+    message: "You must accept the Terms & Conditions to create an account",
+  }),
 });
 
 const LoginBody = z.object({
@@ -158,6 +165,8 @@ router.post("/saas/register", async (req, res): Promise<void> => {
       resellerId,
       emailVerified: false,
       emailVerificationToken,
+      termsAcceptedAt: new Date(),
+      termsVersion: TERMS_VERSION,
     })
     .returning();
 

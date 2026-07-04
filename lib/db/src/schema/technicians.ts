@@ -12,6 +12,10 @@ export const techniciansTable = pgTable("technicians", {
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   approvedBy: text("approved_by"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  // Proof of consent: when the technician accepted the Terms & Conditions at
+  // signup, and which version was in effect at that time.
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  termsVersion: text("terms_version"),
 });
 
 export const technicianAssignmentsTable = pgTable("technician_assignments", {
