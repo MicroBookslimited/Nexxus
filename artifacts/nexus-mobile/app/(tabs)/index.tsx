@@ -40,6 +40,7 @@ import {
 } from "@/components/ui";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { CustomizeSheet } from "@/components/CustomizeSheet";
+import { useAuth } from "@/context/AuthContext";
 import { useCart, type CartLine } from "@/context/CartContext";
 import { usePrinter } from "@/context/PrinterContext";
 import { useStaff } from "@/context/StaffContext";
@@ -65,6 +66,20 @@ function isSimple(p: Product) {
 // products without options are added directly (they have no choices to make).
 function needsCustomization(p: Product) {
   return p.hasVariants || p.hasModifiers;
+}
+
+// Vibrant, deterministic tile colors. Each product keeps a stable bold color
+// (keyed by its id) instead of the flat translucent card surface, so the grid
+// reads as a colorful board. All colors are mid/deep saturated so white text
+// stays legible on top.
+const CARD_COLORS = [
+  "#2563EB", "#7C3AED", "#DB2777", "#DC2626", "#EA580C", "#B45309",
+  "#16A34A", "#0891B2", "#0D9488", "#4F46E5", "#9333EA", "#C026D3",
+  "#059669", "#A16207", "#E11D48", "#0284C7",
+];
+function cardColor(id: number): string {
+  const len = CARD_COLORS.length;
+  return CARD_COLORS[((id % len) + len) % len]!;
 }
 
 // Turn the raw server stock error (e.g. HTTP 409 'Cannot sell "Combo Plate Test":
@@ -107,8 +122,26 @@ export default function SellScreen() {
   const cart = useCart();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { staff, setStaff } = useStaff();
+  const { staff, setStaff, clearStaff } = useStaff();
+  const { signOut } = useAuth();
   const [staffPinOpen, setStaffPinOpen] = useState(false);
+
+  // Tenant logout: clears the business token/cache AND the staff session (so the
+  // next tenant doesn't inherit a stale cashier) then returns to the login
+  // screen so a different tenant account can sign in.
+  const confirmSignOut = () => {
+    Alert.alert("Log out", "Sign out of this business account?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log out",
+        style: "destructive",
+        onPress: () => {
+          clearStaff();
+          void signOut();
+        },
+      },
+    ]);
+  };
 
   const { data: products, isLoading, error, refetch } = useListProducts();
   const [search, setSearch] = useState("");
@@ -239,10 +272,9 @@ export default function SellScreen() {
 
   const onCheckoutComplete = () => queryClient.invalidateQueries();
 
-  // Column count for the product grid. Landscape (and wide tablets) show 3
-  // columns of product cards; portrait phones/tablets stay at 2 to keep the
-  // cards legible in the narrower width.
-  const gridColumns = r.isWide || r.isLandscape ? 3 : 2;
+  // Column count for the product grid. Compact tiles: portrait phones show 3
+  // columns (≈6 cards visible at once), landscape 4, and wide tablets 5.
+  const gridColumns = r.isWide ? 5 : r.isLandscape ? 4 : 3;
 
   const productGrid = (
     <FlatList
@@ -250,57 +282,53 @@ export default function SellScreen() {
       data={filtered}
       keyExtractor={(p) => String(p.id)}
       numColumns={gridColumns}
-      columnWrapperStyle={{ gap: 12, paddingHorizontal: 16 }}
+      columnWrapperStyle={{ gap: 8, paddingHorizontal: 12 }}
       contentContainerStyle={{
-        gap: 12,
+        gap: 8,
         paddingBottom: r.isTablet ? pad.bottom + 16 : pad.bottom + (cart.count > 0 ? 90 : 16),
       }}
       ListEmptyComponent={<EmptyState icon="search" title="No products found" />}
       renderItem={({ item }) => {
         const simple = isSimple(item);
         const out = !item.inStock || item.stockCount <= 0;
+        const bg = cardColor(item.id);
         return (
           <Pressable
             onPress={() => void onAdd(item)}
             style={({ pressed }) => ({
               flex: 1 / gridColumns,
-              backgroundColor: c.card,
-              borderRadius: c.radius + 4,
-              borderWidth: 1,
-              borderColor: c.border,
-              padding: 14,
-              opacity: pressed ? 0.8 : 1,
+              backgroundColor: bg,
+              borderRadius: c.radius + 2,
+              padding: 8,
+              opacity: pressed ? 0.85 : out ? 0.7 : 1,
             })}
           >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
               <View
                 style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 10,
-                  backgroundColor: c.secondary,
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  backgroundColor: "rgba(255,255,255,0.22)",
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <Feather name="box" size={18} color={c.accent} />
+                <Feather name="box" size={15} color="#FFFFFF" />
               </View>
               {out ? <Badge label="Out" tone="danger" /> : <Badge label={`${item.stockCount}`} tone="success" />}
             </View>
             <Text
               numberOfLines={2}
-              style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold"), minHeight: 40 }}
+              style={{ color: "#FFFFFF", fontSize: 12, fontFamily: fontFamily("semibold"), minHeight: 30 }}
             >
               {item.name}
             </Text>
-            <Text style={{ color: c.mutedForeground, fontSize: 12, fontFamily: fontFamily("regular") }}>
-              {item.category}
-            </Text>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-              <Text style={{ color: c.accent, fontSize: 16, fontFamily: fontFamily("bold") }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+              <Text style={{ color: "#FFFFFF", fontSize: 13, fontFamily: fontFamily("bold") }}>
                 {formatMoney(item.price)}
               </Text>
-              {!simple ? <Feather name="layers" size={16} color={c.mutedForeground} /> : null}
+              {!simple ? <Feather name="layers" size={13} color="rgba(255,255,255,0.85)" /> : null}
             </View>
           </Pressable>
         );
@@ -397,6 +425,9 @@ export default function SellScreen() {
       </Pressable>
       <Pressable onPress={() => router.push("/subscription")} hitSlop={8}>
         <Feather name="user" size={22} color={c.mutedForeground} />
+      </Pressable>
+      <Pressable onPress={confirmSignOut} hitSlop={8}>
+        <Feather name="log-out" size={20} color={c.mutedForeground} />
       </Pressable>
     </View>
   );
