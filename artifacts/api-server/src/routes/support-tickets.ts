@@ -120,6 +120,10 @@ function buildTicketEmailHtml(t: {
 }
 
 /* ─── Superadmin auth helper ─── */
+function getJwtSecret(): string {
+  return process.env["SESSION_SECRET"] ?? "nexus-pos-secret";
+}
+
 function requireSuperAdmin(
   req: { headers: { authorization?: string } },
   res: { status: (n: number) => { json: (b: object) => void } },
@@ -130,9 +134,7 @@ function requireSuperAdmin(
     return false;
   }
   try {
-    const secret = process.env["JWT_SECRET"];
-    if (!secret) { res.status(500).json({ error: "Server misconfigured" }); return false; }
-    const p = jwt.verify(auth.slice(7), secret) as { type?: string };
+    const p = jwt.verify(auth.slice(7), getJwtSecret()) as { type?: string };
     if (p.type !== "superadmin") { res.status(403).json({ error: "Forbidden" }); return false; }
     return true;
   } catch {
