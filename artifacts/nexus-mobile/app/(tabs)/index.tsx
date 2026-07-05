@@ -923,7 +923,19 @@ function CheckoutContent({
       </View>
 
       {receipt ? (
-        <View style={{ flex: 1, padding: 24, alignItems: "center", justifyContent: "center", gap: 16 }}>
+        // Scrollable so the "New Sale" button is always reachable even when the
+        // panel is short (e.g. tablet landscape split view) and the success
+        // content would otherwise overflow a fixed, centered container.
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            padding: 24,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 16,
+          }}
+        >
           <View
             style={{
               width: 76,
@@ -967,7 +979,7 @@ function CheckoutContent({
             }}
             style={{ width: "100%" }}
           />
-        </View>
+        </ScrollView>
       ) : empty && embedded ? (
         <View style={{ flex: 1, justifyContent: "center" }}>
           <EmptyState icon="shopping-cart" title="Cart is empty" subtitle="Tap products to add them to the sale." />
