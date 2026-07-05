@@ -9,10 +9,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
+import { View, useWindowDimensions } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import {
+  SafeAreaInsetsContext,
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LoadingState } from "@/components/ui";
@@ -32,6 +37,56 @@ SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });
+
+// Tablet-landscape downscale: the whole app renders on a slightly larger
+// virtual canvas that is then scaled down, so every screen shrinks uniformly
+// and dense layouts (POS split view, checkout panel) fit on screen without
+// per-screen size tweaks. Touches are transform-aware, so taps land correctly.
+// Native modals and alerts render in their own windows and stay at 100%.
+const TABLET_LANDSCAPE_SCALE = 0.85;
+
+function ScaledApp({ children }: { children: React.ReactNode }) {
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const scaleDown = width >= 768 && width > height;
+  const s = scaleDown ? TABLET_LANDSCAPE_SCALE : 1;
+  // Inset values are measured in real screen pixels but get consumed inside
+  // the scaled canvas (where everything renders at s×). Dividing by s keeps
+  // the VISUAL padding equal to the real device inset. All screens read
+  // insets via the useSafeAreaInsets hook, so this JS override covers them.
+  const scaledInsets = useMemo(
+    () => ({
+      top: insets.top / s,
+      bottom: insets.bottom / s,
+      left: insets.left / s,
+      right: insets.right / s,
+    }),
+    [insets.top, insets.bottom, insets.left, insets.right, s],
+  );
+  // The tree shape is identical whether or not scaling is active — only style
+  // values change — so crossing the tablet-landscape breakpoint (rotation,
+  // split-screen resize) never remounts the navigator or resets screen state.
+  return (
+    <View style={{ flex: 1, overflow: "hidden" }}>
+      <View
+        style={
+          scaleDown
+            ? {
+                width: width / s,
+                height: height / s,
+                transform: [{ scale: s }],
+                transformOrigin: "top left",
+              }
+            : { flex: 1 }
+        }
+      >
+        <SafeAreaInsetsContext.Provider value={scaledInsets}>
+          {children}
+        </SafeAreaInsetsContext.Provider>
+      </View>
+    </View>
+  );
+}
 
 function RootLayoutNav() {
   const { token, isLoading } = useAuth();
@@ -90,7 +145,9 @@ export default function RootLayout() {
                 <StaffProvider>
                   <PrinterProvider>
                     <CartProvider>
-                      <RootLayoutNav />
+                      <ScaledApp>
+                        <RootLayoutNav />
+                      </ScaledApp>
                     </CartProvider>
                   </PrinterProvider>
                 </StaffProvider>
