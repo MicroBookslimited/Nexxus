@@ -815,17 +815,26 @@ export function POS() {
   // Per-table aggregation of all open orders (Approach B: each Send = new order)
   const tableTicketMap = useMemo(() => {
     const map = new Map<number, {
-      items: Array<{ productName: string; quantity: number; unitPrice: number }>;
+      items: Array<{ productName: string; quantity: number; unitPrice: number; lineTotal: number }>;
       subtotal: number; tax: number; serviceCharge: number; total: number;
     }>();
     for (const order of openOrders ?? []) {
       const tid = (order as any).tableId as number | undefined;
       if (!tid) continue;
-      const orderItems = ((order as any).items ?? []).map((item: any) => ({
-        productName: item.productName ?? "",
-        quantity: Number(item.quantity ?? 0),
-        unitPrice: Number(item.unitPrice ?? item.price ?? 0),
-      }));
+      const orderItems = ((order as any).items ?? []).map((item: any) => {
+        const quantity  = Number(item.quantity ?? 0);
+        const lineTotal = Number(item.lineTotal ?? 0);
+        // Derive the unit price from the stored line total when the item's
+        // unitPrice comes back 0 — prevents "1 x $0.00" on printed bills.
+        let unitPrice = Number(item.unitPrice ?? item.price ?? 0);
+        if (!unitPrice && quantity > 0 && lineTotal > 0) unitPrice = lineTotal / quantity;
+        return {
+          productName: item.productName ?? "",
+          quantity,
+          unitPrice,
+          lineTotal: lineTotal || quantity * unitPrice,
+        };
+      });
       const existing = map.get(tid);
       const sc = Number((order as any).serviceCharge ?? 0);
       if (existing) {
@@ -858,6 +867,9 @@ export function POS() {
   const [tableTicketPayMethod, setTableTicketPayMethod] = useState<"cash" | "card">("cash");
   const [tableTicketBusy, setTableTicketBusy] = useState(false);
   const [reopenOverrideOpen, setReopenOverrideOpen] = useState(false);
+  // Manager-PIN prompt shown when the cashier tries to add items to a table
+  // whose bill has already been printed (status "billed").
+  const [billedAddPinOpen, setBilledAddPinOpen] = useState(false);
 
   const handlePrintBill = () => {
     if (!tableTicketDialog) return;
@@ -2132,11 +2144,18 @@ export function POS() {
     if (selectedTableId) {
       const selectedTable = tables?.find((t) => t.id === selectedTableId);
       if (selectedTable?.status === "billed") {
-        toast({ title: "Table locked", description: "This table's bill has been printed. Ask a manager to reopen it before adding items.", variant: "destructive" });
+        // The bill was already printed. Instead of a dead end, prompt for a
+        // manager PIN right here — on success the table reopens and the new
+        // items are sent to the kitchen in one step.
+        setBilledAddPinOpen(true);
         return;
       }
     }
 
+    doSendToKitchen();
+  };
+
+  const doSendToKitchen = () => {
     createOrder.mutate(
       {
         data: {
@@ -4872,6 +4891,41 @@ export function POS() {
                   onSuccess: () => {
                     toast({ title: "Table reopened", description: `${tableName} is now open for new items.` });
                     queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+                  },
+                  onError: () => toast({ title: "Error", description: "Could not reopen the table.", variant: "destructive" }),
+                },
+              );
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add items to a billed table — Manager PIN required ───────────── */}
+      <Dialog open={billedAddPinOpen} onOpenChange={(o) => {
+        if (!o) setBilledAddPinOpen(false);
+      }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-400">
+              <Unlock className="h-4 w-4" />Manager Override Required
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground text-center -mt-2 mb-2">
+            This table's bill was already printed. Enter a manager PIN to reopen it and add the new items.
+          </p>
+          <PinPad
+            title=""
+            requiredRoles={["manager", "admin", "supervisor"]}
+            onSuccess={() => {
+              setBilledAddPinOpen(false);
+              if (!selectedTableId) return;
+              updateTable.mutate(
+                { id: selectedTableId, data: { status: "occupied" } },
+                {
+                  onSuccess: () => {
+                    queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+                    toast({ title: "Table reopened", description: "Sending the new items to the kitchen…" });
+                    doSendToKitchen();
                   },
                   onError: () => toast({ title: "Error", description: "Could not reopen the table.", variant: "destructive" }),
                 },

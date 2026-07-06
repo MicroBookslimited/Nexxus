@@ -227,6 +227,18 @@ function escHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// Business names may contain newlines (Settings allows a multi-line name,
+// e.g. "Lotus" / "Indian Cuisine") so the name prints stacked across lines
+// on receipts. Escape each line separately and join with <br/> so the
+// surrounding template style applies to every line.
+function escHtmlMultiline(str: string): string {
+  return String(str)
+    .split(/\r?\n/)
+    .map((l) => escHtml(l.trim()))
+    .filter(Boolean)
+    .join("<br/>");
+}
+
 /**
  * Render a real, scannable CODE128 barcode that encodes the receipt (order)
  * number as a centered PNG <img>, with the number printed beneath it. Returns
@@ -362,7 +374,9 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     // Items: name + line total on first row, qty × unitPrice on second row,
     // then a dotted separator after each item (matches the Loyverse layout).
     const restItemsHtml = order.items.map(item => {
-      const unitPriceStr = item.unitPrice != null
+      // A zero unitPrice with a real lineTotal used to print "1 x $0.00" —
+      // derive the unit price from the line total instead.
+      const unitPriceStr = item.unitPrice
         ? fmt(item.unitPrice)
         : fmt(item.lineTotal / (item.quantity || 1));
       let html = `
@@ -499,7 +513,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
 <body>
 
   ${logoHtml}
-  <div class="r-biz">${escHtml(businessName)}</div>
+  <div class="r-biz">${escHtmlMultiline(businessName)}</div>
   <div class="r-addr">${addrLines}${businessTaxNumber ? `<div>GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}${phoneLine}</div>
 
   <div class="r-sep"></div>
@@ -547,7 +561,9 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
   // brought unitPrice below originalUnitPrice), we also render a green
   // "↳ You save: -<amount>" sub-line directly under the item.
   const itemsHtml = order.items.map(item => {
-    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
+    // Treat a zero unit price as missing too — some stored orders carry a
+    // correct lineTotal but a 0 unitPrice, which used to print "1 x $0.00".
+    const unit = item.unitPrice ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     let html = `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)}${uomHtml(item, settings)}${unitStr}</span><span class="nowrap">${fmtNum(item.lineTotal)}</span></div>`;
@@ -708,7 +724,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
 
   const headerHtml = `
     ${logoHtml}
-    <div class="biz-name" style="text-align:${tpl.headerAlign};">${escHtml(businessName)}</div>
+    <div class="biz-name" style="text-align:${tpl.headerAlign};">${escHtmlMultiline(businessName)}</div>
     <div class="info-block" style="${infoAlign}">
       <div>Order #: ${escHtml(orderNum)}</div>
       <div>${orderTypeLabel}</div>
@@ -932,7 +948,9 @@ function buildSupermarketReceiptHtml(
     </div>`;
   const itemRowsHtml = order.items.map(item => {
     const qtyStr = Number.isInteger(item.quantity) ? String(item.quantity) : String(Math.round(item.quantity * 1000) / 1000);
-    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
+    // Treat a zero unit price as missing too — some stored orders carry a
+    // correct lineTotal but a 0 unitPrice, which used to print "1 x $0.00".
+    const unit = item.unitPrice ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     let html = `
       <div class="sm-item">
@@ -1143,7 +1161,7 @@ function buildSupermarketReceiptHtml(
 <body>
 
   ${logoHtml}
-  <div class="sm-store-name">${escHtml(businessName.toUpperCase())}</div>
+  <div class="sm-store-name">${escHtmlMultiline(businessName.toUpperCase())}</div>
   ${addressLines.map(l => `<div class="sm-center sm-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
   ${businessPhone ? `<div class="sm-center sm-sub">${escHtml(businessPhone)}</div>` : ""}
   ${businessTaxNumber ? `<div class="sm-center sm-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
@@ -1253,7 +1271,9 @@ function buildConvenienceReceiptHtml(
   // Items — each line: QTY  Name @ unit  Price T/B
   const itemRowsHtml = order.items.map(item => {
     const qtyStr = String(item.quantity).padStart(1, " ");
-    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
+    // Treat a zero unit price as missing too — some stored orders carry a
+    // correct lineTotal but a 0 unitPrice, which used to print "1 x $0.00".
+    const unit = item.unitPrice ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     let html = `
@@ -1437,14 +1457,14 @@ function buildConvenienceReceiptHtml(
 <body>
 
   ${logoHtml}
-  <div class="cv-name">${escHtml(businessName.toUpperCase())}</div>
+  <div class="cv-name">${escHtmlMultiline(businessName.toUpperCase())}</div>
   ${addressLines.map(l => `<div class="cv-center cv-sub">${escHtml(l.toUpperCase())}</div>`).join("")}
   ${businessTaxNumber ? `<div class="cv-center cv-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
   ${businessPhone ? `<div class="cv-center cv-sub">${escHtml(businessPhone)}</div>` : ""}
   ${order.staffName ? `<div class="cv-center cv-sub">Cashier: ${escHtml(order.staffName)}</div>` : ""}
   ${order.stationNumber != null ? `<div class="cv-center cv-sub">STATION #${order.stationNumber}</div>` : ""}
   <div class="cv-center cv-sub">THANKS FOR SHOPPING</div>
-  <div class="cv-center cv-sub">with ${escHtml(businessName)}</div>
+  <div class="cv-center cv-sub">with ${escHtml(businessName.replace(/\s*\r?\n\s*/g, " "))}</div>
 
   <div class="cv-blank"></div>
   <div class="cv-div"></div>
@@ -1533,7 +1553,9 @@ function buildStapleReceiptHtml(
   // Item rows — QTY | name\nSKU\n@unit | price N
   const itemRowsHtml = order.items.map((item, i) => {
     const sku = itemSku(item, i);
-    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
+    // Treat a zero unit price as missing too — some stored orders carry a
+    // correct lineTotal but a 0 unitPrice, which used to print "1 x $0.00".
+    const unit = item.unitPrice ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const subLines: string[] = [];
     if (unit != null) subLines.push(`@ ${fmtNum(unit)}`);
@@ -1733,7 +1755,7 @@ function buildStapleReceiptHtml(
 <body>
 
   ${logoHtml}
-  <div class="st-store-name">${escHtml(businessName.toUpperCase())}</div>
+  <div class="st-store-name">${escHtmlMultiline(businessName.toUpperCase())}</div>
   ${receiptFooter ? `<div class="st-tagline">${escHtml(receiptFooter)}</div>` : ""}
   ${addressLines.map(l => `<div class="st-center st-sub">${escHtml(l)}</div>`).join("")}
   ${businessTaxNumber ? `<div class="st-center st-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
@@ -1823,7 +1845,7 @@ function buildHardwareReceiptHtml(
   const itemRowsHtml = order.items.map((item) => {
     const attribute = joinChoices(item.variantChoices as { optionName: string }[] | null);
     const size      = joinChoices(item.modifierChoices as { optionName: string }[] | null);
-    const unit      = item.unitPrice != null
+    const unit      = item.unitPrice
       ? item.unitPrice
       : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     return `
@@ -1988,7 +2010,7 @@ function buildHardwareReceiptHtml(
       ${order.stationNumber != null ? `<div>Station: #${order.stationNumber}</div>` : ""}
     </div>
     <div>
-      <div class="hw-biz-name">${escHtml(businessName)}</div>
+      <div class="hw-biz-name">${escHtmlMultiline(businessName)}</div>
       ${addressLines.map(l => `<div class="hw-biz-line">${escHtml(l)}</div>`).join("")}
       ${businessTaxNumber ? `<div class="hw-biz-line">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
       ${businessPhone ? `<div class="hw-biz-line">Tel: ${escHtml(businessPhone)}</div>` : ""}
@@ -2079,7 +2101,7 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   const lastThree = orderNum.replace(/\D/g, "").slice(-3).padStart(3, "0");
 
   const lines: string[] = [];
-  lines.push(`🧾 *${businessName}*`);
+  lines.push(`🧾 *${businessName.replace(/\s*\r?\n\s*/g, " ")}*`);
   lines.push(`Order #: ${orderNum}  |  Pickup: *${lastThree}*`);
   lines.push(`📅 ${dateStr}`);
   if (order.staffName) lines.push(`🧑 Cashier: ${order.staffName}`);
@@ -2102,7 +2124,9 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
   lines.push(`─────────────────────`);
 
   for (const item of order.items) {
-    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
+    // Treat a zero unit price as missing too — some stored orders carry a
+    // correct lineTotal but a 0 unitPrice, which used to print "1 x $0.00".
+    const unit = item.unitPrice ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     lines.push(`${item.quantity}× ${item.productName}${item.sellingUnit?.trim() ? ` (${item.sellingUnit.trim()})` : ""}${item.size?.trim() ? ` [${item.size.trim()}]` : ""}${unitStr}  ${fmtNum(item.lineTotal)}`);
@@ -2230,7 +2254,9 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
 
   // ── Items ────────────────────────────────────────────────────────────────
   const itemsHtml = order.items.map(item => {
-    const unit = item.unitPrice != null ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
+    // Treat a zero unit price as missing too — some stored orders carry a
+    // correct lineTotal but a 0 unitPrice, which used to print "1 x $0.00".
+    const unit = item.unitPrice ? item.unitPrice : (item.quantity ? item.lineTotal / item.quantity : item.lineTotal);
     const orig = item.originalUnitPrice;
     const unitStr = unit != null ? ` @ ${fmtNum(unit)}` : "";
     let html = row(`${item.quantity}&times; ${escHtml(item.productName)}${uomHtml(item, settings)}${unitStr}`, fmtNum(item.lineTotal), "item");
@@ -2354,7 +2380,7 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
   </style>
 </head>
 <body>
-  <div class="name">${escHtml(businessName)}</div>
+  <div class="name">${escHtmlMultiline(businessName)}</div>
   <div class="center bold">${order.orderType ? escHtml(order.orderType) : "Sale"}${order.guestCount ? ` &middot; ${order.guestCount} Guest${order.guestCount !== 1 ? "s" : ""}` : ""}</div>
   <div class="center sub">Order #: ${escHtml(orderNum)}</div>
   ${order.staffName ? `<div class="center sub">Cashier: ${escHtml(order.staffName)}</div>` : ""}
@@ -2586,7 +2612,7 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, settings: Receip
     .rf-sign-label { text-align: center; font-size: 10px; margin-top: 2px; }
   </style></head>
   <body>
-    <div class="rf-center rf-biz">${escHtml(businessName)}</div>
+    <div class="rf-center rf-biz">${escHtmlMultiline(businessName)}</div>
     ${businessAddress ? `<div class="rf-center rf-sub">${escHtml(businessAddress)}</div>` : ""}
     ${businessTaxNumber ? `<div class="rf-center rf-sub">GCT#: ${escHtml(businessTaxNumber)}</div>` : ""}
     ${businessPhone ? `<div class="rf-center rf-sub">${escHtml(businessPhone)}</div>` : ""}
@@ -2623,6 +2649,8 @@ export interface BillItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  /** Stored line total; lets us derive a unit price when unitPrice is 0. */
+  lineTotal?: number;
 }
 
 export function buildBillHtml(
@@ -2639,12 +2667,15 @@ export function buildBillHtml(
   },
   settings: ReceiptSettings = {},
 ): string {
-  const businessName    = settings.business_name    || "NEXXUS POS";
-  const businessAddress = settings.business_address || "";
-  const businessPhone   = settings.business_phone   || "";
-  const taxName         = settings.tax_name         || "GCT";
-  const baseCurrency    = settings.base_currency    || "JMD";
-  const receiptFooter   = settings.receipt_footer   || "Thank you for your business!";
+  const businessName      = settings.business_name    || "NEXXUS POS";
+  const businessAddress   = settings.business_address || "";
+  const businessPhone     = settings.business_phone   || "";
+  const businessLogoUrl   = settings.business_logo_url || "";
+  const taxName           = settings.tax_name         || "GCT";
+  const baseCurrency      = settings.base_currency    || "JMD";
+  const receiptFooter     = settings.receipt_footer   || "Thank you for your business!";
+  const secondaryCurrency = settings.secondary_currency || "";
+  const exchangeRate      = parseFloat(settings.currency_rate || "0");
 
   const now     = new Date();
   const dateStr = now.toLocaleString("en-JM", {
@@ -2652,71 +2683,84 @@ export function buildBillHtml(
     hour: "numeric", minute: "2-digit", hour12: true,
   });
 
-  const fmt = (n: number) => {
+  const fmt = (n: number, currency = baseCurrency) => {
     try {
-      return new Intl.NumberFormat("en-US", { style: "currency", currency: baseCurrency }).format(n);
+      return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
     } catch {
-      return `${baseCurrency} ${Math.abs(n).toFixed(2)}`;
+      return `${currency} ${Math.abs(n).toFixed(2)}`;
     }
   };
 
-  const itemRows = params.items.map((item) => {
-    const lineTotal = item.quantity * item.unitPrice;
-    return `<tr>
-      <td style="padding:3px 4px">${escHtml(item.productName)}</td>
-      <td style="padding:3px 4px;text-align:center">${item.quantity}</td>
-      <td style="padding:3px 4px;text-align:right">${fmt(item.unitPrice)}</td>
-      <td style="padding:3px 4px;text-align:right">${fmt(lineTotal)}</td>
-    </tr>`;
+  // Logo + stacked business name — same header treatment as normal receipts.
+  const logoHtml  = businessLogoUrl ? logoHtmlFromSettings(businessLogoUrl, escHtml(businessName), settings) : "";
+  const addrLines = businessAddress
+    ? businessAddress.split(/\n/).filter(l => l.trim())
+        .map(l => `<div class="sub">${escHtml(l.trim())}</div>`).join("")
+    : "";
+
+  // Items rendered normal-receipt style: "<qty>× <name> @ <unit>" with the
+  // line total on the right. A zero unitPrice is derived from lineTotal so we
+  // never print "1 x $0.00" beside a real line amount.
+  const itemsHtml = params.items.map((item) => {
+    const unit = item.unitPrice
+      ? item.unitPrice
+      : (item.quantity && item.lineTotal ? item.lineTotal / item.quantity : 0);
+    const lineTotal = item.lineTotal ?? item.quantity * unit;
+    return `<div class="row item-row"><span class="item-name">${item.quantity}&times; ${escHtml(item.productName)} @ ${fmt(unit)}</span><span class="nowrap">${fmt(lineTotal)}</span></div>`;
   }).join("");
+
+  // Secondary-currency conversion (≈ USD 12.34) under the total, matching the
+  // normal receipt templates.
+  const secondaryHtml = secondaryCurrency && exchangeRate > 0
+    ? `<div class="row sub-row"><span>&asymp;&nbsp;${escHtml(secondaryCurrency)}</span><span class="nowrap">${fmt(params.total * exchangeRate, secondaryCurrency)}</span></div>`
+    : "";
 
   const isPaid = params.isPaid ?? false;
   const billLabel   = isPaid ? "RECEIPT" : "BILL";
   const statusBadge = isPaid
     ? `<div style="background:#166534;color:#fff;font-weight:700;padding:3px 10px;border-radius:4px;display:inline-block;font-size:11px;letter-spacing:2px;margin-top:4px">PAID${params.paymentMethod ? ` — ${escHtml(params.paymentMethod.toUpperCase())}` : ""}</div>`
-    : `<div style="border:1px dashed #555;color:#555;font-size:10px;padding:4px;letter-spacing:2px;text-align:center;margin-top:10px">* PAYMENT PENDING *</div>`;
+    : `<div style="border:1px dashed #555;color:#555;font-size:10px;padding:4px;letter-spacing:2px;margin-top:6px">* PAYMENT PENDING *</div>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <title>${billLabel} — ${escHtml(params.tableName)}</title>
 <style>
+  @page { margin: 4mm; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Courier New',monospace; font-size:12px; padding:16px; max-width:380px; }
-  .hdr { text-align:center; border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:8px; }
-  .biz { font-size:16px; font-weight:bold; }
-  .lbl { font-size:24px; font-weight:bold; letter-spacing:4px; margin:6px 0 2px; }
+  body { font-family:'Courier New',monospace; font-size:12px; color:#000; padding:0 2mm; max-width:380px; }
+  .center { text-align:center; }
+  .biz { font-size:16px; font-weight:bold; line-height:1.25; }
+  .sub { font-size:11px; }
+  .lbl { font-size:15px; font-weight:bold; letter-spacing:3px; margin-top:3px; }
   .tbl { font-size:13px; font-weight:bold; }
-  table { width:100%; border-collapse:collapse; }
-  thead th { border-bottom:1px solid #000; padding:2px 4px; font-size:11px; text-align:left; }
-  thead th:nth-child(2) { text-align:center; }
-  thead th:nth-child(3),thead th:nth-child(4) { text-align:right; }
-  .tot { border-top:1px solid #000; margin-top:6px; width:100%; border-collapse:collapse; }
-  .tot td { padding:2px 4px; }
-  .grand td { font-size:14px; font-weight:bold; border-top:2px solid #000; padding-top:4px; }
-  .ftr { text-align:center; font-size:10px; margin-top:10px; color:#555; }
+  .hr { border-top:1px dashed #000; margin:4px 0; }
+  .row { display:flex; justify-content:space-between; gap:8px; }
+  .item-name { word-break:break-word; }
+  .nowrap { white-space:nowrap; }
+  .item-row { margin:1px 0; }
+  .sub-row { font-size:11px; }
+  .grand { font-size:14px; font-weight:bold; border-top:2px solid #000; margin-top:3px; padding-top:3px; }
+  .ftr { text-align:center; font-size:10px; margin-top:6px; }
 </style>
 </head><body>
-<div class="hdr">
-  <div class="biz">${escHtml(businessName)}</div>
-  ${businessAddress ? `<div style="font-size:11px">${escHtml(businessAddress)}</div>` : ""}
-  ${businessPhone   ? `<div style="font-size:11px">${escHtml(businessPhone)}</div>`   : ""}
+<div class="center">
+  ${logoHtml}
+  <div class="biz">${escHtmlMultiline(businessName)}</div>
+  ${addrLines}
+  ${businessPhone ? `<div class="sub">Tel# ${escHtml(businessPhone)}</div>` : ""}
   <div class="lbl">${billLabel}</div>
   <div class="tbl">Table: ${escHtml(params.tableName)}</div>
-  ${params.staffName ? `<div style="font-size:10px;margin-top:2px">Cashier: ${escHtml(params.staffName)}</div>` : ""}
-  <div style="font-size:10px;margin-top:2px">${dateStr}</div>
+  ${params.staffName ? `<div class="sub">Cashier: ${escHtml(params.staffName)}</div>` : ""}
+  <div class="sub">${dateStr}</div>
 </div>
-<table>
-  <thead><tr>
-    <th>Item</th><th>Qty</th><th>Unit</th><th>Total</th>
-  </tr></thead>
-  <tbody>${itemRows}</tbody>
-</table>
-<table class="tot">
-  <tr><td>Subtotal</td><td style="text-align:right">${fmt(params.subtotal)}</td></tr>
-  ${params.serviceCharge && params.serviceCharge > 0 ? `<tr><td>Service</td><td style="text-align:right">${fmt(params.serviceCharge)}</td></tr>` : ""}
-  <tr><td>${escHtml(taxName)}</td><td style="text-align:right">${fmt(params.tax)}</td></tr>
-  <tr class="grand"><td>TOTAL</td><td style="text-align:right">${fmt(params.total)}</td></tr>
-</table>
-${statusBadge}
+<div class="hr"></div>
+${itemsHtml}
+<div class="hr"></div>
+<div class="row sub-row"><span>Subtotal</span><span class="nowrap">${fmt(params.subtotal)}</span></div>
+${params.serviceCharge && params.serviceCharge > 0 ? `<div class="row sub-row"><span>Service</span><span class="nowrap">${fmt(params.serviceCharge)}</span></div>` : ""}
+<div class="row sub-row"><span>${escHtml(taxName)}</span><span class="nowrap">${fmt(params.tax)}</span></div>
+<div class="row grand"><span>TOTAL</span><span class="nowrap">${fmt(params.total)}</span></div>
+${secondaryHtml}
+<div class="center">${statusBadge}</div>
 <div class="ftr">${escHtml(receiptFooter)}</div>
 </body></html>`;
 }

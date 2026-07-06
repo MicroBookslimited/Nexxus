@@ -3,6 +3,7 @@ import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey } from "@work
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -324,12 +325,17 @@ export function AdminSettings() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="biz-name">Business Name</Label>
-              <Input
+              <Textarea
                 id="biz-name"
                 value={businessName}
                 onChange={(e) => { setBusinessName(e.target.value); markDirty(); }}
                 placeholder="NEXXUS POS"
+                rows={2}
+                className="min-h-0 resize-none"
               />
+              <p className="text-[11px] text-muted-foreground">
+                Press Enter to split the name across lines on receipts (e.g. “Lotus” / “Indian Cuisine”).
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="biz-phone">Phone Number</Label>
