@@ -176,6 +176,28 @@
         text-transform: uppercase;
         letter-spacing: 0.05em;
       }
+
+      /* ── POS screen: hide all chat widgets ─────────────────────────────────
+         When the SPA is on /pos the route-watcher below adds .pos-active to
+         <body>. Every Chatfuel element (iframes, launcher divs, the fallback
+         button) and the nx-cf-host wrapper are hidden so they don't overlap
+         the cashier interface. Removed automatically on every other route. */
+      body.pos-active #nx-chat-fallback,
+      body.pos-active .nx-cf-host,
+      body.pos-active iframe[src*="chatfuel"],
+      body.pos-active iframe[src*="panel.chatfuel"],
+      body.pos-active div[id*="chatfuel" i],
+      body.pos-active div[class*="chatfuel" i],
+      body.pos-active div[id*="cf-"],
+      body.pos-active div[class*="cf-"],
+      body.pos-active div[id*="launcher" i],
+      body.pos-active div[class*="launcher" i],
+      body.pos-active #cf-widget-container,
+      body.pos-active .cf-widget-container {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
     </style>
   </head>
   <body>
@@ -203,6 +225,32 @@
         <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
       </button>
     </div>
+
+    <!-- Route-watcher: adds/removes .pos-active on <body> as the SPA navigates.
+         The class is used by the CSS above to hide the chat widget on /pos. -->
+    <script>
+      (function () {
+        function checkPosRoute() {
+          var isPOS = window.location.pathname.startsWith('/pos');
+          document.body.classList.toggle('pos-active', isPOS);
+        }
+        /* Run immediately (covers hard-load directly to /pos) */
+        checkPosRoute();
+        /* Patch history API so SPA navigations (Wouter/React Router) trigger it */
+        var _push    = history.pushState.bind(history);
+        var _replace = history.replaceState.bind(history);
+        history.pushState = function () {
+          _push.apply(this, arguments);
+          checkPosRoute();
+        };
+        history.replaceState = function () {
+          _replace.apply(this, arguments);
+          checkPosRoute();
+        };
+        /* Handle back/forward browser navigation */
+        window.addEventListener('popstate', checkPosRoute);
+      })();
+    </script>
 
     <script>
       (function () {
