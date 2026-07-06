@@ -2161,7 +2161,12 @@ export function POS() {
         data: {
           staffId: sessionStaff?.id ?? undefined,
           items: cart.map((item) => ({
-            productId: item.productId,
+            // Custom/misc items have no catalog productId (sentinel 0 locally);
+            // send them as customName/customPrice exactly like the paid-checkout
+            // path so they reach the kitchen as real line items.
+            productId: item.isCustom ? undefined : item.productId,
+            customName: item.isCustom ? item.productName : undefined,
+            customPrice: item.isCustom ? item.effectivePrice : undefined,
             quantity: item.quantity,
             discountAmount: item.itemDiscount || undefined,
             variantChoices: item.variantChoices.length > 0 ? item.variantChoices : undefined,
