@@ -2170,4 +2170,164 @@ router.post("/orders/:id/refund-items", async (req, res): Promise<void> => {
   }));
 });
 
+/* ─── Void items on an open order (kitchen cancel) ──────────────────────────
+ * Removes specific items (or reduces their quantity) from an open/pending
+ * order that has already been sent to the kitchen. Restores stock for the
+ * voided quantity and recalculates order totals in a single transaction.
+ * Requires the order to be in status "open".
+ * Body: { items: [{ orderItemId: number; quantity: number }], reason?: string }
+ * ─────────────────────────────────────────────────────────────────────────── */
+router.post("/orders/:id/void-items", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const orderId = parseInt(raw, 10);
+  if (isNaN(orderId)) { res.status(400).json({ error: "Invalid order id" }); return; }
+
+  const { items: reqItems, reason } = req.body as {
+    items?: Array<{ orderItemId: number; quantity: number }>;
+    reason?: string;
+  };
+
+  if (!Array.isArray(reqItems) || reqItems.length === 0) {
+    res.status(400).json({ error: "items array is required" });
+    return;
+  }
+
+  // Aggregate duplicates
+  const requestedByItemId = new Map<number, number>();
+  for (const r of reqItems) {
+    if (!Number.isInteger(r.orderItemId) || !(r.quantity > 0)) {
+      res.status(400).json({ error: "Each item needs a valid orderItemId and quantity > 0" });
+      return;
+    }
+    requestedByItemId.set(r.orderItemId, (requestedByItemId.get(r.orderItemId) ?? 0) + r.quantity);
+  }
+
+  type VoidErr = { httpStatus: number; httpMessage: string };
+  const isVoidErr = (e: unknown): e is VoidErr =>
+    typeof e === "object" && e !== null && typeof (e as VoidErr).httpStatus === "number";
+
+  let auditItems: Array<{ orderItemId: number; productName: string; quantity: number }> = [];
+
+  try {
+    await db.transaction(async (tx) => {
+      // Lock the order so concurrent voids serialize
+      const [existing] = await tx.select().from(ordersTable)
+        .where(and(eq(ordersTable.id, orderId), eq(ordersTable.tenantId, tenantId)))
+        .for("update");
+      if (!existing) throw { httpStatus: 404, httpMessage: "Order not found" } satisfies VoidErr;
+      if (existing.status !== "open") throw { httpStatus: 400, httpMessage: "Only open orders can have items voided" } satisfies VoidErr;
+
+      const allItems = await tx.select().from(orderItemsTable)
+        .where(eq(orderItemsTable.orderId, orderId));
+      const itemsById = new Map(allItems.map(i => [i.id, i]));
+
+      // Validate and collect void requests
+      const voidReqs: Array<{ item: typeof orderItemsTable.$inferSelect; voidQty: number }> = [];
+      for (const [orderItemId, voidQty] of requestedByItemId) {
+        const item = itemsById.get(orderItemId);
+        if (!item) throw { httpStatus: 400, httpMessage: `Order item ${orderItemId} not found on this order` } satisfies VoidErr;
+        if (voidQty > item.quantity) throw { httpStatus: 400, httpMessage: `Cannot void ${voidQty} of "${item.productName}" — only ${item.quantity} ordered` } satisfies VoidErr;
+        voidReqs.push({ item, voidQty });
+      }
+
+      // Fetch product metadata for stock restore (composite / batch / simple)
+      const productIds = Array.from(new Set(voidReqs.map(r => r.item.productId).filter(id => id > 0)));
+      const productMeta = productIds.length === 0 ? [] : await tx
+        .select({ id: productsTable.id, structureType: productsTable.structureType, trackBatches: productsTable.trackBatches })
+        .from(productsTable)
+        .where(and(inArray(productsTable.id, productIds), eq(productsTable.tenantId, tenantId)));
+      const metaMap = new Map(productMeta.map(p => [p.id, p]));
+
+      const compositeIds = productMeta.filter(p => p.structureType === "composite").map(p => p.id);
+      const componentsByParent = new Map<number, Array<{ childProductId: number; quantityRequired: number }>>();
+      if (compositeIds.length > 0) {
+        const compRows = await tx
+          .select({ parentId: compositeProductComponentsTable.parentProductId, childId: compositeProductComponentsTable.childProductId, qty: compositeProductComponentsTable.quantityRequired })
+          .from(compositeProductComponentsTable)
+          .where(and(eq(compositeProductComponentsTable.tenantId, tenantId), inArray(compositeProductComponentsTable.parentProductId, compositeIds)));
+        for (const r of compRows) {
+          const arr = componentsByParent.get(r.parentId) ?? [];
+          arr.push({ childProductId: r.childId, quantityRequired: r.qty });
+          componentsByParent.set(r.parentId, arr);
+        }
+      }
+
+      // Apply each void: reduce quantity or delete the row, then restore stock
+      for (const { item, voidQty } of voidReqs) {
+        const remaining = item.quantity - voidQty;
+        if (remaining <= 0) {
+          await tx.delete(orderItemsTable).where(eq(orderItemsTable.id, item.id));
+        } else {
+          const perUnit = item.quantity > 0 ? item.lineTotal / item.quantity : 0;
+          const newLineTotal = Math.round(perUnit * remaining * 100) / 100;
+          await tx.update(orderItemsTable)
+            .set({ quantity: remaining, lineTotal: newLineTotal })
+            .where(eq(orderItemsTable.id, item.id));
+        }
+
+        // Restore stock for the voided quantity
+        await restoreLineStock(tx, {
+          item,
+          restoreQty: voidQty,
+          tenantId,
+          orderId,
+          locationId: existing.locationId ?? null,
+          meta: metaMap.get(item.productId),
+          components: componentsByParent.get(item.productId) ?? [],
+          movementType: "void",
+          compositeMovementType: "composite_void",
+          noteVerb: "Kitchen void",
+          batchSourceType: "void",
+        });
+
+        auditItems.push({ orderItemId: item.id, productName: item.productName, quantity: voidQty });
+      }
+
+      // Recompute order totals from surviving items
+      const survivors = await tx.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
+      const newSubtotal = survivors.reduce((s, i) => s + i.lineTotal, 0);
+
+      // If all items were removed, void the whole order
+      if (survivors.length === 0) {
+        await tx.update(ordersTable)
+          .set({ status: "voided", voidReason: reason ?? "All items cancelled by staff", subtotal: 0, tax: 0, total: 0 })
+          .where(eq(ordersTable.id, orderId));
+      } else {
+        // Re-apply the same tax rate proportionally
+        const taxRate = existing.subtotal > 0 ? existing.tax / existing.subtotal : 0;
+        const newTax = Math.round(newSubtotal * taxRate * 100) / 100;
+        const discountValue = existing.discountValue ?? 0;
+        const serviceChargeRate = existing.subtotal > 0 ? (existing.serviceCharge ?? 0) / existing.subtotal : 0;
+        const newServiceCharge = Math.round(newSubtotal * serviceChargeRate * 100) / 100;
+        const newTotal = Math.max(0, newSubtotal + newTax + newServiceCharge - discountValue);
+        await tx.update(ordersTable)
+          .set({ subtotal: newSubtotal, tax: newTax, serviceCharge: newServiceCharge, total: newTotal })
+          .where(eq(ordersTable.id, orderId));
+      }
+    });
+  } catch (e) {
+    if (isVoidErr(e)) {
+      res.status(e.httpStatus).json({ error: e.httpMessage });
+      return;
+    }
+    throw e;
+  }
+
+  await logAudit({
+    tenantId,
+    staffId: null,
+    action: "order.void_items",
+    entityType: "order",
+    entityId: orderId,
+    details: { reason: reason ?? null, items: auditItems },
+  });
+
+  const fullOrder = await getOrderWithItems(orderId);
+  res.json({ order: fullOrder });
+});
+
 export default router;

@@ -815,12 +815,13 @@ export function POS() {
   // Per-table aggregation of all open orders (Approach B: each Send = new order)
   const tableTicketMap = useMemo(() => {
     const map = new Map<number, {
-      items: Array<{ productName: string; quantity: number; unitPrice: number; lineTotal: number }>;
+      items: Array<{ orderId: number; orderItemId: number; productName: string; quantity: number; unitPrice: number; lineTotal: number }>;
       subtotal: number; tax: number; serviceCharge: number; total: number;
     }>();
     for (const order of openOrders ?? []) {
       const tid = (order as any).tableId as number | undefined;
       if (!tid) continue;
+      const oid = Number((order as any).id ?? 0);
       const orderItems = ((order as any).items ?? []).map((item: any) => {
         const quantity  = Number(item.quantity ?? 0);
         const lineTotal = Number(item.lineTotal ?? 0);
@@ -829,6 +830,8 @@ export function POS() {
         let unitPrice = Number(item.unitPrice ?? item.price ?? 0);
         if (!unitPrice && quantity > 0 && lineTotal > 0) unitPrice = lineTotal / quantity;
         return {
+          orderId: oid,
+          orderItemId: Number(item.id ?? 0),
           productName: item.productName ?? "",
           quantity,
           unitPrice,
@@ -870,6 +873,12 @@ export function POS() {
   // Manager-PIN prompt shown when the cashier tries to add items to a table
   // whose bill has already been printed (status "billed").
   const [billedAddPinOpen, setBilledAddPinOpen] = useState(false);
+  // Cancel-items flow: PIN gate → quantity editor → confirm void
+  const [cancelItemsPinOpen, setCancelItemsPinOpen] = useState(false);
+  const [cancelItemsEditorOpen, setCancelItemsEditorOpen] = useState(false);
+  // Map of orderItemId → { orderId, productName, originalQty, voidQty }
+  const [cancelItemDraft, setCancelItemDraft] = useState<Map<number, { orderId: number; productName: string; originalQty: number; voidQty: number }>>(new Map());
+  const [cancelItemsBusy, setCancelItemsBusy] = useState(false);
 
   const handlePrintBill = () => {
     if (!tableTicketDialog) return;
@@ -4858,6 +4867,16 @@ export function POS() {
                 </Button>
               </div>
             )}
+            {/* Cancel / reduce items — manager PIN required */}
+            {tableTicketMap.get(tableTicketDialog?.id ?? 0)?.items.length > 0 && (
+              <Button
+                variant="outline"
+                className="w-full gap-2 text-red-400 border-red-400/30 hover:bg-red-400/10"
+                onClick={() => setCancelItemsPinOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />Cancel Items (Manager Required)
+              </Button>
+            )}
             <Button
               className="w-full gap-2"
               disabled={tableTicketBusy || !tableTicketMap.has(tableTicketDialog?.id ?? 0)}
@@ -4937,6 +4956,170 @@ export function POS() {
               );
             }}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Cancel Items: Manager PIN gate ──────────────────────────────── */}
+      <Dialog open={cancelItemsPinOpen} onOpenChange={(o) => { if (!o) setCancelItemsPinOpen(false); }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <Trash2 className="h-4 w-4" />Cancel Items — Manager PIN
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground text-center -mt-2 mb-2">
+            A manager PIN is required to cancel or reduce items already sent to the kitchen.
+          </p>
+          <PinPad
+            title=""
+            requiredRoles={["manager", "admin", "supervisor"]}
+            onSuccess={() => {
+              setCancelItemsPinOpen(false);
+              // Build the draft from the current table's items (all voidQty start at 0)
+              if (!tableTicketDialog) return;
+              const ticket = tableTicketMap.get(tableTicketDialog.id);
+              if (!ticket) return;
+              const draft = new Map<number, { orderId: number; productName: string; originalQty: number; voidQty: number }>();
+              for (const item of ticket.items) {
+                if (!item.orderItemId) continue;
+                draft.set(item.orderItemId, {
+                  orderId: item.orderId,
+                  productName: item.productName,
+                  originalQty: item.quantity,
+                  voidQty: 0,
+                });
+              }
+              setCancelItemDraft(draft);
+              setCancelItemsEditorOpen(true);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Cancel Items: Quantity editor ────────────────────────────────── */}
+      <Dialog open={cancelItemsEditorOpen} onOpenChange={(o) => { if (!o) { setCancelItemsEditorOpen(false); setCancelItemDraft(new Map()); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <Trash2 className="h-4 w-4" />Cancel Items
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Set how many of each item to cancel. Leave at 0 to keep it unchanged.
+          </p>
+          <ScrollArea className="max-h-64 pr-1">
+            <div className="space-y-2 py-1">
+              {Array.from(cancelItemDraft.entries()).map(([orderItemId, row]) => (
+                <div key={orderItemId} className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate">{row.productName}</p>
+                    <p className="text-xs text-muted-foreground">Ordered: {row.originalQty}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className="h-7 w-7"
+                      disabled={row.voidQty <= 0}
+                      onClick={() => setCancelItemDraft(prev => {
+                        const next = new Map(prev);
+                        const r = next.get(orderItemId)!;
+                        next.set(orderItemId, { ...r, voidQty: Math.max(0, r.voidQty - 1) });
+                        return next;
+                      })}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </Button>
+                    <span className={`w-6 text-center text-sm font-mono font-bold ${row.voidQty > 0 ? "text-red-400" : "text-muted-foreground"}`}>
+                      {row.voidQty}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className="h-7 w-7"
+                      disabled={row.voidQty >= row.originalQty}
+                      onClick={() => setCancelItemDraft(prev => {
+                        const next = new Map(prev);
+                        const r = next.get(orderItemId)!;
+                        next.set(orderItemId, { ...r, voidQty: Math.min(r.originalQty, r.voidQty + 1) });
+                        return next;
+                      })}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                    {/* Quick-remove: set to full quantity */}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-red-400 hover:bg-red-400/10"
+                      title="Remove entire line"
+                      onClick={() => setCancelItemDraft(prev => {
+                        const next = new Map(prev);
+                        const r = next.get(orderItemId)!;
+                        next.set(orderItemId, { ...r, voidQty: r.originalQty });
+                        return next;
+                      })}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+          <DialogFooter className="flex-col gap-2 sm:flex-col mt-2">
+            {(() => {
+              const toVoid = Array.from(cancelItemDraft.entries()).filter(([, r]) => r.voidQty > 0);
+              return (
+                <Button
+                  className="w-full gap-2 bg-red-600 hover:bg-red-700 text-white"
+                  disabled={toVoid.length === 0 || cancelItemsBusy}
+                  onClick={async () => {
+                    if (!tableTicketDialog) return;
+                    setCancelItemsBusy(true);
+                    // Group void requests by orderId
+                    const byOrder = new Map<number, Array<{ orderItemId: number; quantity: number }>>();
+                    for (const [orderItemId, row] of cancelItemDraft) {
+                      if (row.voidQty <= 0) continue;
+                      const arr = byOrder.get(row.orderId) ?? [];
+                      arr.push({ orderItemId, quantity: row.voidQty });
+                      byOrder.set(row.orderId, arr);
+                    }
+                    try {
+                      const token = localStorage.getItem(TENANT_TOKEN_KEY);
+                      for (const [oid, items] of byOrder) {
+                        const resp = await fetch(`/api/orders/${oid}/void-items`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                          body: JSON.stringify({ items, reason: "Cancelled by manager" }),
+                        });
+                        if (!resp.ok) {
+                          const err = await resp.json().catch(() => ({}));
+                          throw new Error((err as any).error ?? "Failed to cancel items");
+                        }
+                      }
+                      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/kitchen"] });
+                      setCancelItemsEditorOpen(false);
+                      setCancelItemDraft(new Map());
+                      toast({ title: "Items cancelled", description: "The kitchen has been notified." });
+                    } catch (e: any) {
+                      toast({ title: "Error", description: e.message ?? "Could not cancel items.", variant: "destructive" });
+                    } finally {
+                      setCancelItemsBusy(false);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {cancelItemsBusy ? "Cancelling…" : `Confirm Cancel (${toVoid.reduce((s, [, r]) => s + r.voidQty, 0)} item${toVoid.reduce((s, [, r]) => s + r.voidQty, 0) !== 1 ? "s" : ""})`}
+                </Button>
+              );
+            })()}
+            <Button variant="outline" className="w-full" onClick={() => { setCancelItemsEditorOpen(false); setCancelItemDraft(new Map()); }}>
+              Keep All Items
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
