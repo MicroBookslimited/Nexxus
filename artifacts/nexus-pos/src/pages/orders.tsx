@@ -402,8 +402,13 @@ export function Orders() {
         setChargeDialogOpen(false);
         setOrderToCharge(null);
       },
-      onError: () => {
-        toast({ title: "Charge Failed", variant: "destructive" });
+      onError: (err: any) => {
+        const msg = err?.response?.data?.message ?? err?.response?.data?.error ?? err?.message ?? "";
+        toast({
+          title: "Charge Failed",
+          description: msg || "Could not process payment. Check that the payment method is enabled.",
+          variant: "destructive",
+        });
       }
     });
   };

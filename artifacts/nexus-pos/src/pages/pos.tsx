@@ -2188,7 +2188,7 @@ export function POS() {
           customerId: selectedCustomerId ?? undefined,
           loyaltyPointsToRedeem: clampedPoints > 0 ? clampedPoints : undefined,
           tableId: selectedTableId ?? undefined,
-          orderType: "dine-in",
+          orderType: orderMode === "takeout" ? "takeout" : orderMode === "delivery" ? "delivery" : "dine-in",
           locationId: sessionLocationId ?? undefined,
         },
       },
@@ -3445,7 +3445,7 @@ export function POS() {
               </p>
             )}
 
-            {isRestaurant && orderMode === "dine-in" && (
+            {isRestaurant && (
               <Button className="w-full h-10 text-sm bg-amber-500 text-white hover:bg-amber-600 border border-amber-500"
                 onClick={handleSendToKitchen} disabled={cart.length === 0 || createOrder.isPending}>
                 <ChefHat className="mr-2 h-4 w-4" />Send to Kitchen (Pay Later)
@@ -4915,6 +4915,11 @@ export function POS() {
                   onSuccess: () => {
                     toast({ title: "Table reopened", description: `${tableName} is now open for new items.` });
                     queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+                    // Refresh the local dialog state so it reflects "occupied"
+                    // immediately — otherwise the UI stays in "billed" mode and
+                    // the normal buttons (Add Items, Cancel Items, Pay & Close)
+                    // remain hidden until the user closes and reopens the dialog.
+                    setTableTicketDialog((prev) => prev ? { ...prev, status: "occupied" } : prev);
                   },
                   onError: () => toast({ title: "Error", description: "Could not reopen the table.", variant: "destructive" }),
                 },
