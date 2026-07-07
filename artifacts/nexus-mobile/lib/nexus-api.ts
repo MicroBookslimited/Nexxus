@@ -312,3 +312,87 @@ export function saasMe(): Promise<SaasMeResponse> {
 export function getPlans(): Promise<SaasPlan[]> {
   return request<SaasPlan[]>("/api/plans");
 }
+
+/* ───────────── Purchase Bills ───────────── */
+
+export interface PurchaseBillItem {
+  id: number;
+  billId: number;
+  productId: number;
+  productName?: string | null;
+  quantity: number;
+  unitCost: number;
+  taxRate?: number | null;
+  taxAmount?: number | null;
+  totalCost: number;
+  batchNumber?: string | null;
+  expiryDate?: string | null;
+}
+
+export interface PurchaseBill {
+  id: number;
+  tenantId: number;
+  billNumber: string;
+  supplier?: string | null;
+  notes?: string | null;
+  status: "draft" | "confirmed";
+  defaultTaxRate: number;
+  taxMode: "exclusive" | "inclusive";
+  subtotal: number;
+  taxTotal: number;
+  totalCost: number;
+  itemCount?: number;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface PurchaseBillWithItems extends PurchaseBill {
+  items: PurchaseBillItem[];
+}
+
+export interface CostChange {
+  productId: number;
+  productName: string;
+  oldCost: number | null;
+  newCost: number;
+  currentPrice: number;
+  suggestedPrice: number;
+}
+
+export function listPurchaseBills(): Promise<PurchaseBill[]> {
+  return request<PurchaseBill[]>("/api/purchase-bills");
+}
+
+export function getPurchaseBill(id: number): Promise<PurchaseBillWithItems> {
+  return request<PurchaseBillWithItems>(`/api/purchase-bills/${id}`);
+}
+
+export function createPurchaseBill(body: {
+  billNumber: string;
+  supplier?: string;
+  notes?: string;
+  status: "draft" | "confirmed";
+  defaultTaxRate: number;
+  taxMode: "exclusive" | "inclusive";
+  items: Array<{
+    productId: number;
+    quantity: number;
+    unitCost: number;
+    taxRate?: number | null;
+    batchNumber?: string | null;
+    expiryDate?: string | null;
+  }>;
+}): Promise<PurchaseBillWithItems & { costChanges: CostChange[] }> {
+  return request(`/api/purchase-bills`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function confirmPurchaseBill(id: number): Promise<PurchaseBillWithItems & { costChanges: CostChange[] }> {
+  return request(`/api/purchase-bills/${id}/confirm`, { method: "POST" });
+}
+
+export function deletePurchaseBill(id: number): Promise<void> {
+  return request(`/api/purchase-bills/${id}`, { method: "DELETE" });
+}
