@@ -506,12 +506,25 @@ export function SubscriptionPage() {
           {selectedPlan && (() => {
             const planPrice = billingCycle === "annual" ? selectedPlan.priceAnnual : selectedPlan.priceMonthly;
             const isFree = planPrice === 0;
+            const isOnPaidPlan = subscription?.status === "active" && subscription?.provider !== "free";
             return isFree ? (
-              <button onClick={handleActivateFree} disabled={isProcessing}
-                className="w-full bg-[#3b82f6] hover:bg-blue-500 disabled:opacity-60 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors">
-                {isProcessing ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />}
-                Activate {selectedPlan.name} — Free
-              </button>
+              isOnPaidPlan ? (
+                // Paid tenants cannot self-downgrade to a free plan — a superadmin
+                // must do it so billing records are handled deliberately.
+                <div className="w-full bg-[#1a2332] border border-amber-500/40 rounded-xl p-4 flex items-start gap-3">
+                  <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-300">
+                    Your account is on a paid plan. To downgrade to the free plan, please contact support —
+                    a plan change cannot be self-applied while an active paid subscription is in place.
+                  </p>
+                </div>
+              ) : (
+                <button onClick={handleActivateFree} disabled={isProcessing}
+                  className="w-full bg-[#3b82f6] hover:bg-blue-500 disabled:opacity-60 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors">
+                  {isProcessing ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />}
+                  Activate {selectedPlan.name} — Free
+                </button>
+              )
             ) : (
               <button onClick={() => { setShowPayment(true); setPaypalRendered(false); setError(""); setProofFile(null); setTransferRef(""); setTransferNotes(""); }}
                 className="w-full bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors">
