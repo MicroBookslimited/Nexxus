@@ -332,7 +332,12 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
     .where(
       and(
         eq(ordersTable.tenantId, tenantId),
-        gte(ordersTable.createdAt, session.openedAt),
+        // Attribute orders to the session by PAYMENT time, not creation time.
+        // Pay-later (kitchen) orders get their paymentMethod when charged —
+        // possibly during a later shift. Using createdAt retroactively inflated
+        // the creating shift's expected cash (false shortages). completedAt is
+        // set at charge time; fall back to createdAt for immediate-paid orders.
+        gte(sql`COALESCE(${ordersTable.completedAt}, ${ordersTable.createdAt})`, session.openedAt),
         isNotNull(ordersTable.paymentMethod),
         ...(session.staffId ? [eq(ordersTable.staffId, session.staffId)] : []),
       )
@@ -341,9 +346,10 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
 
   const salesSummary = computeSales(orderRows);
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
-  // Cash portion of split payments is stored separately in splitCashAmount
+  // Cash portion of split payments; refunded splits returned their cash to the
+  // customer, so exclude them (mirrors how refundedCash is netted out above).
   const splitCashSales = orderRows
-    .filter(r => r.status !== "voided" && r.paymentMethod === "split")
+    .filter(r => r.status !== "voided" && r.status !== "refunded" && r.paymentMethod === "split")
     .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
   // Cash collected from selling gift vouchers (issuance) also lands in the drawer.
   const issuedVouchers = await db
@@ -401,8 +407,10 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
     .where(
       and(
         eq(ordersTable.tenantId, tenantId),
-        gte(ordersTable.createdAt, session.openedAt),
-        lte(ordersTable.createdAt, closedAt),
+        // Attribute by PAYMENT time (see open-session route above): pay-later
+        // orders charged in a later shift must not count toward this shift.
+        gte(sql`COALESCE(${ordersTable.completedAt}, ${ordersTable.createdAt})`, session.openedAt),
+        lte(sql`COALESCE(${ordersTable.completedAt}, ${ordersTable.createdAt})`, closedAt),
         isNotNull(ordersTable.paymentMethod),
         ...(session.staffId ? [eq(ordersTable.staffId, session.staffId)] : []),
       )
@@ -412,7 +420,7 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
   const salesSummary = computeSales(orderRows);
   const totalPayouts = payouts.reduce((s, p) => s + p.amount, 0);
   const splitCashSales = orderRows
-    .filter(r => r.status !== "voided" && r.paymentMethod === "split")
+    .filter(r => r.status !== "voided" && r.status !== "refunded" && r.paymentMethod === "split")
     .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
   // Cash collected from selling gift vouchers (issuance) also lands in the drawer.
   const issuedVouchers = await db
@@ -602,14 +610,15 @@ router.post("/cash/sessions/:id/admin-close", async (req, res): Promise<void> =>
     .from(ordersTable)
     .where(and(
       eq(ordersTable.tenantId, tenantId),
-      gte(ordersTable.createdAt, session.openedAt),
+      // Attribute by PAYMENT time (see open-session route above).
+      gte(sql`COALESCE(${ordersTable.completedAt}, ${ordersTable.createdAt})`, session.openedAt),
       isNotNull(ordersTable.paymentMethod),
       ...(session.staffId ? [eq(ordersTable.staffId, session.staffId)] : []),
     ));
 
   const sales = computeSales(orderRows);
   const splitCashSales = orderRows
-    .filter(r => r.status !== "voided" && r.paymentMethod === "split")
+    .filter(r => r.status !== "voided" && r.status !== "refunded" && r.paymentMethod === "split")
     .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
   const expectedCash = session.openingCash + (sales.cashSales - sales.refundedCash) + splitCashSales - totalPayouts;
 

@@ -216,6 +216,9 @@ export function PosHardware() {
   const [sessionLocationId, setSessionLocationId] = useState<number | null>(null);
   const { data: products } = useListProducts(
     sessionLocationId ? { locationId: sessionLocationId } : undefined,
+    // Keep the catalog fresh across terminals: new/edited products appear
+    // within a minute without needing a manual page reload.
+    { query: { refetchInterval: 60_000, refetchOnWindowFocus: true } },
   );
   const { data: customers } = useListCustomers();
   const { data: heldOrders } = useListHeldOrders();

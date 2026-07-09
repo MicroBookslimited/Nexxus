@@ -74,6 +74,36 @@ import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 const MANAGEMENT_ROLES = ["admin", "manager", "supervisor"];
 
+/**
+ * Distinct audible ERROR tone for failed scans. Barcode scanners beep on every
+ * successful *read* regardless of whether the POS recognised the code, so
+ * cashiers can't tell a good scan from a bad one by sound alone. This plays a
+ * low double-buzz through the terminal speakers when a scan doesn't ring up.
+ */
+let errorAudioCtx: AudioContext | null = null;
+function playScanErrorTone() {
+  try {
+    if (!errorAudioCtx) errorAudioCtx = new AudioContext();
+    const ctx = errorAudioCtx;
+    if (ctx.state === "suspended") void ctx.resume();
+    const now = ctx.currentTime;
+    [0, 0.18].forEach((offset) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(220, now + offset);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.25, now + offset + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.14);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.15);
+    });
+  } catch {
+    /* audio unavailable — toast still shows the error */
+  }
+}
+
 function fmtNum(val: number) {
   return Math.abs(val).toLocaleString("en-US", {
     minimumFractionDigits: 2,
@@ -152,6 +182,9 @@ export function PosSupermarket({
   const [sessionLocationId, setSessionLocationId] = useState<number | null>(null);
   const { data: products } = useListProducts(
     sessionLocationId ? { locationId: sessionLocationId } : undefined,
+    // Keep the catalog fresh across terminals: new/edited products appear
+    // within a minute without needing a manual page reload.
+    { query: { refetchInterval: 60_000, refetchOnWindowFocus: true } },
   );
   const { data: customers } = useListCustomers();
   const createOrder = useCreateOrder();
@@ -685,6 +718,7 @@ export function PosSupermarket({
       return;
     }
     if (matches.length > 1) {
+      playScanErrorTone();
       toast({
         title: "Multiple products share this code",
         description: "Resolve the duplicate barcode before scanning.",
@@ -702,9 +736,11 @@ export function PosSupermarket({
       if (searchResults.length > 1) return;
       // No matches at all — offer an inline quick-add for this code instead of
       // sending the cashier off to the Products page.
+      playScanErrorTone();
       openQuickAdd(code);
       return;
     }
+    playScanErrorTone();
     toast({
       title: "No product found",
       description: `Nothing matches “${code}”.`,

@@ -47,3 +47,5 @@
 - [Wizard step state must be lifted](wizard-step-state-remount.md) — a multi-step wizard rendered as one of several sibling screens loses its step index on remount; lift step + branch flags to the parent, not the child's useState.
 - [Multi-line business name on receipts](multiline-business-name.md) — business_name may contain newlines; render with escHtmlMultiline (or flatten for plain text), and treat unitPrice 0 as missing (derive from lineTotal/qty).
 - [Global app downscale wrapper](global-scale-wrapper.md) — tablet-landscape scales the whole app via root transform; keep tree shape stable (no remount) and divide safe-area insets by the scale.
+- [Shift cash attribution](shift-cash-attribution.md) — expected-cash must window orders by COALESCE(completedAt, createdAt) in EVERY session endpoint (incl. admin-close), or pay-later orders cause false shortages.
+- [Void must release tables](void-releases-table.md) — any path that voids/cancels a table-linked order must free the dining table (mirror the charge path) or it sticks occupied.

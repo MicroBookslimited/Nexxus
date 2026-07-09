@@ -1678,6 +1678,31 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  // Voiding/cancelling a table-linked order must release the table, otherwise
+  // it stays stuck "occupied"/"billed" with no active order. Only free it when
+  // no OTHER still-active unpaid order references the same table.
+  if (
+    (parsed.data.status === "voided" || parsed.data.status === "cancelled") &&
+    order.tableId
+  ) {
+    const [remaining] = await db
+      .select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(and(
+        eq(ordersTable.tenantId, tenantId),
+        eq(ordersTable.tableId, order.tableId),
+        isNull(ordersTable.paymentMethod),
+        inArray(ordersTable.status, ["open", "pending", "preparing", "ready"]),
+      ))
+      .limit(1);
+    if (!remaining) {
+      await db
+        .update(diningTablesTable)
+        .set({ status: "available", currentOrderId: null })
+        .where(and(eq(diningTablesTable.id, order.tableId), eq(diningTablesTable.tenantId, tenantId)));
+    }
+  }
+
   if (parsed.data.status === "refunded" || parsed.data.status === "voided") {
     const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
     const itemProductIds = Array.from(new Set(items.map(i => i.productId)));

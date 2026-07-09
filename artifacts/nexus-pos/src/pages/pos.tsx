@@ -23,6 +23,7 @@ import {
   useGetSettings,
   useListOrders,
   useChargeOrder,
+  useUpdateOrderStatus,
   useUpdateTable,
   useCreateProduct,
 } from "@workspace/api-client-react";
@@ -464,7 +465,10 @@ export function POS() {
   const [posLocations, setPosLocations] = useState<{ id: number; name: string }[]>([]);
 
   const { data: products, isLoading: loadingProducts } = useListProducts(
-    sessionLocationId ? { locationId: sessionLocationId } : undefined
+    sessionLocationId ? { locationId: sessionLocationId } : undefined,
+    // Keep the catalog fresh across terminals: new/edited products appear
+    // within a minute without needing a manual page reload.
+    { query: { refetchInterval: 60_000, refetchOnWindowFocus: true } },
   );
   const createOrder = useCreateOrder();
   const { data: settings } = useGetSettings();
@@ -859,6 +863,8 @@ export function POS() {
     return map;
   }, [openOrders]);
   const chargeOrder = useChargeOrder();
+  const updateOrderStatus = useUpdateOrderStatus();
+  const [cancelUnpaidOrder, setCancelUnpaidOrder] = useState<typeof unpaidOrders[0] | null>(null);
   const updateTable = useUpdateTable();
   const [kioskChargeOrder, setKioskChargeOrder] = useState<typeof unpaidOrders[0] | null>(null);
   const [kioskPayMethod, setKioskPayMethod] = useState<"card" | "cash">("cash");
@@ -2694,6 +2700,16 @@ export function POS() {
                             >
                               <CreditCard className="h-3 w-3" />
                               Collect Payment
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full h-8 text-xs gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+                              data-testid={`button-cancel-unpaid-${order.id}`}
+                              onClick={() => setCancelUnpaidOrder(order)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              Cancel Order
                             </Button>
                           </div>
                         ))}
@@ -4706,6 +4722,52 @@ export function POS() {
             >
               <CheckCircle2 className="h-4 w-4" />
               {chargeOrder.isPending ? "Processing…" : "Confirm & Charge"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Cancel Unpaid Order Confirmation ────────────────────────────── */}
+      <Dialog open={!!cancelUnpaidOrder} onOpenChange={(open) => { if (!open) setCancelUnpaidOrder(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-destructive" />
+              Cancel Order {cancelUnpaidOrder?.orderNumber}?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will cancel the unpaid order and return its items to stock. No payment was collected, so nothing is refunded. This cannot be undone.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setCancelUnpaidOrder(null)}>Keep Order</Button>
+            <Button
+              variant="destructive"
+              className="gap-2"
+              disabled={updateOrderStatus.isPending}
+              data-testid="button-confirm-cancel-unpaid"
+              onClick={() => {
+                if (!cancelUnpaidOrder) return;
+                updateOrderStatus.mutate(
+                  { id: cancelUnpaidOrder.id, data: { status: "voided", voidReason: "Cancelled before payment" } },
+                  {
+                    onSuccess: () => {
+                      toast({ title: "Order cancelled", description: `${cancelUnpaidOrder.orderNumber} was cancelled and stock restored.` });
+                      setCancelUnpaidOrder(null);
+                      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/kitchen"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+                      queryClient.invalidateQueries({ queryKey: getListProductsQueryKey(sessionLocationId ? { locationId: sessionLocationId } : undefined) });
+                    },
+                    onError: (err) => {
+                      const msg = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data;
+                      toast({ title: "Cancel failed", description: msg?.message || msg?.error || "Could not cancel the order.", variant: "destructive" });
+                    },
+                  },
+                );
+              }}
+            >
+              {updateOrderStatus.isPending ? "Cancelling…" : "Cancel Order"}
             </Button>
           </DialogFooter>
         </DialogContent>
