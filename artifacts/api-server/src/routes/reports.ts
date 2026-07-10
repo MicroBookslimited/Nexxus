@@ -982,6 +982,76 @@ router.get("/reports/tax", async (req, res): Promise<void> => {
   });
 });
 
+// ── Service Fee Report ─────────────────────────────────────────────────────
+router.get("/reports/service-fee", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const { from, to } = rangeParams(req.query as Record<string, string>);
+
+  const [rateSetting] = await db.select().from(appSettingsTable)
+    .where(and(eq(appSettingsTable.tenantId, tenantId), eq(appSettingsTable.key, "service_charge_rate")));
+  const serviceChargeRate = parseFloat(rateSetting?.value ?? "0");
+
+  const baseWhere = and(
+    eq(ordersTable.tenantId, tenantId),
+    eq(ordersTable.status, "completed"),
+    gte(ordersTable.createdAt, from),
+    lte(ordersTable.createdAt, to),
+    sql`${ordersTable.serviceCharge} > 0`,
+  );
+
+  const daily = await db.select({
+    date:          sql<string>`DATE(${ordersTable.createdAt})::text`,
+    orders:        sql<number>`COUNT(*)`,
+    grossTotal:    sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
+    serviceCharge: sql<number>`COALESCE(SUM(${ordersTable.serviceCharge}), 0)`,
+    subtotal:      sql<number>`COALESCE(SUM(${ordersTable.subtotal}), 0)`,
+    tax:           sql<number>`COALESCE(SUM(${ordersTable.tax}), 0)`,
+  }).from(ordersTable)
+    .where(baseWhere)
+    .groupBy(sql`DATE(${ordersTable.createdAt})`)
+    .orderBy(asc(sql`DATE(${ordersTable.createdAt})`));
+
+  const byMethod = await db.select({
+    method:        ordersTable.paymentMethod,
+    orders:        sql<number>`COUNT(*)`,
+    grossTotal:    sql<number>`COALESCE(SUM(${ordersTable.total}), 0)`,
+    serviceCharge: sql<number>`COALESCE(SUM(${ordersTable.serviceCharge}), 0)`,
+  }).from(ordersTable)
+    .where(baseWhere)
+    .groupBy(ordersTable.paymentMethod);
+
+  const totOrders        = daily.reduce((s, r) => s + Number(r.orders),        0);
+  const totGross         = daily.reduce((s, r) => s + Number(r.grossTotal),     0);
+  const totServiceCharge = daily.reduce((s, r) => s + Number(r.serviceCharge),  0);
+  const totSubtotal      = daily.reduce((s, r) => s + Number(r.subtotal),       0);
+
+  res.json({
+    serviceChargeRate,
+    summary: {
+      orders:        totOrders,
+      grossSales:    Math.round(totGross         * 100) / 100,
+      subtotal:      Math.round(totSubtotal      * 100) / 100,
+      serviceCharge: Math.round(totServiceCharge * 100) / 100,
+    },
+    daily: daily.map(r => ({
+      date:          r.date,
+      orders:        Number(r.orders),
+      grossTotal:    Math.round(Number(r.grossTotal)    * 100) / 100,
+      serviceCharge: Math.round(Number(r.serviceCharge) * 100) / 100,
+      subtotal:      Math.round(Number(r.subtotal)      * 100) / 100,
+      tax:           Math.round(Number(r.tax)           * 100) / 100,
+    })),
+    byMethod: byMethod.map(r => ({
+      method:        r.method ?? "other",
+      orders:        Number(r.orders),
+      grossTotal:    Math.round(Number(r.grossTotal)    * 100) / 100,
+      serviceCharge: Math.round(Number(r.serviceCharge) * 100) / 100,
+    })),
+  });
+});
+
 // ── Sales by Staff Report ──────────────────────────────────────────────────
 router.get("/reports/staff-sales", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);

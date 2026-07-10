@@ -1449,6 +1449,145 @@ function TaxReportTab({ range }: { range: { from: string; to: string } }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 12. SERVICE FEE REPORT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function ServiceFeeReportTab({ range }: { range: { from: string; to: string } }) {
+  const { data, isLoading } = useReport<any>(
+    ["service-fee-report", range.from, range.to],
+    `/api/reports/service-fee?from=${range.from}&to=${range.to}`
+  );
+
+  const summary          = data?.summary;
+  const daily            = (data?.daily    ?? []) as any[];
+  const byMethod         = (data?.byMethod ?? []) as any[];
+  const serviceChargeRate = data?.serviceChargeRate ?? 0;
+
+  const handleExport = () => {
+    if (!daily.length) return;
+    downloadCsv(`service-fee-report-${range.from}-to-${range.to}.csv`,
+      ["Date", "Orders", "Subtotal (JMD)", "Service Charge (JMD)", "Gross Total (JMD)"],
+      daily.map(r => [r.date, r.orders, r.subtotal, r.serviceCharge, r.grossTotal])
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start gap-3 rounded-lg border border-orange-500/30 bg-orange-500/10 px-4 py-3">
+        <Percent className="h-4 w-4 text-orange-400 mt-0.5 shrink-0" />
+        <div className="text-sm text-orange-300">
+          <span className="font-semibold">Service Fee Report</span>
+          {serviceChargeRate > 0 && (
+            <> — Rate: <span className="font-mono font-bold">{serviceChargeRate}%</span></>
+          )}.{" "}
+          Covers completed dine-in orders only. Includes all orders where a service charge was applied.
+        </div>
+      </div>
+
+      <div className="flex justify-end"><ExportBtn onClick={handleExport} /></div>
+
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <StatCard title="Service Fee Collected" value={summary ? fc(summary.serviceCharge) : ""} icon={Percent}     loading={isLoading} color="text-orange-400"
+          sub={serviceChargeRate > 0 ? `@ ${serviceChargeRate}% rate` : undefined} />
+        <StatCard title="Gross Sales"            value={summary ? fc(summary.grossSales)    : ""} icon={DollarSign}  loading={isLoading} color="text-blue-400" />
+        <StatCard title="Subtotal (ex. fee)"     value={summary ? fc(summary.subtotal)      : ""} icon={ShoppingBag} loading={isLoading} color="text-violet-400" />
+        <StatCard title="Orders w/ Service Fee"  value={summary ? summary.orders.toString() : ""} icon={UtensilsCrossed} loading={isLoading} />
+      </div>
+
+      {!isLoading && daily.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Daily Service Fee Collection</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={daily} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
+                <Tooltip content={<CT />} />
+                <Bar dataKey="serviceCharge" name="Service Fee (JMD)" fill="#f97316" radius={[3,3,0,0]} />
+                <Bar dataKey="subtotal"      name="Subtotal (JMD)"    fill="#3b82f6" radius={[3,3,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoading && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Day-by-Day Service Fee Breakdown</CardTitle>
+            <CardDescription className="text-xs">All amounts in JMD. Gross Total includes service fee and GCT.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {daily.length === 0 ? <Empty /> : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Orders</TableHead>
+                    <TableHead className="text-right">Subtotal</TableHead>
+                    <TableHead className="text-right text-orange-400">Service Fee</TableHead>
+                    <TableHead className="text-right">Gross Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {daily.map(r => (
+                    <TableRow key={r.date}>
+                      <TableCell className="font-mono text-sm">{r.date}</TableCell>
+                      <TableCell className="text-right">{r.orders}</TableCell>
+                      <TableCell className="text-right font-mono text-muted-foreground">{fc(r.subtotal)}</TableCell>
+                      <TableCell className="text-right font-mono text-orange-400 font-semibold">{fc(r.serviceCharge)}</TableCell>
+                      <TableCell className="text-right font-mono font-semibold">{fc(r.grossTotal)}</TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="border-t-2 border-border/60 font-bold bg-muted/20">
+                    <TableCell>Total</TableCell>
+                    <TableCell className="text-right">{summary?.orders ?? 0}</TableCell>
+                    <TableCell className="text-right font-mono text-muted-foreground">{summary ? fc(summary.subtotal) : ""}</TableCell>
+                    <TableCell className="text-right font-mono text-orange-400">{summary ? fc(summary.serviceCharge) : ""}</TableCell>
+                    <TableCell className="text-right font-mono">{summary ? fc(summary.grossSales) : ""}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoading && byMethod.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Service Fee by Payment Method</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Payment Method</TableHead>
+                  <TableHead className="text-right">Orders</TableHead>
+                  <TableHead className="text-right">Gross Total</TableHead>
+                  <TableHead className="text-right text-orange-400">Service Fee</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {byMethod.map(r => (
+                  <TableRow key={r.method}>
+                    <TableCell className="font-medium capitalize">{METHOD_LABELS[r.method] ?? r.method}</TableCell>
+                    <TableCell className="text-right">{r.orders}</TableCell>
+                    <TableCell className="text-right font-mono">{fc(r.grossTotal)}</TableCell>
+                    <TableCell className="text-right font-mono text-orange-400 font-semibold">{fc(r.serviceCharge)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {isLoading && <Loading />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REGISTER REPORT TAB  (Admin + Manager only)
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1890,14 +2029,15 @@ const BASE_TABS = [
   { value: "table-turnover", label: "Table Turnover", icon: UtensilsCrossed, num: "09" },
   { value: "profit",         label: "Profit Snapshot",icon: TrendingUp,      num: "10" },
   { value: "tax",            label: "GCT / Tax",      icon: Receipt,         num: "11" },
+  { value: "service-fee",   label: "Service Fee",    icon: Percent,         num: "12" },
 ];
 
-const REGISTER_TAB  = { value: "register",    label: "Register Report",  icon: ClipboardList, num: "12" };
-const STAFF_SALES_TAB = { value: "staff-sales", label: "Sales by Staff",   icon: Users,         num: "13" };
-const STOCK_VARIANCE_TAB = { value: "stock-variance", label: "Stock Variance", icon: ScanLine, num: "14" };
+const REGISTER_TAB  = { value: "register",    label: "Register Report",  icon: ClipboardList, num: "13" };
+const STAFF_SALES_TAB = { value: "staff-sales", label: "Sales by Staff",   icon: Users,         num: "14" };
+const STOCK_VARIANCE_TAB = { value: "stock-variance", label: "Stock Variance", icon: ScanLine, num: "15" };
 
 const TABS_WITH_OWN_DATE = new Set(["hourly"]);
-const TABS_WITH_RANGE    = new Set(["daily-sales","payment","product-sales","inventory","staff","discount-void","category","table-turnover","profit","tax","register","staff-sales","stock-variance"]);
+const TABS_WITH_RANGE    = new Set(["daily-sales","payment","product-sales","inventory","staff","discount-void","category","table-turnover","profit","tax","service-fee","register","staff-sales","stock-variance"]);
 
 export function Reports() {
   const { staff } = useStaff();
@@ -1950,6 +2090,7 @@ export function Reports() {
           <TabsContent value="table-turnover"> <TableTurnoverTab range={range} /></TabsContent>
           <TabsContent value="profit">         <ProfitSnapshotTab range={range} /></TabsContent>
           <TabsContent value="tax">            <TaxReportTab range={range} /></TabsContent>
+          <TabsContent value="service-fee">  <ServiceFeeReportTab range={range} /></TabsContent>
           {canViewRegister && (
             <TabsContent value="register">    <RegisterReportTab range={range} /></TabsContent>
           )}
