@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NEXXUS POS — Ding Topup</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{height:100vh;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;
+background:linear-gradient(135deg,#060D18 0%,#0A1628 50%,#060D18 100%);color:#fff}
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#ffffff12;border-radius:2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes scaleIn{from{opacity:0;transform:scale(0.8)}to{opacity:1;transform:scale(1)}}
+.fade-in{animation:fadeIn 0.25s ease forwards}
+.scale-in{animation:scaleIn 0.3s ease forwards}
+button{font-family:inherit;cursor:pointer}
+button:active{opacity:0.85;transform:scale(0.97)}
+</style>
+</head>
+<body>
+<div id="app" style="display:flex;flex-direction:column;height:100vh;overflow:hidden"></div>
+
+<script>
+const CARRIERS=[
+  {id:"digicel",name:"Digicel",color:"#E30613",prefix:"876"},
+  {id:"flow",   name:"Flow",   color:"#00AEEF",prefix:"876"},
+  {id:"claro",  name:"Claro",  color:"#DA291C",prefix:"876"},
+  {id:"tmobile",name:"T-Mobile",color:"#E20074",prefix:"1"},
+  {id:"att",    name:"AT&T",   color:"#00A8E0",prefix:"1"},
+  {id:"orange", name:"Orange", color:"#FF7900",prefix:"44"},
+];
+const AMOUNTS=[100,200,300,500,1000,1500,2000,3000];
+
+let state={
+  device:"iPhone",carrier:"",amount:null,phone:"",
+  step:"idle",txMode:"send",loading:false
+};
+
+function getCarrier(){return CARRIERS.find(c=>c.id===state.carrier)}
+function canSubmit(){return state.carrier&&state.amount&&state.phone.length>=7}
+
+function updateStep(){
+  if(state.step==="success"||state.step==="voucher")return;
+  if(!state.carrier&&!state.amount&&!state.phone){state.step="idle";return;}
+  if(state.carrier&&state.amount&&state.phone.length>=7){state.step="confirm";return;}
+  state.step="entering";
+}
+
+function setState(updates){
+  Object.assign(state,updates);
+  updateStep();
+  render();
+}
+
+/* ── Phone screen content ── */
+function phoneScreen(){
+  const cd=getCarrier();
+  const cc=cd?.color||"#2E86DE";
+  const cn=cd?.name||"—";
+  const currency="JMD";
+
+  if(state.step==="idle") return `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px">
+      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#2E86DE18,#2E86DE35);
+        border:1px solid #2E86DE40;display:flex;align-items:center;justify-content:center;font-size:22px">⚡</div>
+      <div style="text-align:center">
+        <div style="color:#fff;font-size:12px;font-weight:600">Ready to Topup</div>
+        <div style="color:#4B5563;font-size:9px;margin-top:2px">Select carrier &amp; amount</div>
+      </div>
+    </div>`;
+
+  if(state.step==="entering"||state.step==="confirm") return `
+    <div style="display:flex;flex-direction:column;gap:7px" class="fade-in">
+      ${state.carrier?`<div style="background:${cc}12;border:1px solid ${cc}40;border-radius:7px;padding:5px 9px;display:flex;align-items:center;gap:5px">
+        <div style="width:5px;height:5px;border-radius:50%;background:${cc}"></div>
+        <span style="color:${cc};font-size:10px;font-weight:700">${cn}</span></div>`:""}
+      ${state.phone?`<div style="background:#ffffff08;border-radius:7px;padding:7px 9px">
+        <div style="color:#4B5563;font-size:8px;margin-bottom:1px">RECIPIENT</div>
+        <div style="color:#fff;font-size:14px;font-weight:700;font-family:monospace;letter-spacing:1px">
+          +${cd?.prefix||""} ${state.phone.replace(/(\d{3})(\d{3})(\d+)/,"$1 $2 $3")}</div></div>`:""}
+      ${state.amount?`<div style="background:linear-gradient(135deg,#2E86DE12,#1B4F8A20);border:1px solid #2E86DE30;border-radius:9px;padding:10px 9px;text-align:center">
+        <div style="color:#4B5563;font-size:8px;margin-bottom:1px">TOPUP AMOUNT</div>
+        <div style="color:#fff;font-size:20px;font-weight:800">${currency} ${state.amount.toLocaleString()}</div></div>`:""}
+      ${state.step==="confirm"?`<div style="background:linear-gradient(135deg,#1A7A4A18,#1A7A4A30);border:1px solid #1A7A4A44;border-radius:7px;padding:6px 9px">
+        <span style="color:#4ADE80;font-size:9px">✓ Ready to send</span></div>`:""}
+    </div>`;
+
+  if(state.step==="success") return `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px" class="scale-in">
+      <div style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#1A7A4A,#16A34A);
+        display:flex;align-items:center;justify-content:center;box-shadow:0 0 28px #1A7A4A66;font-size:22px">✓</div>
+      <div style="text-align:center">
+        <div style="color:#4ADE80;font-size:13px;font-weight:700">Topup Sent!</div>
+        <div style="color:#fff;font-size:10px;margin-top:2px">${currency} ${state.amount?.toLocaleString()} → ${state.phone}</div>
+        <div style="color:#4B5563;font-size:8px;margin-top:3px">via ${cn}</div>
+      </div>
+      <div style="background:#ffffff08;border-radius:7px;padding:5px 11px;text-align:center">
+        <div style="color:#4B5563;font-size:7px">TRANSACTION ID</div>
+        <div style="color:#9CA3AF;font-size:9px;font-family:monospace">DNG-${Math.floor(Math.random()*9000000+1000000)}</div>
+      </div>
+    </div>`;
+
+  if(state.step==="voucher") return `
+    <div style="display:flex;flex-direction:column;gap:7px" class="fade-in">
+      <div style="color:#9CA3AF;font-size:8px;font-weight:600;letter-spacing:1px;text-align:center">VOUCHER PREVIEW</div>
+      <div style="background:#ffffff08;border:1px dashed #ffffff20;border-radius:9px;padding:9px 10px;font-family:monospace">
+        ${["NEXXUS POS VOUCHER","──────────────────",
+           `Carrier: ${cn}`,`Amount:  ${currency} ${state.amount?.toLocaleString()}`,
+           `Number:  +${cd?.prefix||""} ${state.phone}`,"──────────────────",
+           "PIN: **** **** **** ****","Exp: 12/2027","──────────────────",
+           "Powered by NEXXUS POS"
+        ].map((l,i)=>`<div style="font-size:${i===0?8:7}px;line-height:1.8;text-align:${i===0||i===9?"center":"left"};
+          color:${i===6?"#4ADE80":i===1||i===5||i===8?"#ffffff25":"#fff"}">${l}</div>`).join("")}
+      </div>
+    </div>`;
+  return "";
+}
+
+/* ── Phone mockup ── */
+function phoneMockup(){
+  const iphone=state.device==="iPhone";
+  const cd=getCarrier();
+  const cc=cd?.color||"#2E86DE";
+  const cn=cd?.name||"—";
+  const now=new Date();
+  const ts=now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",hour12:false});
+
+  return `<div style="width:${iphone?270:260}px;height:${iphone?560:548}px;
+    background:${iphone?"#1C1C1E":"#1A1A2E"};
+    border-radius:${iphone?44:30}px;
+    border:${iphone?"8px solid #2C2C2E":"6px solid #252538"};
+    box-shadow:0 0 0 2px #33334A, 0 40px 80px rgba(0,0,0,0.8);
+    position:relative;overflow:hidden;flex-shrink:0;transition:all 0.35s ease">
+
+    <!-- notch/punch -->
+    ${iphone?`<div style="position:absolute;top:0;left:50%;transform:translateX(-50%);
+      width:110px;height:26px;background:#1C1C1E;border-radius:0 0 16px 16px;z-index:10;
+      display:flex;align-items:center;justify-content:center;gap:6px">
+      <div style="width:9px;height:9px;border-radius:50%;background:#2C2C2E;border:1px solid #444"></div>
+      <div style="width:52px;height:5px;border-radius:3px;background:#2C2C2E"></div></div>`
+    :`<div style="position:absolute;top:11px;left:50%;transform:translateX(-50%);
+      width:9px;height:9px;border-radius:50%;background:#252538;z-index:10;
+      box-shadow:0 0 0 2px #2C2C44"></div>`}
+
+    <!-- buttons -->
+    ${iphone?`
+      <div style="position:absolute;left:-8px;top:88px;width:3px;height:30px;background:#3C3C3E;border-radius:2px"></div>
+      <div style="position:absolute;left:-8px;top:128px;width:3px;height:48px;background:#3C3C3E;border-radius:2px"></div>
+      <div style="position:absolute;left:-8px;top:186px;width:3px;height:48px;background:#3C3C3E;border-radius:2px"></div>
+      <div style="position:absolute;right:-8px;top:128px;width:3px;height:66px;background:#3C3C3E;border-radius:2px"></div>
+    `:`
+      <div style="position:absolute;left:-7px;top:100px;width:3px;height:36px;background:#303048;border-radius:2px"></div>
+      <div style="position:absolute;left:-7px;top:145px;width:3px;height:36px;background:#303048;border-radius:2px"></div>
+      <div style="position:absolute;right:-7px;top:118px;width:3px;height:56px;background:#303048;border-radius:2px"></div>
+    `}
+
+    <!-- screen -->
+    <div style="position:absolute;inset:0;background:linear-gradient(155deg,#0D1B2A 0%,#0A1628 60%,#060E1A 100%);
+      border-radius:${iphone?36:24}px;overflow:hidden;display:flex;flex-direction:column">
+
+      <!-- status bar -->
+      <div style="height:${iphone?42:30}px;padding:${iphone?"13px 18px 0":"7px 14px 0"};
+        display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+        <span style="color:#fff;font-size:11px;font-weight:600">${ts}</span>
+        <div style="display:flex;gap:4px;align-items:center">
+          <svg width="12" height="9" viewBox="0 0 12 9" fill="white">
+            <rect x="0" y="4" width="2" height="5" rx="0.5"/><rect x="3" y="2.5" width="2" height="6.5" rx="0.5"/>
+            <rect x="6" y="1" width="2" height="8" rx="0.5"/><rect x="9" y="0" width="2" height="9" rx="0.5"/>
+          </svg>
+          <svg width="20" height="9" viewBox="0 0 20 9" fill="none">
+            <rect x="0.5" y="0.5" width="16" height="8" rx="1.5" stroke="white" stroke-opacity="0.4"/>
+            <rect x="1" y="1" width="12" height="7" rx="1" fill="white"/>
+            <path d="M18 3v3a1.5 1.5 0 000-3z" fill="white" fill-opacity="0.4"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- body -->
+      <div style="flex:1;padding:6px 14px 16px;display:flex;flex-direction:column;gap:8px;overflow-y:auto">
+        <!-- app row -->
+        <div style="display:flex;align-items:center;gap:7px">
+          <div style="width:30px;height:30px;border-radius:8px;
+            background:linear-gradient(135deg,${cc}30,${cc}55);border:1px solid ${cc}44;
+            display:flex;align-items:center;justify-content:center;color:${cc};font-size:13px;font-weight:800">
+            ${cn[0]}
+          </div>
+          <div>
+            <div style="color:#fff;font-size:11px;font-weight:700">Ding Topup</div>
+            <div style="color:#4B5563;font-size:8px">NEXXUS POS</div>
+          </div>
+        </div>
+        ${phoneScreen()}
+      </div>
+
+      <!-- home indicator -->
+      <div style="height:${iphone?24:18}px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        ${iphone
+          ?`<div style="width:90px;height:4px;border-radius:2px;background:#ffffff28"></div>`
+          :`<div style="width:26px;height:4px;border-radius:2px;background:#ffffff18"></div>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── Numpad ── */
+function numpad(){
+  const keys=["1","2","3","4","5","6","7","8","9","C","0","←"];
+  return `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px">
+    ${keys.map(k=>`<button onclick="handleKey('${k}')" style="
+      height:40px;border-radius:8px;border:none;
+      background:${k==="←"?"#2E86DE20":k==="C"?"#DC262620":"#ffffff0a"};
+      color:${k==="←"?"#60A5FA":k==="C"?"#F87171":"#fff"};
+      font-size:16px;font-weight:600;font-family:inherit;transition:background 0.1s">${k}</button>`).join("")}
+  </div>`;
+}
+
+/* ── Main render ── */
+function render(){
+  const cd=getCarrier();
+  const can=canSubmit();
+  const currency="JMD";
+
+  const stepLabel=state.step==="idle"?"Waiting for input..."
+    :state.step==="entering"?"Building transaction..."
+    :state.step==="confirm"?"Ready to submit"
+    :state.step==="success"?"✓ Transaction complete"
+    :"✓ Voucher ready to print";
+
+  document.getElementById("app").innerHTML=`
+  <!-- TOP BAR -->
+  <div style="height:50px;background:#0D1B2ACC;backdrop-filter:blur(12px);
+    border-bottom:1px solid #ffffff0a;display:flex;align-items:center;
+    padding:0 20px;gap:10px;flex-shrink:0">
+    <div style="width:26px;height:26px;border-radius:7px;
+      background:linear-gradient(135deg,#2E86DE,#1B4F8A);
+      display:flex;align-items:center;justify-content:center;
+      color:#fff;font-weight:800;font-size:12px">N</div>
+    <span style="color:#fff;font-weight:700;font-size:14px;letter-spacing:0.4px">NEXXUS POS</span>
+    <div style="width:1px;height:18px;background:#ffffff18;margin:0 4px"></div>
+    <span style="color:#F59E0B;font-weight:700;font-size:12px;display:flex;align-items:center;gap:5px">
+      ⚡ Ding Topup</span>
+    <div style="margin-left:auto;display:flex;gap:5px">
+      ${["iPhone","Samsung"].map(d=>`<button onclick="setDevice('${d}')" style="
+        padding:4px 11px;border-radius:6px;border:none;font-size:11px;font-weight:600;font-family:inherit;
+        background:${state.device===d?"#2E86DE":"#ffffff0a"};
+        color:${state.device===d?"#fff":"#6B7280"};transition:all 0.2s">${d}</button>`).join("")}
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div style="flex:1;display:flex;overflow:hidden;min-height:0">
+
+    <!-- LEFT PANEL -->
+    <div style="flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:18px;border-right:1px solid #ffffff08">
+
+      <!-- Title -->
+      <div>
+        <div style="color:#F59E0B;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:3px">
+          International Topup</div>
+        <div style="color:#fff;font-size:18px;font-weight:800">Ding Topup</div>
+      </div>
+
+      <!-- Mode toggle -->
+      <div style="display:flex;background:#ffffff06;border-radius:9px;padding:3px;gap:2px">
+        ${[{id:"send",label:"📱 Send Topup"},{id:"voucher",label:"🖨️ Print Voucher"}].map(m=>`
+          <button onclick="setMode('${m.id}')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;
+            background:${state.txMode===m.id?"#2E86DE":"transparent"};
+            color:${state.txMode===m.id?"#fff":"#6B7280"};
+            font-size:12px;font-weight:600;font-family:inherit;transition:all 0.2s">${m.label}</button>`).join("")}
+      </div>
+
+      <!-- Carrier -->
+      <div>
+        <div style="color:#A3A3B8;font-size:10px;font-weight:600;letter-spacing:1px;margin-bottom:9px;text-transform:uppercase">
+          1. Select Carrier</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px">
+          ${CARRIERS.map(c=>`
+            <button onclick="setCarrier('${c.id}')" style="
+              padding:9px 6px;border-radius:9px;border:1.5px solid ${state.carrier===c.id?c.color:"#ffffff0f"};
+              background:${state.carrier===c.id?c.color+"20":"#ffffff06"};
+              color:${state.carrier===c.id?c.color:"#9CA3AF"};
+              font-size:11px;font-weight:700;font-family:inherit;transition:all 0.2s;
+              display:flex;flex-direction:column;align-items:center;gap:3px">
+              <div style="width:26px;height:26px;border-radius:7px;
+                background:${state.carrier===c.id?c.color+"30":"#ffffff08"};
+                display:flex;align-items:center;justify-content:center;
+                font-size:13px;font-weight:800;color:${state.carrier===c.id?c.color:"#6B7280"}">${c.name[0]}</div>
+              ${c.name}
+            </button>`).join("")}
+        </div>
+      </div>
+
+      <!-- Amount -->
+      <div>
+        <div style="color:#A3A3B8;font-size:10px;font-weight:600;letter-spacing:1px;margin-bottom:9px;text-transform:uppercase">
+          2. Select Amount (${currency})</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">
+          ${AMOUNTS.map(a=>`
+            <button onclick="setAmount(${a})" style="
+              padding:9px 5px;border-radius:8px;border:1.5px solid ${state.amount===a?"#2E86DE":"#ffffff0f"};
+              background:${state.amount===a?"linear-gradient(135deg,#2E86DE,#1B4F8A)":"#ffffff06"};
+              color:${state.amount===a?"#fff":"#9CA3AF"};
+              font-size:12px;font-weight:700;font-family:inherit;transition:all 0.2s">
+              ${a>=1000?`${a/1000}K`:a}</button>`).join("")}
+        </div>
+      </div>
+
+      <!-- Phone -->
+      <div>
+        <div style="color:#A3A3B8;font-size:10px;font-weight:600;letter-spacing:1px;margin-bottom:9px;text-transform:uppercase">
+          3. Recipient Number</div>
+        <div style="background:#ffffff06;border-radius:9px;padding:10px 14px;margin-bottom:8px;
+          border:1.5px solid ${state.phone.length>=7?"#1A7A4A":"#ffffff0f"};
+          display:flex;align-items:center;gap:8px;transition:border-color 0.3s">
+          ${cd?`<span style="color:#6B7280;font-size:12px;font-family:monospace">+${cd.prefix}</span>`:""}
+          <span style="color:#fff;font-size:18px;font-weight:700;font-family:monospace;letter-spacing:2px;flex:1;min-height:24px;display:flex;align-items:center">
+            ${state.phone||`<span style="color:#ffffff20">_ _ _ _ _ _ _</span>`}</span>
+          ${state.phone?`<button onclick="clearPhone()" style="background:none;border:none;color:#6B7280;padding:3px;font-size:14px;cursor:pointer">✕</button>`:""}
+        </div>
+        ${numpad()}
+      </div>
+
+      <!-- Summary -->
+      ${can?`<div style="background:linear-gradient(135deg,#0F2A1A,#0A1F14);border:1px solid #1A7A4A44;
+        border-radius:9px;padding:11px 14px;display:flex;justify-content:space-between;align-items:center" class="fade-in">
+        <div>
+          <div style="color:#4ADE80;font-size:9px;font-weight:600;letter-spacing:1px">READY TO PROCESS</div>
+          <div style="color:#fff;font-size:13px;font-weight:700;margin-top:2px">
+            ${currency} ${state.amount?.toLocaleString()} → +${cd?.prefix} ${state.phone}</div>
+        </div>
+        <div style="background:${cd?.color}22;border:1px solid ${cd?.color}44;
+          border-radius:6px;padding:3px 7px;color:${cd?.color};font-size:9px;font-weight:700">${cd?.name}</div>
+      </div>`:""}
+
+      <!-- Actions -->
+      <div style="display:flex;gap:8px">
+        <button onclick="handleReset()" style="padding:0 16px;height:46px;border-radius:9px;
+          border:1px solid #ffffff10;background:transparent;color:#6B7280;font-size:12px;font-weight:600;font-family:inherit">
+          Clear</button>
+        <button onclick="${state.txMode==="send"?"handleSend()":"handlePrint()"}"
+          ${!can||state.loading?"disabled":""} style="
+          flex:1;height:46px;border-radius:9px;border:none;font-family:inherit;
+          cursor:${can?"pointer":"not-allowed"};
+          background:${!can?"#ffffff0a":state.txMode==="send"
+            ?"linear-gradient(135deg,#2E86DE,#1B4F8A)"
+            :"linear-gradient(135deg,#F59E0B,#D97706)"};
+          color:${can?"#fff":"#4B5563"};font-size:13px;font-weight:700;
+          display:flex;align-items:center;justify-content:center;gap:7px;transition:all 0.2s">
+          ${state.loading
+            ?`<div style="width:16px;height:16px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite"></div>`
+            :state.txMode==="send"?"📱 Send Topup":"🖨️ Print Voucher"}
+        </button>
+      </div>
+
+      <!-- Recent -->
+      <div>
+        <div style="color:#A3A3B8;font-size:10px;font-weight:600;letter-spacing:1px;margin-bottom:8px;text-transform:uppercase">
+          Recent Topups</div>
+        ${[
+          {carrier:"Digicel",amount:500, phone:"876 XXX 1234",time:"2 min ago"},
+          {carrier:"Flow",   amount:1000,phone:"876 XXX 5678",time:"14 min ago"},
+          {carrier:"Digicel",amount:300, phone:"876 XXX 9012",time:"1 hr ago"},
+        ].map((r,i)=>{
+          const rc=CARRIERS.find(x=>x.name===r.carrier);
+          return `<div style="display:flex;justify-content:space-between;align-items:center;
+            padding:7px 0;border-bottom:${i<2?"1px solid #ffffff06":"none"}">
+            <div style="display:flex;align-items:center;gap:7px">
+              <div style="width:22px;height:22px;border-radius:6px;background:${rc?.color}20;
+                border:1px solid ${rc?.color}30;display:flex;align-items:center;justify-content:center;
+                color:${rc?.color};font-size:9px;font-weight:800">${r.carrier[0]}</div>
+              <div>
+                <div style="color:#fff;font-size:11px;font-weight:600">${r.phone}</div>
+                <div style="color:#6B7280;font-size:9px">${r.carrier} · ${r.time}</div>
+              </div>
+            </div>
+            <div style="color:#9CA3AF;font-size:11px;font-weight:700">${currency} ${r.amount.toLocaleString()}</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div style="width:360px;background:#080E18;flex-shrink:0;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      gap:20px;padding:20px 16px">
+
+      <!-- Live label -->
+      <div style="display:flex;align-items:center;gap:7px">
+        <div style="width:6px;height:6px;border-radius:50%;background:#4ADE80;box-shadow:0 0 8px #4ADE80;
+          animation:pulse 2s infinite"></div>
+        <span style="color:#6B7280;font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase">
+          Live Preview — ${state.device}</span>
+      </div>
+
+      ${phoneMockup()}
+
+      <!-- Status pills -->
+      <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center">
+        ${[
+          {label:"Carrier",done:!!state.carrier},
+          {label:"Amount", done:!!state.amount},
+          {label:"Number", done:state.phone.length>=7},
+        ].map(p=>`
+          <div style="display:flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;
+            background:${p.done?"#1A7A4A1A":"#ffffff08"};border:1px solid ${p.done?"#1A7A4A50":"#ffffff10"}">
+            <div style="width:13px;height:13px;border-radius:50%;
+              background:${p.done?"#1A7A4A":"#ffffff18"};
+              display:flex;align-items:center;justify-content:center;font-size:8px">
+              ${p.done?"✓":""}</div>
+            <span style="color:${p.done?"#4ADE80":"#6B7280"};font-size:10px;font-weight:600">${p.label}</span>
+          </div>`).join("")}
+      </div>
+
+      <div style="color:#374151;font-size:10px;font-family:monospace;letter-spacing:0.5px">${stepLabel}</div>
+    </div>
+  </div>`;
+}
+
+/* ── Event handlers ── */
+function setDevice(d){setState({device:d})}
+function setMode(m){setState({txMode:m})}
+function setCarrier(id){setState({carrier:id})}
+function setAmount(a){setState({amount:a})}
+function clearPhone(){setState({phone:""})}
+function handleReset(){setState({carrier:"",amount:null,phone:"",step:"idle",loading:false})}
+
+function handleKey(k){
+  if(k==="←"){setState({phone:state.phone.slice(0,-1)});return;}
+  if(k==="C"){setState({phone:""});return;}
+  if(state.phone.length>=10)return;
+  setState({phone:state.phone+k});
+}
+
+function handleSend(){
+  if(!canSubmit()||state.loading)return;
+  setState({loading:true});
+  setTimeout(()=>setState({loading:false,step:"success"}),1600);
+}
+
+function handlePrint(){
+  if(!canSubmit()||state.loading)return;
+  setState({loading:true});
+  setTimeout(()=>setState({loading:false,step:"voucher"}),900);
+}
+
+// Initial render
+render();
+</script>
+</body>
+</html>
