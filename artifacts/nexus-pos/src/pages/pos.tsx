@@ -2845,7 +2845,7 @@ export function POS() {
                               if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
                             }}
                             aria-label={`Quantity for ${item.productName}`}
-                            className="h-6 w-12 px-1 text-sm font-bold text-center font-mono"
+                            className="h-7 w-14 px-1 text-sm font-bold text-center font-mono border-2 border-white/25 bg-background focus:border-primary focus:ring-0"
                           />
                           <Button
                             size="icon"
