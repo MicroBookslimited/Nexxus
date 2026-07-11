@@ -10,8 +10,9 @@ import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { cn } from "@/lib/utils";
 import {
   Smartphone, Wallet, ChevronRight, CheckCircle2, XCircle, Clock,
-  RefreshCw, TrendingUp, ArrowUpRight, Search, Filter, Globe, Signal,
-  AlertCircle, Loader2, Phone, DollarSign, Star, History, BarChart2,
+  RefreshCw, TrendingUp, ArrowUpRight, Search, Globe, Signal,
+  AlertCircle, Loader2, DollarSign, Star, History, BarChart2,
+  Printer, Delete, Zap, LayoutGrid,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -64,38 +65,91 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 
 const JMD = (v: number) => new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", minimumFractionDigits: 2 }).format(v);
 
+/* Brand colours for common carriers (matched by name substring). Falls back
+   to the NEXXUS accent blue for any operator not in the map. */
+const CARRIER_BRAND: Record<string, string> = {
+  digicel: "#E30613",
+  flow: "#00AEEF",
+  claro: "#DA291C",
+  lime: "#8DC63F",
+  "t-mobile": "#E20074",
+  tmobile: "#E20074",
+  "at&t": "#00A8E0",
+  att: "#00A8E0",
+  orange: "#FF7900",
+  verizon: "#EE0000",
+  vodafone: "#E60000",
+  airtel: "#E40000",
+};
+function carrierColor(name: string): string {
+  const n = name.toLowerCase();
+  const key = Object.keys(CARRIER_BRAND).find(k => n.includes(k));
+  return key ? CARRIER_BRAND[key] : "#2E86DE";
+}
+
+function money(v: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: v % 1 === 0 ? 0 : 2 }).format(v);
+  } catch {
+    return `${currency} ${v.toLocaleString()}`;
+  }
+}
+
+/* Opens a print window with a voucher-style receipt (proof of a completed
+   top-up). This is NOT a redeemable scratch-card PIN — Ding SendTransfer
+   credits the recipient's phone directly — it is a printable record the
+   cashier can hand to the customer. */
+function printVoucher(v: {
+  operatorName: string; sendValue: number; sendCurrency: string;
+  phoneNumber: string; ref: string; dingId?: string | null; when: Date;
+}): void {
+  const rows = [
+    `Carrier : ${v.operatorName}`,
+    `Amount  : ${money(v.sendValue, v.sendCurrency)}`,
+    `Number  : ${v.phoneNumber}`,
+    `Date    : ${format(v.when, "MMM d, yyyy h:mm a")}`,
+    `Ref     : ${v.ref}`,
+    ...(v.dingId ? [`Txn ID  : ${v.dingId}`] : []),
+  ];
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Top-Up Voucher</title>
+    <style>
+      @page { margin: 0; }
+      body { font-family: 'Courier New', monospace; padding: 14px; width: 280px; color: #000; }
+      .center { text-align: center; }
+      .title { font-size: 15px; font-weight: 800; letter-spacing: 1px; }
+      .sub { font-size: 10px; color: #333; margin-top: 2px; }
+      .line { border-top: 1px dashed #000; margin: 8px 0; }
+      .row { font-size: 12px; line-height: 1.9; white-space: pre; }
+      .badge { font-size: 11px; font-weight: 700; margin-top: 6px; }
+      .foot { font-size: 9px; color: #333; margin-top: 10px; }
+    </style></head><body>
+      <div class="center title">TOP-UP VOUCHER</div>
+      <div class="center sub">NEXXUS POS</div>
+      <div class="line"></div>
+      ${rows.map(r => `<div class="row">${r.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</div>`).join("")}
+      <div class="line"></div>
+      <div class="center badge">✓ TOP-UP COMPLETED</div>
+      <div class="center foot">Keep this voucher as proof of payment.<br/>Powered by NEXXUS POS</div>
+      <script>window.onload=function(){window.print();setTimeout(function(){window.close();},300);};</script>
+    </body></html>`;
+  const w = window.open("", "_blank", "width=340,height=560");
+  if (!w) return;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 function StatusBadge({ status }: { status: string }) {
   if (status === "success") return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle2 className="h-3 w-3 mr-1" />Sent</Badge>;
   if (status === "pending") return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
   return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
 }
 
-/* ── Step indicators ─────────────────────────────────────────────────── */
-const STEPS = ["Country", "Operator", "Phone", "Amount", "Confirm"];
-
-function StepBar({ step }: { step: number }) {
-  return (
-    <div className="flex items-center gap-1 text-xs">
-      {STEPS.map((s, i) => (
-        <div key={s} className="flex items-center gap-1">
-          <div className={cn(
-            "h-6 px-2.5 rounded-full flex items-center font-medium transition-all",
-            i < step ? "bg-primary text-primary-foreground" :
-            i === step ? "bg-primary/20 text-primary border border-primary" :
-            "bg-muted text-muted-foreground"
-          )}>{s}</div>
-          {i < STEPS.length - 1 && <ChevronRight className="h-3 w-3 text-muted-foreground/40" />}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /* ── Main Component ─────────────────────────────────────────────────── */
 
 export function TopUp() {
   const { toast } = useToast();
-  const { activeStaff } = useStaff();
+  const { staff: activeStaff } = useStaff();
 
   const [tab, setTab] = useState<"send" | "history" | "reports">("send");
 
@@ -114,7 +168,6 @@ export function TopUp() {
   const [loadingProducts, setLoadingProducts] = useState(false);
 
   // Selection state
-  const [step, setStep] = useState(0);
   const [selectedCountry, setSelectedCountry] = useState<DingCountry | null>(null);
   const [selectedOperator, setSelectedOperator] = useState<DingOperator | null>(null);
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -137,6 +190,11 @@ export function TopUp() {
 
   // Fund wallet dialog (admin)
   const [fundOpen, setFundOpen] = useState(false);
+
+  // Redesign: transaction mode + carrier picker + post-send preview
+  const [txMode, setTxMode] = useState<"send" | "voucher">("send");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [postSend, setPostSend] = useState<{ mode: "send" | "voucher"; txn: TopupTransaction } | null>(null);
 
   /* ── Load wallet + summary ── */
   const loadWallet = useCallback(async () => {
@@ -228,8 +286,8 @@ export function TopUp() {
   /* ── Send top-up ── */
   async function handleSend() {
     if (!selectedOperator || !selectedProduct || !phoneNumber) return;
-    const cost = selectedProduct.LocalisedPrice?.SenderFee ?? selectedProduct.SendValue;
     const face = selectedProduct.IsRangeTopUp ? parseFloat(customAmount) : selectedProduct.SendValue;
+    const cost = selectedProduct.LocalisedPrice?.SenderFee ?? face;
 
     setSending(true);
     setConfirmOpen(false);
@@ -246,6 +304,18 @@ export function TopUp() {
         }),
       });
       setLastResult({ success: true, txn: result.transaction });
+      setPostSend({ mode: txMode, txn: result.transaction });
+      if (txMode === "voucher") {
+        printVoucher({
+          operatorName: result.transaction.operatorName,
+          sendValue: result.transaction.sendValue,
+          sendCurrency: result.transaction.sendCurrency,
+          phoneNumber: result.transaction.phoneNumber,
+          ref: result.transaction.distributorRef,
+          dingId: result.transaction.dingTransactionId,
+          when: new Date(result.transaction.createdAt ?? Date.now()),
+        });
+      }
       if (wallet) setWallet({ ...wallet, balance: result.walletBalance });
       loadWallet();
     } catch (err) {
@@ -257,13 +327,13 @@ export function TopUp() {
 
   /* ── Reset flow ── */
   function resetFlow() {
-    setStep(0);
     setSelectedOperator(null);
     setPhoneNumber("");
     setSelectedProduct(null);
     setCustomAmount("");
     setResultOpen(false);
     setLastResult(null);
+    setPostSend(null);
   }
 
   const filteredCountries = countries.filter(c => !countrySearch || c.Name.toLowerCase().includes(countrySearch.toLowerCase()) || c.Iso.toLowerCase().includes(countrySearch.toLowerCase()));
@@ -272,6 +342,27 @@ export function TopUp() {
   const face = selectedProduct?.IsRangeTopUp ? parseFloat(customAmount) || 0 : (selectedProduct?.SendValue ?? 0);
   const cost = selectedProduct?.LocalisedPrice?.SenderFee ?? face;
   const commission = face - cost;
+
+  const sendCurrency = selectedProduct?.SendCurrencyIso ?? "JMD";
+  const dialingPrefix = selectedCountry?.Iso === "JM" ? "1876" : selectedCountry?.Iso ?? "";
+  const canSubmit = !!selectedOperator && !!selectedProduct && phoneNumber.length >= 7
+    && (!selectedProduct?.IsRangeTopUp || (parseFloat(customAmount) || 0) > 0);
+  const insufficient = !!wallet && wallet.balance < cost;
+
+  // Live-preview state for the phone panel
+  const previewStep: "idle" | "entering" | "confirm" | "success" | "voucher" =
+    postSend ? (postSend.mode === "voucher" ? "voucher" : "success")
+    : canSubmit ? "confirm"
+    : (selectedOperator || phoneNumber || selectedProduct) ? "entering"
+    : "idle";
+
+  // Numpad key handler
+  function pressKey(k: string) {
+    if (postSend) return;
+    if (k === "del") { setPhoneNumber(p => p.slice(0, -1)); return; }
+    if (k === "clr") { setPhoneNumber(""); return; }
+    setPhoneNumber(p => (p.length >= 10 ? p : p + k));
+  }
 
   /* ── Render ── */
   return (
@@ -351,243 +442,255 @@ export function TopUp() {
 
         {/* ── SEND TAB ── */}
         {tab === "send" && (
-          <div className="grid md:grid-cols-2 gap-4 flex-1">
+          <div className="grid lg:grid-cols-[1fr_360px] gap-4 flex-1 min-h-0">
 
-            {/* Left: Step flow */}
-            <Card className="flex flex-col">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Smartphone className="h-4 w-4 text-primary" />
-                    New Top-Up
-                  </CardTitle>
-                  {step > 0 && (
-                    <Button variant="ghost" size="sm" onClick={resetFlow} className="text-xs h-7">Reset</Button>
-                  )}
+            {/* LEFT: builder */}
+            <Card className="flex flex-col min-h-0">
+              <CardContent className="flex flex-col gap-5 p-5 overflow-auto">
+
+                {/* Title */}
+                <div>
+                  <p className="text-[10px] font-bold tracking-[0.2em] text-amber-400 uppercase">International Top-Up</p>
+                  <h2 className="text-lg font-extrabold flex items-center gap-2"><Zap className="h-4 w-4 text-amber-400" />Ding Top-Up</h2>
                 </div>
-                <StepBar step={step} />
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4 flex-1">
 
-                {/* Step 0: Country */}
-                {step === 0 && (
-                  <div className="space-y-3">
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input className="pl-8" placeholder="Search country…" value={countrySearch} onChange={e => setCountrySearch(e.target.value)} />
-                    </div>
-                    {loadingCountries && (
-                      <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground gap-2">
-                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                        <p className="text-xs">Loading countries…</p>
-                      </div>
-                    )}
-                    {!loadingCountries && countriesError === "auth" && (
-                      <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground gap-2">
-                        <AlertCircle className="h-8 w-8 opacity-40" />
-                        <p className="text-sm font-medium">Session expired</p>
-                        <p className="text-xs">Please log in again to use Top-Up.</p>
-                      </div>
-                    )}
-                    {!loadingCountries && countriesError === "api_key" && (
-                      <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground gap-2">
-                        <AlertCircle className="h-8 w-8 opacity-40" />
-                        <p className="text-sm font-medium">Ding Connect API key not configured</p>
-                        <p className="text-xs">Ask your system administrator to set the DING_API_KEY.</p>
-                      </div>
-                    )}
-                    {!loadingCountries && !countriesError && countries.length === 0 && (
-                      <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground gap-2">
-                        <AlertCircle className="h-8 w-8 opacity-40" />
-                        <p className="text-sm font-medium">No countries available</p>
-                        <p className="text-xs">Check your Ding Connect account configuration.</p>
-                      </div>
-                    )}
-                    <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
-                      {filteredCountries.map(c => (
-                        <button
-                          key={c.Iso}
-                          onClick={() => { setSelectedCountry(c); setStep(1); setCountrySearch(""); }}
-                          className={cn(
-                            "w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-accent/50 transition-colors text-sm",
-                            selectedCountry?.Iso === c.Iso && "bg-primary/10 border border-primary/20"
-                          )}
-                        >
-                          <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
-                          <span className="font-medium flex-1 text-left">{c.Name}</span>
-                          <Badge variant="outline" className="text-xs">{c.Iso}</Badge>
-                          {c.Iso === "JM" && <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 1: Operator */}
-                {step === 1 && (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Globe className="h-4 w-4" />
-                      <span>{selectedCountry?.Name}</span>
-                      <button onClick={() => setStep(0)} className="text-primary text-xs underline ml-auto">Change</button>
-                    </div>
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input className="pl-8" placeholder="Search operator…" value={operatorSearch} onChange={e => setOperatorSearch(e.target.value)} />
-                    </div>
-                    {loadingOperators && <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}
-                    <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
-                      {filteredOperators.map(op => (
-                        <button
-                          key={op.ProviderCode}
-                          onClick={() => { setSelectedOperator(op); setStep(2); setOperatorSearch(""); }}
-                          className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-accent/50 transition-colors text-sm"
-                        >
-                          <Signal className="h-5 w-5 text-primary shrink-0" />
-                          <span className="font-medium flex-1 text-left">{op.Name}</span>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 2: Phone number */}
-                {step === 2 && (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Signal className="h-4 w-4" />
-                      <span>{selectedOperator?.Name}</span>
-                      <button onClick={() => setStep(1)} className="text-primary text-xs underline ml-auto">Change</button>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone Number</Label>
-                      <div className="flex gap-2">
-                        <div className="flex h-9 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground whitespace-nowrap">
-                          {selectedCountry?.Iso === "JM" ? "+1 (876)" : `+${selectedCountry?.Iso}`}
-                        </div>
-                        <Input
-                          id="phone"
-                          type="tel"
-                          placeholder="XXX-XXXX"
-                          value={phoneNumber}
-                          onChange={e => setPhoneNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                          className="flex-1"
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">Enter the recipient's mobile number</p>
-                    </div>
-                    <Button
-                      className="w-full"
-                      disabled={phoneNumber.length < 7}
-                      onClick={() => setStep(3)}
+                {/* Mode toggle */}
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted/40">
+                  {([
+                    { id: "send", label: "Send Top-Up", icon: Smartphone },
+                    { id: "voucher", label: "Print Voucher", icon: Printer },
+                  ] as const).map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => setTxMode(m.id)}
+                      className={cn(
+                        "flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold transition-colors",
+                        txMode === m.id ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                      )}
                     >
-                      Continue <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </div>
-                )}
+                      <m.icon className="h-4 w-4" />{m.label}
+                    </button>
+                  ))}
+                </div>
 
-                {/* Step 3: Amount/Product */}
-                {step === 3 && (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Phone className="h-4 w-4" />
-                      <span>{phoneNumber}</span>
-                      <button onClick={() => setStep(2)} className="text-primary text-xs underline ml-auto">Change</button>
+                {/* 1. Carrier */}
+                <div>
+                  <div className="flex items-center justify-between mb-2.5">
+                    <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">1. Select Carrier</p>
+                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Globe className="h-3 w-3" />{selectedCountry?.Name ?? "—"}</span>
+                  </div>
+
+                  {loadingCountries || (selectedCountry && loadingOperators) ? (
+                    <div className="grid grid-cols-3 gap-2">{[...Array(6)].map((_, i) => <div key={i} className="h-16 rounded-xl bg-muted/30 animate-pulse" />)}</div>
+                  ) : countriesError ? (
+                    <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground gap-1.5 rounded-xl border border-dashed border-border">
+                      <AlertCircle className="h-7 w-7 opacity-40" />
+                      <p className="text-sm font-medium">
+                        {countriesError === "auth" ? "Session expired"
+                          : countriesError === "api_key" ? "Ding not connected"
+                          : "Carriers unavailable"}
+                      </p>
+                      <p className="text-xs max-w-[240px]">
+                        {countriesError === "auth" ? "Please log in again to use Top-Up."
+                          : countriesError === "api_key" ? "Ask your administrator to set the DING_API_KEY."
+                          : "DingConnect rejected the request. Check the IP whitelist and API key in your Ding dashboard."}
+                      </p>
                     </div>
-                    {loadingProducts && <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}
-                    <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
-                      {products.map(p => {
-                        const price = p.LocalisedPrice?.CustomerFee ?? p.SendValue;
-                        const isSelected = selectedProduct?.SkuCode === p.SkuCode;
+                  ) : operators.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground gap-1.5 rounded-xl border border-dashed border-border">
+                      <Signal className="h-7 w-7 opacity-40" />
+                      <p className="text-sm font-medium">No carriers found</p>
+                      <button onClick={() => setMoreOpen(true)} className="text-xs text-primary underline">Choose another country</button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2">
+                      {operators.slice(0, 5).map(op => {
+                        const color = carrierColor(op.Name);
+                        const active = selectedOperator?.ProviderCode === op.ProviderCode;
                         return (
                           <button
-                            key={p.SkuCode}
-                            onClick={() => { setSelectedProduct(p); if (!p.IsRangeTopUp) setStep(4); }}
-                            className={cn(
-                              "flex flex-col items-start p-3 rounded-lg border transition-all text-left",
-                              isSelected
-                                ? "border-primary bg-primary/10"
-                                : "border-border hover:border-primary/40 hover:bg-accent/30"
-                            )}
+                            key={op.ProviderCode}
+                            onClick={() => { setSelectedOperator(op); setPostSend(null); }}
+                            className="flex flex-col items-center gap-1.5 rounded-xl p-2.5 border-[1.5px] transition-all text-[11px] font-bold"
+                            style={{
+                              borderColor: active ? color : "hsl(var(--border))",
+                              background: active ? `${color}22` : "hsl(var(--muted) / 0.3)",
+                              color: active ? color : "hsl(var(--muted-foreground))",
+                            }}
                           >
-                            <span className="text-base font-bold text-primary">{JMD(price)}</span>
-                            <span className="text-xs text-muted-foreground line-clamp-1">{p.Name}</span>
-                            {p.ValidityDays && <span className="text-xs text-muted-foreground/60 mt-0.5">{p.ValidityDays}d validity</span>}
-                            {p.IsRangeTopUp && <span className="text-xs text-primary/70 mt-0.5">Custom amount</span>}
+                            <span
+                              className="h-7 w-7 rounded-lg flex items-center justify-center text-sm font-extrabold"
+                              style={{ background: active ? `${color}33` : "hsl(var(--muted) / 0.5)", color: active ? color : "hsl(var(--muted-foreground))" }}
+                            >{op.Name[0]?.toUpperCase()}</span>
+                            <span className="line-clamp-1 max-w-full">{op.Name}</span>
                           </button>
                         );
                       })}
-                    </div>
-                    {selectedProduct?.IsRangeTopUp && (
-                      <div className="space-y-2">
-                        <Label>Custom Amount ({selectedProduct.SendCurrencyIso})</Label>
-                        <Input type="number" placeholder={`${selectedProduct.Minimum ?? 100} – ${selectedProduct.Maximum ?? 99999}`} value={customAmount} onChange={e => setCustomAmount(e.target.value)} />
-                        <Button className="w-full" disabled={!customAmount || parseFloat(customAmount) <= 0} onClick={() => setStep(4)}>
-                          Continue
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Step 4: Confirm */}
-                {step === 4 && selectedProduct && (
-                  <div className="space-y-4">
-                    <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-3">
-                      <h3 className="text-sm font-semibold text-foreground">Transaction Summary</h3>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-muted-foreground">Recipient</span><span className="font-medium">{phoneNumber}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">Operator</span><span className="font-medium">{selectedOperator?.Name}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">Product</span><span className="font-medium">{selectedProduct.Name}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">Top-Up Value</span><span className="font-bold text-primary">{JMD(face)}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">Cost to You</span><span className="font-medium">{JMD(cost)}</span></div>
-                        <div className="flex justify-between border-t border-border/40 pt-2">
-                          <span className="text-muted-foreground">Commission Earned</span>
-                          <span className={cn("font-medium", commission > 0 ? "text-emerald-400" : "text-muted-foreground")}>{JMD(commission > 0 ? commission : 0)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {wallet && wallet.balance < cost && (
-                      <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                        <AlertCircle className="h-4 w-4 shrink-0" />
-                        <span>Insufficient wallet balance ({JMD(wallet.balance)}). Please fund your wallet.</span>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => setStep(3)} className="flex-1">Back</Button>
-                      <Button
-                        onClick={() => setConfirmOpen(true)}
-                        disabled={sending || (!!wallet && wallet.balance < cost)}
-                        className="flex-2 flex-1 bg-emerald-600 hover:bg-emerald-700"
+                      <button
+                        onClick={() => setMoreOpen(true)}
+                        className="flex flex-col items-center justify-center gap-1.5 rounded-xl p-2.5 border-[1.5px] border-dashed border-border text-[11px] font-bold text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
                       >
-                        {sending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending…</> : "Send Top-Up"}
-                      </Button>
+                        <span className="h-7 w-7 rounded-lg flex items-center justify-center bg-muted/50"><LayoutGrid className="h-3.5 w-3.5" /></span>
+                        More
+                      </button>
                     </div>
+                  )}
+                </div>
+
+                {/* 2. Amount */}
+                <div>
+                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2.5">2. Select Amount{selectedProduct ? ` (${sendCurrency})` : ""}</p>
+                  {!selectedOperator ? (
+                    <p className="text-xs text-muted-foreground">Select a carrier first.</p>
+                  ) : loadingProducts ? (
+                    <div className="grid grid-cols-4 gap-2">{[...Array(8)].map((_, i) => <div key={i} className="h-10 rounded-lg bg-muted/30 animate-pulse" />)}</div>
+                  ) : products.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No amounts available for this carrier.</p>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-4 gap-2">
+                        {products.map(p => {
+                          const active = selectedProduct?.SkuCode === p.SkuCode;
+                          const v = p.SendValue;
+                          const label = p.IsRangeTopUp ? "Custom" : (v >= 1000 && v % 1000 === 0 ? `${v / 1000}K` : v.toLocaleString());
+                          return (
+                            <button
+                              key={p.SkuCode}
+                              onClick={() => { setSelectedProduct(p); setCustomAmount(""); setPostSend(null); }}
+                              title={p.Name}
+                              className={cn(
+                                "h-10 rounded-lg border-[1.5px] text-xs font-bold transition-all",
+                                active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40"
+                              )}
+                            >{label}</button>
+                          );
+                        })}
+                      </div>
+                      {selectedProduct?.IsRangeTopUp && (
+                        <div className="mt-2.5 space-y-1.5">
+                          <Label className="text-xs">Custom Amount ({sendCurrency})</Label>
+                          <Input
+                            type="number"
+                            placeholder={`${selectedProduct.Minimum ?? 100} – ${selectedProduct.Maximum ?? 99999}`}
+                            value={customAmount}
+                            onChange={e => { setCustomAmount(e.target.value); setPostSend(null); }}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* 3. Recipient number */}
+                <div>
+                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2.5">3. Recipient Number</p>
+                  <div
+                    className="flex items-center gap-2 rounded-xl border-[1.5px] px-4 py-3 mb-2.5 transition-colors"
+                    style={{ borderColor: phoneNumber.length >= 7 ? "#1A7A4A" : "hsl(var(--border))" }}
+                  >
+                    {dialingPrefix && <span className="text-xs font-mono text-muted-foreground">+{dialingPrefix}</span>}
+                    <span className="flex-1 font-mono text-lg font-bold tracking-[0.15em] min-h-[24px] flex items-center">
+                      {phoneNumber || <span className="text-muted-foreground/30">_ _ _ _ _ _ _</span>}
+                    </span>
+                    {phoneNumber && (
+                      <button onClick={() => setPhoneNumber("")} className="text-muted-foreground hover:text-foreground"><XCircle className="h-4 w-4" /></button>
+                    )}
+                  </div>
+                  <Numpad onKey={pressKey} />
+                </div>
+
+                {/* Ready summary */}
+                {canSubmit && (
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+                    <div>
+                      <p className="text-[9px] font-semibold tracking-widest text-emerald-400">READY TO PROCESS</p>
+                      <p className="text-sm font-bold mt-0.5">{money(face, sendCurrency)} → +{dialingPrefix} {phoneNumber}</p>
+                    </div>
+                    {selectedOperator && (
+                      <span
+                        className="rounded-md px-2 py-1 text-[10px] font-bold"
+                        style={{ background: `${carrierColor(selectedOperator.Name)}22`, color: carrierColor(selectedOperator.Name) }}
+                      >{selectedOperator.Name}</span>
+                    )}
                   </div>
                 )}
+
+                {insufficient && (
+                  <div className="flex items-center gap-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-3 py-2.5">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>Insufficient wallet balance ({JMD(wallet?.balance ?? 0)}).</span>
+                    <button onClick={() => setFundOpen(true)} className="ml-auto underline shrink-0">Fund</button>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={resetFlow} className="px-5">Clear</Button>
+                  <Button
+                    onClick={() => setConfirmOpen(true)}
+                    disabled={!canSubmit || sending || insufficient}
+                    className={cn(
+                      "flex-1 h-12 text-sm font-bold gap-2",
+                      txMode === "voucher" && "bg-amber-500 hover:bg-amber-600 text-black"
+                    )}
+                  >
+                    {sending ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : txMode === "send" ? <><Smartphone className="h-4 w-4" />Send Top-Up</>
+                      : <><Printer className="h-4 w-4" />Print Voucher</>}
+                  </Button>
+                </div>
+
+                {/* Recent */}
+                <div>
+                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Recent Top-Ups</p>
+                  {loadingWallet ? (
+                    <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-14 rounded-lg bg-muted/30 animate-pulse" />)}</div>
+                  ) : (
+                    <RecentList />
+                  )}
+                </div>
               </CardContent>
             </Card>
 
-            {/* Right: Recent transactions */}
-            <Card className="flex flex-col">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <History className="h-4 w-4 text-primary" />
-                  Recent Transactions
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 overflow-auto space-y-2 max-h-[500px]">
-                {loadingWallet ? (
-                  <div className="space-y-2">
-                    {[1,2,3].map(i => <div key={i} className="h-16 rounded-lg bg-muted/30 animate-pulse" />)}
+            {/* RIGHT: live phone preview */}
+            <Card className="hidden lg:flex flex-col items-center justify-center gap-5 p-5" style={{ background: "#080E18" }}>
+              <div className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" style={{ boxShadow: "0 0 8px #4ADE80" }} />
+                <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">Live Preview</span>
+              </div>
+
+              <PhonePreview
+                step={previewStep}
+                carrierName={postSend ? postSend.txn.operatorName : (selectedOperator?.Name ?? "")}
+                color={carrierColor(postSend ? postSend.txn.operatorName : (selectedOperator?.Name ?? ""))}
+                amount={postSend ? postSend.txn.sendValue : face}
+                currency={postSend ? postSend.txn.sendCurrency : sendCurrency}
+                phone={postSend ? postSend.txn.phoneNumber : phoneNumber}
+                prefix={dialingPrefix}
+                mode={txMode}
+                txRef={postSend?.txn.distributorRef}
+              />
+
+              <div className="flex gap-1.5 flex-wrap justify-center">
+                {[
+                  { label: "Carrier", done: !!selectedOperator },
+                  { label: "Amount", done: !!selectedProduct },
+                  { label: "Number", done: phoneNumber.length >= 7 },
+                ].map(p => (
+                  <div
+                    key={p.label}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-semibold",
+                      p.done ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-muted/20 border-border text-muted-foreground"
+                    )}
+                  >
+                    <span className={cn("h-3.5 w-3.5 rounded-full flex items-center justify-center text-[8px]", p.done ? "bg-emerald-500 text-black" : "bg-muted-foreground/20")}>
+                      {p.done && <CheckCircle2 className="h-2.5 w-2.5" />}
+                    </span>
+                    {p.label}
                   </div>
-                ) : (
-                  <RecentList />
-                )}
-              </CardContent>
+                ))}
+              </div>
             </Card>
           </div>
         )}
@@ -808,6 +911,75 @@ export function TopUp() {
         </DialogContent>
       </Dialog>
 
+      {/* ── More carriers dialog (full Ding list) ── */}
+      <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LayoutGrid className="h-5 w-5 text-primary" />Choose Carrier
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            {/* Country picker */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">Country</p>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-8 h-8 text-xs" placeholder="Search…" value={countrySearch} onChange={e => setCountrySearch(e.target.value)} />
+              </div>
+              <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                {loadingCountries ? (
+                  [...Array(6)].map((_, i) => <div key={i} className="h-9 rounded-md bg-muted/30 animate-pulse" />)
+                ) : filteredCountries.map(c => (
+                  <button
+                    key={c.Iso}
+                    onClick={() => { setSelectedCountry(c); setCountrySearch(""); }}
+                    className={cn(
+                      "w-full flex items-center gap-2 p-2 rounded-md text-xs transition-colors",
+                      selectedCountry?.Iso === c.Iso ? "bg-primary/10 border border-primary/30" : "hover:bg-accent/50"
+                    )}
+                  >
+                    <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="font-medium flex-1 text-left truncate">{c.Name}</span>
+                    {c.Iso === "JM" && <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Operator picker */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">Carrier</p>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-8 h-8 text-xs" placeholder="Search…" value={operatorSearch} onChange={e => setOperatorSearch(e.target.value)} />
+              </div>
+              <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                {!selectedCountry ? (
+                  <p className="text-xs text-muted-foreground py-4 text-center">Pick a country first.</p>
+                ) : loadingOperators ? (
+                  [...Array(6)].map((_, i) => <div key={i} className="h-9 rounded-md bg-muted/30 animate-pulse" />)
+                ) : filteredOperators.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-4 text-center">No carriers.</p>
+                ) : filteredOperators.map(op => (
+                  <button
+                    key={op.ProviderCode}
+                    onClick={() => { setSelectedOperator(op); setPostSend(null); setOperatorSearch(""); setMoreOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-2 p-2 rounded-md text-xs transition-colors",
+                      selectedOperator?.ProviderCode === op.ProviderCode ? "bg-primary/10 border border-primary/30" : "hover:bg-accent/50"
+                    )}
+                  >
+                    <span className="h-5 w-5 rounded flex items-center justify-center text-[10px] font-bold shrink-0" style={{ background: `${carrierColor(op.Name)}22`, color: carrierColor(op.Name) }}>{op.Name[0]?.toUpperCase()}</span>
+                    <span className="font-medium flex-1 text-left truncate">{op.Name}</span>
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Fund wallet dialog ── */}
       <FundWalletDialog
         open={fundOpen}
@@ -818,6 +990,105 @@ export function TopUp() {
         }}
       />
     </>
+  );
+}
+
+/* ── Numpad sub-component ── */
+function Numpad({ onKey }: { onKey: (k: string) => void }) {
+  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clr", "0", "del"];
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {keys.map(k => (
+        <button
+          key={k}
+          type="button"
+          onClick={() => onKey(k)}
+          className="h-11 rounded-xl bg-muted/40 hover:bg-muted active:scale-95 text-lg font-semibold transition-all flex items-center justify-center"
+        >
+          {k === "del" ? <Delete className="h-5 w-5" /> : k === "clr" ? <span className="text-xs font-bold tracking-wider">CLR</span> : k}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ── Live phone preview sub-component ── */
+function PhonePreview({
+  step, carrierName, color, amount, currency, phone, prefix, mode, txRef,
+}: {
+  step: "idle" | "entering" | "confirm" | "success" | "voucher";
+  carrierName: string; color: string; amount: number; currency: string;
+  phone: string; prefix: string; mode: "send" | "voucher"; txRef?: string;
+}) {
+  const fullNumber = phone ? `+${prefix} ${phone}` : "—";
+  const amtLabel = money(amount, currency);
+  return (
+    <div
+      className="relative flex flex-col overflow-hidden shrink-0"
+      style={{ width: 210, height: 420, borderRadius: 34, background: "#0A1628", border: "6px solid #1A2740", boxShadow: "0 20px 60px rgba(0,0,0,0.55)" }}
+    >
+      {/* notch */}
+      <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: 88, height: 18, background: "#1A2740", borderRadius: "0 0 12px 12px" }} />
+      {/* status bar */}
+      <div className="flex justify-between items-center px-5 pt-3 text-[9px]" style={{ color: "#6B7280" }}>
+        <span>9:41</span>
+        <span className="font-semibold" style={{ color: carrierName ? color : "#6B7280" }}>{carrierName || "No carrier"}</span>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 px-5 text-center">
+        {step === "idle" && (
+          <>
+            <div className="h-16 w-16 rounded-full flex items-center justify-center" style={{ background: "#12203A" }}>
+              <Smartphone className="h-7 w-7" style={{ color: "#3B5680" }} />
+            </div>
+            <p className="text-sm font-semibold" style={{ color: "#8AA0C0" }}>Waiting for details</p>
+            <p className="text-[11px]" style={{ color: "#54688A" }}>Build a top-up on the left to see a live preview.</p>
+          </>
+        )}
+
+        {step === "entering" && (
+          <>
+            <div className="h-16 w-16 rounded-full flex items-center justify-center" style={{ background: `${color}22` }}>
+              <Signal className="h-7 w-7" style={{ color }} />
+            </div>
+            <p className="text-sm font-bold" style={{ color: "#E6EDF7" }}>{carrierName || "Select carrier"}</p>
+            {amount > 0 && <p className="text-2xl font-extrabold" style={{ color }}>{amtLabel}</p>}
+            <p className="text-[11px] font-mono" style={{ color: "#8AA0C0" }}>{fullNumber}</p>
+            <p className="text-[11px]" style={{ color: "#54688A" }}>Keep going…</p>
+          </>
+        )}
+
+        {step === "confirm" && (
+          <>
+            <div className="h-14 w-14 rounded-2xl flex items-center justify-center text-lg font-extrabold" style={{ background: `${color}22`, color }}>
+              {carrierName[0]?.toUpperCase()}
+            </div>
+            <p className="text-sm font-bold" style={{ color: "#E6EDF7" }}>{carrierName}</p>
+            <p className="text-3xl font-extrabold" style={{ color }}>{amtLabel}</p>
+            <p className="text-[11px] font-mono" style={{ color: "#8AA0C0" }}>{fullNumber}</p>
+            <div className="mt-1 flex items-center gap-1.5 px-3 py-1 rounded-full" style={{ background: "#12203A", color: "#4ADE80" }}>
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span className="text-[10px] font-bold">Ready to {mode === "voucher" ? "print" : "send"}</span>
+            </div>
+          </>
+        )}
+
+        {(step === "success" || step === "voucher") && (
+          <>
+            <div className="h-16 w-16 rounded-full flex items-center justify-center" style={{ background: "rgba(74,222,128,0.15)" }}>
+              {step === "voucher" ? <Printer className="h-8 w-8 text-emerald-400" /> : <CheckCircle2 className="h-8 w-8 text-emerald-400" />}
+            </div>
+            <p className="text-base font-extrabold text-emerald-400">{step === "voucher" ? "Voucher Printed" : "Top-Up Sent!"}</p>
+            <p className="text-2xl font-extrabold" style={{ color: "#E6EDF7" }}>{amtLabel}</p>
+            <p className="text-[11px] font-mono" style={{ color: "#8AA0C0" }}>{fullNumber}</p>
+            {txRef && <p className="text-[10px]" style={{ color: "#54688A" }}>Ref: {txRef}</p>}
+          </>
+        )}
+      </div>
+
+      {/* home indicator */}
+      <div style={{ margin: "0 auto 10px", width: 90, height: 4, borderRadius: 4, background: "#2A3A55" }} />
+    </div>
   );
 }
 
