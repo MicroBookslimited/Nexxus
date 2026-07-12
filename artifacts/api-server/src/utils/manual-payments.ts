@@ -1,5 +1,14 @@
 import { db, subscriptionManualPaymentsTable, subscriptionsTable, subscriptionPlansTable } from "@workspace/db";
 import { eq, and, lte, desc } from "drizzle-orm";
+import { issueSubscriptionInvoice } from "../lib/subscription-invoices";
+
+const MANUAL_METHOD_LABEL: Record<string, string> = {
+  cash: "Cash",
+  bank_transfer: "Bank transfer",
+  cheque: "Cheque",
+  card: "Card",
+  other: "Other",
+};
 
 function addBillingCycle(date: Date, cycle: string): Date {
   const d = new Date(date);
@@ -63,6 +72,8 @@ export async function applyDueManualPayments(tenantId: number): Promise<void> {
   if (duePayments.length === 0) return;
 
   for (const payment of duePayments) {
+    const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, payment.planId));
+
     const [existingSub] = await db
       .select({ id: subscriptionsTable.id })
       .from(subscriptionsTable)
@@ -80,24 +91,36 @@ export async function applyDueManualPayments(tenantId: number): Promise<void> {
           cancelledAt: null,
         })
         .where(eq(subscriptionsTable.tenantId, tenantId));
-    } else {
-      const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, payment.planId));
-      if (plan) {
-        await db.insert(subscriptionsTable).values({
-          tenantId,
-          planId: payment.planId,
-          status: "active",
-          billingCycle: payment.billingCycle,
-          provider: "manual",
-          currentPeriodStart: payment.scheduledStartDate,
-          currentPeriodEnd: payment.scheduledEndDate,
-        });
-      }
+    } else if (plan) {
+      await db.insert(subscriptionsTable).values({
+        tenantId,
+        planId: payment.planId,
+        status: "active",
+        billingCycle: payment.billingCycle,
+        provider: "manual",
+        currentPeriodStart: payment.scheduledStartDate,
+        currentPeriodEnd: payment.scheduledEndDate,
+      });
     }
 
     await db.update(subscriptionManualPaymentsTable)
       .set({ status: "applied", appliedAt: now, updatedAt: now })
       .where(eq(subscriptionManualPaymentsTable.id, payment.id));
+
+    await issueSubscriptionInvoice({
+      tenantId,
+      planId: payment.planId,
+      planName: plan?.name ?? "Subscription",
+      billingCycle: payment.billingCycle,
+      amount: payment.amount,
+      currency: "USD",
+      provider: "manual",
+      paymentMethodLabel: MANUAL_METHOD_LABEL[payment.paymentMethod] ?? payment.paymentMethod,
+      providerRef: `manual:${payment.id}`,
+      periodStart: payment.scheduledStartDate,
+      periodEnd: payment.scheduledEndDate,
+      paidAt: now,
+    });
   }
 }
 

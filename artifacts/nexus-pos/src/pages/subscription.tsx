@@ -3,13 +3,14 @@ import { useLocation } from "wouter";
 import {
   Check, CreditCard, Zap, Calendar, AlertTriangle,
   ArrowUpRight, RefreshCw, Upload, Banknote, X, FileCheck, Clock, Shield,
-  Users, Package, MapPin, FileText,
+  Users, Package, MapPin, FileText, Download, Send, Receipt,
 } from "lucide-react";
 import {
   TENANT_TOKEN_KEY, saasMe, getPlans, createPayPalOrder, capturePayPalOrder,
   initiatePowerTranz, getPowerTranz3dsStatus, getBankAccounts, submitBankTransferProof, getMyBankTransferProofs,
-  activateFreeSubscription,
+  activateFreeSubscription, getBillingInvoices, openBillingPdf, resendBillingInvoice,
   type Plan, type Tenant, type Subscription, type BankAccount, type BankTransferProofRow, type NextScheduledPayment,
+  type BillingInvoiceRow,
 } from "@/lib/saas-api";
 import { loadScript } from "@paypal/paypal-js";
 
@@ -35,6 +36,9 @@ export function SubscriptionPage() {
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [myProofs, setMyProofs] = useState<BankTransferProofRow[]>([]);
+  const [invoices, setInvoices] = useState<BillingInvoiceRow[]>([]);
+  const [pdfBusy, setPdfBusy] = useState<string | null>(null);
+  const [resendingId, setResendingId] = useState<number | null>(null);
   const [selectedBank, setSelectedBank] = useState<number | null>(null);
   const [transferRef, setTransferRef] = useState("");
   const [transferNotes, setTransferNotes] = useState("");
@@ -52,12 +56,37 @@ export function SubscriptionPage() {
     setNextScheduledPayment(me.nextScheduledPayment ?? null);
   }
 
+  async function handleOpenPdf(id: number, kind: "invoice" | "receipt") {
+    setPdfBusy(`${id}:${kind}`);
+    try {
+      await openBillingPdf(id, kind);
+    } catch {
+      setError(`Could not open the ${kind}. Please try again.`);
+    } finally {
+      setPdfBusy(null);
+    }
+  }
+
+  async function handleResend(id: number) {
+    setResendingId(id);
+    setError(""); setSuccess("");
+    try {
+      const res = await resendBillingInvoice(id);
+      setSuccess(`Invoice and receipt re-sent to ${res.email}.`);
+      setInvoices(await getBillingInvoices().catch(() => invoices));
+    } catch {
+      setError("Could not re-send the email. Please try again.");
+    } finally {
+      setResendingId(null);
+    }
+  }
+
   useEffect(() => {
     const token = localStorage.getItem(TENANT_TOKEN_KEY);
     if (!token) { navigate("/signup"); return; }
 
-    Promise.all([saasMe(), getPlans(), getBankAccounts(), getMyBankTransferProofs()])
-      .then(([me, p, ba, proofs]) => {
+    Promise.all([saasMe(), getPlans(), getBankAccounts(), getMyBankTransferProofs(), getBillingInvoices().catch(() => [])])
+      .then(([me, p, ba, proofs, inv]) => {
         setTenant(me.tenant);
         setSubscription(me.subscription ?? null);
         setCurrentPlan(me.plan ?? null);
@@ -65,6 +94,7 @@ export function SubscriptionPage() {
         setPlans(p);
         setBankAccounts(ba);
         setMyProofs(proofs);
+        setInvoices(inv);
         if (me.subscription?.billingCycle) setBillingCycle(me.subscription.billingCycle as "monthly" | "annual");
         if (ba.length > 0 && ba[0]) setSelectedBank(ba[0].id);
       })
@@ -720,6 +750,52 @@ export function SubscriptionPage() {
                   {p.status === "pending" && <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs px-2 py-0.5 rounded-full flex items-center gap-1"><Clock size={9} /> Pending</span>}
                   {p.status === "approved" && <span className="bg-green-500/10 text-green-400 border border-green-500/20 text-xs px-2 py-0.5 rounded-full flex items-center gap-1"><Check size={9} /> Approved</span>}
                   {p.status === "rejected" && <span className="bg-red-500/10 text-red-400 border border-red-500/20 text-xs px-2 py-0.5 rounded-full flex items-center gap-1"><X size={9} /> Rejected{p.reviewNotes ? ` — ${p.reviewNotes}` : ""}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Billing history (invoices & receipts) */}
+      {invoices.length > 0 && !showPayment && (
+        <div className="mt-6">
+          <h2 className="text-base font-semibold text-white mb-3 flex items-center gap-2">
+            <Receipt size={16} className="text-[#3b82f6]" /> Billing History
+          </h2>
+          <div className="space-y-2">
+            {invoices.map(inv => (
+              <div key={inv.id} className="bg-[#1a2332] border border-[#2a3a55] rounded-lg px-4 py-3 flex items-center justify-between gap-3 flex-wrap text-sm">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-white font-medium">{inv.planName}</span>
+                    <span className="text-[#475569] capitalize">({inv.billingCycle})</span>
+                    <span className="text-[#94a3b8]">{inv.currency} {inv.amount.toFixed(2)}</span>
+                  </div>
+                  <div className="text-[#475569] text-xs mt-0.5 flex items-center gap-2 flex-wrap">
+                    <span className="font-mono">{inv.invoiceNumber}</span>
+                    <span>· {new Date(inv.paidAt).toLocaleDateString()}</span>
+                    {inv.paymentMethodLabel && <span>· {inv.paymentMethodLabel}</span>}
+                    {inv.emailStatus === "sent" && <span className="text-green-500/80">· Emailed</span>}
+                    {inv.emailStatus === "failed" && <span className="text-red-400/80">· Email failed</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleOpenPdf(inv.id, "invoice")}
+                    disabled={pdfBusy === `${inv.id}:invoice`}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-[#2a3a55] text-[#94a3b8] hover:text-white hover:border-[#3b82f6] transition-colors disabled:opacity-50"
+                  ><FileText size={12} /> Invoice</button>
+                  <button
+                    onClick={() => handleOpenPdf(inv.id, "receipt")}
+                    disabled={pdfBusy === `${inv.id}:receipt`}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-[#2a3a55] text-[#94a3b8] hover:text-white hover:border-[#3b82f6] transition-colors disabled:opacity-50"
+                  ><Download size={12} /> Receipt</button>
+                  <button
+                    onClick={() => handleResend(inv.id)}
+                    disabled={resendingId === inv.id}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-[#2a3a55] text-[#94a3b8] hover:text-white hover:border-[#3b82f6] transition-colors disabled:opacity-50"
+                  >{resendingId === inv.id ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />} Re-send</button>
                 </div>
               </div>
             ))}

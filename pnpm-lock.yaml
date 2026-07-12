@@ -223,6 +223,9 @@ importers:
       nodemailer:
         specifier: ^8.0.5
         version: 8.0.5
+      pdfkit:
+        specifier: ^0.18.0
+        version: 0.18.0
       pg:
         specifier: ^8.20.0
         version: 8.20.0
@@ -257,6 +260,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
+      '@types/pdfkit':
+        specifier: ^0.17.6
+        version: 0.17.6
       esbuild:
         specifier: 0.27.3
         version: 0.27.3

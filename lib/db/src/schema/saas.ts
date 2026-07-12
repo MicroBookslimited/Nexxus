@@ -1,4 +1,5 @@
 import { pgTable, serial, text, integer, real, timestamp, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const subscriptionPlansTable = pgTable("subscription_plans", {
   id: serial("id").primaryKey(),
@@ -232,6 +233,48 @@ export const subscriptionManualPaymentsTable = pgTable("subscription_manual_paym
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * One row per subscription payment event (new subscription or renewal), across
+ * all payment providers (PayPal, PowerTranz, manual). Backs the emailed
+ * Invoice + Receipt PDFs and the tenant-facing Billing History page.
+ * Numbers are assigned at issue time and stay stable for re-download/re-send.
+ */
+export const subscriptionInvoicesTable = pgTable("subscription_invoices", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id, { onDelete: "cascade" }),
+  planId: integer("plan_id").references(() => subscriptionPlansTable.id),
+  // Human-facing document numbers, e.g. MB-INV-26-00042 / MB-RCP-26-00042.
+  invoiceNumber: text("invoice_number").notNull(),
+  receiptNumber: text("receipt_number").notNull(),
+  planName: text("plan_name").notNull(),
+  billingCycle: text("billing_cycle").notNull().default("monthly"),
+  amount: real("amount").notNull(),
+  currency: text("currency").notNull().default("USD"),
+  // paypal | powertranz | manual (+ manual sub-type stored in paymentMethodLabel)
+  provider: text("provider").notNull(),
+  paymentMethodLabel: text("payment_method_label"),
+  providerRef: text("provider_ref"),
+  periodStart: timestamp("period_start", { withTimezone: true }),
+  periodEnd: timestamp("period_end", { withTimezone: true }),
+  // Snapshot of the buyer details as printed on the documents.
+  billToName: text("bill_to_name").notNull().default(""),
+  billToEmail: text("bill_to_email").notNull().default(""),
+  billToAddress: text("bill_to_address"),
+  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+  paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
+  emailedAt: timestamp("emailed_at", { withTimezone: true }),
+  emailStatus: text("email_status").notNull().default("pending"),
+  emailError: text("email_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  // Race-safe idempotency: one invoice per tenant+provider+providerRef.
+  uniqTenantProviderRef: uniqueIndex("subscription_invoices_tenant_provider_ref_uidx")
+    .on(t.tenantId, t.provider, t.providerRef)
+    .where(sql`${t.providerRef} is not null`),
+}));
+
+export type SubscriptionInvoice = typeof subscriptionInvoicesTable.$inferSelect;
 
 export const bankTransferProofsTable = pgTable("bank_transfer_proofs", {
   id: serial("id").primaryKey(),

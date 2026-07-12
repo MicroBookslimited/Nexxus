@@ -1,15 +1,17 @@
 import { Router, type IRouter } from "express";
 import {
   db, subscriptionsTable, subscriptionPlansTable, tenantsTable,
-  bankAccountSettingsTable, bankTransferProofsTable,
+  bankAccountSettingsTable, bankTransferProofsTable, subscriptionInvoicesTable,
+  type SubscriptionInvoice,
 } from "@workspace/db";
 import { recordResellerCommission } from "./reseller";
 import { creditWallet as creditTopupWallet } from "./topup";
-import { eq } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
 import { getSetting } from "./settings";
 import { getActiveProductCount, planProductLimitError } from "../utils/plan-limits";
+import { issueSubscriptionInvoice, renderInvoiceDocs, sendInvoiceEmail } from "../lib/subscription-invoices";
 
 const router: IRouter = Router();
 
@@ -173,6 +175,12 @@ router.post("/billing/paypal/capture-order", async (req, res): Promise<void> => 
         }
         await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, tenant.tenantId));
         await recordResellerCommission(tenant.tenantId, plan.id, amount);
+        await issueSubscriptionInvoice({
+          tenantId: tenant.tenantId, planId: plan.id, planName: plan.name,
+          billingCycle: parsed.data.billingCycle, amount, currency: "USD",
+          provider: "paypal", paymentMethodLabel: "PayPal", providerRef: captured.id,
+          periodStart: now, periodEnd, paidAt: now,
+        });
       }
     }
 
@@ -192,7 +200,10 @@ interface Pending3DS {
 }
 const pending3DS = new Map<string, Pending3DS>();
 
-async function activateSubscription(tenantId: number, planId: number, billingCycle: string, txId?: string) {
+async function activateSubscription(
+  tenantId: number, planId: number, billingCycle: string, txId?: string,
+  invoice?: { amount: number; planName: string },
+) {
   const now = new Date(); const periodEnd = new Date(now);
   if (billingCycle === "annual") periodEnd.setFullYear(periodEnd.getFullYear() + 1);
   else periodEnd.setMonth(periodEnd.getMonth() + 1);
@@ -209,6 +220,14 @@ async function activateSubscription(tenantId: number, planId: number, billingCyc
     });
   }
   await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, tenantId));
+
+  if (invoice) {
+    await issueSubscriptionInvoice({
+      tenantId, planId, planName: invoice.planName, billingCycle, amount: invoice.amount,
+      currency: "USD", provider: "powertranz", paymentMethodLabel: "Card",
+      providerRef: txId ?? null, periodStart: now, periodEnd, paidAt: now,
+    });
+  }
 }
 
 async function callPowerTranz(endpoint: string, body: object | string): Promise<{ raw: string; status: number; data: Record<string, unknown> }> {
@@ -316,7 +335,7 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
 
     // Direct approval (frictionless)
     if (data.Approved) {
-      await activateSubscription(tenant.tenantId, plan.id, parsed.data.billingCycle, data.TransactionIdentifier as string);
+      await activateSubscription(tenant.tenantId, plan.id, parsed.data.billingCycle, data.TransactionIdentifier as string, { amount: Number(amount), planName: plan.name });
       await recordResellerCommission(tenant.tenantId, plan.id, amount);
       res.json({ step: "approved", approved: true, transactionId: data.TransactionIdentifier, rrn: data.RrN, authCode: data.AuthorizationCode });
       return;
@@ -376,7 +395,7 @@ router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> 
         setTimeout(() => pending3DS.delete(spiToken), 5 * 60 * 1000);
         res.send(closeScript("approved", `Wallet funded!${rrn}`, `,fundJmd:${JSON.stringify(pending.fundJmd ?? 0)}`));
       } else {
-        await activateSubscription(pending.tenantId, pending.planId, pending.billingCycle, data.TransactionIdentifier as string);
+        await activateSubscription(pending.tenantId, pending.planId, pending.billingCycle, data.TransactionIdentifier as string, { amount: pending.amount, planName: pending.planName });
         await recordResellerCommission(pending.tenantId, pending.planId, pending.amount);
         pending3DS.set(spiToken, { ...pending, status: "approved", txId: data.TransactionIdentifier as string, rrn: data.RrN as string });
         setTimeout(() => pending3DS.delete(spiToken), 5 * 60 * 1000);
@@ -743,6 +762,89 @@ router.get("/billing/bank-transfer/my-proofs", async (req, res): Promise<void> =
     .orderBy(bankTransferProofsTable.createdAt);
 
   res.json(proofs);
+});
+
+/* ─── Billing history: list invoices ─── */
+router.get("/billing/invoices", async (req, res): Promise<void> => {
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const rows = await db.select({
+    id: subscriptionInvoicesTable.id,
+    invoiceNumber: subscriptionInvoicesTable.invoiceNumber,
+    receiptNumber: subscriptionInvoicesTable.receiptNumber,
+    planName: subscriptionInvoicesTable.planName,
+    billingCycle: subscriptionInvoicesTable.billingCycle,
+    amount: subscriptionInvoicesTable.amount,
+    currency: subscriptionInvoicesTable.currency,
+    provider: subscriptionInvoicesTable.provider,
+    paymentMethodLabel: subscriptionInvoicesTable.paymentMethodLabel,
+    periodStart: subscriptionInvoicesTable.periodStart,
+    periodEnd: subscriptionInvoicesTable.periodEnd,
+    paidAt: subscriptionInvoicesTable.paidAt,
+    issuedAt: subscriptionInvoicesTable.issuedAt,
+    emailedAt: subscriptionInvoicesTable.emailedAt,
+    emailStatus: subscriptionInvoicesTable.emailStatus,
+  }).from(subscriptionInvoicesTable)
+    .where(eq(subscriptionInvoicesTable.tenantId, tenant.tenantId))
+    .orderBy(desc(subscriptionInvoicesTable.paidAt));
+
+  res.json(rows);
+});
+
+async function loadTenantInvoice(
+  req: { headers: { authorization?: string } }, id: number,
+): Promise<{ ok: true; rec: SubscriptionInvoice } | { ok: false; status: number }> {
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) return { ok: false, status: 401 };
+  const [rec] = await db.select().from(subscriptionInvoicesTable).where(and(
+    eq(subscriptionInvoicesTable.id, id),
+    eq(subscriptionInvoicesTable.tenantId, tenant.tenantId),
+  ));
+  if (!rec) return { ok: false, status: 404 };
+  return { ok: true, rec };
+}
+
+/* ─── Billing history: download invoice PDF ─── */
+router.get("/billing/invoices/:id/invoice.pdf", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const found = await loadTenantInvoice(req, id);
+  if (!found.ok) { res.status(found.status).json({ error: found.status === 401 ? "Unauthorized" : "Not found" }); return; }
+  const { invoice } = await renderInvoiceDocs(found.rec);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="Invoice-${found.rec.invoiceNumber}.pdf"`);
+  res.send(invoice);
+});
+
+/* ─── Billing history: download receipt PDF ─── */
+router.get("/billing/invoices/:id/receipt.pdf", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const found = await loadTenantInvoice(req, id);
+  if (!found.ok) { res.status(found.status).json({ error: found.status === 401 ? "Unauthorized" : "Not found" }); return; }
+  const { receipt } = await renderInvoiceDocs(found.rec);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="Receipt-${found.rec.receiptNumber}.pdf"`);
+  res.send(receipt);
+});
+
+/* ─── Billing history: re-send invoice email ─── */
+router.post("/billing/invoices/:id/resend", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const found = await loadTenantInvoice(req, id);
+  if (!found.ok) { res.status(found.status).json({ error: found.status === 401 ? "Unauthorized" : "Not found" }); return; }
+  try {
+    await sendInvoiceEmail(found.rec);
+    res.json({ ok: true, email: found.rec.billToEmail });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await db.update(subscriptionInvoicesTable)
+      .set({ emailStatus: "failed", emailError: msg })
+      .where(eq(subscriptionInvoicesTable.id, found.rec.id));
+    res.status(502).json({ error: "Failed to send email", details: msg });
+  }
 });
 
 export default router;

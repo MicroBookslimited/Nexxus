@@ -140,6 +140,56 @@ export const submitBankTransferProof = (data: {
 export const getMyBankTransferProofs = () =>
   api<BankTransferProofRow[]>("/billing/bank-transfer/my-proofs", { headers: tenantAuthHeaders() });
 
+/* ─── Billing history (invoices / receipts) ─── */
+export interface BillingInvoiceRow {
+  id: number;
+  invoiceNumber: string;
+  receiptNumber: string;
+  planName: string;
+  billingCycle: string;
+  amount: number;
+  currency: string;
+  provider: string;
+  paymentMethodLabel: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  paidAt: string;
+  issuedAt: string;
+  emailedAt: string | null;
+  emailStatus: string;
+}
+
+export const getBillingInvoices = () =>
+  api<BillingInvoiceRow[]>("/billing/invoices", { headers: tenantAuthHeaders() });
+
+export const resendBillingInvoice = (id: number) =>
+  api<{ ok: boolean; email: string }>(`/billing/invoices/${id}/resend`, {
+    method: "POST",
+    headers: tenantAuthHeaders(),
+  });
+
+/**
+ * Fetches a billing PDF (invoice or receipt) as a Blob so it can be opened or
+ * downloaded. Auth is header-based, so a plain <a href> won't work.
+ */
+async function fetchBillingPdf(id: number, kind: "invoice" | "receipt"): Promise<Blob> {
+  const resp = await fetch(`/api/billing/invoices/${id}/${kind}.pdf`, {
+    headers: tenantAuthHeaders(),
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({ error: resp.statusText })) as Record<string, unknown>;
+    throw new ApiError(String(body["error"] ?? resp.statusText), body, resp.status);
+  }
+  return resp.blob();
+}
+
+export const openBillingPdf = async (id: number, kind: "invoice" | "receipt") => {
+  const blob = await fetchBillingPdf(id, kind);
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
 /* ─── Superadmin ─── */
 export const superadminLogin = (email: string, password: string) =>
   api<{ token: string }>("/superadmin/login", { method: "POST", body: JSON.stringify({ email, password }) });

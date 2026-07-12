@@ -34,6 +34,13 @@ function serializeError(err: unknown): string {
   try { return JSON.stringify(err); } catch { return String(err); }
 }
 
+/** A file attachment. `content` is the raw file bytes (base64-encoded when sent). */
+export interface MailAttachment {
+  filename: string;
+  content: Buffer;
+  mimeType: string;
+}
+
 export async function sendMail(opts: {
   to: string;
   subject: string;
@@ -41,9 +48,11 @@ export async function sendMail(opts: {
   fromName: string;
   fromAddress: string;
   tenantId?: number;
+  attachments?: MailAttachment[];
 }): Promise<{ messageId?: string }> {
   const tenantId = opts.tenantId ?? 0;
   const provider = await getSetting("email_provider", tenantId);
+  const attachments = opts.attachments ?? [];
 
   if (provider === "smtp") {
     const smtp = await getSmtpConfig(tenantId);
@@ -57,7 +66,10 @@ export async function sendMail(opts: {
     const from = smtp.from
       ? `${smtp.fromName || opts.fromName} <${smtp.from}>`
       : `${opts.fromName} <${opts.fromAddress}>`;
-    const info = await transport.sendMail({ from, to: opts.to, subject: opts.subject, html: opts.html });
+    const info = await transport.sendMail({
+      from, to: opts.to, subject: opts.subject, html: opts.html,
+      attachments: attachments.map((a) => ({ filename: a.filename, content: a.content, contentType: a.mimeType })),
+    });
     return { messageId: info.messageId };
   }
 
@@ -71,6 +83,13 @@ export async function sendMail(opts: {
       to: [{ email_address: { address: opts.to, name: "" } }],
       subject: opts.subject,
       htmlbody: opts.html,
+      ...(attachments.length > 0 && {
+        attachments: attachments.map((a) => ({
+          content: a.content.toString("base64"),
+          mime_type: a.mimeType,
+          name: a.filename,
+        })),
+      }),
     });
     return { messageId: (response as { data?: { message_id?: string } })?.data?.message_id };
   } catch (err) {
