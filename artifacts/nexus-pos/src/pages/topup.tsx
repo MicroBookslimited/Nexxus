@@ -227,6 +227,10 @@ export function TopUp() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<DingProduct | null>(null);
   const [customAmount, setCustomAmount] = useState("");
+  const [carrierCheck, setCarrierCheck] = useState<{
+    status: "idle" | "checking" | "confirmed" | "mismatch" | "unconfirmed";
+    detected: { ProviderCode: string; Name: string }[];
+  }>({ status: "idle", detected: [] });
   const [countrySearch, setCountrySearch] = useState("");
   const [operatorSearch, setOperatorSearch] = useState("");
 
@@ -339,6 +343,36 @@ export function TopUp() {
       .finally(() => setLoadingProducts(false));
   }, [selectedOperator]);
 
+  /* ── Validate recipient number + confirm carrier ──
+     A phone number can only belong to one carrier, so once a full number is
+     entered we ask Ding which provider(s) own that number and compare against
+     the selected operator. Debounced; degrades to "unconfirmed" on any error. */
+  useEffect(() => {
+    if (section === "giftcards" || !selectedOperator || phoneNumber.length < 7) {
+      setCarrierCheck({ status: "idle", detected: [] });
+      return;
+    }
+    const prefix = selectedCountry?.Iso === "JM" ? "1876" : (selectedCountry?.Iso ?? "");
+    const lookupNumber = /^\d+$/.test(prefix) ? `${prefix}${phoneNumber}` : phoneNumber;
+    const operatorCode = selectedOperator.ProviderCode;
+    let cancelled = false;
+    setCarrierCheck(prev => ({ ...prev, status: "checking" }));
+    const t = setTimeout(() => {
+      apiFetch<{ providers: { ProviderCode: string; Name: string }[] }>(
+        `/api/topup/lookup?countryIso=${encodeURIComponent(selectedCountry?.Iso ?? "")}&accountNumber=${encodeURIComponent(lookupNumber)}`
+      )
+        .then(d => {
+          if (cancelled) return;
+          const detected = d.providers ?? [];
+          if (detected.length === 0) { setCarrierCheck({ status: "unconfirmed", detected: [] }); return; }
+          const match = detected.some(p => p.ProviderCode === operatorCode);
+          setCarrierCheck({ status: match ? "confirmed" : "mismatch", detected });
+        })
+        .catch(() => { if (!cancelled) setCarrierCheck({ status: "unconfirmed", detected: [] }); });
+    }, 500);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [phoneNumber, selectedOperator, selectedCountry, section]);
+
   /* ── Load history ── */
   const loadHistory = useCallback(async () => {
     setLoadingTxns(true);
@@ -364,6 +398,16 @@ export function TopUp() {
   /* ── Send top-up / buy gift card ── */
   async function handleSend() {
     if (!selectedOperator || !selectedProduct) return;
+    // Guard against a carrier mismatch that may have resolved after the confirm
+    // dialog was opened — a number can only belong to one carrier.
+    if (!isGiftCards && carrierCheck.status === "mismatch") {
+      toast({
+        variant: "destructive",
+        title: "Carrier mismatch",
+        description: `This number belongs to ${carrierCheck.detected[0]?.Name ?? "a different carrier"}, not ${selectedOperator.Name}.`,
+      });
+      return;
+    }
     // Gift cards deliver a redemption code, so the recipient phone is optional —
     // Ding still needs an AccountNumber, so fall back to a placeholder.
     const effectivePhone = isGiftCards ? (phoneNumber || "0000000000") : phoneNumber;
@@ -463,6 +507,20 @@ export function TopUp() {
     && (isGiftCards || phoneNumber.length >= 7)
     && (!selectedProduct?.IsRangeTopUp || (parseFloat(customAmount) || 0) > 0);
   const insufficient = !!wallet && wallet.balance < cost;
+  // A number can only belong to one carrier — block sending when Ding confirms
+  // the entered number belongs to a different carrier than the one selected.
+  const carrierBlocked = !isGiftCards && carrierCheck.status === "mismatch";
+
+  function switchToDetectedCarrier() {
+    const target = carrierCheck.detected[0];
+    if (!target) return;
+    const op = operators.find(o => o.ProviderCode === target.ProviderCode);
+    if (!op) return;
+    setSelectedOperator(op);
+    setSelectedProduct(null);
+    setCustomAmount("");
+    setPostSend(null);
+  }
 
   // Live-preview state for the phone panel
   const previewStep: "idle" | "entering" | "confirm" | "success" | "voucher" =
@@ -893,7 +951,13 @@ export function TopUp() {
                   </p>
                   <div
                     className="flex items-center gap-2 rounded-xl border-[1.5px] px-4 py-3 mb-2.5 transition-colors"
-                    style={{ borderColor: phoneNumber.length >= 7 ? "#1A7A4A" : "hsl(var(--border))" }}
+                    style={{
+                      borderColor:
+                        carrierBlocked ? "#DC2626"
+                        : carrierCheck.status === "confirmed" ? "#1A7A4A"
+                        : phoneNumber.length >= 7 ? "#1A7A4A"
+                        : "hsl(var(--border))",
+                    }}
                   >
                     {dialingPrefix && <span className="text-xs font-mono text-muted-foreground">+{dialingPrefix}</span>}
                     <span className="flex-1 font-mono text-lg font-bold tracking-[0.15em] min-h-[24px] flex items-center">
@@ -903,6 +967,40 @@ export function TopUp() {
                       <button onClick={() => setPhoneNumber("")} className="text-muted-foreground hover:text-foreground"><XCircle className="h-4 w-4" /></button>
                     )}
                   </div>
+                  {/* Carrier validation status */}
+                  {!isGiftCards && carrierCheck.status !== "idle" && (
+                    <div className="mb-2.5">
+                      {carrierCheck.status === "checking" && (
+                        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" />Checking carrier…
+                        </p>
+                      )}
+                      {carrierCheck.status === "confirmed" && (
+                        <p className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
+                          <CheckCircle2 className="h-3.5 w-3.5" />Carrier confirmed: {selectedOperator?.Name}
+                        </p>
+                      )}
+                      {carrierCheck.status === "mismatch" && (
+                        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+                          <p className="flex items-center gap-1.5 font-medium">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                            This number belongs to {carrierCheck.detected[0]?.Name}, not {selectedOperator?.Name}.
+                          </p>
+                          {operators.some(o => o.ProviderCode === carrierCheck.detected[0]?.ProviderCode) && (
+                            <button
+                              onClick={switchToDetectedCarrier}
+                              className="mt-1.5 underline font-semibold text-red-200 hover:text-white"
+                            >Switch to {carrierCheck.detected[0]?.Name}</button>
+                          )}
+                        </div>
+                      )}
+                      {carrierCheck.status === "unconfirmed" && (
+                        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          <AlertCircle className="h-3 w-3" />Couldn't confirm the carrier for this number.
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {isGiftCards && (
                     <p className="text-[11px] text-muted-foreground mb-2.5">The redemption code is generated instantly — a delivery phone is only needed if you want the code texted to the customer.</p>
                   )}
@@ -969,7 +1067,7 @@ export function TopUp() {
                   <Button variant="outline" onClick={resetFlow} className="px-5">Clear</Button>
                   <Button
                     onClick={() => setConfirmOpen(true)}
-                    disabled={!canSubmit || sending || insufficient}
+                    disabled={!canSubmit || sending || insufficient || carrierBlocked}
                     className={cn(
                       "flex-1 h-12 text-sm font-bold gap-2",
                       txMode === "voucher" && "bg-amber-500 hover:bg-amber-600 text-black"
@@ -1147,7 +1245,11 @@ export function TopUp() {
               {commission > 0 && <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">Commission</span><span className="font-medium text-emerald-400">{JMD(commission)}</span></div>}
               <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">Wallet balance</span><span className={cn("font-mono", (wallet?.balance ?? 0) < cost ? "text-red-400" : "text-foreground")}>{JMD(wallet?.balance ?? 0)}</span></div>
             </div>
-            {(wallet?.balance ?? 0) < cost ? (
+            {carrierBlocked ? (
+              <div className="rounded-md border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-300 text-center">
+                This number belongs to {carrierCheck.detected[0]?.Name}, not {selectedOperator?.Name}. Switch carriers before sending.
+              </div>
+            ) : (wallet?.balance ?? 0) < cost ? (
               <div className="rounded-md border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-300 text-center">
                 Insufficient wallet balance. Please add funds before sending.
               </div>
@@ -1157,7 +1259,7 @@ export function TopUp() {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-            <Button onClick={handleSend} disabled={sending || (wallet?.balance ?? 0) < cost} className="bg-emerald-600 hover:bg-emerald-700 gap-2">
+            <Button onClick={handleSend} disabled={sending || (wallet?.balance ?? 0) < cost || carrierBlocked} className="bg-emerald-600 hover:bg-emerald-700 gap-2">
               {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Processing…</> : <><CheckCircle2 className="h-4 w-4" />{isGiftCards ? "Confirm & Buy" : "Confirm & Send"}</>}
             </Button>
           </DialogFooter>

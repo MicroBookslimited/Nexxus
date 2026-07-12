@@ -239,6 +239,39 @@ router.get("/topup/operators", async (req, res): Promise<void> => {
   }
 });
 
+/* Carrier lookup for a recipient number. Ding's GetProviders accepts an
+   accountNumber and returns only the provider(s) whose number ranges match it,
+   so we can confirm the entered number belongs to the selected carrier (a
+   number can only be registered to one carrier). Degrades gracefully: any
+   upstream error returns an empty provider list rather than blocking. */
+router.get("/topup/lookup", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!getDingKey()) { res.status(503).json({ error: "Ding API key not configured" }); return; }
+  const { countryIso, accountNumber } = req.query as { countryIso?: string; accountNumber?: string };
+  if (!accountNumber) { res.status(400).json({ error: "accountNumber is required" }); return; }
+  try {
+    const params = new URLSearchParams();
+    if (countryIso) params.append("countryIsos[0]", countryIso);
+    params.append("accountNumber", accountNumber);
+    const r = await dingFetch(`/GetProviders?${params.toString()}`);
+    const data = await r.json() as Record<string, unknown>;
+    const upstreamErr = extractDingError(r.status, data);
+    if (upstreamErr) {
+      // Non-fatal: return no matches so the UI shows "couldn't confirm" rather
+      // than a hard error that blocks an otherwise-valid send.
+      res.json({ providers: [], note: upstreamErr });
+      return;
+    }
+    const providers = (data.Providers as Record<string, unknown>[] | undefined) ?? (Array.isArray(data.Items) ? data.Items as Record<string, unknown>[] : []);
+    res.json({
+      providers: providers.map((p) => ({ ProviderCode: p.ProviderCode, Name: p.Name })),
+    });
+  } catch (err) {
+    res.status(502).json({ error: "Failed to look up carrier", details: String(err) });
+  }
+});
+
 router.get("/topup/products", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
