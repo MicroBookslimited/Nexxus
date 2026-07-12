@@ -171,8 +171,34 @@ router.get("/topup/products", async (req, res): Promise<void> => {
         .json({ error: `Ding: ${upstreamErr}`, upstream: data });
       return;
     }
-    // Ding API returns Items; frontend expects Products
-    if (!data.Products && Array.isArray(data.Items)) data.Products = data.Items;
+    // Ding returns Items with nested Maximum/Minimum objects; normalize to frontend shape
+    const rawItems = Array.isArray(data.Items) ? data.Items as Record<string, unknown>[] : [];
+    data.Products = rawItems.map(p => {
+      const max = (p.Maximum ?? {}) as Record<string, unknown>;
+      const min = (p.Minimum ?? {}) as Record<string, unknown>;
+      const sendValue = (max.SendValue ?? min.SendValue ?? 0) as number;
+      const sendCurrencyIso = (max.SendCurrencyIso ?? min.SendCurrencyIso ?? "USD") as string;
+      const receiveCurrencyIso = (max.ReceiveCurrencyIso ?? min.ReceiveCurrencyIso ?? "") as string;
+      const minSend = (min.SendValue ?? sendValue) as number;
+      const maxSend = (max.SendValue ?? sendValue) as number;
+      const isRange = minSend !== maxSend;
+      return {
+        SkuCode: p.SkuCode,
+        Name: p.DefaultDisplayText ?? p.SkuCode,
+        SendValue: sendValue,
+        SendCurrencyIso: sendCurrencyIso,
+        ReceiverCurrencyIso: receiveCurrencyIso,
+        IsRangeTopUp: isRange,
+        Minimum: isRange ? minSend : undefined,
+        Maximum: isRange ? maxSend : undefined,
+        ValidityDays: (p.ValidityDays ?? undefined) as number | undefined,
+        LocalisedPrice: {
+          CustomerFee: (max.CustomerFee ?? 0) as number,
+          SenderFee: sendValue,
+          CurrencyIso: sendCurrencyIso,
+        },
+      };
+    });
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: "Failed to fetch products", details: String(err) });
@@ -238,7 +264,38 @@ router.get("/topup/net-check", async (req, res): Promise<void> => {
     }
   }
 
-  res.json({ outboundIp, dingConfigured: !!getDingKey(), dingAuth, dingCountries });
+  let dingProviders: { ok: boolean; httpStatus?: number; count?: number; itemKeys?: string[]; sample?: unknown; error?: string | null } | null = null;
+  if (req.query.providers === "1" && getDingKey()) {
+    try {
+      const r = await dingFetch("/GetProviders?countryIsos[0]=JM");
+      const d = await r.json() as Record<string, unknown>;
+      const err = extractDingError(r.status, d);
+      const items = Array.isArray(d?.Items) ? d.Items as Record<string, unknown>[] : [];
+      const mobile = items.filter((p) => /digicel|flow|lime/i.test(String(p.Name ?? "")));
+      dingProviders = { ok: !err, httpStatus: r.status, count: items.length, itemKeys: items[0] ? Object.keys(items[0]) : [], sample: (mobile.length ? mobile : items).slice(0, 3), error: err };
+    } catch (e) { dingProviders = { ok: false, error: String(e) }; }
+  }
+
+  let dingProducts: { ok: boolean; httpStatus?: number; count?: number; itemKeys?: string[]; sample?: unknown; error?: string | null } | null = null;
+  if (req.query.products === "1" && getDingKey()) {
+    // Get the first JM provider code then fetch its products
+    try {
+      const pr = await dingFetch("/GetProviders?countryIsos[0]=JM");
+      const pd = await pr.json() as Record<string, unknown>;
+      const providers = Array.isArray(pd?.Items) ? pd.Items as Record<string, unknown>[] : [];
+      const mobile = providers.find((p) => /digicel|flow/i.test(String(p.Name ?? ""))) ?? providers[0];
+      const code = mobile?.ProviderCode as string | undefined;
+      if (code) {
+        const r = await dingFetch(`/GetProducts?providerCodes[0]=${encodeURIComponent(code)}`);
+        const d = await r.json() as Record<string, unknown>;
+        const err = extractDingError(r.status, d);
+        const items = Array.isArray(d?.Items) ? d.Items as Record<string, unknown>[] : [];
+        dingProducts = { ok: !err, httpStatus: r.status, count: items.length, itemKeys: items[0] ? Object.keys(items[0]) : [], sample: items.slice(0, 1), error: err };
+      }
+    } catch (e) { dingProducts = { ok: false, error: String(e) }; }
+  }
+
+  res.json({ outboundIp, dingConfigured: !!getDingKey(), dingAuth, dingCountries, dingProviders, dingProducts });
 });
 
 /* ─── SEND TOP-UP ─── */
