@@ -243,47 +243,58 @@ ${emailHeader("Low Stock Alert", `${businessName} · ${date}`, "⚠️")}
   return emailShell(`Low Stock Alert — ${date}`, body);
 }
 
-/* ── Build: Subscription Expiry ── */
-function buildExpiryHtml(data: {
+/* ── Build: Subscription Renewal Reminder ── */
+function buildRenewalReminderHtml(data: {
   businessName: string;
   ownerName: string;
   planName: string;
-  expiresAt: Date;
+  renewsAt: Date;
   daysLeft: number;
   status: string;
 }): string {
-  const { businessName, ownerName, planName, expiresAt, daysLeft, status } = data;
-  const expiryStr = expiresAt.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const urgencyColor = daysLeft === 1 ? "#dc2626" : daysLeft <= 3 ? "#d97706" : "#2563eb";
-  const urgencyBg    = daysLeft === 1 ? "#fef2f2" : daysLeft <= 3 ? "#fffbeb" : "#eff6ff";
-  const urgencyBorder= daysLeft === 1 ? "#fecaca" : daysLeft <= 3 ? "#fde68a" : "#bfdbfe";
+  const { businessName, ownerName, planName, renewsAt, daysLeft, status } = data;
+  const renewsStr = renewsAt.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const isTrial = status === "trial";
 
+  // Tone tiers: friendly (14–7 days) → warning (5–2 days) → urgent (1 day)
+  const isEarly    = daysLeft >= 7;
+  const isUrgent   = daysLeft === 1;
+  const urgencyColor  = isUrgent ? "#dc2626" : isEarly ? "#2563eb" : "#d97706";
+  const urgencyBg     = isUrgent ? "#fef2f2" : isEarly ? "#eff6ff" : "#fffbeb";
+  const urgencyBorder = isUrgent ? "#fecaca" : isEarly ? "#bfdbfe" : "#fde68a";
+
+  const icon    = isUrgent ? "🚨" : isEarly ? "🔔" : "⏰";
+  const heading = isUrgent
+    ? (isTrial ? "Trial Ends Tomorrow!" : "Subscription Renews Tomorrow!")
+    : isEarly
+      ? (isTrial ? `Trial Ends in ${daysLeft} Days` : `Renewal Reminder — ${daysLeft} Days`)
+      : (isTrial ? `Trial Ends in ${daysLeft} Days` : `Renew Soon — ${daysLeft} Days Left`);
+
+  const intro = isEarly
+    ? `Just a friendly heads-up — your ${isTrial ? "free trial" : "subscription"} is coming up for renewal in <strong>${daysLeft} days</strong>.`
+    : isUrgent
+      ? `This is your final reminder — your ${isTrial ? "free trial" : "subscription"} ${isTrial ? "ends" : "renews"} <strong>tomorrow</strong>.`
+      : `Your ${isTrial ? "free trial" : "subscription"} is renewing in <strong>${daysLeft} days</strong>. Please make sure your payment method is up to date.`;
+
   const body = `
-${emailHeader(
-  daysLeft === 1 ? "Subscription Expires Tomorrow!" : `Subscription Expires in ${daysLeft} Days`,
-  `${businessName} · Action Required`,
-  daysLeft === 1 ? "🚨" : "⏰"
-)}
+${emailHeader(heading, `${businessName} · NEXXUS POS`, icon)}
 <div style="padding:24px 32px;">
   <p style="font-size:14px;color:#475569;margin:0 0 20px;">Hi ${ownerName},</p>
+  <p style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 20px;">${intro}</p>
 
   <div style="background:${urgencyBg};border:1px solid ${urgencyBorder};border-radius:10px;padding:20px;margin-bottom:20px;">
-    <div style="font-size:13px;font-weight:700;color:${urgencyColor};margin-bottom:14px;">
-      ${isTrial ? "Your free trial" : "Your subscription"} expires ${daysLeft === 1 ? "tomorrow" : `in ${daysLeft} days`}
-    </div>
     <table style="width:100%;border-collapse:collapse;">
       <tr>
-        <td style="padding:4px 0;font-size:12px;color:#64748b;">Business</td>
-        <td style="padding:4px 0;font-size:12px;font-weight:600;color:#1e293b;text-align:right;">${businessName}</td>
+        <td style="padding:5px 0;font-size:12px;color:#64748b;">Business</td>
+        <td style="padding:5px 0;font-size:12px;font-weight:600;color:#1e293b;text-align:right;">${businessName}</td>
       </tr>
       <tr>
-        <td style="padding:4px 0;font-size:12px;color:#64748b;">Plan</td>
-        <td style="padding:4px 0;font-size:12px;font-weight:600;color:#1e293b;text-align:right;">${planName}</td>
+        <td style="padding:5px 0;font-size:12px;color:#64748b;">Plan</td>
+        <td style="padding:5px 0;font-size:12px;font-weight:600;color:#1e293b;text-align:right;">${planName}</td>
       </tr>
       <tr>
-        <td style="padding:4px 0;font-size:12px;color:#64748b;">${isTrial ? "Trial ends" : "Renews"}</td>
-        <td style="padding:4px 0;font-size:12px;font-weight:600;color:${urgencyColor};text-align:right;">${expiryStr}</td>
+        <td style="padding:5px 0;font-size:12px;color:#64748b;">${isTrial ? "Trial ends" : "Renewal date"}</td>
+        <td style="padding:5px 0;font-size:12px;font-weight:700;color:${urgencyColor};text-align:right;">${renewsStr}</td>
       </tr>
     </table>
   </div>
@@ -291,18 +302,19 @@ ${emailHeader(
   <p style="font-size:13px;color:#475569;line-height:1.6;">
     ${isTrial
       ? "After your trial ends, you'll lose access to NEXXUS POS until you subscribe to a paid plan."
-      : "After your subscription expires, you'll lose access to NEXXUS POS until it's renewed."}
-    Renew now to keep your business running without interruption.
+      : daysLeft <= 3
+        ? "To avoid any disruption to your business, please ensure your subscription is renewed before the date above."
+        : "No action is needed if your payment method is already on file — we'll take care of the renewal automatically on the date above."}
   </p>
 
   <div style="text-align:center;margin-top:24px;">
-    <a href="https://nexxuspos.com/billing" style="display:inline-block;background:#3b82f6;color:#fff;font-weight:700;font-size:14px;padding:14px 32px;border-radius:8px;text-decoration:none;">
-      ${isTrial ? "Upgrade Now" : "Renew Subscription"} →
+    <a href="https://nexxus.microbookspos.com/app/subscription" style="display:inline-block;background:#3b82f6;color:#fff;font-weight:700;font-size:14px;padding:14px 32px;border-radius:8px;text-decoration:none;">
+      ${isTrial ? "Choose a Plan" : "Manage Subscription"} →
     </a>
   </div>
 </div>`;
 
-  return emailShell(`Subscription Expires in ${daysLeft} Days — ${businessName}`, body);
+  return emailShell(`${heading} — ${businessName}`, body);
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -486,17 +498,18 @@ export async function runLowStockAlertsForAllTenants(
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   JOB 3 — Subscription Expiry Alerts (7 / 3 / 1 day warnings)
+   JOB 3 — Subscription Renewal Reminders
+   Fires at 14 / 10 / 7 / 5 / 4 / 3 / 2 / 1 days before renewal.
 ──────────────────────────────────────────────────────────────────── */
 export async function runSubscriptionExpiryAlerts(): Promise<{ sent: number; failed: number }> {
   let sent = 0, failed = 0;
 
-  const WARN_DAYS = [7, 3, 1];
+  const WARN_DAYS = [14, 10, 7, 5, 4, 3, 2, 1];
 
   for (const daysLeft of WARN_DAYS) {
     const { start, end } = todayRange(daysLeft);
 
-    // Fetch subscriptions expiring in exactly this many days (trial or active)
+    // Fetch subscriptions whose renewal date falls in exactly this window today.
     const expiring = await db.select({
       tenantId:     subscriptionsTable.tenantId,
       status:       subscriptionsTable.status,
@@ -527,32 +540,37 @@ export async function runSubscriptionExpiryAlerts(): Promise<{ sent: number; fai
 
     for (const row of expiring) {
       try {
-        const expiresAt = (row.status === "trial" ? row.trialEndsAt : row.periodEnd) as Date;
-        const html = buildExpiryHtml({
+        const renewsAt = (row.status === "trial" ? row.trialEndsAt : row.periodEnd) as Date;
+        const html = buildRenewalReminderHtml({
           businessName: row.businessName,
           ownerName:    row.ownerName,
           planName:     row.planName ?? "NEXXUS POS Plan",
-          expiresAt,
+          renewsAt,
           daysLeft,
           status:       row.status,
         });
 
+        const isTrial = row.status === "trial";
+        const subject = daysLeft === 1
+          ? `🚨 ${isTrial ? "Your trial ends tomorrow" : "Your subscription renews tomorrow"} — ${row.businessName}`
+          : daysLeft <= 4
+            ? `⏰ ${isTrial ? "Trial ends" : "Subscription renews"} in ${daysLeft} days — ${row.businessName}`
+            : `🔔 Renewal reminder: ${daysLeft} days to go — ${row.businessName}`;
+
         const { fromAddress, fromName } = await getFromDetails(0);
         await sendMail({
-          to:          row.email,
-          subject:     daysLeft === 1
-            ? `🚨 Your NEXXUS POS subscription expires TOMORROW — ${row.businessName}`
-            : `⏰ Your NEXXUS POS subscription expires in ${daysLeft} days — ${row.businessName}`,
+          to: row.email,
+          subject,
           html,
           fromAddress,
           fromName,
           tenantId: 0,
         });
 
-        logger.info({ tenantId: row.tenantId, daysLeft, to: row.email }, "Subscription expiry alert sent");
+        logger.info({ tenantId: row.tenantId, daysLeft, to: row.email }, "Subscription renewal reminder sent");
         sent++;
       } catch (err) {
-        logger.error({ tenantId: row.tenantId, daysLeft, err }, "Subscription expiry alert failed");
+        logger.error({ tenantId: row.tenantId, daysLeft, err }, "Subscription renewal reminder failed");
         failed++;
       }
     }
