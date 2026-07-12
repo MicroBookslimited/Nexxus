@@ -488,11 +488,13 @@ export function TopUp() {
                       <p className="text-sm font-medium">
                         {countriesError === "auth" ? "Session expired"
                           : countriesError === "api_key" ? "Ding not connected"
+                          : countriesError === "no_countries" ? "No markets enabled"
                           : "Carriers unavailable"}
                       </p>
                       <p className="text-xs max-w-[240px]">
                         {countriesError === "auth" ? "Please log in again to use Top-Up."
                           : countriesError === "api_key" ? "Ask your administrator to set the DING_API_KEY."
+                          : countriesError === "no_countries" ? "Your DingConnect account has no countries enabled. Log in to your Ding dashboard to activate markets."
                           : "DingConnect rejected the request. Check the IP whitelist and API key in your Ding dashboard."}
                       </p>
                       {countriesError !== "auth" && (

@@ -214,7 +214,19 @@ router.get("/topup/net-check", async (req, res): Promise<void> => {
     }
   }
 
-  res.json({ outboundIp, dingConfigured: !!getDingKey(), dingAuth });
+  let dingCountries: { ok: boolean; httpStatus?: number; count?: number; sample?: unknown; error?: string | null } | null = null;
+  if (req.query.countries === "1" && getDingKey()) {
+    try {
+      const r = await dingFetch("/GetCountries");
+      const d = await r.json() as { Countries?: unknown[] };
+      const err = extractDingError(r.status, d);
+      dingCountries = { ok: !err, httpStatus: r.status, count: d?.Countries?.length ?? 0, sample: d?.Countries?.slice(0, 2), error: err };
+    } catch (e) {
+      dingCountries = { ok: false, error: String(e) };
+    }
+  }
+
+  res.json({ outboundIp, dingConfigured: !!getDingKey(), dingAuth, dingCountries });
 });
 
 /* ─── SEND TOP-UP ─── */
