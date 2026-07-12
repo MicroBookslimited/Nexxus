@@ -1199,14 +1199,20 @@ export function TopUp() {
 /* ── Numpad sub-component ── */
 function Numpad({ onKey }: { onKey: (k: string) => void }) {
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clr", "0", "del"];
+  const isAction = (k: string) => k === "clr" || k === "del";
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-3 gap-2 max-w-[280px] mx-auto">
       {keys.map(k => (
         <button
           key={k}
           type="button"
           onClick={() => onKey(k)}
-          className="h-11 rounded-xl bg-muted hover:bg-muted/80 active:scale-95 text-lg font-semibold transition-all flex items-center justify-center border border-border"
+          className={cn(
+            "aspect-[4/3] rounded-2xl active:scale-95 text-xl font-bold transition-all flex items-center justify-center select-none shadow-sm",
+            isAction(k)
+              ? "bg-secondary text-secondary-foreground hover:bg-secondary/90 active:bg-secondary"
+              : "bg-card text-foreground border border-border hover:bg-accent active:bg-accent"
+          )}
         >
           {k === "del" ? <Delete className="h-5 w-5" /> : k === "clr" ? <span className="text-xs font-bold tracking-wider">CLR</span> : k}
         </button>
