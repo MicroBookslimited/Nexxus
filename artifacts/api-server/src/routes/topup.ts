@@ -3,7 +3,7 @@ import { db, topupTransactionsTable, topupWalletsTable, topupWalletLedgerTable }
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { logAudit } from "./audit";
-import { ProxyAgent } from "undici";
+import { ProxyAgent, fetch as undiciFetch } from "undici";
 
 const router: IRouter = Router();
 
@@ -28,17 +28,20 @@ function getFixieDispatcher(): ProxyAgent | undefined {
 async function dingFetch(path: string, opts: RequestInit = {}): Promise<Response> {
   const key = getDingKey();
   const dispatcher = getFixieDispatcher();
-  const fetchOpts: Parameters<typeof fetch>[1] & { dispatcher?: ProxyAgent } = {
-    ...opts,
-    headers: {
-      "api_key": key,
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-      ...(opts.headers ?? {}),
-    },
-    ...(dispatcher ? { dispatcher } : {}),
+  const headers = {
+    "api_key": key,
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    ...(opts.headers ?? {}),
   };
-  return fetch(`https://api.dingconnect.com/api/V1${path}`, fetchOpts);
+  const url = `https://api.dingconnect.com/api/V1${path}`;
+  if (dispatcher) {
+    // Use undici's own fetch so the ProxyAgent dispatcher is version-compatible.
+    // Node 24's global fetch uses a different internal undici build and rejects
+    // a dispatcher from the installed undici package.
+    return undiciFetch(url, { ...opts, headers, dispatcher }) as Promise<Response>;
+  }
+  return fetch(url, { ...opts, headers });
 }
 
 /**
