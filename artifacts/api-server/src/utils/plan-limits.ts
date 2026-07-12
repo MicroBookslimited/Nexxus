@@ -129,7 +129,8 @@ export async function getPlanLimitStatus(tenantId: number): Promise<PlanLimitSta
       (p) =>
         p.id !== plan!.id &&
         p.maxProducts != null &&
-        p.maxProducts >= needed,
+        p.maxProducts >= needed &&
+        p.priceMonthly > 0, // never suggest a free plan as an upgrade path
     );
     if (fit) {
       recommendedPlan = {
