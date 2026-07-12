@@ -453,6 +453,9 @@ export function TopUp() {
     : (selectedProduct?.SendValue ?? 0);
   const cost = selectedProduct?.LocalisedPrice?.SenderFee ?? face;
   const commission = face - cost;
+  const customerFee = selectedProduct?.LocalisedPrice?.CustomerFee ?? 0;
+  const feeCurrency = selectedProduct?.LocalisedPrice?.CurrencyIso ?? selectedProduct?.SendCurrencyIso ?? "USD";
+  const customerTotal = face + customerFee;
 
   const sendCurrency = selectedProduct?.SendCurrencyIso ?? "JMD";
   const dialingPrefix = selectedCountry?.Iso === "JM" ? "1876" : selectedCountry?.Iso ?? "";
@@ -738,23 +741,33 @@ export function TopUp() {
                                 <p className="text-sm font-bold leading-snug">{p.Name}</p>
                                 <span className="text-sm font-extrabold shrink-0" style={{ color: c }}>{priceLabel}</span>
                               </div>
-                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                {p.ValidityDays ? (
-                                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                                    <Clock className="h-3 w-3" />{p.ValidityDays} day{p.ValidityDays === 1 ? "" : "s"}
-                                  </span>
-                                ) : null}
-                                {p.RedemptionMechanism ? (
-                                  <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                                    {p.RedemptionMechanism}
-                                  </span>
-                                ) : null}
-                                {p.IsRangeTopUp ? (
+                              <div className="mt-1.5 space-y-1 text-[11px]">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Customer receives</span>
+                                  <span className="font-semibold">{priceLabel}</span>
+                                </div>
+                                {!p.IsRangeTopUp && p.SendValue > 0 && (
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Retail price</span>
+                                    <span className="font-semibold">{money(p.SendValue, p.SendCurrencyIso || "USD")}</span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Validity</span>
+                                  <span className="font-semibold">{p.ValidityDays ? `${p.ValidityDays} day${p.ValidityDays === 1 ? "" : "s"}` : "—"}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Redemption</span>
+                                  <span className="font-semibold text-right">{p.RedemptionMechanism || "—"}</span>
+                                </div>
+                              </div>
+                              {p.IsRangeTopUp ? (
+                                <div className="mt-2">
                                   <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
                                     Custom amount
                                   </span>
-                                ) : null}
-                              </div>
+                                </div>
+                              ) : null}
                             </button>
                           );
                         })}
@@ -896,19 +909,50 @@ export function TopUp() {
                   <Numpad onKey={pressKey} />
                 </div>
 
-                {/* Ready summary */}
-                {canSubmit && (
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
-                    <div>
-                      <p className="text-[9px] font-semibold tracking-widest text-emerald-400">READY TO PROCESS</p>
-                      <p className="text-sm font-bold mt-0.5">{money(faceReceive, homeCurrency)}{isGiftCards ? (phoneNumber ? ` → +${dialingPrefix} ${phoneNumber}` : " gift card") : ` → +${dialingPrefix} ${phoneNumber}`}</p>
+                {/* Credit breakdown */}
+                {selectedProduct && faceReceive > 0 && (
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 overflow-hidden">
+                    <div className="px-4 py-3 text-center border-b border-emerald-500/20">
+                      <p className="text-[9px] font-semibold tracking-widest text-emerald-400 uppercase">
+                        {isGiftCards ? "Card value" : topupSubMode === "plans" ? "Plan credit" : "Credit to phone"}
+                      </p>
+                      <p className="text-2xl font-extrabold text-emerald-300 mt-1">{money(faceReceive, homeCurrency)}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {isGiftCards ? "Redeemable value the customer receives" : "Amount the customer's account will be credited"}
+                      </p>
                     </div>
-                    {selectedOperator && (
-                      <span
-                        className="rounded-md px-2 py-1 text-[10px] font-bold"
-                        style={{ background: `${carrierColor(selectedOperator.Name)}22`, color: carrierColor(selectedOperator.Name) }}
-                      >{selectedOperator.Name}</span>
-                    )}
+                    <div className="px-4 py-3 space-y-1.5 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{isGiftCards ? "Card value" : "Top-up value"}</span>
+                        <span className="font-medium">{money(faceReceive, homeCurrency)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Retail price</span>
+                        <span className="font-medium">{money(face, sendCurrency)}</span>
+                      </div>
+                      {customerFee > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Service fee</span>
+                          <span className="font-medium">{money(customerFee, feeCurrency)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between border-t border-emerald-500/20 pt-1.5">
+                        <span className="text-muted-foreground font-semibold">Customer pays</span>
+                        <span className="font-bold text-foreground">{money(customerTotal, sendCurrency)}</span>
+                      </div>
+                      {commission > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Your commission</span>
+                          <span className="font-medium text-emerald-400">{JMD(commission)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between border-t border-emerald-500/20 pt-1.5">
+                        <span className="text-muted-foreground">Wallet after</span>
+                        <span className={cn("font-mono", (wallet?.balance ?? 0) < cost ? "text-red-400" : "text-foreground")}>
+                          {JMD(Math.max(0, (wallet?.balance ?? 0) - cost))}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
 
