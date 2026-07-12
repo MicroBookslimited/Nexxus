@@ -319,6 +319,11 @@ export function PosSupermarket({
   // Numeric keypad: quantity for the next scanned item (or for a selected line).
   const [qtyInput, setQtyInput] = useState("");
 
+  // Per-row draft for the inline quantity input (Retail layout). While a cashier
+  // is typing, the raw string lives here so partial values ("", "1", "12") don't
+  // clobber the committed quantity until blur/Enter.
+  const [qtyRowDraft, setQtyRowDraft] = useState<Record<string, string>>({});
+
   const cartBottomRef = useRef<HTMLDivElement>(null);
 
   // ── Volume / tier pricing ────────────────────────────────────────────────
@@ -1329,7 +1334,42 @@ export function PosSupermarket({
                       >
                         <Minus className="h-4 w-4" />
                       </button>
-                      <span className="font-mono text-xl font-extrabold w-10 text-center text-foreground">{c.quantity}</span>
+                      {retailLayout ? (
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={qtyRowDraft[c.cartKey] ?? String(c.quantity)}
+                          onFocus={(e) => {
+                            e.currentTarget.select();
+                            setQtyRowDraft((prev) => ({ ...prev, [c.cartKey]: String(c.quantity) }));
+                          }}
+                          onChange={(e) =>
+                            setQtyRowDraft((prev) => ({ ...prev, [c.cartKey]: e.target.value }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+                          }}
+                          onBlur={() => {
+                            const raw = qtyRowDraft[c.cartKey];
+                            setQtyRowDraft((prev) => {
+                              const next = { ...prev };
+                              delete next[c.cartKey];
+                              return next;
+                            });
+                            if (raw === undefined) return;
+                            const qty = parseInt(raw, 10);
+                            if (!Number.isFinite(qty) || qty < 0 || qty === c.quantity) return;
+                            requestSupermarketAction(
+                              { type: "setqty", cartKey: c.cartKey, qty },
+                              qty < c.quantity,
+                            );
+                          }}
+                          aria-label={`Quantity for ${c.productName}`}
+                          className="font-mono text-xl font-extrabold w-14 text-center text-foreground bg-background border-2 border-border rounded-lg h-9 px-1 focus:outline-none focus:border-cyan-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                      ) : (
+                        <span className="font-mono text-xl font-extrabold w-10 text-center text-foreground">{c.quantity}</span>
+                      )}
                       <button
                         onClick={() => incQty(c.cartKey)}
                         className="h-9 w-9 rounded-lg bg-cyan-500 text-white hover:bg-cyan-600 transition flex items-center justify-center shadow-sm"
