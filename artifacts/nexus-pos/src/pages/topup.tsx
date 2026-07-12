@@ -554,9 +554,9 @@ export function TopUp() {
 
         {/* ── SEND TAB ── */}
         {tab === "send" && (
-          <div className="grid lg:grid-cols-[1fr_360px] gap-4 flex-1 min-h-0">
+          <div className="grid lg:grid-cols-[1fr_340px_300px] gap-4 flex-1 min-h-0">
 
-            {/* LEFT: builder */}
+            {/* LEFT: product / carrier selection */}
             <Card className="flex flex-col min-h-0">
               <CardContent className="flex flex-col gap-5 p-5 overflow-auto">
 
@@ -713,6 +713,64 @@ export function TopUp() {
                     <div className="grid grid-cols-4 gap-2">{[...Array(8)].map((_, i) => <div key={i} className="h-10 rounded-lg bg-muted/30 animate-pulse" />)}</div>
                   ) : categoryProducts.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No {isGiftCards ? "card values" : topupSubMode === "plans" ? "plans" : "amounts"} available for this {brandLabel.toLowerCase()}.</p>
+                  ) : effectiveCategory === "plans" ? (
+                    <>
+                      {/* Full plan details list */}
+                      <div className="space-y-2">
+                        {categoryProducts.map((p, idx) => {
+                          const active = selectedProduct?.SkuCode === p.SkuCode;
+                          const c = AMOUNT_PALETTE[idx % AMOUNT_PALETTE.length];
+                          const priceLabel = p.IsRangeTopUp
+                            ? `${money(p.ReceiveValueMin ?? 0, p.ReceiverCurrencyIso || homeCurrency)} – ${money(p.ReceiveValueMax ?? 0, p.ReceiverCurrencyIso || homeCurrency)}`
+                            : money(p.ReceiveValue, p.ReceiverCurrencyIso || homeCurrency);
+                          return (
+                            <button
+                              key={p.SkuCode}
+                              onClick={() => { setSelectedProduct(p); setCustomAmount(""); setPostSend(null); }}
+                              className="w-full text-left rounded-xl border-[1.5px] p-3 transition-all"
+                              style={{
+                                borderColor: active ? c : "hsl(var(--border))",
+                                background: active ? `${c}18` : "transparent",
+                                boxShadow: active ? `0 0 10px ${c}44` : "none",
+                              }}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-sm font-bold leading-snug">{p.Name}</p>
+                                <span className="text-sm font-extrabold shrink-0" style={{ color: c }}>{priceLabel}</span>
+                              </div>
+                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                {p.ValidityDays ? (
+                                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                                    <Clock className="h-3 w-3" />{p.ValidityDays} day{p.ValidityDays === 1 ? "" : "s"}
+                                  </span>
+                                ) : null}
+                                {p.RedemptionMechanism ? (
+                                  <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                                    {p.RedemptionMechanism}
+                                  </span>
+                                ) : null}
+                                {p.IsRangeTopUp ? (
+                                  <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                    Custom amount
+                                  </span>
+                                ) : null}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {selectedProduct?.IsRangeTopUp && (
+                        <div className="mt-2.5 space-y-1.5">
+                          <Label className="text-xs">Custom Amount ({homeCurrency})</Label>
+                          <Input
+                            type="number"
+                            placeholder={`${Math.round(selectedProduct.ReceiveValueMin ?? 100)} – ${Math.round(selectedProduct.ReceiveValueMax ?? 99999)}`}
+                            value={customAmount}
+                            onChange={e => { setCustomAmount(e.target.value); setPostSend(null); }}
+                          />
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <>
                       <div className="grid grid-cols-4 gap-2">
@@ -756,6 +814,64 @@ export function TopUp() {
                   )}
                 </div>
 
+                {/* Recent */}
+                <div>
+                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Recent {isGiftCards ? "Gift Cards" : "Top-Ups"}</p>
+                  {loadingWallet ? (
+                    <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-14 rounded-lg bg-muted/30 animate-pulse" />)}</div>
+                  ) : (
+                    <RecentList />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* MIDDLE: live phone preview */}
+            <Card className="hidden lg:flex flex-col items-center justify-center gap-5 p-5" style={{ background: "#080E18" }}>
+              <div className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" style={{ boxShadow: "0 0 8px #4ADE80" }} />
+                <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">Live Preview</span>
+              </div>
+
+              <PhonePreview
+                step={previewStep}
+                carrierName={postSend ? postSend.txn.operatorName : (selectedOperator?.Name ?? "")}
+                color={carrierColor(postSend ? postSend.txn.operatorName : (selectedOperator?.Name ?? ""))}
+                amount={postSend ? postSend.txn.benefitValue : faceReceive}
+                currency={postSend ? postSend.txn.benefitCurrency : homeCurrency}
+                phone={postSend ? postSend.txn.phoneNumber : phoneNumber}
+                prefix={dialingPrefix}
+                mode={postSend?.mode ?? txMode}
+                isGiftCard={postSend ? postSend.txn.productType === "giftcards" : isGiftCards}
+                subMode={topupSubMode}
+                txRef={postSend?.txn.distributorRef}
+              />
+
+              <div className="flex gap-1.5 flex-wrap justify-center">
+                {[
+                  { label: brandLabel, done: !!selectedOperator },
+                  { label: amountLabel, done: !!selectedProduct },
+                  { label: isGiftCards ? "Phone" : "Number", done: isGiftCards ? true : phoneNumber.length >= 7 },
+                ].map(p => (
+                  <div
+                    key={p.label}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-semibold",
+                      p.done ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-muted/20 border-border text-muted-foreground"
+                    )}
+                  >
+                    <span className={cn("h-3.5 w-3.5 rounded-full flex items-center justify-center text-[8px]", p.done ? "bg-emerald-500 text-black" : "bg-muted-foreground/20")}>
+                      {p.done && <CheckCircle2 className="h-2.5 w-2.5" />}
+                    </span>
+                    {p.label}
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* RIGHT: keypad (static entry column) */}
+            <Card className="flex flex-col min-h-0">
+              <CardContent className="flex flex-col gap-4 p-5 overflow-auto">
                 {/* 3. Recipient number / delivery phone */}
                 <div>
                   <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2.5">
@@ -805,7 +921,7 @@ export function TopUp() {
                 )}
 
                 {/* Actions */}
-                <div className="flex gap-2">
+                <div className="flex gap-2 mt-auto">
                   <Button variant="outline" onClick={resetFlow} className="px-5">Clear</Button>
                   <Button
                     onClick={() => setConfirmOpen(true)}
@@ -821,60 +937,7 @@ export function TopUp() {
                       : <><Printer className="h-4 w-4" />Print Voucher</>}
                   </Button>
                 </div>
-
-                {/* Recent */}
-                <div>
-                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Recent {isGiftCards ? "Gift Cards" : "Top-Ups"}</p>
-                  {loadingWallet ? (
-                    <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-14 rounded-lg bg-muted/30 animate-pulse" />)}</div>
-                  ) : (
-                    <RecentList />
-                  )}
-                </div>
               </CardContent>
-            </Card>
-
-            {/* RIGHT: live phone preview */}
-            <Card className="hidden lg:flex flex-col items-center justify-center gap-5 p-5" style={{ background: "#080E18" }}>
-              <div className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" style={{ boxShadow: "0 0 8px #4ADE80" }} />
-                <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">Live Preview</span>
-              </div>
-
-              <PhonePreview
-                step={previewStep}
-                carrierName={postSend ? postSend.txn.operatorName : (selectedOperator?.Name ?? "")}
-                color={carrierColor(postSend ? postSend.txn.operatorName : (selectedOperator?.Name ?? ""))}
-                amount={postSend ? postSend.txn.benefitValue : faceReceive}
-                currency={postSend ? postSend.txn.benefitCurrency : homeCurrency}
-                phone={postSend ? postSend.txn.phoneNumber : phoneNumber}
-                prefix={dialingPrefix}
-                mode={postSend?.mode ?? txMode}
-                isGiftCard={postSend ? postSend.txn.productType === "giftcards" : isGiftCards}
-                subMode={topupSubMode}
-                txRef={postSend?.txn.distributorRef}
-              />
-
-              <div className="flex gap-1.5 flex-wrap justify-center">
-                {[
-                  { label: brandLabel, done: !!selectedOperator },
-                  { label: amountLabel, done: !!selectedProduct },
-                  { label: isGiftCards ? "Phone" : "Number", done: isGiftCards ? true : phoneNumber.length >= 7 },
-                ].map(p => (
-                  <div
-                    key={p.label}
-                    className={cn(
-                      "flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-semibold",
-                      p.done ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-muted/20 border-border text-muted-foreground"
-                    )}
-                  >
-                    <span className={cn("h-3.5 w-3.5 rounded-full flex items-center justify-center text-[8px]", p.done ? "bg-emerald-500 text-black" : "bg-muted-foreground/20")}>
-                      {p.done && <CheckCircle2 className="h-2.5 w-2.5" />}
-                    </span>
-                    {p.label}
-                  </div>
-                ))}
-              </div>
             </Card>
           </div>
         )}
