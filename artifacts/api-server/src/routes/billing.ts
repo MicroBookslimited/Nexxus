@@ -669,11 +669,14 @@ router.post("/billing/free-activate", async (req, res): Promise<void> => {
 
   const [existing] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.tenantId, tenant.tenantId));
 
-  // Block self-service downgrade to a free plan for tenants that already hold
-  // an active paid subscription. A superadmin must perform the downgrade on
-  // their behalf (via /superadmin/tenants/:id/subscription) so that billing
-  // records, refunds, and plan limits are handled deliberately.
-  if (existing && existing.status === "active" && existing.provider !== "free") {
+  // Block self-service downgrade to a free plan for tenants that have ever held
+  // a paid subscription (any provider other than "free"), regardless of current
+  // status. A superadmin must perform the downgrade via
+  // /superadmin/tenants/:id so that billing records and plan limits are handled
+  // deliberately. Checking only status==="active" was the prior bug: a tenant
+  // whose status was changed to "past_due", "trial", or "cancelled" by a
+  // superadmin could still self-downgrade even though their provider was paid.
+  if (existing && existing.provider && existing.provider !== "free") {
     res.status(403).json({
       error: "Your account is on a paid plan. To downgrade to a free plan, please contact support.",
     });

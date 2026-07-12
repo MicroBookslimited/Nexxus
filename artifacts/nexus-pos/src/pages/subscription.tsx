@@ -536,7 +536,7 @@ export function SubscriptionPage() {
           {selectedPlan && (() => {
             const planPrice = billingCycle === "annual" ? selectedPlan.priceAnnual : selectedPlan.priceMonthly;
             const isFree = planPrice === 0;
-            const isOnPaidPlan = subscription?.status === "active" && subscription?.provider !== "free";
+            const isOnPaidPlan = !!subscription?.provider && subscription?.provider !== "free";
             return isFree ? (
               isOnPaidPlan ? (
                 // Paid tenants cannot self-downgrade to a free plan — a superadmin
