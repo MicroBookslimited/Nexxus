@@ -502,6 +502,29 @@ export function TopUp() {
   const customerTotal = face + customerFee;
 
   const sendCurrency = selectedProduct?.SendCurrencyIso ?? "JMD";
+
+  // Ding-style breakdown, shown in the recipient's local (home) currency like
+  // ding.com's checkout. Ding returns SendValue/CustomerFee in USD; the wallet
+  // is JMD, so convert USD → JMD via the superadmin-configured top-up FX rate
+  // (JMD per 1 USD, default 158 to match the server fallback). The rate is only
+  // valid for USD→JMD, so any other currency pair is shown in its OWN currency
+  // (never relabeled) to avoid displaying a wrong number under the wrong symbol.
+  const jmdPerUsd = (() => { const n = Number(settings?.topup_jmd_per_usd); return n > 0 ? n : 158; })();
+  const toDisplay = (v: number, currency: string): { value: number; currency: string } => {
+    if (currency === homeCurrency) return { value: v, currency };
+    if (currency === "USD" && homeCurrency === "JMD") return { value: v * jmdPerUsd, currency: homeCurrency };
+    return { value: v, currency };
+  };
+  // "Top-up subtotal" = retail price of the credit; "Top-up fee" = service fee;
+  // "Your Total" = what the customer pays (subtotal + fee). faceReceive is the
+  // net amount delivered to the phone ("Receives").
+  const subtotalDisp = toDisplay(face, sendCurrency);
+  const feeDisp = toDisplay(customerFee, feeCurrency);
+  // Only sum when both legs resolved to the same currency; otherwise fall back
+  // to the raw send-currency total rather than adding mismatched currencies.
+  const totalDisp = subtotalDisp.currency === feeDisp.currency
+    ? { value: subtotalDisp.value + feeDisp.value, currency: subtotalDisp.currency }
+    : toDisplay(customerTotal, sendCurrency);
   const dialingPrefix = selectedCountry?.Iso === "JM" ? "1876" : selectedCountry?.Iso ?? "";
   const canSubmit = !!selectedOperator && !!selectedProduct
     && (isGiftCards || phoneNumber.length >= 7)
@@ -1007,36 +1030,32 @@ export function TopUp() {
                   <Numpad onKey={pressKey} />
                 </div>
 
-                {/* Credit breakdown */}
+                {/* Order breakdown (mirrors ding.com's checkout) */}
                 {selectedProduct && faceReceive > 0 && (
                   <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 overflow-hidden">
                     <div className="px-4 py-3 text-center border-b border-emerald-500/20">
                       <p className="text-[9px] font-semibold tracking-widest text-emerald-400 uppercase">
-                        {isGiftCards ? "Card value" : topupSubMode === "plans" ? "Plan credit" : "Credit to phone"}
+                        {isGiftCards ? "Card value" : topupSubMode === "plans" ? "Plan credit" : "Receives"}
                       </p>
                       <p className="text-2xl font-extrabold text-emerald-300 mt-1">{money(faceReceive, homeCurrency)}</p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {isGiftCards ? "Redeemable value the customer receives" : "Amount the customer's account will be credited"}
+                        {isGiftCards ? "Redeemable value the customer receives" : "Net amount credited to the phone"}
                       </p>
                     </div>
                     <div className="px-4 py-3 space-y-1.5 text-xs">
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">{isGiftCards ? "Card value" : "Top-up value"}</span>
-                        <span className="font-medium">{money(faceReceive, homeCurrency)}</span>
+                        <span className="text-muted-foreground">{isGiftCards ? "Card value" : "Top-up subtotal"}</span>
+                        <span className="font-medium">{money(subtotalDisp.value, subtotalDisp.currency)}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Retail price</span>
-                        <span className="font-medium">{money(face, sendCurrency)}</span>
-                      </div>
-                      {customerFee > 0 && (
+                      {feeDisp.value > 0 && (
                         <div className="flex justify-between">
-                          <span className="text-muted-foreground">Service fee</span>
-                          <span className="font-medium">{money(customerFee, feeCurrency)}</span>
+                          <span className="text-muted-foreground">Top-up fee</span>
+                          <span className="font-medium">{money(feeDisp.value, feeDisp.currency)}</span>
                         </div>
                       )}
                       <div className="flex justify-between border-t border-emerald-500/20 pt-1.5">
-                        <span className="text-muted-foreground font-semibold">Customer pays</span>
-                        <span className="font-bold text-foreground">{money(customerTotal, sendCurrency)}</span>
+                        <span className="text-foreground font-semibold">Your Total</span>
+                        <span className="font-bold text-foreground text-sm">{money(totalDisp.value, totalDisp.currency)}</span>
                       </div>
                       {commission > 0 && (
                         <div className="flex justify-between">
@@ -1241,7 +1260,10 @@ export function TopUp() {
                 <div className="flex justify-between"><span className="text-muted-foreground">{isGiftCards ? "Delivery phone" : "Phone"}</span><span className="font-semibold">{phoneNumber || "—"}</span></div>
               )}
               <div className="flex justify-between"><span className="text-muted-foreground">{isGiftCards ? "Brand" : "Operator"}</span><span className="font-semibold">{selectedOperator?.Name}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">{isGiftCards ? "Card value" : "Amount"}</span><span className="font-bold text-primary text-base">{money(faceReceive, homeCurrency)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{isGiftCards ? "Card value" : "Receives"}</span><span className="font-bold text-primary text-base">{money(faceReceive, homeCurrency)}</span></div>
+              <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">{isGiftCards ? "Card value" : "Top-up subtotal"}</span><span className="font-medium">{money(subtotalDisp.value, subtotalDisp.currency)}</span></div>
+              {feeDisp.value > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Top-up fee</span><span className="font-medium">{money(feeDisp.value, feeDisp.currency)}</span></div>}
+              <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-foreground font-semibold">Your Total</span><span className="font-bold text-foreground text-base">{money(totalDisp.value, totalDisp.currency)}</span></div>
               {commission > 0 && <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">Commission</span><span className="font-medium text-emerald-400">{JMD(commission)}</span></div>}
               <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">Wallet balance</span><span className={cn("font-mono", (wallet?.balance ?? 0) < cost ? "text-red-400" : "text-foreground")}>{JMD(wallet?.balance ?? 0)}</span></div>
             </div>
