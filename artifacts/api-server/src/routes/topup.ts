@@ -110,13 +110,20 @@ router.get("/topup/countries", async (req, res): Promise<void> => {
   if (!getDingKey()) { res.status(503).json({ error: "Ding API key not configured" }); return; }
   try {
     const r = await dingFetch("/GetCountries");
-    const data = await r.json() as unknown;
+    const data = await r.json() as Record<string, unknown>;
     const upstreamErr = extractDingError(r.status, data);
     if (upstreamErr) {
       res.status(r.status === 401 ? 502 : (r.status >= 400 ? r.status : 502))
         .json({ error: `Ding: ${upstreamErr}`, upstream: data });
       return;
     }
+    // Ding returns Items with CountryIso/CountryName; frontend expects Countries with Iso/Name
+    const raw = Array.isArray(data.Items) ? data.Items as Record<string, unknown>[] : (Array.isArray(data.Countries) ? data.Countries as Record<string, unknown>[] : []);
+    data.Countries = raw.map(c => ({
+      Iso: c.CountryIso ?? c.Iso,
+      Name: c.CountryName ?? c.Name,
+      RegionCode: Array.isArray(c.RegionCodes) ? (c.RegionCodes as string[])[0] : c.RegionCode,
+    }));
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: "Failed to fetch countries", details: String(err) });
@@ -132,13 +139,15 @@ router.get("/topup/operators", async (req, res): Promise<void> => {
     const params = new URLSearchParams();
     if (countryIso) params.append("countryIsos[0]", countryIso);
     const r = await dingFetch(`/GetProviders?${params.toString()}`);
-    const data = await r.json() as unknown;
+    const data = await r.json() as Record<string, unknown>;
     const upstreamErr = extractDingError(r.status, data);
     if (upstreamErr) {
       res.status(r.status === 401 ? 502 : (r.status >= 400 ? r.status : 502))
         .json({ error: `Ding: ${upstreamErr}`, upstream: data });
       return;
     }
+    // Ding API returns Items; frontend expects Providers
+    if (!data.Providers && Array.isArray(data.Items)) data.Providers = data.Items;
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: "Failed to fetch operators", details: String(err) });
@@ -155,13 +164,15 @@ router.get("/topup/products", async (req, res): Promise<void> => {
     const params = new URLSearchParams();
     params.append("providerCodes[0]", operatorId);
     const r = await dingFetch(`/GetProducts?${params.toString()}`);
-    const data = await r.json() as unknown;
+    const data = await r.json() as Record<string, unknown>;
     const upstreamErr = extractDingError(r.status, data);
     if (upstreamErr) {
       res.status(r.status === 401 ? 502 : (r.status >= 400 ? r.status : 502))
         .json({ error: `Ding: ${upstreamErr}`, upstream: data });
       return;
     }
+    // Ding API returns Items; frontend expects Products
+    if (!data.Products && Array.isArray(data.Items)) data.Products = data.Items;
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: "Failed to fetch products", details: String(err) });
@@ -214,13 +225,14 @@ router.get("/topup/net-check", async (req, res): Promise<void> => {
     }
   }
 
-  let dingCountries: { ok: boolean; httpStatus?: number; count?: number; sample?: unknown; error?: string | null } | null = null;
+  let dingCountries: { ok: boolean; httpStatus?: number; count?: number; keys?: string[]; sample?: unknown; error?: string | null } | null = null;
   if (req.query.countries === "1" && getDingKey()) {
     try {
       const r = await dingFetch("/GetCountries");
-      const d = await r.json() as { Countries?: unknown[] };
+      const d = await r.json() as Record<string, unknown>;
       const err = extractDingError(r.status, d);
-      dingCountries = { ok: !err, httpStatus: r.status, count: d?.Countries?.length ?? 0, sample: d?.Countries?.slice(0, 2), error: err };
+      const items = Array.isArray(d?.Items) ? d.Items as unknown[] : (Array.isArray(d?.Countries) ? d.Countries as unknown[] : []);
+      dingCountries = { ok: !err, httpStatus: r.status, count: items.length, keys: Object.keys(d ?? {}), resultCode: d?.ResultCode, errorCodes: d?.ErrorCodes, sample: items.slice(0, 2), error: err };
     } catch (e) {
       dingCountries = { ok: false, error: String(e) };
     }
