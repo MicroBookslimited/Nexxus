@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useStaff } from "@/contexts/StaffContext";
+import { useGetSettings } from "@workspace/api-client-react";
 import { TENANT_TOKEN_KEY } from "@/lib/saas-api";
 import { cn } from "@/lib/utils";
 import {
@@ -28,9 +29,10 @@ interface DingProduct {
   SkuCode: string; Name: string;
   LocalisedPrice?: { CustomerFee: number; SenderFee: number; CurrencyIso: string; };
   SendValue: number; SendCurrencyIso: string;
-  ReceiverCurrencyIso: string;
+  ReceiveValue: number; ReceiverCurrencyIso: string;
   ValidityDays?: number;
   IsRangeTopUp?: boolean; Minimum?: number; Maximum?: number;
+  ReceiveValueMin?: number; ReceiveValueMax?: number;
 }
 
 interface TopupTransaction {
@@ -106,12 +108,12 @@ function money(v: number, currency: string): string {
    credits the recipient's phone directly — it is a printable record the
    cashier can hand to the customer. */
 function printVoucher(v: {
-  operatorName: string; sendValue: number; sendCurrency: string;
+  operatorName: string; amount: number; currency: string;
   phoneNumber: string; ref: string; dingId?: string | null; when: Date;
 }): void {
   const rows = [
     `Carrier : ${v.operatorName}`,
-    `Amount  : ${money(v.sendValue, v.sendCurrency)}`,
+    `Amount  : ${money(v.amount, v.currency)}`,
     `Number  : ${v.phoneNumber}`,
     `Date    : ${format(v.when, "MMM d, yyyy h:mm a")}`,
     `Ref     : ${v.ref}`,
@@ -156,6 +158,8 @@ function StatusBadge({ status }: { status: string }) {
 export function TopUp() {
   const { toast } = useToast();
   const { staff: activeStaff } = useStaff();
+  const { data: settings } = useGetSettings();
+  const baseCurrency = settings?.base_currency || "JMD";
 
   const [tab, setTab] = useState<"send" | "history" | "reports">("send");
 
@@ -300,7 +304,11 @@ export function TopUp() {
   /* ── Send top-up ── */
   async function handleSend() {
     if (!selectedOperator || !selectedProduct || !phoneNumber) return;
-    const face = selectedProduct.IsRangeTopUp ? parseFloat(customAmount) : selectedProduct.SendValue;
+    // Range custom amounts are entered in the home (receive) currency; convert
+    // back to the send currency for wallet/cost accounting.
+    const ratio = selectedProduct.ReceiveValue ? selectedProduct.SendValue / selectedProduct.ReceiveValue : 1;
+    const receiveAmount = selectedProduct.IsRangeTopUp ? (parseFloat(customAmount) || 0) : selectedProduct.ReceiveValue;
+    const face = selectedProduct.IsRangeTopUp ? receiveAmount * ratio : selectedProduct.SendValue;
     const cost = selectedProduct.LocalisedPrice?.SenderFee ?? face;
 
     setSending(true);
@@ -313,7 +321,7 @@ export function TopUp() {
           operatorId: selectedOperator.ProviderCode, operatorName: selectedOperator.Name,
           productSkuCode: selectedProduct.SkuCode, productName: selectedProduct.Name,
           sendValue: face, sendCurrency: selectedProduct.SendCurrencyIso,
-          benefitValue: face, benefitCurrency: selectedProduct.ReceiverCurrencyIso,
+          benefitValue: receiveAmount, benefitCurrency: selectedProduct.ReceiverCurrencyIso,
           cost, staffId: activeStaff?.id, staffName: activeStaff?.name,
         }),
       });
@@ -322,8 +330,8 @@ export function TopUp() {
       if (txMode === "voucher") {
         printVoucher({
           operatorName: result.transaction.operatorName,
-          sendValue: result.transaction.sendValue,
-          sendCurrency: result.transaction.sendCurrency,
+          amount: result.transaction.benefitValue,
+          currency: result.transaction.benefitCurrency,
           phoneNumber: result.transaction.phoneNumber,
           ref: result.transaction.distributorRef,
           dingId: result.transaction.dingTransactionId,
@@ -353,7 +361,21 @@ export function TopUp() {
   const filteredCountries = countries.filter(c => !countrySearch || c.Name.toLowerCase().includes(countrySearch.toLowerCase()) || c.Iso.toLowerCase().includes(countrySearch.toLowerCase()));
   const filteredOperators = operators.filter(o => !operatorSearch || o.Name.toLowerCase().includes(operatorSearch.toLowerCase()));
 
-  const face = selectedProduct?.IsRangeTopUp ? parseFloat(customAmount) || 0 : (selectedProduct?.SendValue ?? 0);
+  // Home-currency (receive) amount shown to the user. For range products the
+  // custom amount is entered in the home currency; for fixed products it's the
+  // Ding ReceiveValue (the credit delivered to the phone).
+  const homeCurrency = selectedProduct?.ReceiverCurrencyIso || baseCurrency;
+  const faceReceive = selectedProduct?.IsRangeTopUp
+    ? (parseFloat(customAmount) || 0)
+    : (selectedProduct?.ReceiveValue ?? 0);
+  // Ratio to translate a home-currency amount back to the send currency (USD)
+  // used for wallet/cost accounting. Defaults to 1 when receive data missing.
+  const sendPerReceive = selectedProduct?.ReceiveValue
+    ? selectedProduct.SendValue / selectedProduct.ReceiveValue
+    : 1;
+  const face = selectedProduct?.IsRangeTopUp
+    ? faceReceive * sendPerReceive
+    : (selectedProduct?.SendValue ?? 0);
   const cost = selectedProduct?.LocalisedPrice?.SenderFee ?? face;
   const commission = face - cost;
 
@@ -566,7 +588,7 @@ export function TopUp() {
 
                 {/* 2. Amount */}
                 <div>
-                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2.5">2. Select Amount{selectedProduct ? ` (${sendCurrency})` : ""}</p>
+                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2.5">2. Select Amount ({homeCurrency})</p>
                   {!selectedOperator ? (
                     <p className="text-xs text-muted-foreground">Select a carrier first.</p>
                   ) : loadingProducts ? (
@@ -578,8 +600,12 @@ export function TopUp() {
                       <div className="grid grid-cols-4 gap-2">
                         {products.map((p, idx) => {
                           const active = selectedProduct?.SkuCode === p.SkuCode;
-                          const v = p.SendValue;
-                          const label = p.IsRangeTopUp ? "Custom" : (v >= 1000 && v % 1000 === 0 ? `${v / 1000}K` : v.toLocaleString());
+                          const v = p.ReceiveValue;
+                          const label = p.IsRangeTopUp
+                            ? "Custom"
+                            : (v >= 1000 && v % 1000 === 0
+                                ? `${v / 1000}K`
+                                : (Number.isInteger(v) ? v.toLocaleString() : Math.round(v).toLocaleString()));
                           const c = AMOUNT_PALETTE[idx % AMOUNT_PALETTE.length];
                           return (
                             <button
@@ -599,10 +625,10 @@ export function TopUp() {
                       </div>
                       {selectedProduct?.IsRangeTopUp && (
                         <div className="mt-2.5 space-y-1.5">
-                          <Label className="text-xs">Custom Amount ({sendCurrency})</Label>
+                          <Label className="text-xs">Custom Amount ({homeCurrency})</Label>
                           <Input
                             type="number"
-                            placeholder={`${selectedProduct.Minimum ?? 100} – ${selectedProduct.Maximum ?? 99999}`}
+                            placeholder={`${Math.round(selectedProduct.ReceiveValueMin ?? 100)} – ${Math.round(selectedProduct.ReceiveValueMax ?? 99999)}`}
                             value={customAmount}
                             onChange={e => { setCustomAmount(e.target.value); setPostSend(null); }}
                           />
@@ -635,7 +661,7 @@ export function TopUp() {
                   <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
                     <div>
                       <p className="text-[9px] font-semibold tracking-widest text-emerald-400">READY TO PROCESS</p>
-                      <p className="text-sm font-bold mt-0.5">{money(face, sendCurrency)} → +{dialingPrefix} {phoneNumber}</p>
+                      <p className="text-sm font-bold mt-0.5">{money(faceReceive, homeCurrency)} → +{dialingPrefix} {phoneNumber}</p>
                     </div>
                     {selectedOperator && (
                       <span
@@ -694,8 +720,8 @@ export function TopUp() {
                 step={previewStep}
                 carrierName={postSend ? postSend.txn.operatorName : (selectedOperator?.Name ?? "")}
                 color={carrierColor(postSend ? postSend.txn.operatorName : (selectedOperator?.Name ?? ""))}
-                amount={postSend ? postSend.txn.sendValue : face}
-                currency={postSend ? postSend.txn.sendCurrency : sendCurrency}
+                amount={postSend ? postSend.txn.benefitValue : faceReceive}
+                currency={postSend ? postSend.txn.benefitCurrency : homeCurrency}
                 phone={postSend ? postSend.txn.phoneNumber : phoneNumber}
                 prefix={dialingPrefix}
                 mode={txMode}
@@ -880,7 +906,7 @@ export function TopUp() {
             <div className="rounded-lg bg-muted/30 p-4 space-y-2">
               <div className="flex justify-between"><span className="text-muted-foreground">Phone</span><span className="font-semibold">{phoneNumber}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Operator</span><span className="font-semibold">{selectedOperator?.Name}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Amount</span><span className="font-bold text-primary text-base">{JMD(face)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Amount</span><span className="font-bold text-primary text-base">{money(faceReceive, homeCurrency)}</span></div>
               {commission > 0 && <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">Commission</span><span className="font-medium text-emerald-400">{JMD(commission)}</span></div>}
               <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">Wallet balance</span><span className={cn("font-mono", (wallet?.balance ?? 0) < cost ? "text-red-400" : "text-foreground")}>{JMD(wallet?.balance ?? 0)}</span></div>
             </div>
@@ -914,7 +940,7 @@ export function TopUp() {
               <h2 className="text-xl font-bold">{lastResult?.success ? "Top-Up Sent!" : "Top-Up Failed"}</h2>
               {lastResult?.success ? (
                 <p className="text-muted-foreground text-sm mt-1">
-                  {JMD(lastResult.txn.sendValue)} sent to {lastResult.txn.phoneNumber}
+                  {money(lastResult.txn.benefitValue, lastResult.txn.benefitCurrency)} sent to {lastResult.txn.phoneNumber}
                 </p>
               ) : (
                 <p className="text-red-400 text-sm mt-1">{lastResult?.txn.errorMessage ?? "An error occurred"}</p>

@@ -179,18 +179,24 @@ router.get("/topup/products", async (req, res): Promise<void> => {
       const sendValue = (max.SendValue ?? min.SendValue ?? 0) as number;
       const sendCurrencyIso = (max.SendCurrencyIso ?? min.SendCurrencyIso ?? "USD") as string;
       const receiveCurrencyIso = (max.ReceiveCurrencyIso ?? min.ReceiveCurrencyIso ?? "") as string;
+      const receiveValue = (max.ReceiveValue ?? min.ReceiveValue ?? 0) as number;
       const minSend = (min.SendValue ?? sendValue) as number;
       const maxSend = (max.SendValue ?? sendValue) as number;
+      const minReceive = (min.ReceiveValue ?? receiveValue) as number;
+      const maxReceive = (max.ReceiveValue ?? receiveValue) as number;
       const isRange = minSend !== maxSend;
       return {
         SkuCode: p.SkuCode,
         Name: p.DefaultDisplayText ?? p.SkuCode,
         SendValue: sendValue,
         SendCurrencyIso: sendCurrencyIso,
+        ReceiveValue: receiveValue,
         ReceiverCurrencyIso: receiveCurrencyIso,
         IsRangeTopUp: isRange,
         Minimum: isRange ? minSend : undefined,
         Maximum: isRange ? maxSend : undefined,
+        ReceiveValueMin: isRange ? minReceive : undefined,
+        ReceiveValueMax: isRange ? maxReceive : undefined,
         ValidityDays: (p.ValidityDays ?? undefined) as number | undefined,
         LocalisedPrice: {
           CustomerFee: (max.CustomerFee ?? 0) as number,
