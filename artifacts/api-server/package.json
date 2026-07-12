@@ -23,6 +23,7 @@
     "cors": "^2",
     "drizzle-orm": "0.45.2",
     "express": "^5",
+    "https-proxy-agent": "^9.1.0",
     "jsonwebtoken": "^9.0.3",
     "nanoid": "^5.1.7",
     "node-cron": "^4.2.1",
@@ -31,6 +32,7 @@
     "pino": "^9",
     "pino-http": "^10",
     "resend": "^6.10.0",
+    "undici": "^8.7.0",
     "zeptomail": "^7.0.2",
     "zod": "catalog:"
   },

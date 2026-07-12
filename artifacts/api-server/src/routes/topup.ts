@@ -3,6 +3,7 @@ import { db, topupTransactionsTable, topupWalletsTable, topupWalletLedgerTable }
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { logAudit } from "./audit";
+import { ProxyAgent } from "undici";
 
 const router: IRouter = Router();
 
@@ -13,15 +14,21 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
   return p ? p.tenantId : null;
 }
 
-
 function getDingKey(): string {
   const key = process.env.DING_API_KEY ?? "";
   return key;
 }
 
+function getFixieDispatcher(): ProxyAgent | undefined {
+  const url = process.env.FIXIE_URL;
+  if (!url) return undefined;
+  return new ProxyAgent(url);
+}
+
 async function dingFetch(path: string, opts: RequestInit = {}): Promise<Response> {
   const key = getDingKey();
-  const res = await fetch(`https://api.dingconnect.com/api/V1${path}`, {
+  const dispatcher = getFixieDispatcher();
+  const fetchOpts: Parameters<typeof fetch>[1] & { dispatcher?: ProxyAgent } = {
     ...opts,
     headers: {
       "api_key": key,
@@ -29,8 +36,9 @@ async function dingFetch(path: string, opts: RequestInit = {}): Promise<Response
       "Accept": "application/json",
       ...(opts.headers ?? {}),
     },
-  });
-  return res;
+    ...(dispatcher ? { dispatcher } : {}),
+  };
+  return fetch(`https://api.dingconnect.com/api/V1${path}`, fetchOpts);
 }
 
 /**
