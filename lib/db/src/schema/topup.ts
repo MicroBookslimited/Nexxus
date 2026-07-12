@@ -18,6 +18,8 @@ export const topupTransactionsTable = pgTable("topup_transactions", {
   cost: real("cost").notNull().default(0),
   commissionEarned: real("commission_earned").notNull().default(0),
   status: text("status").notNull().default("pending"),
+  productType: text("product_type").notNull().default("topup"),
+  redemptionInfo: text("redemption_info"),
   staffId: integer("staff_id"),
   staffName: text("staff_name"),
   errorMessage: text("error_message"),

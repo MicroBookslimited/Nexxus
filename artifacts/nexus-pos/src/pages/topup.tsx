@@ -13,7 +13,7 @@ import {
   Smartphone, Wallet, ChevronRight, CheckCircle2, XCircle, Clock,
   RefreshCw, TrendingUp, ArrowUpRight, Search, Globe, Signal,
   AlertCircle, Loader2, DollarSign, Star, History, BarChart2,
-  Printer, Delete, Zap, LayoutGrid,
+  Printer, Delete, Zap, LayoutGrid, Gift, Copy,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -23,10 +23,13 @@ import { format } from "date-fns";
 
 /* ── Types ──────────────────────────────────────────────────────────── */
 
+type TopupCategory = "topup" | "plans" | "giftcards";
+
 interface DingCountry { Iso: string; Name: string; RegionCode: string; }
-interface DingOperator { ProviderCode: string; Name: string; CountryIso: string; LogoUrl?: string; }
+interface DingOperator { ProviderCode: string; Name: string; CountryIso: string; LogoUrl?: string; Category?: TopupCategory; Categories?: TopupCategory[]; }
 interface DingProduct {
   SkuCode: string; Name: string;
+  ProductType?: TopupCategory; RedemptionMechanism?: string;
   LocalisedPrice?: { CustomerFee: number; SenderFee: number; CurrencyIso: string; };
   SendValue: number; SendCurrencyIso: string;
   ReceiveValue: number; ReceiverCurrencyIso: string;
@@ -41,6 +44,7 @@ interface TopupTransaction {
   productSkuCode: string; productName: string; sendValue: number; sendCurrency: string;
   benefitValue: number; benefitCurrency: string; cost: number; commissionEarned: number;
   status: "pending" | "success" | "failed"; staffName?: string; errorMessage?: string;
+  productType?: TopupCategory; redemptionInfo?: string;
   createdAt: string;
 }
 
@@ -147,6 +151,46 @@ function printVoucher(v: {
   w.document.close();
 }
 
+function printGiftCard(txn: TopupTransaction): void {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const rows = [
+    `Brand   : ${txn.operatorName}`,
+    `Value   : ${money(txn.benefitValue, txn.benefitCurrency)}`,
+    `Date    : ${format(new Date(txn.createdAt ?? Date.now()), "MMM d, yyyy h:mm a")}`,
+    `Ref     : ${txn.distributorRef}`,
+    ...(txn.dingTransactionId ? [`Txn ID  : ${txn.dingTransactionId}`] : []),
+  ];
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Gift Card</title>
+    <style>
+      @page { margin: 0; }
+      body { font-family: 'Courier New', monospace; padding: 14px; width: 280px; color: #000; }
+      .center { text-align: center; }
+      .title { font-size: 15px; font-weight: 800; letter-spacing: 1px; }
+      .sub { font-size: 10px; color: #333; margin-top: 2px; }
+      .line { border-top: 1px dashed #000; margin: 8px 0; }
+      .row { font-size: 12px; line-height: 1.9; white-space: pre; }
+      .codehdr { font-size: 10px; font-weight: 700; margin-top: 6px; text-align: center; }
+      .code { font-size: 13px; font-weight: 800; white-space: pre-wrap; word-break: break-word; text-align: center; margin-top: 4px; }
+      .foot { font-size: 9px; color: #333; margin-top: 10px; }
+    </style></head><body>
+      <div class="center title">GIFT CARD</div>
+      <div class="center sub">NEXXUS POS</div>
+      <div class="line"></div>
+      ${rows.map(r => `<div class="row">${esc(r)}</div>`).join("")}
+      <div class="line"></div>
+      <div class="codehdr">REDEMPTION DETAILS</div>
+      <div class="code">${esc(txn.redemptionInfo ?? "See email/SMS for code")}</div>
+      <div class="line"></div>
+      <div class="center foot">Keep this receipt safe.<br/>Powered by NEXXUS POS</div>
+      <script>window.onload=function(){window.print();setTimeout(function(){window.close();},300);};</script>
+    </body></html>`;
+  const w = window.open("", "_blank", "width=340,height=560");
+  if (!w) return;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 function StatusBadge({ status }: { status: string }) {
   if (status === "success") return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle2 className="h-3 w-3 mr-1" />Sent</Badge>;
   if (status === "pending") return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
@@ -206,6 +250,14 @@ export function TopUp() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [postSend, setPostSend] = useState<{ mode: "send" | "voucher"; txn: TopupTransaction } | null>(null);
 
+  // Top-Up vs Gift Cards section, and (within Top-Up) the Top-up vs Plans sub-toggle
+  const [section, setSection] = useState<"topup" | "giftcards">("topup");
+  const [topupSubMode, setTopupSubMode] = useState<"topup" | "plans">("topup");
+  const effectiveCategory: TopupCategory = section === "giftcards" ? "giftcards" : topupSubMode;
+  const isGiftCards = section === "giftcards";
+  const opCategories = (o: DingOperator): TopupCategory[] => o.Categories ?? [o.Category ?? "topup"];
+  const categoryOperators = operators.filter(o => opCategories(o).includes(effectiveCategory));
+
   /* ── Load wallet + summary ── */
   const loadWallet = useCallback(async () => {
     try {
@@ -255,18 +307,26 @@ export function TopUp() {
     setLoadingOperators(true);
     setOperators([]); setSelectedOperator(null); setProducts([]); setSelectedProduct(null);
     apiFetch<{ Providers?: DingOperator[] }>(`/api/topup/operators?countryIso=${selectedCountry.Iso}`)
-      .then(d => {
-        const ops = d.Providers ?? [];
-        setOperators(ops);
-        // Auto-select Flow Jamaica (non-bundle) as default, else first operator
-        const defaultOp =
-          ops.find(op => /\bflow\b/i.test(op.Name) && !/bundle/i.test(op.Name)) ??
-          ops[0] ?? null;
-        if (defaultOp) setSelectedOperator(defaultOp);
-      })
+      .then(d => setOperators(d.Providers ?? []))
       .catch(() => {})
       .finally(() => setLoadingOperators(false));
   }, [selectedCountry]);
+
+  /* ── Auto-select a default operator for the active category ──
+     Runs when the operator list loads or the section/sub-toggle changes. Keeps
+     the current selection if it still belongs to the category, else defaults to
+     Flow (non-bundle) for top-up, or the first provider otherwise. */
+  useEffect(() => {
+    const inCategory = operators.filter(o => (o.Categories ?? [o.Category ?? "topup"]).includes(effectiveCategory));
+    if (inCategory.length === 0) { setSelectedOperator(null); return; }
+    setSelectedOperator(prev => {
+      if (prev && inCategory.some(o => o.ProviderCode === prev.ProviderCode)) return prev;
+      const def = effectiveCategory === "topup"
+        ? (inCategory.find(op => /\bflow\b/i.test(op.Name) && !/bundle/i.test(op.Name)) ?? inCategory[0])
+        : inCategory[0];
+      return def;
+    });
+  }, [operators, effectiveCategory]);
 
   /* ── Load products when operator selected ── */
   useEffect(() => {
@@ -301,9 +361,13 @@ export function TopUp() {
     finally { setCheckingId(null); }
   }
 
-  /* ── Send top-up ── */
+  /* ── Send top-up / buy gift card ── */
   async function handleSend() {
-    if (!selectedOperator || !selectedProduct || !phoneNumber) return;
+    if (!selectedOperator || !selectedProduct) return;
+    // Gift cards deliver a redemption code, so the recipient phone is optional —
+    // Ding still needs an AccountNumber, so fall back to a placeholder.
+    const effectivePhone = isGiftCards ? (phoneNumber || "0000000000") : phoneNumber;
+    if (!effectivePhone) return;
     // Range custom amounts are entered in the home (receive) currency; convert
     // back to the send currency for wallet/cost accounting.
     const ratio = selectedProduct.ReceiveValue ? selectedProduct.SendValue / selectedProduct.ReceiveValue : 1;
@@ -317,12 +381,15 @@ export function TopUp() {
       const result = await apiFetch<{ success: boolean; transaction: TopupTransaction; walletBalance: number }>("/api/topup/send", {
         method: "POST",
         body: JSON.stringify({
-          phoneNumber, countryCode: selectedCountry?.Iso ?? "JM",
+          phoneNumber: effectivePhone, countryCode: selectedCountry?.Iso ?? "JM",
           operatorId: selectedOperator.ProviderCode, operatorName: selectedOperator.Name,
           productSkuCode: selectedProduct.SkuCode, productName: selectedProduct.Name,
           sendValue: face, sendCurrency: selectedProduct.SendCurrencyIso,
           benefitValue: receiveAmount, benefitCurrency: selectedProduct.ReceiverCurrencyIso,
           cost, staffId: activeStaff?.id, staffName: activeStaff?.name,
+          productType: effectiveCategory,
+          dingSendValue: isGiftCards ? selectedProduct.SendValue : undefined,
+          dingSendCurrency: isGiftCards ? selectedProduct.SendCurrencyIso : undefined,
         }),
       });
       setLastResult({ success: true, txn: result.transaction });
@@ -359,7 +426,15 @@ export function TopUp() {
   }
 
   const filteredCountries = countries.filter(c => !countrySearch || c.Name.toLowerCase().includes(countrySearch.toLowerCase()) || c.Iso.toLowerCase().includes(countrySearch.toLowerCase()));
-  const filteredOperators = operators.filter(o => !operatorSearch || o.Name.toLowerCase().includes(operatorSearch.toLowerCase()));
+  const filteredOperators = categoryOperators.filter(o => !operatorSearch || o.Name.toLowerCase().includes(operatorSearch.toLowerCase()));
+
+  // Products belonging to the active category (a carrier can carry airtime AND
+  // data bundles; only show the SKUs matching the current Top-up/Plans/Gift Card mode).
+  const categoryProducts = products.filter(p => (p.ProductType ?? "topup") === effectiveCategory);
+
+  // Dynamic labels for the shared builder UI (carrier vs brand, etc.)
+  const brandLabel = isGiftCards ? "Brand" : "Carrier";
+  const amountLabel = isGiftCards ? "Card Value" : "Amount";
 
   // Home-currency (receive) amount shown to the user. For range products the
   // custom amount is entered in the home currency; for fixed products it's the
@@ -381,7 +456,8 @@ export function TopUp() {
 
   const sendCurrency = selectedProduct?.SendCurrencyIso ?? "JMD";
   const dialingPrefix = selectedCountry?.Iso === "JM" ? "1876" : selectedCountry?.Iso ?? "";
-  const canSubmit = !!selectedOperator && !!selectedProduct && phoneNumber.length >= 7
+  const canSubmit = !!selectedOperator && !!selectedProduct
+    && (isGiftCards || phoneNumber.length >= 7)
     && (!selectedProduct?.IsRangeTopUp || (parseFloat(customAmount) || 0) > 0);
   const insufficient = !!wallet && wallet.balance < cost;
 
@@ -486,33 +562,75 @@ export function TopUp() {
 
                 {/* Title */}
                 <div>
-                  <p className="text-[10px] font-bold tracking-[0.2em] text-amber-400 uppercase">International Top-Up</p>
-                  <h2 className="text-lg font-extrabold flex items-center gap-2"><Zap className="h-4 w-4 text-amber-400" />Ding Top-Up</h2>
+                  <p className="text-[10px] font-bold tracking-[0.2em] text-amber-400 uppercase">International {isGiftCards ? "Gift Cards" : "Top-Up"}</p>
+                  <h2 className="text-lg font-extrabold flex items-center gap-2"><Zap className="h-4 w-4 text-amber-400" />{isGiftCards ? "Ding Gift Cards" : "Ding Top-Up"}</h2>
                 </div>
 
-                {/* Mode toggle */}
+                {/* Section toggle: Top-Up vs Gift Cards */}
                 <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted/40">
                   {([
-                    { id: "send", label: "Send Top-Up", icon: Smartphone },
-                    { id: "voucher", label: "Print Voucher", icon: Printer },
-                  ] as const).map(m => (
+                    { id: "topup", label: "Top-Up", icon: Smartphone },
+                    { id: "giftcards", label: "Gift Cards", icon: Gift },
+                  ] as const).map(s => (
                     <button
-                      key={m.id}
-                      onClick={() => setTxMode(m.id)}
+                      key={s.id}
+                      onClick={() => { setSection(s.id); setSelectedProduct(null); setCustomAmount(""); setPostSend(null); if (s.id === "giftcards") setTxMode("send"); }}
                       className={cn(
-                        "flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold transition-colors",
-                        txMode === m.id ? "bg-primary text-primary-foreground shadow" : "bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted"
+                        "flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold transition-colors",
+                        section === s.id ? "bg-primary text-primary-foreground shadow" : "bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted"
                       )}
                     >
-                      <m.icon className="h-4 w-4" />{m.label}
+                      <s.icon className="h-4 w-4" />{s.label}
                     </button>
                   ))}
                 </div>
 
-                {/* 1. Carrier */}
+                {/* Sub-toggle: Top-up vs Plans (only within Top-Up) */}
+                {section === "topup" && (
+                  <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted/25">
+                    {([
+                      { id: "topup", label: "Top-up", icon: Zap },
+                      { id: "plans", label: "Plans", icon: LayoutGrid },
+                    ] as const).map(s => (
+                      <button
+                        key={s.id}
+                        onClick={() => { setTopupSubMode(s.id); setSelectedProduct(null); setCustomAmount(""); setPostSend(null); }}
+                        className={cn(
+                          "flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-colors",
+                          topupSubMode === s.id ? "bg-background text-foreground shadow-sm border border-border" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <s.icon className="h-3.5 w-3.5" />{s.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Mode toggle (send vs print voucher) — top-up & plans only */}
+                {section === "topup" && (
+                  <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted/40">
+                    {([
+                      { id: "send", label: topupSubMode === "plans" ? "Send Plan" : "Send Top-Up", icon: Smartphone },
+                      { id: "voucher", label: "Print Voucher", icon: Printer },
+                    ] as const).map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => setTxMode(m.id)}
+                        className={cn(
+                          "flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold transition-colors",
+                          txMode === m.id ? "bg-primary text-primary-foreground shadow" : "bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted"
+                        )}
+                      >
+                        <m.icon className="h-4 w-4" />{m.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* 1. Carrier / Brand */}
                 <div>
                   <div className="flex items-center justify-between mb-2.5">
-                    <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">1. Select Carrier</p>
+                    <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">1. Select {brandLabel}</p>
                     <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Globe className="h-3 w-3" />{selectedCountry?.Name ?? "—"}</span>
                   </div>
 
@@ -544,15 +662,15 @@ export function TopUp() {
                         </button>
                       )}
                     </div>
-                  ) : operators.length === 0 ? (
+                  ) : categoryOperators.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground gap-1.5 rounded-xl border border-dashed border-border">
-                      <Signal className="h-7 w-7 opacity-40" />
-                      <p className="text-sm font-medium">No carriers found</p>
-                      <button onClick={() => setMoreOpen(true)} className="text-xs text-primary underline">Choose another country</button>
+                      {isGiftCards ? <Gift className="h-7 w-7 opacity-40" /> : <Signal className="h-7 w-7 opacity-40" />}
+                      <p className="text-sm font-medium">No {isGiftCards ? "gift cards" : topupSubMode === "plans" ? "plans" : "carriers"} available</p>
+                      <button onClick={() => setMoreOpen(true)} className="text-xs text-primary underline">{isGiftCards ? "Browse all brands" : "Choose another country"}</button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
-                      {operators.slice(0, 5).map(op => {
+                      {categoryOperators.slice(0, 5).map(op => {
                         const color = carrierColor(op.Name);
                         const active = selectedOperator?.ProviderCode === op.ProviderCode;
                         return (
@@ -586,19 +704,19 @@ export function TopUp() {
                   )}
                 </div>
 
-                {/* 2. Amount */}
+                {/* 2. Amount / Card Value */}
                 <div>
-                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2.5">2. Select Amount ({homeCurrency})</p>
+                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2.5">2. Select {amountLabel} ({homeCurrency})</p>
                   {!selectedOperator ? (
-                    <p className="text-xs text-muted-foreground">Select a carrier first.</p>
+                    <p className="text-xs text-muted-foreground">Select a {brandLabel.toLowerCase()} first.</p>
                   ) : loadingProducts ? (
                     <div className="grid grid-cols-4 gap-2">{[...Array(8)].map((_, i) => <div key={i} className="h-10 rounded-lg bg-muted/30 animate-pulse" />)}</div>
-                  ) : products.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No amounts available for this carrier.</p>
+                  ) : categoryProducts.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No {isGiftCards ? "card values" : topupSubMode === "plans" ? "plans" : "amounts"} available for this {brandLabel.toLowerCase()}.</p>
                   ) : (
                     <>
                       <div className="grid grid-cols-4 gap-2">
-                        {products.map((p, idx) => {
+                        {categoryProducts.map((p, idx) => {
                           const active = selectedProduct?.SkuCode === p.SkuCode;
                           const v = p.ReceiveValue;
                           const label = p.IsRangeTopUp
@@ -638,9 +756,12 @@ export function TopUp() {
                   )}
                 </div>
 
-                {/* 3. Recipient number */}
+                {/* 3. Recipient number / delivery phone */}
                 <div>
-                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2.5">3. Recipient Number</p>
+                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2.5">
+                    3. {isGiftCards ? "Delivery Phone" : "Recipient Number"}
+                    {isGiftCards && <span className="ml-1.5 normal-case tracking-normal text-muted-foreground/60">(optional)</span>}
+                  </p>
                   <div
                     className="flex items-center gap-2 rounded-xl border-[1.5px] px-4 py-3 mb-2.5 transition-colors"
                     style={{ borderColor: phoneNumber.length >= 7 ? "#1A7A4A" : "hsl(var(--border))" }}
@@ -653,6 +774,9 @@ export function TopUp() {
                       <button onClick={() => setPhoneNumber("")} className="text-muted-foreground hover:text-foreground"><XCircle className="h-4 w-4" /></button>
                     )}
                   </div>
+                  {isGiftCards && (
+                    <p className="text-[11px] text-muted-foreground mb-2.5">The redemption code is generated instantly — a delivery phone is only needed if you want the code texted to the customer.</p>
+                  )}
                   <Numpad onKey={pressKey} />
                 </div>
 
@@ -661,7 +785,7 @@ export function TopUp() {
                   <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
                     <div>
                       <p className="text-[9px] font-semibold tracking-widest text-emerald-400">READY TO PROCESS</p>
-                      <p className="text-sm font-bold mt-0.5">{money(faceReceive, homeCurrency)} → +{dialingPrefix} {phoneNumber}</p>
+                      <p className="text-sm font-bold mt-0.5">{money(faceReceive, homeCurrency)}{isGiftCards ? (phoneNumber ? ` → +${dialingPrefix} ${phoneNumber}` : " gift card") : ` → +${dialingPrefix} ${phoneNumber}`}</p>
                     </div>
                     {selectedOperator && (
                       <span
@@ -692,14 +816,15 @@ export function TopUp() {
                     )}
                   >
                     {sending ? <Loader2 className="h-4 w-4 animate-spin" />
-                      : txMode === "send" ? <><Smartphone className="h-4 w-4" />Send Top-Up</>
+                      : isGiftCards ? <><Gift className="h-4 w-4" />Buy Gift Card</>
+                      : txMode === "send" ? <><Smartphone className="h-4 w-4" />{topupSubMode === "plans" ? "Send Plan" : "Send Top-Up"}</>
                       : <><Printer className="h-4 w-4" />Print Voucher</>}
                   </Button>
                 </div>
 
                 {/* Recent */}
                 <div>
-                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Recent Top-Ups</p>
+                  <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Recent {isGiftCards ? "Gift Cards" : "Top-Ups"}</p>
                   {loadingWallet ? (
                     <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-14 rounded-lg bg-muted/30 animate-pulse" />)}</div>
                   ) : (
@@ -724,15 +849,17 @@ export function TopUp() {
                 currency={postSend ? postSend.txn.benefitCurrency : homeCurrency}
                 phone={postSend ? postSend.txn.phoneNumber : phoneNumber}
                 prefix={dialingPrefix}
-                mode={txMode}
+                mode={postSend?.mode ?? txMode}
+                isGiftCard={postSend ? postSend.txn.productType === "giftcards" : isGiftCards}
+                subMode={topupSubMode}
                 txRef={postSend?.txn.distributorRef}
               />
 
               <div className="flex gap-1.5 flex-wrap justify-center">
                 {[
-                  { label: "Carrier", done: !!selectedOperator },
-                  { label: "Amount", done: !!selectedProduct },
-                  { label: "Number", done: phoneNumber.length >= 7 },
+                  { label: brandLabel, done: !!selectedOperator },
+                  { label: amountLabel, done: !!selectedProduct },
+                  { label: isGiftCards ? "Phone" : "Number", done: isGiftCards ? true : phoneNumber.length >= 7 },
                 ].map(p => (
                   <div
                     key={p.label}
@@ -899,14 +1026,17 @@ export function TopUp() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Smartphone className="h-5 w-5 text-primary" />Confirm Top-Up
+              {isGiftCards ? <Gift className="h-5 w-5 text-primary" /> : <Smartphone className="h-5 w-5 text-primary" />}
+              {isGiftCards ? "Confirm Gift Card" : "Confirm Top-Up"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
             <div className="rounded-lg bg-muted/30 p-4 space-y-2">
-              <div className="flex justify-between"><span className="text-muted-foreground">Phone</span><span className="font-semibold">{phoneNumber}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Operator</span><span className="font-semibold">{selectedOperator?.Name}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Amount</span><span className="font-bold text-primary text-base">{money(faceReceive, homeCurrency)}</span></div>
+              {(!isGiftCards || phoneNumber) && (
+                <div className="flex justify-between"><span className="text-muted-foreground">{isGiftCards ? "Delivery phone" : "Phone"}</span><span className="font-semibold">{phoneNumber || "—"}</span></div>
+              )}
+              <div className="flex justify-between"><span className="text-muted-foreground">{isGiftCards ? "Brand" : "Operator"}</span><span className="font-semibold">{selectedOperator?.Name}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{isGiftCards ? "Card value" : "Amount"}</span><span className="font-bold text-primary text-base">{money(faceReceive, homeCurrency)}</span></div>
               {commission > 0 && <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">Commission</span><span className="font-medium text-emerald-400">{JMD(commission)}</span></div>}
               <div className="flex justify-between border-t border-border/40 pt-2"><span className="text-muted-foreground">Wallet balance</span><span className={cn("font-mono", (wallet?.balance ?? 0) < cost ? "text-red-400" : "text-foreground")}>{JMD(wallet?.balance ?? 0)}</span></div>
             </div>
@@ -915,13 +1045,13 @@ export function TopUp() {
                 Insufficient wallet balance. Please add funds before sending.
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground text-center">This action cannot be undone. The top-up will be sent immediately.</p>
+              <p className="text-xs text-muted-foreground text-center">This action cannot be undone. The {isGiftCards ? "gift card will be purchased" : "top-up will be sent"} immediately.</p>
             )}
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
             <Button onClick={handleSend} disabled={sending || (wallet?.balance ?? 0) < cost} className="bg-emerald-600 hover:bg-emerald-700 gap-2">
-              {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Sending…</> : <><CheckCircle2 className="h-4 w-4" />Confirm & Send</>}
+              {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Processing…</> : <><CheckCircle2 className="h-4 w-4" />{isGiftCards ? "Confirm & Buy" : "Confirm & Send"}</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -937,15 +1067,31 @@ export function TopUp() {
               <XCircle className="h-16 w-16 text-red-400" />
             )}
             <div>
-              <h2 className="text-xl font-bold">{lastResult?.success ? "Top-Up Sent!" : "Top-Up Failed"}</h2>
+              <h2 className="text-xl font-bold">{lastResult?.success ? (lastResult.txn.productType === "giftcards" ? "Gift Card Purchased!" : "Top-Up Sent!") : (lastResult?.txn.productType === "giftcards" ? "Purchase Failed" : "Top-Up Failed")}</h2>
               {lastResult?.success ? (
                 <p className="text-muted-foreground text-sm mt-1">
-                  {money(lastResult.txn.benefitValue, lastResult.txn.benefitCurrency)} sent to {lastResult.txn.phoneNumber}
+                  {money(lastResult.txn.benefitValue, lastResult.txn.benefitCurrency)}{lastResult.txn.productType === "giftcards" ? ` ${lastResult.txn.operatorName} gift card` : ` sent to ${lastResult.txn.phoneNumber}`}
                 </p>
               ) : (
                 <p className="text-red-400 text-sm mt-1">{lastResult?.txn.errorMessage ?? "An error occurred"}</p>
               )}
             </div>
+            {lastResult?.success && lastResult.txn.redemptionInfo && (
+              <div className="w-full rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-left space-y-2">
+                <p className="text-[10px] font-bold tracking-widest text-amber-400 uppercase">Redemption Details</p>
+                <pre className="whitespace-pre-wrap break-words font-mono text-sm font-semibold text-foreground">{lastResult.txn.redemptionInfo}</pre>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="flex-1 gap-1.5"
+                    onClick={() => { navigator.clipboard?.writeText(lastResult.txn.redemptionInfo ?? ""); toast({ title: "Copied", description: "Redemption details copied to clipboard." }); }}>
+                    <Copy className="h-3.5 w-3.5" />Copy
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1 gap-1.5"
+                    onClick={() => printGiftCard(lastResult.txn)}>
+                    <Printer className="h-3.5 w-3.5" />Print
+                  </Button>
+                </div>
+              </div>
+            )}
             {lastResult?.success && lastResult.txn.commissionEarned > 0 && (
               <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 text-sm">
                 <span className="text-muted-foreground">Commission earned: </span>
@@ -960,7 +1106,7 @@ export function TopUp() {
             )}
           </div>
           <DialogFooter className="flex-col gap-2">
-            <Button onClick={resetFlow} className="w-full">New Top-Up</Button>
+            <Button onClick={resetFlow} className="w-full">{lastResult?.txn.productType === "giftcards" ? "New Gift Card" : "New Top-Up"}</Button>
             {lastResult?.success && (
               <Button variant="outline" onClick={() => { setResultOpen(false); setTab("history"); }} className="w-full">View History</Button>
             )}
@@ -973,7 +1119,7 @@ export function TopUp() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <LayoutGrid className="h-5 w-5 text-primary" />Choose Carrier
+              <LayoutGrid className="h-5 w-5 text-primary" />Choose {brandLabel}
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
@@ -1071,14 +1217,16 @@ function Numpad({ onKey }: { onKey: (k: string) => void }) {
 
 /* ── Live phone preview sub-component ── */
 function PhonePreview({
-  step, carrierName, color, amount, currency, phone, prefix, mode, txRef,
+  step, carrierName, color, amount, currency, phone, prefix, mode, isGiftCard, subMode, txRef,
 }: {
   step: "idle" | "entering" | "confirm" | "success" | "voucher";
   carrierName: string; color: string; amount: number; currency: string;
-  phone: string; prefix: string; mode: "send" | "voucher"; txRef?: string;
+  phone: string; prefix: string; mode: "send" | "voucher";
+  isGiftCard?: boolean; subMode?: "topup" | "plans"; txRef?: string;
 }) {
   const fullNumber = phone ? `+${prefix} ${phone}` : "—";
   const amtLabel = money(amount, currency);
+  const successLabel = isGiftCard ? "Gift Card Purchased!" : subMode === "plans" ? "Plan Sent!" : "Top-Up Sent!";
   return (
     <div
       className="relative flex flex-col overflow-hidden shrink-0"
@@ -1135,7 +1283,7 @@ function PhonePreview({
             <div className="h-16 w-16 rounded-full flex items-center justify-center" style={{ background: "rgba(74,222,128,0.15)" }}>
               {step === "voucher" ? <Printer className="h-8 w-8 text-emerald-400" /> : <CheckCircle2 className="h-8 w-8 text-emerald-400" />}
             </div>
-            <p className="text-base font-extrabold text-emerald-400">{step === "voucher" ? "Voucher Printed" : "Top-Up Sent!"}</p>
+            <p className="text-base font-extrabold text-emerald-400">{step === "voucher" ? "Voucher Printed" : successLabel}</p>
             <p className="text-2xl font-extrabold" style={{ color: "#E6EDF7" }}>{amtLabel}</p>
             <p className="text-[11px] font-mono" style={{ color: "#8AA0C0" }}>{fullNumber}</p>
             {txRef && <p className="text-[10px]" style={{ color: "#54688A" }}>Ref: {txRef}</p>}

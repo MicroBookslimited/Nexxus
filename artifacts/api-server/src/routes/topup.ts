@@ -69,6 +69,75 @@ function extractDingError(status: number, data: unknown): string | null {
   return null;
 }
 
+/* ─── Provider categorisation (top-up vs plans vs gift cards) ───────────
+   Ding exposes every product — mobile credit, mobile bundles and brand gift
+   cards — through the same GetProviders/GetProducts endpoints with no explicit
+   "type" field. We classify each PROVIDER by the Benefits of its products:
+     • any product with a "DigitalProduct" benefit  → gift card brand
+     • else any product with a "Data" benefit        → mobile plan / bundle
+     • else (Mobile / Minutes / Voice / SMS)         → plain mobile top-up
+   A single country-wide GetProducts call returns all products, so we build the
+   whole provider→category map in one request and cache it per country. */
+export type TopupCategory = "topup" | "plans" | "giftcards";
+
+function classifyBenefits(benefits: Set<string>): TopupCategory {
+  if (benefits.has("digitalproduct")) return "giftcards";
+  if (benefits.has("data")) return "plans";
+  return "topup";
+}
+
+/* Pull a gift-card redemption code / PIN / URL out of a Ding transfer
+   response. Ding places these under the transfer record's ReceiptText or a
+   Redemption block; shapes vary by brand, so we probe the known locations and
+   fall back to any string that looks like a code. */
+function extractRedemptionInfo(data: Record<string, unknown>): string | null {
+  const rec = (data.TransferRecord ?? data) as Record<string, unknown>;
+  const candidates: unknown[] = [
+    rec.ReceiptText,
+    rec.RedemptionText,
+    (rec.Redemption as Record<string, unknown> | undefined)?.Code,
+    (rec.Redemption as Record<string, unknown> | undefined)?.Pin,
+    (rec.Redemption as Record<string, unknown> | undefined)?.Url,
+    rec.PinCode,
+    rec.Pin,
+  ];
+  const parts: string[] = [];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) parts.push(c.trim());
+  }
+  return parts.length ? Array.from(new Set(parts)).join("\n") : null;
+}
+
+const CATEGORY_TTL_MS = 30 * 60 * 1000;
+const providerCategoryCache = new Map<string, { at: number; map: Map<string, Set<TopupCategory>> }>();
+
+/* Build a provider → set-of-categories map. A provider is classified per
+   PRODUCT (not by aggregating all its benefits), so a carrier that sells both
+   airtime and data bundles appears under BOTH the Top-up and Plans sub-modes
+   instead of being forced into a single bucket. */
+async function getProviderCategories(countryIso: string): Promise<Map<string, Set<TopupCategory>>> {
+  const cached = providerCategoryCache.get(countryIso);
+  if (cached && Date.now() - cached.at < CATEGORY_TTL_MS) return cached.map;
+  const r = await dingFetch(`/GetProducts?countryIsos[0]=${encodeURIComponent(countryIso)}`);
+  const d = await r.json() as Record<string, unknown>;
+  if (extractDingError(r.status, d)) return cached?.map ?? new Map();
+  const items = Array.isArray(d.Items) ? d.Items as Record<string, unknown>[] : [];
+  const map = new Map<string, Set<TopupCategory>>();
+  for (const p of items) {
+    const code = p.ProviderCode as string | undefined;
+    if (!code) continue;
+    const benefits = Array.isArray(p.Benefits)
+      ? (p.Benefits as unknown[]).map((b) => String((b as Record<string, unknown>)?.BenefitType ?? b).toLowerCase())
+      : [];
+    const cat = classifyBenefits(new Set(benefits));
+    let set = map.get(code);
+    if (!set) { set = new Set(); map.set(code, set); }
+    set.add(cat);
+  }
+  providerCategoryCache.set(countryIso, { at: Date.now(), map });
+  return map;
+}
+
 async function getOrCreateWallet(tenantId: number): Promise<typeof topupWalletsTable.$inferSelect> {
   const [existing] = await db.select().from(topupWalletsTable).where(eq(topupWalletsTable.tenantId, tenantId)).limit(1);
   if (existing) return existing;
@@ -147,7 +216,23 @@ router.get("/topup/operators", async (req, res): Promise<void> => {
       return;
     }
     // Ding API returns Items; frontend expects Providers
-    if (!data.Providers && Array.isArray(data.Items)) data.Providers = data.Items;
+    const providers = (data.Providers as Record<string, unknown>[] | undefined) ?? (Array.isArray(data.Items) ? data.Items as Record<string, unknown>[] : []);
+    // Tag each provider with its category (top-up / plan / gift card) so the
+    // frontend can split them into the Top-Up and Gift Cards sections.
+    if (countryIso && providers.length) {
+      try {
+        const catMap = await getProviderCategories(countryIso);
+        data.Providers = providers.map((p) => {
+          const cats = catMap.get(p.ProviderCode as string);
+          const list = cats && cats.size ? Array.from(cats) : (["topup"] as TopupCategory[]);
+          return { ...p, Categories: list, Category: list[0] };
+        });
+      } catch {
+        data.Providers = providers;
+      }
+    } else {
+      data.Providers = providers;
+    }
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: "Failed to fetch operators", details: String(err) });
@@ -185,9 +270,15 @@ router.get("/topup/products", async (req, res): Promise<void> => {
       const minReceive = (min.ReceiveValue ?? receiveValue) as number;
       const maxReceive = (max.ReceiveValue ?? receiveValue) as number;
       const isRange = minSend !== maxSend;
+      const benefits = Array.isArray(p.Benefits)
+        ? (p.Benefits as unknown[]).map((b) => String((b as Record<string, unknown>)?.BenefitType ?? b).toLowerCase())
+        : [];
+      const productType = classifyBenefits(new Set(benefits));
       return {
         SkuCode: p.SkuCode,
         Name: p.DefaultDisplayText ?? p.SkuCode,
+        ProductType: productType,
+        RedemptionMechanism: (p.RedemptionMechanism ?? undefined) as string | undefined,
         SendValue: sendValue,
         SendCurrencyIso: sendCurrencyIso,
         ReceiveValue: receiveValue,
@@ -311,11 +402,15 @@ router.post("/topup/send", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-  const { phoneNumber, countryCode, operatorId, operatorName, productSkuCode, productName, sendValue, sendCurrency, benefitValue, benefitCurrency, cost, staffId, staffName } = req.body as {
+  const { phoneNumber, countryCode, operatorId, operatorName, productSkuCode, productName, sendValue, sendCurrency, benefitValue, benefitCurrency, cost, staffId, staffName, productType: rawProductType, dingSendValue, dingSendCurrency } = req.body as {
     phoneNumber: string; countryCode: string; operatorId: string; operatorName: string;
     productSkuCode: string; productName: string; sendValue: number; sendCurrency: string;
     benefitValue: number; benefitCurrency: string; cost: number; staffId?: number; staffName?: string;
+    productType?: TopupCategory; dingSendValue?: number; dingSendCurrency?: string;
   };
+
+  const productType: TopupCategory = rawProductType === "giftcards" || rawProductType === "plans" ? rawProductType : "topup";
+  const isGiftCard = productType === "giftcards";
 
   if (!phoneNumber || !operatorId || !productSkuCode || !sendValue) {
     res.status(400).json({ error: "Missing required fields" }); return;
@@ -336,7 +431,7 @@ router.post("/topup/send", async (req, res): Promise<void> => {
     sendValue, sendCurrency: sendCurrency ?? "JMD",
     benefitValue: benefitValue ?? sendValue, benefitCurrency: benefitCurrency ?? sendCurrency ?? "JMD",
     cost: deductAmount, commissionEarned: 0,
-    status: "pending", staffId: staffId ?? null, staffName: staffName ?? null,
+    status: "pending", productType, staffId: staffId ?? null, staffName: staffName ?? null,
   }).returning();
 
   if (!getDingKey()) {
@@ -347,30 +442,55 @@ router.post("/topup/send", async (req, res): Promise<void> => {
   }
 
   try {
-    const body = {
+    // Gift-card SKUs are fixed-value and require the SendValue/currency in the
+    // request (mobile top-up SKUs must NOT include it). Everything else mirrors
+    // the mobile flow — the phone number is the delivery account for both.
+    const body: Record<string, unknown> = {
       AccountNumber: phoneNumber,
       ProductSkuCode: productSkuCode,
       DistributorRef: distributorRef,
       ValidateOnly: false,
     };
+    if (isGiftCard) {
+      if (dingSendValue) body.SendValue = dingSendValue;
+      if (dingSendCurrency) body.SendCurrencyIso = dingSendCurrency;
+    }
     const dingRes = await dingFetch("/SendTransfer", { method: "POST", body: JSON.stringify(body) });
-    const dingData = await dingRes.json() as { Errors?: { Code: string; Message: string }[]; TransferId?: string; TransferStatus?: number };
+    const dingData = await dingRes.json() as {
+      Errors?: { Code: string; Message: string }[];
+      ErrorCodes?: { Code: string; Context?: string }[];
+      ResultCode?: number;
+      TransferId?: string;
+      TransferStatus?: number;
+      TransferRecord?: Record<string, unknown>;
+    };
 
-    if (!dingRes.ok || (dingData.Errors && dingData.Errors.length > 0)) {
-      const errMsg = dingData.Errors?.[0]?.Message ?? `HTTP ${dingRes.status}`;
+    const hasError = !dingRes.ok
+      || (dingData.Errors && dingData.Errors.length > 0)
+      || (dingData.ErrorCodes && dingData.ErrorCodes.length > 0)
+      || (typeof dingData.ResultCode === "number" && dingData.ResultCode !== 1);
+    if (hasError) {
+      const errMsg = dingData.Errors?.[0]?.Message
+        ?? (dingData.ErrorCodes?.length ? `${dingData.ErrorCodes[0].Code} (${dingData.ErrorCodes[0].Context ?? ""})` : undefined)
+        ?? `HTTP ${dingRes.status}`;
       await db.update(topupTransactionsTable)
         .set({ status: "failed", errorMessage: errMsg, updatedAt: new Date() })
         .where(eq(topupTransactionsTable.id, txn.id));
       res.status(400).json({ error: errMsg, transaction: { ...txn, status: "failed" } }); return;
     }
 
+    // Gift cards return a redemption code / PIN inside the transfer record.
+    const redemptionInfo = isGiftCard ? extractRedemptionInfo(dingData) : null;
+
     const commission = sendValue - deductAmount;
-    const newBalance = await debitWallet(tenantId, deductAmount, `Top-up ${phoneNumber} (${productName})`, String(txn.id));
+    const label = isGiftCard ? `Gift card ${productName}` : `Top-up ${phoneNumber} (${productName})`;
+    const newBalance = await debitWallet(tenantId, deductAmount, label, String(txn.id));
 
     await db.update(topupTransactionsTable).set({
       dingTransactionId: dingData.TransferId ?? null,
       status: dingData.TransferStatus === 2 ? "pending" : "success",
       commissionEarned: commission > 0 ? commission : 0,
+      redemptionInfo,
       updatedAt: new Date(),
     }).where(eq(topupTransactionsTable.id, txn.id));
 
