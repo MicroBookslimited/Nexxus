@@ -495,6 +495,16 @@ export function TopUp() {
                           : countriesError === "api_key" ? "Ask your administrator to set the DING_API_KEY."
                           : "DingConnect rejected the request. Check the IP whitelist and API key in your Ding dashboard."}
                       </p>
+                      {countriesError !== "auth" && (
+                        <button
+                          onClick={() => loadCountries()}
+                          disabled={loadingCountries}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted/50 disabled:opacity-50"
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${loadingCountries ? "animate-spin" : ""}`} />
+                          Retry
+                        </button>
+                      )}
                     </div>
                   ) : operators.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground gap-1.5 rounded-xl border border-dashed border-border">

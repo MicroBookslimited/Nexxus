@@ -19,19 +19,21 @@ function getDingKey(): string {
   return key;
 }
 
+let fixieDispatcher: ProxyAgent | null | undefined;
 function getFixieDispatcher(): ProxyAgent | undefined {
+  if (fixieDispatcher !== undefined) return fixieDispatcher ?? undefined;
   const url = process.env.FIXIE_URL;
-  if (!url) return undefined;
-  return new ProxyAgent(url);
+  fixieDispatcher = url ? new ProxyAgent(url) : null;
+  return fixieDispatcher ?? undefined;
 }
 
 async function dingFetch(path: string, opts: RequestInit = {}): Promise<Response> {
   const key = getDingKey();
-  const headers = {
+  const headers: Record<string, string> = {
     "api_key": key,
     "Content-Type": "application/json",
     "Accept": "application/json",
-    ...(opts.headers ?? {}),
+    ...(opts.headers as Record<string, string> ?? {}),
   };
   const url = `https://api.dingconnect.com/api/V1${path}`;
   const dispatcher = getFixieDispatcher();
@@ -40,7 +42,7 @@ async function dingFetch(path: string, opts: RequestInit = {}): Promise<Response
       // Use undici's own fetch so the ProxyAgent dispatcher is version-compatible.
       // Node 24's global fetch uses a different internal undici build and rejects
       // a dispatcher from the installed undici package.
-      return await (undiciFetch(url, { ...opts, headers, dispatcher }) as Promise<Response>);
+      return await (undiciFetch(url, { ...opts, headers, dispatcher } as Parameters<typeof undiciFetch>[1]) as Promise<Response>);
     } catch {
       // Proxy unreachable — fall through to direct fetch below.
     }
