@@ -4200,9 +4200,7 @@ export function Products() {
                 ) : (
                   <>.</>
                 )}{" "}
-                {planLimit.recommendedPlan
-                  ? `Upgrade to ${planLimit.recommendedPlan.name} to add more products.`
-                  : "Archive products or contact us about a higher plan to add more."}
+                {"Upgrade your plan to add more products."}
               </p>
             </div>
           </div>
@@ -4211,7 +4209,7 @@ export function Products() {
             className="gap-2 shrink-0 bg-amber-500 hover:bg-amber-400 text-amber-950"
           >
             <TrendingUp className="h-4 w-4" />
-            {planLimit.recommendedPlan ? `Upgrade to ${planLimit.recommendedPlan.name}` : "View plans"}
+            Upgrade Plan
           </Button>
         </div>
       )}
@@ -6024,20 +6022,7 @@ export function Products() {
                     <>.</>
                   )}
                 </p>
-                <p>
-                  {limitPrompt?.recommendedPlan ? (
-                    <>
-                      Upgrade to the{" "}
-                      <span className="font-semibold text-foreground">{limitPrompt.recommendedPlan.name}</span> plan
-                      {limitPrompt.recommendedPlan.maxProducts != null && (
-                        <> (up to {limitPrompt.recommendedPlan.maxProducts} products)</>
-                      )}{" "}
-                      to add more.
-                    </>
-                  ) : (
-                    <>Archive products you no longer sell, or contact us about a higher plan, to add more products.</>
-                  )}
-                </p>
+                <p>Upgrade your plan to add more products.</p>
               </div>
             </DialogDescription>
           </DialogHeader>
@@ -6048,7 +6033,7 @@ export function Products() {
               className="gap-2 bg-amber-500 hover:bg-amber-400 text-amber-950"
             >
               <TrendingUp className="h-4 w-4" />
-              {limitPrompt?.recommendedPlan ? `Upgrade to ${limitPrompt.recommendedPlan.name}` : "View plans"}
+              Upgrade Plan
             </Button>
           </DialogFooter>
         </DialogContent>
