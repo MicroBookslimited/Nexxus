@@ -87,6 +87,12 @@ function carrierColor(name: string): string {
   return key ? CARRIER_BRAND[key] : "#2E86DE";
 }
 
+/* Vibrant palette for amount denomination buttons */
+const AMOUNT_PALETTE = [
+  "#E30613", "#FF7900", "#F59E0B", "#16A34A",
+  "#00AEEF", "#7C3AED", "#EC4899", "#0EA5E9",
+];
+
 function money(v: number, currency: string): string {
   try {
     return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: v % 1 === 0 ? 0 : 2 }).format(v);
@@ -245,7 +251,15 @@ export function TopUp() {
     setLoadingOperators(true);
     setOperators([]); setSelectedOperator(null); setProducts([]); setSelectedProduct(null);
     apiFetch<{ Providers?: DingOperator[] }>(`/api/topup/operators?countryIso=${selectedCountry.Iso}`)
-      .then(d => setOperators(d.Providers ?? []))
+      .then(d => {
+        const ops = d.Providers ?? [];
+        setOperators(ops);
+        // Auto-select Flow Jamaica (non-bundle) as default, else first operator
+        const defaultOp =
+          ops.find(op => /\bflow\b/i.test(op.Name) && !/bundle/i.test(op.Name)) ??
+          ops[0] ?? null;
+        if (defaultOp) setSelectedOperator(defaultOp);
+      })
       .catch(() => {})
       .finally(() => setLoadingOperators(false));
   }, [selectedCountry]);
@@ -465,7 +479,7 @@ export function TopUp() {
                       onClick={() => setTxMode(m.id)}
                       className={cn(
                         "flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold transition-colors",
-                        txMode === m.id ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                        txMode === m.id ? "bg-primary text-primary-foreground shadow" : "bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted"
                       )}
                     >
                       <m.icon className="h-4 w-4" />{m.label}
@@ -525,14 +539,15 @@ export function TopUp() {
                             onClick={() => { setSelectedOperator(op); setPostSend(null); }}
                             className="flex flex-col items-center gap-1.5 rounded-xl p-2.5 border-[1.5px] transition-all text-[11px] font-bold"
                             style={{
-                              borderColor: active ? color : "hsl(var(--border))",
-                              background: active ? `${color}22` : "hsl(var(--muted) / 0.3)",
-                              color: active ? color : "hsl(var(--muted-foreground))",
+                              borderColor: color,
+                              background: active ? color : `${color}28`,
+                              color: active ? "#fff" : color,
+                              boxShadow: active ? `0 0 12px ${color}55` : "none",
                             }}
                           >
                             <span
                               className="h-7 w-7 rounded-lg flex items-center justify-center text-sm font-extrabold"
-                              style={{ background: active ? `${color}33` : "hsl(var(--muted) / 0.5)", color: active ? color : "hsl(var(--muted-foreground))" }}
+                              style={{ background: active ? "rgba(255,255,255,0.2)" : `${color}44`, color: active ? "#fff" : color }}
                             >{op.Name[0]?.toUpperCase()}</span>
                             <span className="line-clamp-1 max-w-full">{op.Name}</span>
                           </button>
@@ -540,9 +555,9 @@ export function TopUp() {
                       })}
                       <button
                         onClick={() => setMoreOpen(true)}
-                        className="flex flex-col items-center justify-center gap-1.5 rounded-xl p-2.5 border-[1.5px] border-dashed border-border text-[11px] font-bold text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+                        className="flex flex-col items-center justify-center gap-1.5 rounded-xl p-2.5 border-[1.5px] border-primary/50 bg-primary/10 text-[11px] font-bold text-primary hover:bg-primary/20 transition-all"
                       >
-                        <span className="h-7 w-7 rounded-lg flex items-center justify-center bg-muted/50"><LayoutGrid className="h-3.5 w-3.5" /></span>
+                        <span className="h-7 w-7 rounded-lg flex items-center justify-center bg-primary/20"><LayoutGrid className="h-3.5 w-3.5" /></span>
                         More
                       </button>
                     </div>
@@ -561,19 +576,23 @@ export function TopUp() {
                   ) : (
                     <>
                       <div className="grid grid-cols-4 gap-2">
-                        {products.map(p => {
+                        {products.map((p, idx) => {
                           const active = selectedProduct?.SkuCode === p.SkuCode;
                           const v = p.SendValue;
                           const label = p.IsRangeTopUp ? "Custom" : (v >= 1000 && v % 1000 === 0 ? `${v / 1000}K` : v.toLocaleString());
+                          const c = AMOUNT_PALETTE[idx % AMOUNT_PALETTE.length];
                           return (
                             <button
                               key={p.SkuCode}
                               onClick={() => { setSelectedProduct(p); setCustomAmount(""); setPostSend(null); }}
                               title={p.Name}
-                              className={cn(
-                                "h-10 rounded-lg border-[1.5px] text-xs font-bold transition-all",
-                                active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40"
-                              )}
+                              className="h-10 rounded-lg border-[1.5px] text-xs font-bold transition-all"
+                              style={{
+                                borderColor: c,
+                                background: active ? c : `${c}28`,
+                                color: active ? "#fff" : c,
+                                boxShadow: active ? `0 0 10px ${c}55` : "none",
+                              }}
                             >{label}</button>
                           );
                         })}
@@ -1015,7 +1034,7 @@ function Numpad({ onKey }: { onKey: (k: string) => void }) {
           key={k}
           type="button"
           onClick={() => onKey(k)}
-          className="h-11 rounded-xl bg-muted/40 hover:bg-muted active:scale-95 text-lg font-semibold transition-all flex items-center justify-center"
+          className="h-11 rounded-xl bg-muted hover:bg-muted/80 active:scale-95 text-lg font-semibold transition-all flex items-center justify-center border border-border"
         >
           {k === "del" ? <Delete className="h-5 w-5" /> : k === "clr" ? <span className="text-xs font-bold tracking-wider">CLR</span> : k}
         </button>
