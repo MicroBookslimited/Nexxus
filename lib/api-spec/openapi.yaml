@@ -527,6 +527,11 @@ paths:
           in: query
           schema:
             type: integer
+        - name: offset
+          in: query
+          description: Number of orders to skip (for pagination).
+          schema:
+            type: integer
         - name: from
           in: query
           description: Start date (YYYY-MM-DD, Jamaica timezone). Inclusive.

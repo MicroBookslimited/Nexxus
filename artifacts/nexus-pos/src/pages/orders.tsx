@@ -70,6 +70,8 @@ export function Orders() {
   const [searchQuery, setSearchQuery] = useState("");
   const [fromDate, setFromDate] = useState<string>(() => todayStr());
   const [toDate, setToDate] = useState<string>(() => todayStr());
+  const [pageSize, setPageSize] = useState<number>(1000);
+  const [page, setPage] = useState(0);
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
   const [expandedOfflineId, setExpandedOfflineId] = useState<string | null>(null);
   const [offlineOrders, setOfflineOrders] = useState<QueuedRequest[]>(getOfflineOrders);
@@ -131,7 +133,15 @@ export function Orders() {
   // Only admins/managers can see the staff list for filtering
   const { data: staffList } = useListStaff({ query: { enabled: canViewAllOrders } });
 
-  const listParams: Record<string, any> = {};
+  // Reset to the first page whenever a filter or the page size changes
+  useEffect(() => {
+    setPage(0);
+  }, [statusFilter, staffFilter, fromDate, toDate, pageSize]);
+
+  const listParams: Record<string, any> = {
+    limit: pageSize,
+    offset: page * pageSize,
+  };
   if (statusFilter !== "all") listParams.status = statusFilter;
   if (fromDate) listParams.from = fromDate;
   if (toDate) listParams.to = toDate;
@@ -1055,6 +1065,9 @@ export function Orders() {
                   <TableCell />
                   <TableCell colSpan={2} className="font-semibold text-sm py-3">
                     {totals.count} order{totals.count !== 1 ? "s" : ""} total
+                    {(page > 0 || (orders?.length ?? 0) >= pageSize) && (
+                      <span className="text-xs text-muted-foreground font-normal"> (this page)</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm text-center py-3">
                     {filteredOrders?.reduce((s, o) => s + o.items.length, 0) ?? 0} items
@@ -1085,6 +1098,44 @@ export function Orders() {
               </TableFooter>
             )}
           </Table>
+
+          {/* ── Pagination ── */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-border">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Rows per page</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="bg-secondary border border-border rounded-md px-2 py-1.5 text-sm text-foreground focus:outline-none"
+              >
+                {[100, 250, 500, 750, 1000].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                Page {page + 1}
+                {orders && ` · showing ${orders.length} order${orders.length !== 1 ? "s" : ""}`}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === 0 || isLoading}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isLoading || (orders?.length ?? 0) < pageSize}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

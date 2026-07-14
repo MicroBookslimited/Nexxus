@@ -940,6 +940,10 @@ export const ListOrdersQueryParams = zod.object({
     .enum(["open", "pending", "completed", "cancelled", "refunded", "voided"])
     .optional(),
   limit: zod.coerce.number().optional(),
+  offset: zod.coerce
+    .number()
+    .optional()
+    .describe("Number of orders to skip (for pagination)."),
   from: zod.coerce
     .string()
     .regex(listOrdersQueryFromRegExp)

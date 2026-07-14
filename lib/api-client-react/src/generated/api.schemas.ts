@@ -1690,6 +1690,10 @@ export type ListOrdersParams = {
   status?: ListOrdersStatus;
   limit?: number;
   /**
+   * Number of orders to skip (for pagination).
+   */
+  offset?: number;
+  /**
    * Start date (YYYY-MM-DD, Jamaica timezone). Inclusive.
    * @pattern ^\d{4}-\d{2}-\d{2}$
    */

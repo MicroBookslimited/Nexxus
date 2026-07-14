@@ -224,11 +224,17 @@ router.get("/orders", async (req, res): Promise<void> => {
     conditions.push(eq(ordersTable.staffId, query.data.staffId));
   }
 
+  // Pagination: cap at 1000 rows per page; default to the max when unspecified.
+  const limit = Math.min(Math.max(query.data.limit ?? 1000, 1), 1000);
+  const offset = Math.max(query.data.offset ?? 0, 0);
+
   const orders = await db
     .select()
     .from(ordersTable)
     .where(and(...conditions))
-    .orderBy(desc(ordersTable.createdAt));
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(limit)
+    .offset(offset);
 
   const ordersWithItemsRaw = await Promise.all(
     orders.map(async (order) => {
