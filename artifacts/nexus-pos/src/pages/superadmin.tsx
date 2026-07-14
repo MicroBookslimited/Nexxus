@@ -895,6 +895,7 @@ type PlanFormData = {
   priceMonthly: number; priceAnnual: number;
   maxStaff: number; maxProducts: number; maxLocations: number; maxInvoices: number;
   modules: string[]; features: string[]; isActive: boolean;
+  isPromotional: boolean;
 };
 
 function PlanFormModal({
@@ -920,6 +921,7 @@ function PlanFormModal({
     modules: plan?.modules ?? ALL_MODULES.map(m => m.key),
     features: plan?.features ?? [],
     isActive: plan?.isActive ?? true,
+    isPromotional: plan?.isPromotional ?? false,
   });
   const [newFeature, setNewFeature] = useState("");
 
@@ -1056,6 +1058,18 @@ function PlanFormModal({
               <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${form.isActive ? "translate-x-5" : "translate-x-0.5"}`} />
             </button>
             <span className="text-sm text-[#94a3b8]">Plan is {form.isActive ? "active" : "inactive"}</span>
+          </div>
+
+          {/* Promotional toggle */}
+          <div className="flex items-start gap-3">
+            <button type="button" onClick={() => setF("isPromotional", !form.isPromotional)}
+              className={`relative w-10 h-5 rounded-full transition-colors shrink-0 mt-0.5 ${form.isPromotional ? "bg-amber-500" : "bg-[#2a3a55]"}`}>
+              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${form.isPromotional ? "translate-x-5" : "translate-x-0.5"}`} />
+            </button>
+            <div>
+              <span className="text-sm text-[#94a3b8]">Promotional plan (coupon required)</span>
+              <p className="text-xs text-[#475569] mt-0.5">Hidden from the public pricing page. Tenants can only activate it by redeeming a coupon code — never self-serve.</p>
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">

@@ -219,6 +219,7 @@ type PlanInput = {
   priceMonthly: number; priceAnnual: number;
   maxStaff: number; maxProducts: number; maxLocations: number; maxInvoices: number;
   modules: string[]; features: string[]; isActive?: boolean;
+  isPromotional?: boolean;
 };
 export const superadminGetPlans = () =>
   api<Plan[]>("/superadmin/plans", { headers: superadminAuthHeaders() });
