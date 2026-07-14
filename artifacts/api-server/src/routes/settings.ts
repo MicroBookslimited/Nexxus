@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, appSettingsTable } from "@workspace/db";
+import { db, appSettingsTable, tenantsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
@@ -57,16 +57,39 @@ function makeDbKey(tenantId: number, key: string): string {
   return `${tenantId}:${key}`;
 }
 
+// Settings that, when not explicitly saved by the tenant, default to the
+// information captured during signup (tenants table) instead of static defaults.
+const TENANT_FALLBACK_KEYS = ["business_name", "business_phone", "business_address"] as const;
+
+async function tenantBusinessDefaults(tenantId: number): Promise<Record<string, string>> {
+  if (!tenantId) return {};
+  const [tenant] = await db
+    .select({ businessName: tenantsTable.businessName, phone: tenantsTable.phone, address: tenantsTable.address })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, tenantId));
+  if (!tenant) return {};
+  const out: Record<string, string> = {};
+  if (tenant.businessName?.trim()) out["business_name"] = tenant.businessName.trim();
+  if (tenant.phone?.trim()) out["business_phone"] = tenant.phone.trim();
+  if (tenant.address?.trim()) out["business_address"] = tenant.address.trim();
+  return out;
+}
+
 async function getSetting(key: string, tenantId = 0): Promise<string> {
   const dbKey = makeDbKey(tenantId, key);
   const [row] = await db.select().from(appSettingsTable).where(eq(appSettingsTable.key, dbKey));
-  return row?.value ?? DEFAULTS[key] ?? "";
+  if (row) return row.value;
+  if ((TENANT_FALLBACK_KEYS as readonly string[]).includes(key)) {
+    const fallback = (await tenantBusinessDefaults(tenantId))[key];
+    if (fallback) return fallback;
+  }
+  return DEFAULTS[key] ?? "";
 }
 
 async function getAllSettings(tenantId = 0): Promise<Record<string, string>> {
   const rows = await db.select().from(appSettingsTable)
     .where(eq(appSettingsTable.tenantId, tenantId));
-  const map: Record<string, string> = { ...DEFAULTS };
+  const map: Record<string, string> = { ...DEFAULTS, ...(await tenantBusinessDefaults(tenantId)) };
   const prefix = `${tenantId}:`;
   for (const row of rows) {
     const originalKey = row.key.startsWith(prefix) ? row.key.slice(prefix.length) : row.key;
