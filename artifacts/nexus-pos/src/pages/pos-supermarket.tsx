@@ -65,7 +65,7 @@ import { buildReceiptHtml, receiptOrderFrom } from "@/lib/receipt";
 import { CardTypeDialog, type CardType } from "@/components/card-type-dialog";
 import { SplitPaymentDialog } from "@/components/split-payment-dialog";
 import { printOrderReceipt } from "@/lib/print-receipt";
-import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, lookupGiftVoucher, type VoucherLookupResult, ApiError, getPricingTiers, previewTierPrice, type PricingTier } from "@/lib/saas-api";
+import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, lookupGiftVoucher, type VoucherLookupResult, ApiError, getPricingTiers, previewTierPrice, type PricingTier, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels } from "@/lib/saas-api";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -149,6 +149,9 @@ type CartLine = {
   price: number;
   quantity: number;
   isTaxable: boolean;
+  // Set for sell-by-weight lines: quantity is a decimal weight in this unit
+  // (lb/kg/oz/g). Weight lines never merge and skip the +/- quantity controls.
+  weightUnit?: string | null;
 };
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -393,17 +396,27 @@ export function PosSupermarket({
 
   const executeSupermarketAction = (action: SupermarketAction) => {
     if (action.type === "decrease") {
-      setCart((prev) =>
-        prev
-          .map((c) => (c.cartKey === action.cartKey ? { ...c, quantity: c.quantity - 1 } : c))
-          .filter((c) => c.quantity > 0),
-      );
+      // Decreasing a weight line by 1 makes no sense — treat it as removal.
+      const target = cart.find((c) => c.cartKey === action.cartKey);
+      if (target?.weightUnit) {
+        releaseLabelsForKeys([action.cartKey]);
+        setCart((prev) => prev.filter((c) => c.cartKey !== action.cartKey));
+        setSelectedKey((k) => (k === action.cartKey ? null : k));
+      } else {
+        setCart((prev) =>
+          prev
+            .map((c) => (c.cartKey === action.cartKey ? { ...c, quantity: c.quantity - 1 } : c))
+            .filter((c) => c.quantity > 0),
+        );
+      }
     } else if (action.type === "remove") {
+      releaseLabelsForKeys([action.cartKey]);
       setCart((prev) => prev.filter((c) => c.cartKey !== action.cartKey));
       setSelectedKey((k) => (k === action.cartKey ? null : k));
     } else if (action.type === "clear") {
       resetCart();
     } else if (action.type === "setqty") {
+      if (action.qty <= 0) releaseLabelsForKeys([action.cartKey]);
       setCart((prev) =>
         prev
           .map((c) => (c.cartKey === action.cartKey ? { ...c, quantity: action.qty } : c))
@@ -524,6 +537,99 @@ export function PosSupermarket({
     doCreateProduct();
   };
 
+  /* ── Sell-by-weight ───────────────────────────────────────────────────── */
+  // When a sell-by-weight product is picked/scanned via its plain catalog
+  // barcode (no weight embedded), prompt the cashier for the weight instead of
+  // adding quantity 1. Weight lines store the decimal weight as the quantity —
+  // the server prices per unit, so weight × unit price is computed there.
+  const [weightPromptProduct, setWeightPromptProduct] = useState<{
+    id: number;
+    name: string;
+    price: number;
+    unit: string;
+    isTaxable: boolean;
+  } | null>(null);
+  const [weightPromptValue, setWeightPromptValue] = useState("");
+  // Weight-label IDs (from scanned scale labels) currently in the cart, so they
+  // can be marked sold once the order is created, or released when removed.
+  const scaleLabelIdsRef = useRef<Map<string, number>>(new Map());
+
+  const confirmWeightEntry = () => {
+    if (!weightPromptProduct) return;
+    const w = parseFloat(weightPromptValue);
+    if (!Number.isFinite(w) || w <= 0) {
+      toast({ title: "Enter a valid weight", description: "Weight must be greater than zero.", variant: "destructive" });
+      return;
+    }
+    const p = weightPromptProduct;
+    setCart((prev) => [
+      ...prev,
+      {
+        cartKey: `wt:${p.id}:${Date.now()}`,
+        productId: p.id,
+        productName: p.name,
+        barcode: null,
+        price: p.price,
+        quantity: w,
+        isTaxable: p.isTaxable,
+        weightUnit: p.unit,
+      },
+    ]);
+    toast({ title: "Weight item added", description: `${p.name} — ${w.toFixed(3)} ${p.unit}` });
+    setWeightPromptProduct(null);
+    setWeightPromptValue("");
+    focusScanInput();
+  };
+
+  // Weight-embedded EAN-13 barcode ('2' + PLU + grams): resolve via the scale
+  // label service — no popup needed, the weight travels in the barcode.
+  const addWeightLabelToCart = async (barcode: string) => {
+    try {
+      const { label } = await lookupWeightLabel(barcode);
+      const p = productList.find((x) => x.id === label.productId);
+      const unitPrice =
+        p?.price ?? (label.weightValue > 0 ? label.totalPrice / label.weightValue : label.totalPrice);
+      const cartKey = `wlbl:${label.id ?? barcode}:${Date.now()}`;
+      setCart((prev) => [
+        ...prev,
+        {
+          cartKey,
+          productId: label.productId,
+          productName: label.productName,
+          barcode: null,
+          price: unitPrice,
+          quantity: label.weightValue,
+          isTaxable: p?.isTaxable !== false,
+          weightUnit: label.unitOfMeasure,
+        },
+      ]);
+      if (label.id) scaleLabelIdsRef.current.set(cartKey, label.id);
+      toast({
+        title: "Weight item added",
+        description: `${label.productName} — ${label.weightValue.toFixed(3)} ${label.unitOfMeasure}`,
+      });
+    } catch (err) {
+      toast({
+        title: "Barcode not recognised",
+        description: (err as Error).message || "No matching weight label found",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Release reserved scale labels for lines leaving the cart (best-effort).
+  const releaseLabelsForKeys = (keys: string[]) => {
+    const ids: number[] = [];
+    for (const key of keys) {
+      const id = scaleLabelIdsRef.current.get(key);
+      if (id != null) {
+        ids.push(id);
+        scaleLabelIdsRef.current.delete(key);
+      }
+    }
+    if (ids.length > 0) void releaseWeightLabels(ids).catch(() => {});
+  };
+
   /* ── Add / change cart lines ──────────────────────────────────────────── */
   const addToCart = (productId: number, qty: number) => {
     const p = productList.find((x) => x.id === productId);
@@ -536,9 +642,23 @@ export function PosSupermarket({
       });
       return;
     }
+    // Sell-by-weight products need a weight, not a count — ask the cashier.
+    const pw = p as typeof p & { soldByWeight?: boolean; unitOfMeasure?: string | null };
+    if (pw.soldByWeight) {
+      setWeightPromptProduct({
+        id: p.id,
+        name: p.name,
+        price: p.price,
+        unit: pw.unitOfMeasure || "lb",
+        isTaxable: p.isTaxable,
+      });
+      setWeightPromptValue("");
+      return;
+    }
     const addQty = qty > 0 ? qty : 1;
     setCart((prev) => {
-      const idx = prev.findIndex((c) => c.productId === productId);
+      // Never merge into a weight line — its quantity is a decimal weight.
+      const idx = prev.findIndex((c) => c.productId === productId && !c.weightUnit);
       if (idx >= 0) {
         return prev.map((c, i) => (i === idx ? { ...c, quantity: c.quantity + addQty } : c));
       }
@@ -563,6 +683,11 @@ export function PosSupermarket({
   };
 
   const resetCart = () => {
+    // Release any still-reserved scale labels (checkout clears the map first,
+    // so labels on a completed sale are marked sold, not released).
+    const leftover = Array.from(scaleLabelIdsRef.current.values());
+    scaleLabelIdsRef.current.clear();
+    if (leftover.length > 0) void releaseWeightLabels(leftover).catch(() => {});
     setCart([]);
     setSelectedKey(null);
     setCashTenderedInput("");
@@ -584,6 +709,17 @@ export function PosSupermarket({
   const handleHoldBill = () => {
     if (cart.length === 0) {
       toast({ title: "Bill is empty", description: "Scan items before holding a bill.", variant: "destructive" });
+      return;
+    }
+    // Scanned scale labels can't survive a hold/recall round-trip (held orders
+    // only store product/qty), so their reservation and sold-marking would be
+    // lost. Ask the cashier to finish or remove those lines first.
+    if (scaleLabelIdsRef.current.size > 0) {
+      toast({
+        title: "Weight labels can't be held",
+        description: "Complete the sale or remove the scanned weight-label items before holding this bill.",
+        variant: "destructive",
+      });
       return;
     }
     createHeldOrder.mutate(
@@ -618,10 +754,17 @@ export function PosSupermarket({
       const ok = window.confirm("This will replace the current bill. Continue?");
       if (!ok) return;
     }
+    // The recalled bill replaces the cart, so any scale labels reserved by the
+    // outgoing cart must be released now or they'd stay stuck as reserved (and
+    // could be wrongly marked sold on the next checkout).
+    const staleLabels = Array.from(scaleLabelIdsRef.current.values());
+    scaleLabelIdsRef.current.clear();
+    if (staleLabels.length > 0) void releaseWeightLabels(staleLabels).catch(() => {});
     const productMap = new Map(productList.map((p) => [p.id, p]));
     setCart(
       held.items.map((item, idx) => {
         const p = productMap.get(item.productId);
+        const pw = p as (typeof p & { soldByWeight?: boolean; unitOfMeasure?: string | null }) | undefined;
         return {
           cartKey: `${item.productId}:recall:${Date.now()}:${idx}`,
           productId: item.productId,
@@ -630,6 +773,9 @@ export function PosSupermarket({
           price: item.price,
           quantity: item.quantity,
           isTaxable: p?.isTaxable ?? true,
+          // Rehydrate the weight flag so recalled sell-by-weight lines keep the
+          // weight display and never merge with count lines.
+          weightUnit: pw?.soldByWeight ? pw.unitOfMeasure || "lb" : null,
         };
       }),
     );
@@ -714,6 +860,15 @@ export function PosSupermarket({
     if (e.key !== "Enter") return;
     const code = searchTerm.trim();
     if (!code) return;
+    // Weight-embedded EAN-13 barcode: starts with '2', exactly 13 digits — the
+    // weight travels in the barcode, so resolve it via the scale label service.
+    if (/^2\d{12}$/.test(code)) {
+      void addWeightLabelToCart(code);
+      setSearchTerm("");
+      setQtyInput("");
+      focusScanInput();
+      return;
+    }
     const norm = code.toLowerCase();
     const matches = productList.filter(
       (p) => (p.barcode ?? "").toLowerCase() === norm || (p.sku ?? "").toLowerCase() === norm,
@@ -871,7 +1026,9 @@ export function PosSupermarket({
   const tax =
     taxMode === "inclusive" ? (taxBase * taxRate) / (1 + taxRate) : taxBase * taxRate;
   const total = subtotal + (taxMode === "exclusive" ? tax : 0);
-  const itemCount = cart.reduce((s, c) => s + c.quantity, 0);
+  // Weight lines count as 1 item — summing decimal weights into the count
+  // would show nonsense like "3.75 items".
+  const itemCount = cart.reduce((s, c) => s + (c.weightUnit ? 1 : c.quantity), 0);
 
   const cashTendered =
     paymentMethod === "cash" && cashTenderedInput && parseFloat(cashTenderedInput) > 0
@@ -1021,6 +1178,13 @@ export function PosSupermarket({
       },
       {
         onSuccess: (data) => {
+          // Scale labels in this sale are now sold — clear the map before
+          // resetCart so they aren't released back to 'available'.
+          const soldLabelIds = Array.from(scaleLabelIdsRef.current.values());
+          scaleLabelIdsRef.current.clear();
+          if (soldLabelIds.length > 0) {
+            void markWeightLabelsSold(soldLabelIds, data?.id).catch(() => {});
+          }
           setReceiptOrder(data);
           if (settings?.auto_print_receipt === "true") {
             const ro = receiptOrderFrom(data, {
@@ -1052,6 +1216,11 @@ export function PosSupermarket({
           queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
         },
         onError: (err: unknown) => {
+          // Order failed — release any reserved scale labels so they can be
+          // re-scanned (same behaviour as the standard POS).
+          const reserved = Array.from(scaleLabelIdsRef.current.values());
+          scaleLabelIdsRef.current.clear();
+          if (reserved.length > 0) void releaseWeightLabels(reserved).catch(() => {});
           const apiErr = err as { status?: number; body?: unknown; data?: unknown; message?: string } | undefined;
           const payload = (apiErr?.body ?? apiErr?.data) as
             | { error?: string; message?: string; productName?: string; available?: number; requested?: number }
@@ -1328,6 +1497,13 @@ export function PosSupermarket({
                       </div>
                     </div>
                     <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      {c.weightUnit ? (
+                        // Weight lines: quantity is a decimal weight — no +/- steppers.
+                        <span className="font-mono text-lg font-extrabold text-center text-foreground whitespace-nowrap px-2">
+                          {c.quantity.toFixed(3)} {c.weightUnit}
+                        </span>
+                      ) : (
+                      <>
                       <button
                         onClick={() => requestSupermarketAction({ type: "decrease", cartKey: c.cartKey }, true)}
                         className="h-9 w-9 rounded-lg bg-rose-500 text-white hover:bg-rose-600 transition flex items-center justify-center shadow-sm"
@@ -1376,6 +1552,8 @@ export function PosSupermarket({
                       >
                         <Plus className="h-4 w-4" />
                       </button>
+                      </>
+                      )}
                     </div>
                     <div className="text-right font-mono text-2xl font-extrabold text-foreground">
                       {formatCurrency(effectiveUnitPrice(c) * c.quantity, baseCurrency)}
@@ -1691,6 +1869,73 @@ export function PosSupermarket({
               toast({ title: "Override approved", description: `Authorized by ${staff.name}` });
             }}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Weight entry for sell-by-weight products ────────────────────── */}
+      <Dialog
+        open={!!weightPromptProduct}
+        onOpenChange={(o) => {
+          if (!o) {
+            setWeightPromptProduct(null);
+            setWeightPromptValue("");
+            focusScanInput();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Enter Weight</DialogTitle>
+            <DialogDescription>
+              {weightPromptProduct
+                ? `${weightPromptProduct.name} — ${formatCurrency(weightPromptProduct.price, baseCurrency)} per ${weightPromptProduct.unit}`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5 py-2">
+            <Label htmlFor="sm-weight-input">
+              Weight ({weightPromptProduct?.unit})
+            </Label>
+            <Input
+              id="sm-weight-input"
+              autoFocus
+              type="text"
+              inputMode="decimal"
+              placeholder="e.g. 1.250"
+              value={weightPromptValue}
+              onChange={(e) => setWeightPromptValue(e.target.value.replace(/[^0-9.]/g, ""))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmWeightEntry();
+              }}
+              className="text-2xl font-mono h-14 text-center"
+            />
+            {(() => {
+              const w = parseFloat(weightPromptValue);
+              return Number.isFinite(w) && w > 0 && weightPromptProduct ? (
+                <div className="text-center text-lg font-semibold text-emerald-600 dark:text-emerald-400">
+                  = {formatCurrency(w * weightPromptProduct.price, baseCurrency)}
+                </div>
+              ) : null;
+            })()}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setWeightPromptProduct(null);
+                setWeightPromptValue("");
+                focusScanInput();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmWeightEntry}
+              disabled={!(parseFloat(weightPromptValue) > 0)}
+            >
+              Add to Cart
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
