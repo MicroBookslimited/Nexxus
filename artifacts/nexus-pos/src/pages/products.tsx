@@ -45,6 +45,7 @@ import {
 import type { GetProductResponse } from "@workspace/api-zod";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { PricingUnitsEditor } from "@/components/PricingUnitsEditor";
+import { SubscriptionExpiredDialog } from "@/components/SubscriptionExpiredDialog";
 import { ProductUnitsManager } from "@/components/ProductUnitsManager";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -2904,13 +2905,6 @@ function saveProductErrorToast(
 ): { title: string; description?: string; variant: "destructive" } {
   const apiErr = err as { status?: number; body?: unknown; data?: unknown; message?: string } | undefined;
   const payload = (apiErr?.body ?? apiErr?.data) as { error?: string; message?: string } | undefined;
-  if (apiErr?.status === 402 && payload?.error === "SUBSCRIPTION_EXPIRED") {
-    return {
-      title: "Subscription expired",
-      description: payload.message ?? "Renew your subscription to add or edit products.",
-      variant: "destructive",
-    };
-  }
   return {
     title: fallbackTitle,
     ...(payload?.message ? { description: payload.message } : {}),
@@ -2918,11 +2912,26 @@ function saveProductErrorToast(
   };
 }
 
+/**
+ * If the error is the deliberate 402 SUBSCRIPTION_EXPIRED write-block, return
+ * the server's message (or a default) so callers can show the renewal dialog
+ * instead of a toast. Returns null for any other error.
+ */
+function subscriptionExpiredMessage(err: unknown): string | null {
+  const apiErr = err as { status?: number; body?: unknown; data?: unknown } | undefined;
+  const payload = (apiErr?.body ?? apiErr?.data) as { error?: string; message?: string } | undefined;
+  if (apiErr?.status === 402 && payload?.error === "SUBSCRIPTION_EXPIRED") {
+    return payload.message ?? "Renew your subscription to add or edit products.";
+  }
+  return null;
+}
+
 export function Products() {
   const { can, staff } = useStaff();
   const canManage = can("inventory.manage");
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [subscriptionExpiredMsg, setSubscriptionExpiredMsg] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [showOutOfStock, setShowOutOfStock] = useState(false);
@@ -3884,7 +3893,11 @@ export function Products() {
             queryClient.invalidateQueries({ queryKey: ["/api/products"] });
             if (andClose) { setDialogOpen(false); setEditingProduct(null); setForm(emptyForm()); }
           },
-          onError: (err) => toast(saveProductErrorToast(err, "Update failed")),
+          onError: (err) => {
+            const expiredMsg = subscriptionExpiredMessage(err);
+            if (expiredMsg) { setSubscriptionExpiredMsg(expiredMsg); return; }
+            toast(saveProductErrorToast(err, "Update failed"));
+          },
         },
       );
     } else {
@@ -3919,6 +3932,8 @@ export function Products() {
               });
               return;
             }
+            const expiredMsg = subscriptionExpiredMessage(err);
+            if (expiredMsg) { setSubscriptionExpiredMsg(expiredMsg); return; }
             toast(saveProductErrorToast(err, "Create failed"));
           },
         },
@@ -6553,6 +6568,12 @@ export function Products() {
           queryClient.invalidateQueries({ queryKey: ["/api/products"] });
           queryClient.invalidateQueries({ queryKey: ["/api/products/plan-limit"] });
         }}
+      />
+
+      <SubscriptionExpiredDialog
+        open={subscriptionExpiredMsg !== null}
+        onOpenChange={(open) => { if (!open) setSubscriptionExpiredMsg(null); }}
+        description={subscriptionExpiredMsg ?? undefined}
       />
     </motion.div>
   );

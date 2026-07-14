@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { buildReceiptHtml, openReceiptWindow, openWhatsAppReceipt, receiptOrderFrom, buildBillHtml } from "@/lib/receipt";
 import { CardTypeDialog, type CardType } from "@/components/card-type-dialog";
 import { SplitPaymentDialog } from "@/components/split-payment-dialog";
+import { SubscriptionExpiredDialog } from "@/components/SubscriptionExpiredDialog";
 import { printOrderReceipt } from "@/lib/print-receipt";
 import {
   useListProducts,
@@ -669,6 +670,7 @@ export function POS() {
 
   // ── Subscription state (drives the read-only banner) ──
   const [subscriptionExpired, setSubscriptionExpired] = useState(false);
+  const [subscriptionExpiredMsg, setSubscriptionExpiredMsg] = useState<string | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   useEffect(() => {
     saasMe()
@@ -2124,11 +2126,7 @@ export function POS() {
           }
           if (apiErr?.status === 402 && payload?.error === "SUBSCRIPTION_EXPIRED") {
             setSubscriptionExpired(true);
-            toast({
-              title: "Subscription expired",
-              description: payload.message ?? "Renew to continue selling.",
-              variant: "destructive",
-            });
+            setSubscriptionExpiredMsg(payload.message ?? "Renew to continue selling.");
             return;
           }
           if (apiErr?.status === 400 && payload?.error === "PAYMENT_METHOD_DISABLED") {
@@ -5280,6 +5278,12 @@ export function POS() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SubscriptionExpiredDialog
+        open={subscriptionExpiredMsg !== null}
+        onOpenChange={(open) => { if (!open) setSubscriptionExpiredMsg(null); }}
+        description={subscriptionExpiredMsg ?? undefined}
+      />
     </div>
   );
 }
