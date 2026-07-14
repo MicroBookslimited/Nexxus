@@ -1235,4 +1235,88 @@ router.delete("/superadmin/tenants/:id/manual-payments/:paymentId", async (req, 
   res.json({ success: true });
 });
 
+/* ─── Subscriptions (list / edit / delete) ─── */
+router.get("/superadmin/subscriptions", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const rows = await db
+    .select({
+      id: subscriptionsTable.id,
+      tenantId: subscriptionsTable.tenantId,
+      businessName: tenantsTable.businessName,
+      ownerName: tenantsTable.ownerName,
+      email: tenantsTable.email,
+      planId: subscriptionsTable.planId,
+      planName: subscriptionPlansTable.name,
+      status: subscriptionsTable.status,
+      provider: subscriptionsTable.provider,
+      billingCycle: subscriptionsTable.billingCycle,
+      trialEndsAt: subscriptionsTable.trialEndsAt,
+      currentPeriodStart: subscriptionsTable.currentPeriodStart,
+      currentPeriodEnd: subscriptionsTable.currentPeriodEnd,
+      cancelledAt: subscriptionsTable.cancelledAt,
+      createdAt: subscriptionsTable.createdAt,
+      updatedAt: subscriptionsTable.updatedAt,
+    })
+    .from(subscriptionsTable)
+    .leftJoin(tenantsTable, eq(subscriptionsTable.tenantId, tenantsTable.id))
+    .leftJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
+    .orderBy(desc(subscriptionsTable.createdAt));
+
+  res.json(rows);
+});
+
+const UpdateSubscriptionBody = z.object({
+  planId: z.number().int().positive().nullable().optional(),
+  status: z.enum(["trial", "active", "past_due", "cancelled", "expired"]).optional(),
+  billingCycle: z.enum(["monthly", "annual"]).optional(),
+  currentPeriodStart: z.string().datetime().nullable().optional(),
+  currentPeriodEnd: z.string().datetime().nullable().optional(),
+  trialEndsAt: z.string().datetime().nullable().optional(),
+});
+
+router.patch("/superadmin/subscriptions/:id", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = Number(req.params["id"]);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = UpdateSubscriptionBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request", details: parsed.error.issues }); return; }
+  const d = parsed.data;
+
+  const [existing] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Subscription not found" }); return; }
+
+  if (d.planId != null) {
+    const [plan] = await db.select({ id: subscriptionPlansTable.id }).from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, d.planId));
+    if (!plan) { res.status(400).json({ error: "Plan not found" }); return; }
+  }
+
+  const update: Partial<typeof subscriptionsTable.$inferInsert> = { updatedAt: new Date() };
+  if (d.planId !== undefined) update.planId = d.planId;
+  if (d.status !== undefined) {
+    update.status = d.status;
+    update.cancelledAt = d.status === "cancelled" ? (existing.cancelledAt ?? new Date()) : null;
+  }
+  if (d.billingCycle !== undefined) update.billingCycle = d.billingCycle;
+  if (d.currentPeriodStart !== undefined) update.currentPeriodStart = d.currentPeriodStart ? new Date(d.currentPeriodStart) : null;
+  if (d.currentPeriodEnd !== undefined) update.currentPeriodEnd = d.currentPeriodEnd ? new Date(d.currentPeriodEnd) : null;
+  if (d.trialEndsAt !== undefined) update.trialEndsAt = d.trialEndsAt ? new Date(d.trialEndsAt) : null;
+
+  await db.update(subscriptionsTable).set(update).where(eq(subscriptionsTable.id, id));
+  res.json({ success: true });
+});
+
+router.delete("/superadmin/subscriptions/:id", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = Number(req.params["id"]);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [existing] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Subscription not found" }); return; }
+
+  await db.delete(subscriptionsTable).where(eq(subscriptionsTable.id, id));
+  res.json({ success: true });
+});
+
 export default router;

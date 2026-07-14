@@ -255,6 +255,30 @@ export const superadminDeactivateCoupon = (id: number) =>
 export const superadminGetCouponRedemptions = (id: number) =>
   api<CouponRedemption[]>(`/superadmin/coupons/${id}/redemptions`, { headers: superadminAuthHeaders() });
 
+export interface SubscriptionRow {
+  id: number; tenantId: number;
+  businessName?: string | null; ownerName?: string | null; email?: string | null;
+  planId?: number | null; planName?: string | null;
+  status: string; provider?: string | null; billingCycle: string;
+  trialEndsAt?: string | null;
+  currentPeriodStart?: string | null; currentPeriodEnd?: string | null;
+  cancelledAt?: string | null; createdAt: string; updatedAt?: string | null;
+}
+export interface SubscriptionUpdate {
+  planId?: number | null;
+  status?: "trial" | "active" | "past_due" | "cancelled" | "expired";
+  billingCycle?: "monthly" | "annual";
+  currentPeriodStart?: string | null;
+  currentPeriodEnd?: string | null;
+  trialEndsAt?: string | null;
+}
+export const superadminGetSubscriptions = () =>
+  api<SubscriptionRow[]>("/superadmin/subscriptions", { headers: superadminAuthHeaders() });
+export const superadminUpdateSubscription = (id: number, data: SubscriptionUpdate) =>
+  api<{ success: boolean }>(`/superadmin/subscriptions/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: superadminAuthHeaders() });
+export const superadminDeleteSubscription = (id: number) =>
+  api<{ success: boolean }>(`/superadmin/subscriptions/${id}`, { method: "DELETE", headers: superadminAuthHeaders() });
+
 export const superadminGetBankAccounts = () =>
   api<BankAccount[]>("/superadmin/bank-accounts", { headers: superadminAuthHeaders() });
 

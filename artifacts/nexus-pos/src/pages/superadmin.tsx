@@ -15,6 +15,7 @@ import { SuperadminAnalyticsTab } from "./superadmin-analytics-tab";
 import { TechniciansTab } from "./superadmin-technicians-tab";
 import { SuperadminSupportTab } from "./superadmin-support-tab";
 import { SuperadminCouponsTab } from "./superadmin-coupons-tab";
+import { SuperadminSubscriptionsTab } from "./superadmin-subscriptions-tab";
 import {
   SUPERADMIN_TOKEN_KEY, TENANT_TOKEN_KEY,
   superadminLogin, superadminStats, superadminTenants,
@@ -35,7 +36,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "analytics" | "users" | "tenants" | "technicians" | "payments" | "plans" | "coupons" | "email" | "marketing" | "gateway" | "settings" | "store" | "support" | "impersonation-logs";
+type Tab = "overview" | "analytics" | "users" | "tenants" | "technicians" | "payments" | "plans" | "coupons" | "subscriptions" | "email" | "marketing" | "gateway" | "settings" | "store" | "support" | "impersonation-logs";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -1238,6 +1239,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     { id: "technicians", label: "Technicians", icon: Wrench },
     { id: "payments", label: "Payments", icon: Banknote, badge: stats?.pendingProofs || undefined },
     { id: "plans", label: "Plans", icon: Package },
+    { id: "subscriptions", label: "Subscriptions", icon: CreditCard },
     { id: "coupons", label: "Coupons", icon: Ticket },
     { id: "email", label: "Email", icon: Mail },
     { id: "marketing", label: "Marketing", icon: Megaphone },
@@ -1756,6 +1758,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
         )}
 
         {tab === "coupons" && <SuperadminCouponsTab />}
+        {tab === "subscriptions" && <SuperadminSubscriptionsTab />}
 
         {/* ── EMAIL ── */}
         {tab === "technicians" && <TechniciansTab />}
