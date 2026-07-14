@@ -6,7 +6,9 @@ import {
   techniciansTable, technicianAssignmentsTable,
   subscriptionManualPaymentsTable,
   subscriptionCouponsTable, subscriptionCouponRedemptionsTable,
+  subscriptionInvoicesTable, type SubscriptionInvoice,
 } from "@workspace/db";
+import { issueSubscriptionInvoice, renderInvoiceDocs, sendInvoiceEmail } from "../lib/subscription-invoices";
 import { eq, desc, count, sql, ilike, or, and, isNull } from "drizzle-orm";
 import { computeNextStartDate, addBillingCycle } from "../utils/manual-payments";
 import { getActiveProductCount, planProductLimitError } from "../utils/plan-limits";
@@ -1305,6 +1307,90 @@ router.patch("/superadmin/subscriptions/:id", async (req, res): Promise<void> =>
 
   await db.update(subscriptionsTable).set(update).where(eq(subscriptionsTable.id, id));
   res.json({ success: true });
+});
+
+/**
+ * Resolve the billing document for a subscription line: the tenant's most
+ * recent invoice, or — when none exists — a freshly issued one built from the
+ * subscription's current plan/cycle/period (provider "manual", idempotent per
+ * subscription+period so repeated clicks reuse the same document).
+ */
+async function resolveSubscriptionInvoice(
+  subscriptionId: number,
+): Promise<{ rec: SubscriptionInvoice } | { status: number; error: string }> {
+  const [row] = await db
+    .select({
+      sub: subscriptionsTable,
+      planName: subscriptionPlansTable.name,
+      priceMonthly: subscriptionPlansTable.priceMonthly,
+      priceAnnual: subscriptionPlansTable.priceAnnual,
+    })
+    .from(subscriptionsTable)
+    .leftJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
+    .where(eq(subscriptionsTable.id, subscriptionId));
+  if (!row) return { status: 404, error: "Subscription not found" };
+  const { sub } = row;
+
+  const [latest] = await db
+    .select()
+    .from(subscriptionInvoicesTable)
+    .where(eq(subscriptionInvoicesTable.tenantId, sub.tenantId))
+    .orderBy(desc(subscriptionInvoicesTable.issuedAt))
+    .limit(1);
+  if (latest) return { rec: latest };
+
+  if (!sub.planId || !row.planName) {
+    return { status: 400, error: "This subscription has no plan and no billing history — nothing to invoice." };
+  }
+  const cycle = sub.billingCycle === "annual" ? "annual" : "monthly";
+  const amount = cycle === "annual" ? (row.priceAnnual ?? 0) : (row.priceMonthly ?? 0);
+  const rec = await issueSubscriptionInvoice({
+    tenantId: sub.tenantId,
+    planId: sub.planId,
+    planName: row.planName,
+    billingCycle: cycle,
+    amount,
+    provider: "manual",
+    paymentMethodLabel: "Manual / Offline",
+    providerRef: `superadmin-sub-${sub.id}-${sub.currentPeriodStart?.toISOString() ?? "none"}`,
+    periodStart: sub.currentPeriodStart ?? null,
+    periodEnd: sub.currentPeriodEnd ?? null,
+    sendEmail: false,
+  });
+  if (!rec) return { status: 500, error: "Failed to create the invoice" };
+  return { rec };
+}
+
+router.post("/superadmin/subscriptions/:id/invoice/send", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = Number(req.params["id"]);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const resolved = await resolveSubscriptionInvoice(id);
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+
+  try {
+    await sendInvoiceEmail(resolved.rec);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to send the invoice email";
+    res.status(502).json({ error: msg });
+    return;
+  }
+  res.json({ success: true, invoiceNumber: resolved.rec.invoiceNumber, emailedTo: resolved.rec.billToEmail });
+});
+
+router.get("/superadmin/subscriptions/:id/invoice.pdf", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = Number(req.params["id"]);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const resolved = await resolveSubscriptionInvoice(id);
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+
+  const { invoice } = await renderInvoiceDocs(resolved.rec);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="Invoice-${resolved.rec.invoiceNumber}.pdf"`);
+  res.send(invoice);
 });
 
 router.delete("/superadmin/subscriptions/:id", async (req, res): Promise<void> => {

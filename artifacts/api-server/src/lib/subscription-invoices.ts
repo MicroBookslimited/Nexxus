@@ -20,6 +20,8 @@ export interface IssueInvoiceParams {
   periodStart?: Date | null;
   periodEnd?: Date | null;
   paidAt?: Date;
+  /** Set false to create the record without emailing it (e.g. download-only). */
+  sendEmail?: boolean;
 }
 
 function pad(n: number): string {
@@ -200,6 +202,8 @@ export async function issueSubscriptionInvoice(params: IssueInvoiceParams): Prom
       .set({ invoiceNumber, receiptNumber })
       .where(eq(subscriptionInvoicesTable.id, inserted.id))
       .returning();
+
+    if (params.sendEmail === false) return rec;
 
     try {
       await sendInvoiceEmail(rec);

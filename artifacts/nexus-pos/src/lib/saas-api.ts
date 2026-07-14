@@ -278,6 +278,21 @@ export const superadminUpdateSubscription = (id: number, data: SubscriptionUpdat
   api<{ success: boolean }>(`/superadmin/subscriptions/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: superadminAuthHeaders() });
 export const superadminDeleteSubscription = (id: number) =>
   api<{ success: boolean }>(`/superadmin/subscriptions/${id}`, { method: "DELETE", headers: superadminAuthHeaders() });
+export const superadminSendSubscriptionInvoice = (id: number) =>
+  api<{ success: boolean; invoiceNumber: string; emailedTo: string }>(
+    `/superadmin/subscriptions/${id}/invoice/send`,
+    { method: "POST", headers: superadminAuthHeaders() },
+  );
+export const superadminDownloadSubscriptionInvoice = async (id: number): Promise<{ blob: Blob; filename: string }> => {
+  const resp = await fetch(`/api/superadmin/subscriptions/${id}/invoice.pdf`, { headers: superadminAuthHeaders() });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({ error: resp.statusText })) as Record<string, unknown>;
+    throw new ApiError(String(body["error"] ?? resp.statusText), body, resp.status);
+  }
+  const cd = resp.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(cd);
+  return { blob: await resp.blob(), filename: match?.[1] ?? `Invoice-${id}.pdf` };
+};
 
 export const superadminGetBankAccounts = () =>
   api<BankAccount[]>("/superadmin/bank-accounts", { headers: superadminAuthHeaders() });

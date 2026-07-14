@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { RefreshCw, CreditCard, Trash2, Pencil, X, Search } from "lucide-react";
+import { RefreshCw, CreditCard, Trash2, Pencil, X, Search, Send, FileDown } from "lucide-react";
 import {
   superadminGetSubscriptions, superadminUpdateSubscription, superadminDeleteSubscription,
-  superadminGetPlans,
+  superadminGetPlans, superadminSendSubscriptionInvoice, superadminDownloadSubscriptionInvoice,
   type SubscriptionRow, type SubscriptionUpdate, type Plan,
 } from "@/lib/saas-api";
 
@@ -176,6 +176,40 @@ export function SuperadminSubscriptionsTab() {
     });
   }, [subs, search, statusFilter]);
 
+  const [invoiceBusy, setInvoiceBusy] = useState<{ id: number; action: "send" | "download" } | null>(null);
+
+  async function sendInvoice(s: SubscriptionRow) {
+    if (!confirm(`Email the latest invoice to ${s.email ?? s.businessName ?? `tenant #${s.tenantId}`}?`)) return;
+    setInvoiceBusy({ id: s.id, action: "send" });
+    try {
+      const r = await superadminSendSubscriptionInvoice(s.id);
+      alert(`Invoice ${r.invoiceNumber} sent to ${r.emailedTo}.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to send the invoice.");
+    } finally {
+      setInvoiceBusy(null);
+    }
+  }
+
+  async function downloadInvoice(s: SubscriptionRow) {
+    setInvoiceBusy({ id: s.id, action: "download" });
+    try {
+      const { blob, filename } = await superadminDownloadSubscriptionInvoice(s.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to download the invoice.");
+    } finally {
+      setInvoiceBusy(null);
+    }
+  }
+
   async function markInactive(s: SubscriptionRow) {
     if (!confirm(`Set ${s.businessName ?? "this subscription"} to cancelled? The tenant will lose plan access.`)) return;
     await superadminUpdateSubscription(s.id, { status: "cancelled" });
@@ -259,6 +293,14 @@ export function SuperadminSubscriptionsTab() {
                     <td className="px-4 py-3 text-[#94a3b8]">{fmtDate(s.currentPeriodEnd)}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1.5 justify-end">
+                        <button onClick={() => sendInvoice(s)} title="Send invoice" disabled={invoiceBusy !== null}
+                          className="p-1.5 rounded-lg text-[#475569] hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50">
+                          {invoiceBusy?.id === s.id && invoiceBusy.action === "send" ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                        </button>
+                        <button onClick={() => downloadInvoice(s)} title="Download invoice" disabled={invoiceBusy !== null}
+                          className="p-1.5 rounded-lg text-[#475569] hover:text-sky-400 hover:bg-sky-500/10 transition-colors disabled:opacity-50">
+                          {invoiceBusy?.id === s.id && invoiceBusy.action === "download" ? <RefreshCw size={14} className="animate-spin" /> : <FileDown size={14} />}
+                        </button>
                         <button onClick={() => setEditing(s)} title="Edit"
                           className="p-1.5 rounded-lg text-[#475569] hover:text-[#3b82f6] hover:bg-[#3b82f6]/10 transition-colors"><Pencil size={14} /></button>
                         {s.status !== "cancelled" && (
@@ -293,6 +335,14 @@ export function SuperadminSubscriptionsTab() {
                   <div><span className="text-[#475569]">End: </span><span className="text-[#94a3b8]">{fmtDate(s.currentPeriodEnd)}</span></div>
                 </div>
                 <div className="flex gap-2 mt-3 pt-3 border-t border-[#2a3a55]">
+                  <button onClick={() => sendInvoice(s)} disabled={invoiceBusy !== null}
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-[#0f1729] border border-[#2a3a55] text-emerald-400 py-1.5 rounded-lg text-xs disabled:opacity-50">
+                    {invoiceBusy?.id === s.id && invoiceBusy.action === "send" ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />} Invoice
+                  </button>
+                  <button onClick={() => downloadInvoice(s)} disabled={invoiceBusy !== null}
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-[#0f1729] border border-[#2a3a55] text-sky-400 py-1.5 rounded-lg text-xs disabled:opacity-50">
+                    {invoiceBusy?.id === s.id && invoiceBusy.action === "download" ? <RefreshCw size={12} className="animate-spin" /> : <FileDown size={12} />} PDF
+                  </button>
                   <button onClick={() => setEditing(s)}
                     className="flex-1 flex items-center justify-center gap-1.5 bg-[#0f1729] border border-[#2a3a55] text-[#94a3b8] hover:text-white py-1.5 rounded-lg text-xs"><Pencil size={12} /> Edit</button>
                   {s.status !== "cancelled" && (
