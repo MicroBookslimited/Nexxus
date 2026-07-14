@@ -8,7 +8,7 @@ import {
 import {
   TENANT_TOKEN_KEY, saasMe, getPlans, createPayPalOrder, capturePayPalOrder,
   initiatePowerTranz, getPowerTranz3dsStatus, getBankAccounts, submitBankTransferProof, getMyBankTransferProofs,
-  activateFreeSubscription, getBillingInvoices, openBillingPdf, resendBillingInvoice,
+  activateFreeSubscription, redeemCoupon, getBillingInvoices, openBillingPdf, resendBillingInvoice,
   type Plan, type Tenant, type Subscription, type BankAccount, type BankTransferProofRow, type NextScheduledPayment,
   type BillingInvoiceRow,
 } from "@/lib/saas-api";
@@ -33,6 +33,9 @@ export function SubscriptionPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [paypalRendered, setPaypalRendered] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponError, setCouponError] = useState("");
+  const [redeemingCoupon, setRedeemingCoupon] = useState(false);
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [myProofs, setMyProofs] = useState<BankTransferProofRow[]>([]);
@@ -217,6 +220,23 @@ export function SubscriptionPage() {
       setError(e instanceof Error ? e.message : "Failed to activate plan.");
     } finally {
       setIsProcessing(false);
+    }
+  }
+
+  async function handleRedeemCoupon() {
+    const code = couponCode.trim();
+    if (!code) { setCouponError("Please enter a code."); return; }
+    setCouponError(""); setError(""); setRedeemingCoupon(true);
+    try {
+      const res = await redeemCoupon(code);
+      setSuccess(`Code accepted — ${res.plan.name} is now active!`);
+      setCouponCode("");
+      setSelectedPlan(null);
+      await reload();
+    } catch (e) {
+      setCouponError(e instanceof Error ? e.message : "Could not redeem that code.");
+    } finally {
+      setRedeemingCoupon(false);
     }
   }
 
@@ -563,6 +583,41 @@ export function SubscriptionPage() {
               </button>
             );
           })()}
+
+          {/* Redeem a code (unlocks a promotional plan) */}
+          <div className="mt-6 bg-[#1a2332] border border-[#2a3a55] rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Zap size={15} className="text-amber-400" />
+              <h3 className="text-sm font-semibold text-white">Have a code?</h3>
+            </div>
+            <p className="text-xs text-[#94a3b8] mb-3">
+              Enter a promotional code to unlock a special plan.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={couponCode}
+                onChange={e => { setCouponCode(e.target.value.toUpperCase()); setCouponError(""); }}
+                onKeyDown={e => { if (e.key === "Enter") handleRedeemCoupon(); }}
+                placeholder="Enter code"
+                autoCapitalize="characters"
+                className="flex-1 bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#475569] uppercase tracking-wide focus:outline-none focus:border-[#3b82f6]"
+              />
+              <button
+                onClick={handleRedeemCoupon}
+                disabled={redeemingCoupon || !couponCode.trim()}
+                className="bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-[#0f1729] font-semibold px-5 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
+              >
+                {redeemingCoupon ? <RefreshCw size={15} className="animate-spin" /> : <Check size={15} />}
+                Redeem
+              </button>
+            </div>
+            {couponError && (
+              <p className="text-xs text-red-400 mt-2 flex items-center gap-1.5">
+                <AlertTriangle size={12} /> {couponError}
+              </p>
+            )}
+          </div>
         </div>
       )}
 

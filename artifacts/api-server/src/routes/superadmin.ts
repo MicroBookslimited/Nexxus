@@ -5,6 +5,7 @@ import {
   impersonationLogsTable, tenantAdminUsersTable,
   techniciansTable, technicianAssignmentsTable,
   subscriptionManualPaymentsTable,
+  subscriptionCouponsTable, subscriptionCouponRedemptionsTable,
 } from "@workspace/db";
 import { eq, desc, count, sql, ilike, or, and, isNull } from "drizzle-orm";
 import { computeNextStartDate, addBillingCycle } from "../utils/manual-payments";
@@ -216,7 +217,7 @@ router.post("/superadmin/tenants", async (req, res): Promise<void> => {
 
   const subStatus = subscriptionStatus ?? (planId ? "active" : "trial");
   const trialEnd = new Date();
-  trialEnd.setDate(trialEnd.getDate() + 14);
+  trialEnd.setDate(trialEnd.getDate() + 3);
 
   const now = new Date();
   const periodEnd = new Date(now);
@@ -683,6 +684,111 @@ router.delete("/superadmin/plans/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params["id"] ?? "0", 10);
   await db.update(subscriptionPlansTable).set({ isActive: false }).where(eq(subscriptionPlansTable.id, id));
   res.json({ success: true });
+});
+
+/* ─── Superadmin Coupon CRUD ─── */
+// Coupons unlock a promotional plan for a tenant. Each code carries a redemption
+// limit (1 = single-use, N = batch) and is enforced one-redemption-per-tenant.
+router.get("/superadmin/coupons", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const rows = await db
+    .select({
+      id: subscriptionCouponsTable.id,
+      code: subscriptionCouponsTable.code,
+      planId: subscriptionCouponsTable.planId,
+      planName: subscriptionPlansTable.name,
+      billingCycle: subscriptionCouponsTable.billingCycle,
+      maxRedemptions: subscriptionCouponsTable.maxRedemptions,
+      redemptionCount: subscriptionCouponsTable.redemptionCount,
+      expiresAt: subscriptionCouponsTable.expiresAt,
+      isActive: subscriptionCouponsTable.isActive,
+      notes: subscriptionCouponsTable.notes,
+      createdBy: subscriptionCouponsTable.createdBy,
+      createdAt: subscriptionCouponsTable.createdAt,
+    })
+    .from(subscriptionCouponsTable)
+    .leftJoin(subscriptionPlansTable, eq(subscriptionCouponsTable.planId, subscriptionPlansTable.id))
+    .orderBy(desc(subscriptionCouponsTable.createdAt));
+  res.json(rows);
+});
+
+const CouponBody = z.object({
+  code: z.string().min(1).max(64),
+  planId: coerceInt.pipe(z.number().int().min(1)),
+  billingCycle: z.enum(["monthly", "annual"]).default("annual"),
+  maxRedemptions: coerceInt.pipe(z.number().int().min(1)).default(1),
+  expiresAt: z.string().datetime().nullish().or(z.literal("").transform(() => null)),
+  isActive: z.union([z.boolean(), z.enum(["true", "false"]).transform(v => v === "true")]).default(true),
+  notes: z.string().max(500).optional(),
+});
+
+router.post("/superadmin/coupons", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const parsed = CouponBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ") }); return; }
+  const { code, expiresAt, ...rest } = parsed.data;
+  const normalizedCode = code.trim().toUpperCase();
+
+  const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, rest.planId));
+  if (!plan) { res.status(400).json({ error: "Selected plan does not exist." }); return; }
+
+  const [existing] = await db.select().from(subscriptionCouponsTable).where(eq(subscriptionCouponsTable.code, normalizedCode));
+  if (existing) { res.status(409).json({ error: "A coupon with that code already exists." }); return; }
+
+  const [coupon] = await db.insert(subscriptionCouponsTable).values({
+    ...rest,
+    code: normalizedCode,
+    expiresAt: expiresAt ? new Date(expiresAt) : null,
+    createdBy: getSuperadminEmailFromRequest(req),
+  }).returning();
+  res.status(201).json(coupon);
+});
+
+// Update mutable coupon fields (activate/deactivate, raise the limit, extend expiry, notes).
+const CouponPatchBody = z.object({
+  isActive: z.union([z.boolean(), z.enum(["true", "false"]).transform(v => v === "true")]).optional(),
+  maxRedemptions: coerceInt.pipe(z.number().int().min(1)).optional(),
+  expiresAt: z.string().datetime().nullish().or(z.literal("").transform(() => null)),
+  notes: z.string().max(500).optional(),
+});
+
+router.patch("/superadmin/coupons/:id", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "0", 10);
+  const parsed = CouponPatchBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ") }); return; }
+  const { expiresAt, ...rest } = parsed.data;
+  const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+  if (expiresAt !== undefined) patch["expiresAt"] = expiresAt ? new Date(expiresAt) : null;
+  const [coupon] = await db.update(subscriptionCouponsTable).set(patch).where(eq(subscriptionCouponsTable.id, id)).returning();
+  if (!coupon) { res.status(404).json({ error: "Coupon not found" }); return; }
+  res.json(coupon);
+});
+
+router.delete("/superadmin/coupons/:id", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "0", 10);
+  await db.update(subscriptionCouponsTable).set({ isActive: false, updatedAt: new Date() }).where(eq(subscriptionCouponsTable.id, id));
+  res.json({ success: true });
+});
+
+// Redemption history for a single coupon (who redeemed it and when).
+router.get("/superadmin/coupons/:id/redemptions", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "0", 10);
+  const rows = await db
+    .select({
+      id: subscriptionCouponRedemptionsTable.id,
+      tenantId: subscriptionCouponRedemptionsTable.tenantId,
+      businessName: tenantsTable.businessName,
+      email: tenantsTable.email,
+      redeemedAt: subscriptionCouponRedemptionsTable.redeemedAt,
+    })
+    .from(subscriptionCouponRedemptionsTable)
+    .leftJoin(tenantsTable, eq(subscriptionCouponRedemptionsTable.tenantId, tenantsTable.id))
+    .where(eq(subscriptionCouponRedemptionsTable.couponId, id))
+    .orderBy(desc(subscriptionCouponRedemptionsTable.redeemedAt));
+  res.json(rows);
 });
 
 /* ─── All Users (Tenants) with full search ─── */

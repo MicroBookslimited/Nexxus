@@ -238,7 +238,7 @@ function Hero() {
             className="flex items-center gap-2 px-8 py-4 rounded-xl font-semibold text-white gradient-blue text-base hover:opacity-90 transition-all"
             style={{ boxShadow: "0 0 40px rgba(59,130,246,0.3)" }}
           >
-            Start Free 14-Day Trial
+            Start Free 3-Day Trial
             <Icon name="arrow_right" cls="w-4 h-4" />
           </a>
           <a href="#how-it-works"
@@ -577,7 +577,7 @@ function Pricing() {
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-white mb-4">Plans that grow with you</h2>
           <p className="text-lg max-w-xl mx-auto" style={{ color: "#64748b" }}>
-            No hidden fees. No per-transaction cuts. Just flat monthly pricing with a free 14-day trial on every plan.
+            No hidden fees. No per-transaction cuts. Just flat monthly pricing with a free 3-day trial on every plan.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
@@ -629,7 +629,7 @@ function Pricing() {
           ))}
         </div>
         <p className="text-center text-sm mt-8" style={{ color: "#475569" }}>
-          All plans include a 14-day free trial. No credit card required to start.
+          All plans include a 3-day free trial. No credit card required to start.
         </p>
       </div>
     </section>
@@ -701,7 +701,7 @@ function FAQ() {
   const faqs = [
     { q: "Do I need to buy special hardware?", a: "No — NEXXUS POS runs in any modern web browser on tablets, touchscreens, or desktops. You can use hardware you already own. We support standard 80mm thermal printers, cash drawers, and card terminals from all major brands." },
     { q: "Can I use NEXXUS offline?", a: "Yes. NEXXUS POS continues to work during internet outages. Orders are queued locally and sync automatically when your connection is restored. You won't lose a single sale." },
-    { q: "How long does the free trial last?", a: "Every plan includes a 14-day free trial with no credit card required. You get full access to all features on your chosen plan from day one." },
+    { q: "How long does the free trial last?", a: "Every plan includes a 3-day free trial with no credit card required. You get full access to all features on your chosen plan from day one." },
     { q: "How many staff members can I add?", a: "All plans support unlimited staff accounts. Each staff member gets a unique PIN and role (cashier, manager, or kitchen). Permissions are managed at the plan level, not per user." },
     { q: "Can I manage multiple locations?", a: "Yes — the Enterprise plan includes a multi-location dashboard where you can view sales, inventory, and staff across all your sites from a single login." },
     { q: "What payment methods does NEXXUS support?", a: "We support cash, card (via PowerTranz integration), PayPal, and split payments. You can also log custom payment types like gift cards or direct transfer." },
@@ -766,7 +766,7 @@ function CTA() {
           <div className="relative">
             <h2 className="text-4xl md:text-5xl font-black text-white mb-4">Ready to power your business?</h2>
             <p className="text-lg mb-8 max-w-xl mx-auto" style={{ color: "#94a3b8" }}>
-              Join thousands of businesses already running on NEXXUS POS. Start your free 14-day trial today — no credit card, no commitment.
+              Join thousands of businesses already running on NEXXUS POS. Start your free 3-day trial today — no credit card, no commitment.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a href={`${POS_URL}signup`}

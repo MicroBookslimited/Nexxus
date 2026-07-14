@@ -300,7 +300,7 @@ export function Onboarding() {
           {step === 1 && (
             <form onSubmit={handleStep1} noValidate>
               <h2 className="text-2xl font-bold text-white mb-1">Create your account</h2>
-              <p className="text-[#94a3b8] text-sm mb-6">Start your 14-day free trial — no credit card required.</p>
+              <p className="text-[#94a3b8] text-sm mb-6">Start your 3-day free trial — no credit card required.</p>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-[#94a3b8] mb-1">Business Name</label>
@@ -404,7 +404,7 @@ export function Onboarding() {
           {step === 3 && (
             <form onSubmit={handleStep3}>
               <h2 className="text-2xl font-bold text-white mb-1">Choose your plan</h2>
-              <p className="text-[#94a3b8] text-sm mb-4">Start free for 14 days, then pay as you grow.</p>
+              <p className="text-[#94a3b8] text-sm mb-4">Start free for 3 days, then pay as you grow.</p>
 
               <div className="flex items-center justify-center gap-3 mb-6 bg-[#0f1729] rounded-lg p-1 w-fit mx-auto">
                 <button type="button" onClick={() => setBillingCycle("monthly")}
@@ -487,7 +487,7 @@ export function Onboarding() {
               <p className="text-[#94a3b8] text-sm mb-2">
                 {selectedPlan?.name} — ${billingCycle === "annual" ? selectedPlan?.priceAnnual : selectedPlan?.priceMonthly}/{billingCycle === "annual" ? "year" : "month"}
               </p>
-              <p className="text-xs text-green-400 mb-6">Your 14-day free trial is already active. You will be charged after it ends.</p>
+              <p className="text-xs text-green-400 mb-6">Your 3-day free trial is already active. You will be charged after it ends.</p>
 
               <div className="flex gap-2 mb-6">
                 <button type="button" onClick={() => { setPaymentMethod("paypal"); setPaypalRendered(false); }}
@@ -560,7 +560,7 @@ export function Onboarding() {
               )}
 
               <div className="mt-6 border-t border-[#2a3a55] pt-5">
-                <p className="text-xs text-center text-[#475569] mb-3">Your 14-day free trial is already active — payment is only required when the trial ends.</p>
+                <p className="text-xs text-center text-[#475569] mb-3">Your 3-day free trial is already active — payment is only required when the trial ends.</p>
                 <button
                   type="button"
                   onClick={async () => { setError(""); setIsLoading(true); try { await saasUpdateOnboarding(5, {}); } catch { /* ignore */ } finally { setIsLoading(false); } setStep(5); }}
@@ -748,7 +748,7 @@ export function Onboarding() {
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">You're all set!</h2>
               <p className="text-[#94a3b8] mb-2">Welcome to NEXXUS POS, <strong className="text-white">{form.businessName || "your business"}</strong>.</p>
-              <p className="text-sm text-[#475569] mb-8">Your 14-day trial is active. Explore all features and start selling in minutes.</p>
+              <p className="text-sm text-[#475569] mb-8">Your 3-day trial is active. Explore all features and start selling in minutes.</p>
               <button onClick={() => navigate("/dashboard")}
                 className="bg-[#3b82f6] hover:bg-blue-500 text-white font-semibold py-3 px-8 rounded-lg flex items-center justify-center gap-2 mx-auto transition-colors">
                 Go to Dashboard <ArrowRight size={16} />

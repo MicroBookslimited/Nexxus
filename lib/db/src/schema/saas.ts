@@ -276,6 +276,46 @@ export const subscriptionInvoicesTable = pgTable("subscription_invoices", {
 
 export type SubscriptionInvoice = typeof subscriptionInvoicesTable.$inferSelect;
 
+/**
+ * Superadmin-issued coupon codes that unlock a promotional subscription plan
+ * (e.g. "1 Year Free"). Promotional plans can ONLY be activated by redeeming a
+ * valid coupon — they are rejected by the self-serve free-activate path. Each
+ * code carries a redemption limit (1 = single-use, N = batch) and an optional
+ * expiry; redemptions are tracked one-per-tenant in the redemptions table below.
+ */
+export const subscriptionCouponsTable = pgTable("subscription_coupons", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  planId: integer("plan_id").notNull().references(() => subscriptionPlansTable.id),
+  // Billing cycle recorded on the resulting subscription. When the plan has a
+  // durationDays override (e.g. 365), that takes precedence for the period end.
+  billingCycle: text("billing_cycle").notNull().default("annual"),
+  maxRedemptions: integer("max_redemptions").notNull().default(1),
+  redemptionCount: integer("redemption_count").notNull().default(0),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdBy: text("created_by").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type SubscriptionCoupon = typeof subscriptionCouponsTable.$inferSelect;
+
+export const subscriptionCouponRedemptionsTable = pgTable("subscription_coupon_redemptions", {
+  id: serial("id").primaryKey(),
+  couponId: integer("coupon_id").notNull().references(() => subscriptionCouponsTable.id, { onDelete: "cascade" }),
+  tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id, { onDelete: "cascade" }),
+  planId: integer("plan_id").references(() => subscriptionPlansTable.id),
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  // One redemption per (coupon, tenant): a tenant cannot re-redeem the same code.
+  uniqCouponTenant: uniqueIndex("subscription_coupon_redemptions_coupon_tenant_uidx")
+    .on(t.couponId, t.tenantId),
+}));
+
+export type SubscriptionCouponRedemption = typeof subscriptionCouponRedemptionsTable.$inferSelect;
+
 export const bankTransferProofsTable = pgTable("bank_transfer_proofs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id),

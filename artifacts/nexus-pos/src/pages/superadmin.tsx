@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Settings, Pencil, Trash2, Download, ChevronRight,
   LogIn, KeyRound, Check, Package, ToggleLeft, ToggleRight, Mail,
   Cpu, Globe, ShoppingBag, ClipboardList, Megaphone, Wrench,
-  BarChart3, LifeBuoy,
+  BarChart3, LifeBuoy, Ticket,
 } from "lucide-react";
 import { EmailTab } from "./superadmin-email-tab";
 import { SuperadminMarketingTab } from "./superadmin-marketing-tab";
@@ -14,6 +14,7 @@ import { SuperadminStoreTab } from "./superadmin-store-tab";
 import { SuperadminAnalyticsTab } from "./superadmin-analytics-tab";
 import { TechniciansTab } from "./superadmin-technicians-tab";
 import { SuperadminSupportTab } from "./superadmin-support-tab";
+import { SuperadminCouponsTab } from "./superadmin-coupons-tab";
 import {
   SUPERADMIN_TOKEN_KEY, TENANT_TOKEN_KEY,
   superadminLogin, superadminStats, superadminTenants,
@@ -34,7 +35,7 @@ type Stats = {
   planBreakdown: { planName: string; count: number }[];
 };
 
-type Tab = "overview" | "analytics" | "users" | "tenants" | "technicians" | "payments" | "plans" | "email" | "marketing" | "gateway" | "settings" | "store" | "support" | "impersonation-logs";
+type Tab = "overview" | "analytics" | "users" | "tenants" | "technicians" | "payments" | "plans" | "coupons" | "email" | "marketing" | "gateway" | "settings" | "store" | "support" | "impersonation-logs";
 
 /* ─── Login Screen ─── */
 function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
@@ -1223,6 +1224,7 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
     { id: "technicians", label: "Technicians", icon: Wrench },
     { id: "payments", label: "Payments", icon: Banknote, badge: stats?.pendingProofs || undefined },
     { id: "plans", label: "Plans", icon: Package },
+    { id: "coupons", label: "Coupons", icon: Ticket },
     { id: "email", label: "Email", icon: Mail },
     { id: "marketing", label: "Marketing", icon: Megaphone },
     { id: "gateway", label: "Gateway", icon: CreditCard },
@@ -1738,6 +1740,8 @@ function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
             )}
           </>
         )}
+
+        {tab === "coupons" && <SuperadminCouponsTab />}
 
         {/* ── EMAIL ── */}
         {tab === "technicians" && <TechniciansTab />}

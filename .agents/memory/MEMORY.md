@@ -51,4 +51,6 @@
 - [Shift cash attribution](shift-cash-attribution.md) — expected-cash must window orders by COALESCE(completedAt, createdAt) in EVERY session endpoint (incl. admin-close), or pay-later orders cause false shortages.
 - [Void must release tables](void-releases-table.md) — any path that voids/cancels a table-linked order must free the dining table (mirror the charge path) or it sticks occupied.
 - [Fixie proxy + Node 24 undici](fixie-proxy-node24-undici.md) — IP-whitelisted vendor calls route via Fixie ProxyAgent; MUST use undici's own fetch (global fetch throws), cache dispatcher singleton, whitelist ALL Fixie IPs.
+- [Promo plans are coupon-gated](promo-plan-coupon-gating.md) — isPromotional plans NEVER self-serve; free-activate 403s them, redeem-coupon is the only path; per-code cap + one-per-tenant unique index, redeem in one rollback-safe txn.
+- [billing.ts restricted-role gap](billing-restricted-role-gap.md) — billing.ts's local getTenantFromAuth does NOT block technician-restricted tokens; subscription-mutating handlers must call requireFullTenant explicitly.
 - [Subscription invoice idempotency](subscription-invoice-idempotency.md) — auto-issued billing PDFs dedupe per (tenant,provider,providerRef) via partial unique index + onConflictDoNothing; every payment path must pass a stable non-null providerRef.

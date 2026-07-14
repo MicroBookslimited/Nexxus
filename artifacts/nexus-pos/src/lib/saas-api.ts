@@ -229,6 +229,31 @@ export const superadminUpdatePlan = (id: number, data: Partial<PlanInput>) =>
 export const superadminDeletePlan = (id: number) =>
   api<{ success: boolean }>(`/superadmin/plans/${id}`, { method: "DELETE", headers: superadminAuthHeaders() });
 
+/* ─── Superadmin Coupons ─── */
+export interface Coupon {
+  id: number; code: string; planId: number; planName?: string | null;
+  billingCycle: string; maxRedemptions: number; redemptionCount: number;
+  expiresAt?: string | null; isActive: boolean; notes?: string | null;
+  createdBy?: string; createdAt: string;
+}
+export interface CouponInput {
+  code: string; planId: number; billingCycle: "monthly" | "annual";
+  maxRedemptions: number; expiresAt?: string | null; isActive?: boolean; notes?: string;
+}
+export interface CouponRedemption {
+  id: number; tenantId: number; businessName?: string | null; email?: string | null; redeemedAt: string;
+}
+export const superadminGetCoupons = () =>
+  api<Coupon[]>("/superadmin/coupons", { headers: superadminAuthHeaders() });
+export const superadminCreateCoupon = (data: CouponInput) =>
+  api<Coupon>("/superadmin/coupons", { method: "POST", body: JSON.stringify(data), headers: superadminAuthHeaders() });
+export const superadminUpdateCoupon = (id: number, data: Partial<Pick<CouponInput, "maxRedemptions" | "expiresAt" | "isActive" | "notes">>) =>
+  api<Coupon>(`/superadmin/coupons/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: superadminAuthHeaders() });
+export const superadminDeactivateCoupon = (id: number) =>
+  api<{ success: boolean }>(`/superadmin/coupons/${id}`, { method: "DELETE", headers: superadminAuthHeaders() });
+export const superadminGetCouponRedemptions = (id: number) =>
+  api<CouponRedemption[]>(`/superadmin/coupons/${id}/redemptions`, { headers: superadminAuthHeaders() });
+
 export const superadminGetBankAccounts = () =>
   api<BankAccount[]>("/superadmin/bank-accounts", { headers: superadminAuthHeaders() });
 
@@ -1410,6 +1435,13 @@ export const activateFreeSubscription = (planSlug: string, billingCycle: "monthl
   api<{ success: boolean; plan: { name: string; slug: string } }>("/billing/free-activate", {
     method: "POST",
     body: JSON.stringify({ planSlug, billingCycle }),
+    headers: tenantAuthHeaders(),
+  });
+
+export const redeemCoupon = (code: string) =>
+  api<{ success: boolean; plan: { name: string; slug: string } }>("/billing/redeem-coupon", {
+    method: "POST",
+    body: JSON.stringify({ code }),
     headers: tenantAuthHeaders(),
   });
 

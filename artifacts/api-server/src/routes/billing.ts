@@ -2,13 +2,14 @@ import { Router, type IRouter } from "express";
 import {
   db, subscriptionsTable, subscriptionPlansTable, tenantsTable,
   bankAccountSettingsTable, bankTransferProofsTable, subscriptionInvoicesTable,
+  subscriptionCouponsTable, subscriptionCouponRedemptionsTable,
   type SubscriptionInvoice,
 } from "@workspace/db";
 import { recordResellerCommission } from "./reseller";
 import { creditWallet as creditTopupWallet } from "./topup";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql, lt } from "drizzle-orm";
 import { z } from "zod";
-import { verifyTenantToken } from "./saas-auth";
+import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { getSetting } from "./settings";
 import { getActiveProductCount, planProductLimitError } from "../utils/plan-limits";
 import { issueSubscriptionInvoice, renderInvoiceDocs, sendInvoiceEmail } from "../lib/subscription-invoices";
@@ -644,6 +645,8 @@ const FreeActivateBody = z.object({
 });
 
 router.post("/billing/free-activate", async (req, res): Promise<void> => {
+  // Restricted-role sessions (e.g. technician impersonation) may not mutate subscriptions.
+  if (!requireFullTenant(req, res)) return;
   const tenant = getTenantFromAuth(req);
   if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -652,6 +655,15 @@ router.post("/billing/free-activate", async (req, res): Promise<void> => {
 
   const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.slug, parsed.data.planSlug));
   if (!plan) { res.status(404).json({ error: "Plan not found" }); return; }
+
+  // Promotional plans (e.g. "1 Year Free") can NEVER be self-activated for free.
+  // They are gated behind a superadmin-issued coupon code (POST /billing/redeem-coupon).
+  // This closes the abuse vector where a free/trial tenant could repeatedly
+  // re-activate a hidden promotional plan from the plan picker.
+  if (plan.isPromotional) {
+    res.status(403).json({ error: "This plan requires a coupon code. Enter your code under \"Redeem a code\"." });
+    return;
+  }
 
   const price = parsed.data.billingCycle === "annual" ? plan.priceAnnual : plan.priceMonthly;
   if (price > 0) {
@@ -697,6 +709,109 @@ router.post("/billing/free-activate", async (req, res): Promise<void> => {
   await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, tenant.tenantId));
 
   res.json({ success: true, plan: { name: plan.name, slug: plan.slug } });
+});
+
+/* ─── Redeem a Coupon Code (unlocks a promotional plan) ─── */
+class CouponExhaustedError extends Error {}
+const RedeemCouponBody = z.object({ code: z.string().min(1).max(64) });
+
+router.post("/billing/redeem-coupon", async (req, res): Promise<void> => {
+  // Restricted-role sessions (e.g. technician impersonation) may not mutate subscriptions.
+  if (!requireFullTenant(req, res)) return;
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const parsed = RedeemCouponBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Please enter a coupon code." }); return; }
+  const code = parsed.data.code.trim().toUpperCase();
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [coupon] = await tx.select().from(subscriptionCouponsTable)
+        .where(eq(subscriptionCouponsTable.code, code));
+      if (!coupon || !coupon.isActive) {
+        return { status: 404 as const, body: { error: "That code is not valid." } };
+      }
+      if (coupon.expiresAt && coupon.expiresAt.getTime() <= Date.now()) {
+        return { status: 400 as const, body: { error: "That code has expired." } };
+      }
+
+      const [plan] = await tx.select().from(subscriptionPlansTable)
+        .where(eq(subscriptionPlansTable.id, coupon.planId));
+      if (!plan || !plan.isActive) {
+        return { status: 400 as const, body: { error: "The plan for this code is no longer available." } };
+      }
+
+      // Enforce the plan's product ceiling before granting the plan.
+      const limitErr = planProductLimitError(plan, await getActiveProductCount(tenant.tenantId));
+      if (limitErr) return { status: 409 as const, body: limitErr };
+
+      // One redemption per (coupon, tenant). The unique index makes this race-safe;
+      // catch the violation and report a friendly message.
+      try {
+        await tx.insert(subscriptionCouponRedemptionsTable).values({
+          couponId: coupon.id, tenantId: tenant.tenantId, planId: plan.id,
+        });
+      } catch (e) {
+        if (e instanceof Error && /unique|duplicate/i.test(e.message)) {
+          return { status: 409 as const, body: { error: "You have already redeemed this code." } };
+        }
+        throw e;
+      }
+
+      // Atomically claim one redemption slot. The conditional WHERE guards against
+      // over-redeeming a batch code under concurrency.
+      const claimed = await tx.update(subscriptionCouponsTable)
+        .set({ redemptionCount: sql`${subscriptionCouponsTable.redemptionCount} + 1`, updatedAt: new Date() })
+        .where(and(
+          eq(subscriptionCouponsTable.id, coupon.id),
+          eq(subscriptionCouponsTable.isActive, true),
+          lt(subscriptionCouponsTable.redemptionCount, subscriptionCouponsTable.maxRedemptions),
+        ))
+        .returning({ id: subscriptionCouponsTable.id });
+      if (claimed.length === 0) {
+        // Roll back the redemption insert above.
+        throw new CouponExhaustedError();
+      }
+
+      const billingCycle = coupon.billingCycle === "monthly" ? "monthly" : "annual";
+      const now = new Date();
+      const periodEnd = new Date(now);
+      if (plan.durationDays && plan.durationDays > 0) {
+        periodEnd.setDate(periodEnd.getDate() + plan.durationDays);
+      } else if (billingCycle === "annual") {
+        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+      } else {
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
+      }
+
+      const [existing] = await tx.select().from(subscriptionsTable)
+        .where(eq(subscriptionsTable.tenantId, tenant.tenantId));
+      if (existing) {
+        await tx.update(subscriptionsTable).set({
+          planId: plan.id, status: "active", provider: "free", providerOrderId: null,
+          billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd, updatedAt: now,
+        }).where(eq(subscriptionsTable.tenantId, tenant.tenantId));
+      } else {
+        await tx.insert(subscriptionsTable).values({
+          tenantId: tenant.tenantId, planId: plan.id, status: "active", provider: "free",
+          billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd,
+        });
+      }
+      await tx.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 })
+        .where(eq(tenantsTable.id, tenant.tenantId));
+
+      return { status: 200 as const, body: { success: true, plan: { name: plan.name, slug: plan.slug } } };
+    });
+    res.status(result.status).json(result.body);
+  } catch (e) {
+    if (e instanceof CouponExhaustedError) {
+      res.status(409).json({ error: "This code has already been fully redeemed." });
+      return;
+    }
+    req.log.error({ err: e }, "coupon redemption failed");
+    res.status(500).json({ error: "Could not redeem code. Please try again." });
+  }
 });
 
 /* ─── Submit Bank Transfer Proof ─── */

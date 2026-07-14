@@ -171,7 +171,7 @@ router.post("/saas/register", async (req, res): Promise<void> => {
     .returning();
 
   const trialEnd = new Date();
-  trialEnd.setDate(trialEnd.getDate() + 14);
+  trialEnd.setDate(trialEnd.getDate() + 3);
 
   await db.insert(subscriptionsTable).values({
     tenantId: tenant.id,
