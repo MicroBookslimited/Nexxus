@@ -128,12 +128,51 @@ export default function PackagesPage() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  function openReceive() {
-    setForm(EMPTY_FORM);
+  function openReceive(prefillTracking?: string) {
+    setForm(prefillTracking ? { ...EMPTY_FORM, trackingNumber: prefillTracking } : EMPTY_FORM);
     setEditing(null);
     setReceiveOpen(true);
     setTimeout(() => trackingInputRef.current?.focus(), 50);
   }
+
+  // ── Barcode scan → open Receive form ─────────────────────────────────────
+  // USB/HID barcode scanners "type" the code as a rapid keystroke burst ending
+  // with Enter. When the receive dialog is NOT open, detect such a burst
+  // anywhere on the page and open the Receive form with the tracking number
+  // prefilled. Human typing is too slow to trigger this (>50ms between keys).
+  const anyDialogOpen = receiveOpen || !!viewing || !!cancelling;
+  const scanRef = useRef({ buffer: "", lastTs: 0 });
+  useEffect(() => {
+    if (anyDialogOpen) return;
+    const MAX_GAP_MS = 50;
+    const MIN_LEN = 4;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const s = scanRef.current;
+      const now = Date.now();
+      if (now - s.lastTs > MAX_GAP_MS) s.buffer = "";
+      s.lastTs = now;
+      if (e.key === "Enter") {
+        const code = s.buffer;
+        s.buffer = "";
+        if (code.length >= MIN_LEN) {
+          e.preventDefault();
+          // If the burst was typed into the search box, undo it there.
+          const target = e.target as HTMLElement | null;
+          if (target instanceof HTMLInputElement && target.value.endsWith(code)) {
+            setSearch((prev) => (prev.endsWith(code) ? prev.slice(0, -code.length) : prev));
+          }
+          openReceive(code);
+        }
+        return;
+      }
+      if (e.key.length === 1) s.buffer += e.key;
+      else if (e.key !== "Shift") s.buffer = "";
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anyDialogOpen]);
 
   function openEdit(pkg: StorePackage) {
     setForm({
@@ -255,7 +294,7 @@ export default function PackagesPage() {
             </span>
           )}
         </div>
-        <Button onClick={openReceive}>
+        <Button onClick={() => openReceive()}>
           <Plus className="h-4 w-4 mr-1" /> Receive Package
         </Button>
       </div>
