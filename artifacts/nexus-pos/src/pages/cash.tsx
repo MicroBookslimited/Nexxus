@@ -374,6 +374,7 @@ function CloseShiftDialog({
   openingCash,
   totalPayouts,
   splitCashSales,
+  layawayCashIn,
   onClose,
   onClosed,
   closingFor,
@@ -385,6 +386,7 @@ function CloseShiftDialog({
   openingCash: number;
   totalPayouts: number;
   splitCashSales?: number;
+  layawayCashIn?: number;
   onClose: () => void;
   onClosed: (closedSessionId: number) => void;
   /** When an admin is closing another staff member's shift, show their name in a banner */
@@ -502,6 +504,7 @@ function CloseShiftDialog({
               <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><Banknote className="h-3.5 w-3.5" />Cash sales</span><span className="font-mono">{formatCurrency(salesSummary.cashSales)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" />Card sales</span><span className="font-mono">{formatCurrency(salesSummary.cardSales)}</span></div>
               {salesSummary.splitSales > 0 && <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><SplitSquareHorizontal className="h-3.5 w-3.5" />Split sales</span><span className="font-mono">{formatCurrency(salesSummary.splitSales)}</span></div>}
+              {(layawayCashIn ?? 0) !== 0 && <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><Banknote className="h-3.5 w-3.5" />Layaway deposits (cash)</span><span className="font-mono">{formatCurrency(layawayCashIn ?? 0)}</span></div>}
               {(salesSummary.totalRefunds ?? 0) > 0 && (
                 <div className="flex justify-between text-red-400"><span className="flex items-center gap-1"><ArrowDownLeft className="h-3.5 w-3.5" />Refunds</span><span className="font-mono">-{formatCurrency(salesSummary.totalRefunds ?? 0)}</span></div>
               )}
@@ -602,6 +605,12 @@ function CloseShiftDialog({
                 <div className="flex justify-between">
                   <span className="text-muted-foreground flex items-center gap-1"><span className="text-xs w-3.5 text-center">+</span>Split (cash portion)</span>
                   <span className="font-mono">{formatCurrency(splitCashSales ?? 0)}</span>
+                </div>
+              )}
+              {(layawayCashIn ?? 0) !== 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground flex items-center gap-1"><span className="text-xs w-3.5 text-center">+</span>Layaway deposits (cash)</span>
+                  <span className="font-mono">{formatCurrency(layawayCashIn ?? 0)}</span>
                 </div>
               )}
               {(salesSummary.refundedCash ?? 0) > 0 && (
@@ -743,6 +752,9 @@ type SessionDetail = {
   salesSummary: { cashSales: number; cardSales: number; splitSales: number; creditSales?: number; totalSales: number; refundedCash?: number; refundedCard?: number; totalRefunds?: number; voidedCount?: number; voidedTotal?: number };
   expectedCash: number;
   totalPayouts: number;
+  splitCashSales?: number;
+  voucherCashIn?: number;
+  layawayCashIn?: number;
   itemSummary?: ItemSummaryRow[];
   creditOrders?: CreditOrderRow[];
 };
@@ -785,6 +797,9 @@ function buildReportHtml(d: SessionDetail, withDetail: boolean, businessName: st
       <b>Cash Reconciliation</b>
       <div style="display:flex;justify-content:space-between"><span>Opening cash:</span><span>${fmt(d.session.openingCash)}</span></div>
       <div style="display:flex;justify-content:space-between"><span>+ Cash sales:</span><span>${fmt(d.salesSummary.cashSales)}</span></div>
+      ${(d.splitCashSales ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between"><span>+ Split (cash portion):</span><span>${fmt(d.splitCashSales ?? 0)}</span></div>` : ""}
+      ${(d.voucherCashIn ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between"><span>+ Voucher sales (cash):</span><span>${fmt(d.voucherCashIn ?? 0)}</span></div>` : ""}
+      ${(d.layawayCashIn ?? 0) !== 0 ? `<div style="display:flex;justify-content:space-between"><span>${(d.layawayCashIn ?? 0) >= 0 ? "+" : "-"} Layaway deposits (cash):</span><span>${(d.layawayCashIn ?? 0) >= 0 ? "" : "-"}${fmt(d.layawayCashIn ?? 0)}</span></div>` : ""}
       ${(d.salesSummary.refundedCash ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between;color:#c00"><span>- Cash refunds:</span><span>-${fmt(d.salesSummary.refundedCash ?? 0)}</span></div>` : ""}
       <div style="display:flex;justify-content:space-between"><span>- Payouts:</span><span>-${fmt(d.totalPayouts)}</span></div>
       <div style="display:flex;justify-content:space-between;font-weight:bold"><span>Expected cash:</span><span>${fmt(d.expectedCash)}</span></div>
@@ -957,7 +972,7 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
   const cashVariance = (session.actualCash ?? 0) - expectedCash;
   const cardVariance = (session.actualCard ?? 0) - salesSummary.cardSales;
 
-  const detail: SessionDetail = { session, payouts, orders, salesSummary, expectedCash, totalPayouts, itemSummary: data.itemSummary, creditOrders: data.creditOrders };
+  const detail: SessionDetail = { session, payouts, orders, salesSummary, expectedCash, totalPayouts, splitCashSales: data.splitCashSales, voucherCashIn: data.voucherCashIn, layawayCashIn: data.layawayCashIn, itemSummary: data.itemSummary, creditOrders: data.creditOrders };
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -1382,7 +1397,7 @@ function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { st
   }
   if (!data) return null;
 
-  const { session, payouts, salesSummary, expectedCash, totalPayouts, splitCashSales, orders } = data;
+  const { session, payouts, salesSummary, expectedCash, totalPayouts, splitCashSales, layawayCashIn, orders } = data;
 
   return (
     <div className="flex-1 overflow-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
@@ -1543,6 +1558,7 @@ function ActiveSessionPanel({ staffName, onShiftClosed, autoOpen = false }: { st
         openingCash={session.openingCash}
         totalPayouts={totalPayouts}
         splitCashSales={splitCashSales ?? 0}
+        layawayCashIn={layawayCashIn ?? 0}
         onClose={() => setCloseOpen(false)}
         onClosed={(id) => { setCloseOpen(false); onShiftClosed(id); }}
       />
@@ -1597,6 +1613,7 @@ function OpenSessionManagerCard({
           openingCash={data.session.openingCash}
           totalPayouts={data.totalPayouts}
           splitCashSales={data.splitCashSales ?? 0}
+          layawayCashIn={data.layawayCashIn ?? 0}
           closingFor={session.staffName}
           onClose={() => setCloseOpen(false)}
           onClosed={() => {

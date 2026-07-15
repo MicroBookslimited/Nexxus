@@ -1603,6 +1603,9 @@ export interface CashSessionDetail {
   salesSummary: CashSalesSummary;
   expectedCash: number;
   totalPayouts: number;
+  splitCashSales?: number;
+  voucherCashIn?: number;
+  layawayCashIn?: number;
 }
 
 export interface OpenCashSessionBody {

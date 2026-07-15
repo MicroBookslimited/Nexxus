@@ -68,6 +68,7 @@ export type CreateLayawayInput = {
   installmentFrequency?: "weekly" | "biweekly" | "monthly";
   firstDueDate?: string;
   notes?: string;
+  staffId?: number;
   staffName?: string;
 };
 
@@ -75,6 +76,7 @@ export type AddLayawayPaymentInput = {
   amount: number;
   method?: "cash" | "card" | "other";
   reference?: string;
+  staffId?: number;
   staffName?: string;
 };
 
@@ -82,6 +84,7 @@ export type CancelLayawayInput = {
   cancellationFee?: number;
   reason?: string;
   markDefaulted?: boolean;
+  staffId?: number;
 };
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────

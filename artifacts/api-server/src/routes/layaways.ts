@@ -49,6 +49,7 @@ const CreateLayawayBody = z.object({
   installmentFrequency: z.enum(["weekly", "biweekly", "monthly"]).optional(),
   firstDueDate: z.coerce.date().optional(),
   notes: z.string().max(2000).optional(),
+  staffId: z.number().int().positive().optional(),
   staffName: z.string().max(200).optional(),
 });
 
@@ -56,6 +57,7 @@ const AddPaymentBody = z.object({
   amount: z.number().positive().finite(),
   method: z.enum(["cash", "card", "other"]).default("cash"),
   reference: z.string().max(200).optional(),
+  staffId: z.number().int().positive().optional(),
   staffName: z.string().max(200).optional(),
 });
 
@@ -65,6 +67,7 @@ const CancelBody = z.object({
   cancellationFee: z.number().nonnegative().default(0),
   reason: z.string().max(500).optional(),
   markDefaulted: z.boolean().default(false),
+  staffId: z.number().int().positive().optional(),
 });
 
 /* ─── Totals (mirrors quotations.ts computeTotals) ─── */
@@ -268,6 +271,7 @@ router.post("/layaways", async (req, res): Promise<void> => {
           layawayId: created.id,
           amount: r2(data.depositAmount),
           method: data.depositMethod,
+          staffId: data.staffId ?? null,
           staffName: data.staffName ?? null,
           kind: "deposit",
         });
@@ -318,6 +322,7 @@ router.post("/layaways/:id/payments", async (req, res): Promise<void> => {
         amount: r2(parsed.data.amount),
         method: parsed.data.method,
         reference: parsed.data.reference ?? null,
+        staffId: parsed.data.staffId ?? null,
         staffName: parsed.data.staffName ?? null,
         kind: "payment",
       });
@@ -434,6 +439,7 @@ router.post("/layaways/:id/cancel", async (req, res): Promise<void> => {
           layawayId: id,
           amount: -refund,
           method: "cash",
+          staffId: parsed.data.staffId ?? null,
           kind: "refund",
           reference: parsed.data.reason ?? null,
         });

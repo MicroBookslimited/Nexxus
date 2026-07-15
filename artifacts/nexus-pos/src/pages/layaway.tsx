@@ -25,6 +25,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useStaff } from "@/contexts/StaffContext";
 import { PiggyBank, Search, Plus, Trash2, Eye, Ban, DollarSign } from "lucide-react";
 
 function formatCurrency(n: number, currency = "JMD") {
@@ -55,6 +56,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function LayawayPage() {
   const { toast } = useToast();
+  const { staff: sessionStaff } = useStaff();
   const { data: layaways, isLoading } = useListLayaways();
   const { data: customers } = useListCustomers();
   const { data: products } = useListProducts();
@@ -182,6 +184,7 @@ export default function LayawayPage() {
             }
           : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
+        ...(sessionStaff ? { staffId: sessionStaff.id, staffName: sessionStaff.name } : {}),
       },
       {
         onSuccess: (created) => {
@@ -200,7 +203,12 @@ export default function LayawayPage() {
     const amt = Number(payAmount);
     if (!Number.isFinite(amt) || amt <= 0) { toast({ title: "Enter a payment amount", variant: "destructive" }); return; }
     addPayment.mutate(
-      { id: viewing.id, amount: amt, method: payMethod },
+      {
+        id: viewing.id,
+        amount: amt,
+        method: payMethod,
+        ...(sessionStaff ? { staffId: sessionStaff.id, staffName: sessionStaff.name } : {}),
+      },
       {
         onSuccess: (updated) => {
           setPayAmount("");
@@ -224,6 +232,7 @@ export default function LayawayPage() {
         id: cancelling.id,
         ...(Number.isFinite(fee) && fee > 0 ? { cancellationFee: fee } : {}),
         markDefaulted,
+        ...(sessionStaff ? { staffId: sessionStaff.id } : {}),
       },
       {
         onSuccess: () => {

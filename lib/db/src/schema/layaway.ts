@@ -62,6 +62,9 @@ export const layawayPaymentsTable = pgTable("layaway_payments", {
   // cash | card | other
   method: text("method").notNull().default("cash"),
   reference: text("reference"),
+  // Staff attribution so cash payments tie into the collector's cash session
+  // (mirrors gift_vouchers.issuedByStaffId).
+  staffId: integer("staff_id"),
   staffName: text("staff_name"),
   // "deposit" for the opening payment, "payment" for subsequent ones,
   // "refund" for negative adjustments on cancellation.

@@ -5141,6 +5141,12 @@ components:
           type: number
         totalPayouts:
           type: number
+        splitCashSales:
+          type: number
+        voucherCashIn:
+          type: number
+        layawayCashIn:
+          type: number
       required:
         - session
         - payouts

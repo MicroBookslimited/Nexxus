@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, gte, lte, isNotNull, isNull, or, sql, desc } from "drizzle-orm";
-import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable, giftVouchersTable } from "@workspace/db";
+import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable, giftVouchersTable, layawayPaymentsTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { logAudit } from "./audit";
@@ -124,6 +124,32 @@ async function computeItemSummary(tenantId: number, from: Date, to: Date) {
     .orderBy(sql`sum(${orderItemsTable.quantity}) desc`);
 }
 
+/**
+ * Net cash collected on layaways (deposits + installment payments − cash
+ * refunds on cancellation) during a window. This money enters the drawer but
+ * creates no order row until the layaway pays off (and that payoff order uses
+ * paymentMethod "layaway", which never counts as cash), so it must be added
+ * to expected cash explicitly — same idea as gift-voucher issuance cash.
+ */
+async function computeLayawayCashIn(
+  tenantId: number,
+  windowStart: Date,
+  windowEnd: Date | null,
+  staffId: number | null | undefined,
+): Promise<number> {
+  const rows = await db
+    .select({ amount: layawayPaymentsTable.amount })
+    .from(layawayPaymentsTable)
+    .where(and(
+      eq(layawayPaymentsTable.tenantId, tenantId),
+      eq(layawayPaymentsTable.method, "cash"),
+      gte(layawayPaymentsTable.createdAt, windowStart),
+      ...(windowEnd ? [lte(layawayPaymentsTable.createdAt, windowEnd)] : []),
+      ...(staffId ? [eq(layawayPaymentsTable.staffId, staffId)] : []),
+    ));
+  return rows.reduce((s, r) => s + Number(r.amount ?? 0), 0);
+}
+
 router.get("/cash/sessions", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
@@ -189,8 +215,11 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
     // simultaneous cashiers) don't bleed into each other's totals.
     const sessionConditions = [
       eq(ordersTable.tenantId, tenantId),
-      gte(ordersTable.createdAt, windowStart),
-      lte(ordersTable.createdAt, windowEnd),
+      // Attribute orders by payment time (pay-later orders complete in a later
+      // shift); fall back to createdAt for immediate-paid orders. Matches the
+      // session-detail and close-session endpoints.
+      gte(sql`COALESCE(${ordersTable.completedAt}, ${ordersTable.createdAt})`, windowStart),
+      lte(sql`COALESCE(${ordersTable.completedAt}, ${ordersTable.createdAt})`, windowEnd),
       isNotNull(ordersTable.paymentMethod),
       ...(s.staffId ? [eq(ordersTable.staffId, s.staffId)] : []),
     ];
@@ -227,6 +256,9 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       0,
     );
 
+    // Layaway deposits/installments collected in cash also enter the drawer.
+    const layawayCashIn = await computeLayawayCashIn(tenantId, windowStart, windowEnd, s.staffId);
+
     // For split payments, attribute each portion to its correct column so
     // Cash and Card Slips totals reflect exactly what each tender received.
     const notVoided = orderRows.filter(r => r.status !== "voided");
@@ -252,6 +284,7 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       + (sales.cashSales - sales.refundedCash)
       + splitCash
       + voucherCashIn
+      + layawayCashIn
       - totalPayouts;
 
     return {
@@ -267,8 +300,10 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       actualCard,
       // Cash from selling gift vouchers (issuance) also lands in the drawer.
       voucherCashIn,
-      // Cash = pure cash orders + cash portion of split payments + voucher sales
-      cashSales:    sales.cashSales - sales.refundedCash + splitCash + voucherCashIn,
+      // Cash collected on layaways (deposits/installments, net of cash refunds).
+      layawayCashIn,
+      // Cash = pure cash orders + cash portion of split payments + voucher sales + layaway cash
+      cashSales:    sales.cashSales - sales.refundedCash + splitCash + voucherCashIn + layawayCashIn,
       // Card = pure card orders + card portion of split payments
       cardSales:    sales.cardSales - sales.refundedCard + splitCard,
       creditSales:  sales.creditSales,
@@ -362,12 +397,14 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
       ...(session.staffId ? [eq(giftVouchersTable.issuedByStaffId, session.staffId)] : []),
     ));
   const voucherCashIn = issuedVouchers.reduce((s, v) => s + Number(v.amountPaid ?? v.originalValue ?? 0), 0);
-  // Expected = opening float + net cash sales (pure cash, net of refunds) + split cash portions + voucher cash − payouts
-  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn - totalPayouts;
+  // Layaway deposits/installments collected in cash also enter the drawer.
+  const layawayCashIn = await computeLayawayCashIn(tenantId, session.openedAt, null, session.staffId);
+  // Expected = opening float + net cash sales (pure cash, net of refunds) + split cash portions + voucher cash + layaway cash − payouts
+  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn + layawayCashIn - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, new Date());
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, new Date());
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, itemSummary, creditOrders });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, layawayCashIn, itemSummary, creditOrders });
 });
 
 router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
@@ -434,11 +471,13 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
       ...(session.staffId ? [eq(giftVouchersTable.issuedByStaffId, session.staffId)] : []),
     ));
   const voucherCashIn = issuedVouchers.reduce((s, v) => s + Number(v.amountPaid ?? v.originalValue ?? 0), 0);
-  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn - totalPayouts;
+  // Layaway deposits/installments collected in cash also enter the drawer.
+  const layawayCashIn = await computeLayawayCashIn(tenantId, session.openedAt, closedAt, session.staffId);
+  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn + layawayCashIn - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, closedAt);
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, closedAt);
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, itemSummary, creditOrders });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, layawayCashIn, itemSummary, creditOrders });
 });
 
 router.post("/cash/sessions", async (req, res): Promise<void> => {
@@ -620,7 +659,9 @@ router.post("/cash/sessions/:id/admin-close", async (req, res): Promise<void> =>
   const splitCashSales = orderRows
     .filter(r => r.status !== "voided" && r.status !== "refunded" && r.paymentMethod === "split")
     .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
-  const expectedCash = session.openingCash + (sales.cashSales - sales.refundedCash) + splitCashSales - totalPayouts;
+  // Layaway deposits/installments collected in cash also enter the drawer.
+  const layawayCashIn = await computeLayawayCashIn(tenantId, session.openedAt, null, session.staffId);
+  const expectedCash = session.openingCash + (sales.cashSales - sales.refundedCash) + splitCashSales + layawayCashIn - totalPayouts;
 
   const [closed] = await db
     .update(cashSessionsTable)
