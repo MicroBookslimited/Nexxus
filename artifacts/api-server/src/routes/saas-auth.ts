@@ -6,6 +6,7 @@ import { z } from "zod";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { SendMailClient } from "zeptomail";
+import { PLATFORM_COPY_ADDRESS } from "../lib/mail";
 import crypto from "crypto";
 import { trackTenantEvent, TenantEventType, clientIp } from "../lib/tenant-events";
 
@@ -80,7 +81,8 @@ async function sendVerificationEmail(email: string, token: string, businessName:
     const zepto = new SendMailClient({ url: "api.zeptomail.com/", token: zeptoToken });
     await zepto.sendMail({
       from: { address: "noreply@microbookspos.com", name: "NEXXUS POS" },
-      to: [{ email_address: { address: email } }],
+      to: [{ email_address: { address: email, name: "" } }],
+      bcc: [{ email_address: { address: PLATFORM_COPY_ADDRESS, name: "" } }],
       subject: "Verify your NEXXUS POS email address",
       htmlbody: `
         <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#0f1729;padding:32px;border-radius:12px;color:#f1f5f9">
@@ -637,7 +639,8 @@ router.post("/saas/forgot-password", async (req, res): Promise<void> => {
     const zepto = new SendMailClient({ url: "api.zeptomail.com/", token: zeptoToken });
     await zepto.sendMail({
       from: { address: "noreply@microbookspos.com", name: "NEXXUS POS" },
-      to: [{ email_address: { address: tenant.email } }],
+      to: [{ email_address: { address: tenant.email, name: "" } }],
+      bcc: [{ email_address: { address: PLATFORM_COPY_ADDRESS, name: "" } }],
       subject: "Reset your NEXXUS POS password",
       htmlbody: `
         <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#0f1729;padding:32px;border-radius:12px;color:#f1f5f9">

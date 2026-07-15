@@ -4,6 +4,14 @@ import { getSetting, getAllSettings } from "../routes/settings";
 
 const ZEPTOMAIL_API_URL = "api.zeptomail.com/";
 
+/**
+ * Every platform-level email (subscriptions, billing, auth, support,
+ * reminders — anything sent with tenantId 0) is BCC'd here so the accounts
+ * team keeps a copy. Tenant-originated emails (receipts, loyalty/marketing to
+ * a tenant's own customers) are NOT copied.
+ */
+export const PLATFORM_COPY_ADDRESS = "accounts@microbookssolutions.com";
+
 export async function getFromDetails(tenantId = 0): Promise<{ fromAddress: string; fromName: string }> {
   const [fromAddress, fromName] = await Promise.all([
     getSetting("from_email", tenantId),
@@ -49,10 +57,17 @@ export async function sendMail(opts: {
   fromAddress: string;
   tenantId?: number;
   attachments?: MailAttachment[];
+  /** Force (true) or suppress (false) the accounts@ BCC. Default: platform emails (tenantId 0) are copied. */
+  platformCopy?: boolean;
 }): Promise<{ messageId?: string }> {
   const tenantId = opts.tenantId ?? 0;
   const provider = await getSetting("email_provider", tenantId);
   const attachments = opts.attachments ?? [];
+  const bccAddress =
+    (opts.platformCopy ?? tenantId === 0) &&
+    opts.to.trim().toLowerCase() !== PLATFORM_COPY_ADDRESS
+      ? PLATFORM_COPY_ADDRESS
+      : undefined;
 
   if (provider === "smtp") {
     const smtp = await getSmtpConfig(tenantId);
@@ -67,7 +82,7 @@ export async function sendMail(opts: {
       ? `${smtp.fromName || opts.fromName} <${smtp.from}>`
       : `${opts.fromName} <${opts.fromAddress}>`;
     const info = await transport.sendMail({
-      from, to: opts.to, subject: opts.subject, html: opts.html,
+      from, to: opts.to, bcc: bccAddress, subject: opts.subject, html: opts.html,
       attachments: attachments.map((a) => ({ filename: a.filename, content: a.content, contentType: a.mimeType })),
     });
     return { messageId: info.messageId };
@@ -81,6 +96,7 @@ export async function sendMail(opts: {
     const response = await zepto.sendMail({
       from: { address: opts.fromAddress, name: opts.fromName },
       to: [{ email_address: { address: opts.to, name: "" } }],
+      ...(bccAddress && { bcc: [{ email_address: { address: bccAddress, name: "" } }] }),
       subject: opts.subject,
       htmlbody: opts.html,
       ...(attachments.length > 0 && {

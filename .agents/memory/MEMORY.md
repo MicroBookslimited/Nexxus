@@ -54,4 +54,5 @@
 - [Promo plans are coupon-gated](promo-plan-coupon-gating.md) — isPromotional plans NEVER self-serve; free-activate 403s them, redeem-coupon is the only path; per-code cap + one-per-tenant unique index, redeem in one rollback-safe txn.
 - [billing.ts restricted-role gap](billing-restricted-role-gap.md) — billing.ts's local getTenantFromAuth does NOT block technician-restricted tokens; subscription-mutating handlers must call requireFullTenant explicitly.
 - [Scale weight-label lifecycle](scale-label-lifecycle.md) — scanned scale labels need full reserve/sold/release lifecycle in every POS cart; holds can't carry label ownership, so block holding them.
+- [Platform email BCC](platform-email-bcc.md) — platform emails (tenantId 0 / platformCopy) BCC accounts@; tenant→customer emails never copied; new platform senders must opt in.
 - [Subscription invoice idempotency](subscription-invoice-idempotency.md) — auto-issued billing PDFs dedupe per (tenant,provider,providerRef) via partial unique index + onConflictDoNothing; every payment path must pass a stable non-null providerRef.

@@ -295,6 +295,7 @@ router.post("/support/tickets", async (req, res) => {
     try {
       const { fromAddress, fromName } = await getFromDetails(tenantId);
       await sendMail({
+        platformCopy: true,
         to: SUPPORT_INBOX,
         subject: `[${priority}] ${inserted!.ticketRef} — ${businessName}: ${subCategory}`,
         html: buildTicketEmailHtml({
