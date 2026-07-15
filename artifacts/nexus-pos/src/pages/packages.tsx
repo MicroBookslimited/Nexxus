@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { lookupPackage } from "@workspace/api-client-react";
-import { ApiError } from "@/lib/saas-api";
 import { isRoutingOnlyBarcode, cleanScannedTracking } from "@/lib/package-barcode";
 import { PackageCheck, Search, Plus, Eye, Ban, Pencil } from "lucide-react";
 
@@ -173,12 +172,12 @@ export default function PackagesPage() {
       setViewing(pkg);
       toast({ title: "Package found", description: pkg.trackingNumber });
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
+      if ((err as { status?: number } | null)?.status === 404) {
         openReceive(code);
       } else {
         toast({
-          title: "Package lookup failed",
-          description: (err as Error).message || "Could not look up that barcode.",
+          title: "Couldn't check that barcode",
+          description: "There was a problem looking up this package. Please scan again.",
           variant: "destructive",
         });
       }

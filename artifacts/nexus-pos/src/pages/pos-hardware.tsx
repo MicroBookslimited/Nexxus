@@ -969,10 +969,12 @@ export function PosHardware() {
       setSearchTerm("");
       return true;
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) return false;
+      // Not a package — stay silent and let the normal product-scan flow
+      // handle the code. (Check .status directly: two ApiError classes exist.)
+      if ((err as { status?: number } | null)?.status === 404) return false;
       toast({
-        title: "Package lookup failed",
-        description: (err as Error).message || "Could not look up that tracking number.",
+        title: "Couldn't check that barcode",
+        description: "There was a problem checking for a package pickup. Please scan again.",
         variant: "destructive",
       });
       return false;
