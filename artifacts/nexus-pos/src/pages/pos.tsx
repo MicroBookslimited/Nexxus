@@ -48,6 +48,7 @@ import {
   ChevronDown, ChevronUp, LayoutGrid,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions, lookupGiftVoucher, type VoucherLookupResult, fetchCustomerByCard, closeTable } from "@/lib/saas-api";
+import { isRoutingOnlyBarcode, cleanScannedTracking } from "@/lib/package-barcode";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
@@ -1389,8 +1390,14 @@ export function POS() {
   const packagesEnabled = settings?.packages_enabled === "true";
 
   const tryAddPackagePickup = async (code: string): Promise<boolean> => {
+    // Routing-only barcode chunk (420+ZIP, no tracking digits): swallow it so
+    // it doesn't fall through to product-not-found handling.
+    if (isRoutingOnlyBarcode(code)) {
+      setSearchTerm("");
+      return true;
+    }
     try {
-      const pkg = await lookupPackage(code);
+      const pkg = await lookupPackage(cleanScannedTracking(code));
       if (pkg.status === "collected") {
         toast({
           title: "Package already collected",

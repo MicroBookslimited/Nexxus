@@ -93,6 +93,7 @@ import { SplitPaymentDialog } from "@/components/split-payment-dialog";
 import { printQuotation } from "@/lib/quotation-doc";
 import { printOrderReceipt } from "@/lib/print-receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, getPurchaseUnits, type PurchaseUnit, getPricingTiers, previewTierPrice, type PricingTier, lookupGiftVoucher, type VoucherLookupResult, ApiError } from "@/lib/saas-api";
+import { isRoutingOnlyBarcode, cleanScannedTracking } from "@/lib/package-barcode";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -898,8 +899,14 @@ export function PosHardware() {
   // cart as a custom line. The package is marked collected only after the
   // order is created (checkout success), so an abandoned cart never consumes it.
   const tryAddPackagePickup = async (code: string): Promise<boolean> => {
+    // Routing-only barcode chunk (420+ZIP, no tracking digits): swallow it so
+    // it doesn't fall through to product-not-found handling.
+    if (isRoutingOnlyBarcode(code)) {
+      setSearchTerm("");
+      return true;
+    }
     try {
-      const pkg = await lookupPackage(code);
+      const pkg = await lookupPackage(cleanScannedTracking(code));
       if (pkg.status === "collected") {
         toast({
           title: "Package already collected",

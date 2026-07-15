@@ -23,6 +23,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { lookupPackage } from "@workspace/api-client-react";
+import { ApiError } from "@/lib/saas-api";
+import { isRoutingOnlyBarcode, cleanScannedTracking } from "@/lib/package-barcode";
 import { PackageCheck, Search, Plus, Eye, Ban, Pencil } from "lucide-react";
 
 function formatCurrency(n: number, currency = "JMD") {
@@ -128,15 +131,6 @@ export default function PackagesPage() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  // USPS IMpb barcodes prepend routing digits ("420" + 5- or 9-digit ZIP) to
-  // the tracking number; the human-readable number omits them. Strip the
-  // routing prefix so the stored tracking number matches the printed one.
-  function cleanScannedTracking(raw: string): string {
-    const code = raw.trim();
-    const m = code.match(/^420(?:\d{9}|\d{5})(9\d{21,})$/);
-    return m ? m[1] : code;
-  }
-
   function openReceive(prefillTracking?: string) {
     setForm(
       prefillTracking
@@ -146,6 +140,29 @@ export default function PackagesPage() {
     setEditing(null);
     setReceiveOpen(true);
     setTimeout(() => trackingInputRef.current?.focus(), 50);
+  }
+
+  // Scan flow: look the code up first. If the package exists, filter the list
+  // to it and show its details; only open the Receive form when it's new.
+  async function handleScannedCode(rawCode: string) {
+    const code = cleanScannedTracking(rawCode);
+    try {
+      const pkg = await lookupPackage(code);
+      setStatusFilter("all");
+      setSearch(pkg.trackingNumber);
+      setViewing(pkg);
+      toast({ title: "Package found", description: pkg.trackingNumber });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        openReceive(code);
+      } else {
+        toast({
+          title: "Package lookup failed",
+          description: (err as Error).message || "Could not look up that barcode.",
+          variant: "destructive",
+        });
+      }
+    }
   }
 
   // ── Barcode scan → open Receive form ─────────────────────────────────────
@@ -175,7 +192,9 @@ export default function PackagesPage() {
           if (target instanceof HTMLInputElement && target.value.endsWith(code)) {
             setSearch((prev) => (prev.endsWith(code) ? prev.slice(0, -code.length) : prev));
           }
-          openReceive(code);
+          // Routing-only chunk (420+ZIP, no tracking digits) — ignore it and
+          // wait for the tracking-number chunk of the same scan.
+          if (!isRoutingOnlyBarcode(code)) void handleScannedCode(code);
         }
         return;
       }
