@@ -70,6 +70,8 @@ export function AdminSettings() {
   const [supermarketSearchMode, setSupermarketSearchMode] = useState(false);
   const [retailUiMode, setRetailUiMode] = useState(false);
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
+  const [layawayEnabled, setLayawayEnabled] = useState(false);
+  const [workOrdersEnabled, setWorkOrdersEnabled] = useState(false);
   const [showProductSize, setShowProductSize] = useState(false);
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
   const [receiptLogoSize, setReceiptLogoSize] = useState("90");
@@ -131,6 +133,8 @@ export function AdminSettings() {
     setSupermarketSearchMode(settings.supermarket_search_mode === "true");
     setRetailUiMode(settings.retail_ui_mode === "true");
     setKioskLockEnabled(settings.kiosk_lock_enabled === "true");
+    setLayawayEnabled(settings.layaway_enabled === "true");
+    setWorkOrdersEnabled(settings.work_orders_enabled === "true");
     setShowProductSize(settings.show_product_size === "true");
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
     setReceiptLogoSize(settings.receipt_logo_size ?? "90");
@@ -186,6 +190,8 @@ export function AdminSettings() {
           supermarket_search_mode: supermarketSearchMode ? "true" : "false",
           retail_ui_mode: retailUiMode ? "true" : "false",
           kiosk_lock_enabled: kioskLockEnabled ? "true" : "false",
+          layaway_enabled: layawayEnabled ? "true" : "false",
+          work_orders_enabled: workOrdersEnabled ? "true" : "false",
           show_product_size: showProductSize ? "true" : "false",
           stock_method: stockMethod,
           receipt_logo_size: receiptLogoSize,
@@ -284,6 +290,7 @@ export function AdminSettings() {
             { id: "section-inventory", label: "Inventory", icon: Boxes },
             { id: "section-pos-security", label: "POS Security", icon: ShieldCheck },
             { id: "section-pos-interface", label: "POS Interface", icon: Settings },
+            { id: "section-optional-modules", label: "Optional Modules", icon: Boxes },
             { id: "section-payments", label: "Payment Methods", icon: CreditCard },
             { id: "section-qr", label: "QR Code", icon: QrCode },
             { id: "section-admins", label: "Admin Users", icon: UserCog },
@@ -1731,6 +1738,68 @@ export function AdminSettings() {
               <span className={cn(
                 "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
                 showProductSize ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Optional Modules */}
+      <Card id="section-optional-modules">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Boxes className="h-4 w-4 text-primary" />
+            Optional Modules
+          </CardTitle>
+          <CardDescription>
+            Turn on extra business modules. When enabled, they appear in the navigation for staff with the right permissions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Layaway</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Let customers reserve items with a deposit and pay them off over time. Stock is reserved when the layaway is created, and a sale is recorded automatically once the balance is fully paid. Supports flexible payments or a fixed installment schedule per layaway.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={layawayEnabled}
+              onClick={() => { setLayawayEnabled(!layawayEnabled); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                layawayEnabled ? "bg-violet-500" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                layawayEnabled ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Work Orders (Repairs)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Track repair jobs from intake to collection: record the item and problem, assign a technician, add parts and labor, and move the job through Received → In Progress → Ready → Collected. Ready jobs can be loaded into the POS cart to charge the customer.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={workOrdersEnabled}
+              onClick={() => { setWorkOrdersEnabled(!workOrdersEnabled); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                workOrdersEnabled ? "bg-amber-500" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                workOrdersEnabled ? "translate-x-5" : "translate-x-0"
               )} />
             </button>
           </div>

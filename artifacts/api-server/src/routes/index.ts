@@ -58,6 +58,8 @@ import giftVouchersRouter from "./gift-vouchers";
 import shopifyRouter from "./shopify";
 import superadminAnalyticsRouter from "./superadmin-analytics";
 import supportTicketsRouter from "./support-tickets";
+import layawaysRouter from "./layaways";
+import workOrdersRouter from "./work-orders";
 
 const router: IRouter = Router();
 
@@ -67,6 +69,8 @@ router.use(variantsRouter);
 router.use(ordersRouter);
 router.use(heldOrdersRouter);
 router.use(quotationsRouter);
+router.use(layawaysRouter);
+router.use(workOrdersRouter);
 router.use(giftVouchersRouter);
 router.use(dashboardRouter);
 router.use(customersRouter);

@@ -47,6 +47,8 @@ const PriceManager = lazy(() => import("@/pages/price-manager"));
 const Promotions = lazy(() => import("@/pages/promotions"));
 const SupplierReturns = lazy(() => import("@/pages/supplier-returns"));
 const Quotations = lazy(() => import("@/pages/quotations"));
+const LayawayPage = lazy(() => import("@/pages/layaway"));
+const WorkOrdersPage = lazy(() => import("@/pages/work-orders"));
 const GiftVouchers = lazy(() => import("@/pages/gift-vouchers"));
 const Account = lazy(() => import("@/pages/account"));
 const Support = lazy(() => import("@/pages/support/support"));
@@ -210,6 +212,8 @@ function POSRouter() {
       <Route path="/promotions"><ProtectedRoute component={Promotions} permission="pricing.manage" /></Route>
       <Route path="/supplier-returns"><ProtectedRoute component={SupplierReturns} permission="inventory.manage" /></Route>
       <Route path="/quotations"><ProtectedRoute component={Quotations} permission="orders.view" /></Route>
+      <Route path="/layaway"><ProtectedRoute component={LayawayPage} permission="orders.view" /></Route>
+      <Route path="/work-orders"><ProtectedRoute component={WorkOrdersPage} permission="orders.view" /></Route>
       <Route path="/gift-vouchers"><ProtectedRoute component={GiftVouchers} permission="vouchers.manage" /></Route>
       <Route path="/scale"><ProtectedRoute component={ScalePage} permission="scale.use" /></Route>
       <Route path="/store"><ProtectedRoute component={StorePage} /></Route>

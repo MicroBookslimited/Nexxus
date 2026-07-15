@@ -27,6 +27,7 @@ import {
   useUpdateOrderStatus,
   useUpdateTable,
   useCreateProduct,
+  useUpdateWorkOrder,
 } from "@workspace/api-client-react";
 import { PinPad } from "@/components/PinPad";
 import type { GetOrderResponse } from "@workspace/api-zod";
@@ -472,6 +473,7 @@ export function POS() {
     { query: { refetchInterval: 60_000, refetchOnWindowFocus: true } },
   );
   const createOrder = useCreateOrder();
+  const updateWorkOrder = useUpdateWorkOrder();
   const { data: settings } = useGetSettings();
   const baseCurrency = settings?.base_currency || "JMD";
   const secondaryCurrency = settings?.secondary_currency || "";
@@ -621,6 +623,117 @@ export function POS() {
   const [searchTerm, setSearchTerm] = useState("");
   const { headerHidden, toggleHeader } = usePosChrome();
   const [cart, setCart] = useState<CartItem[]>([]);
+  /** Work order handed over from the Work Orders page (charge-at-collection). */
+  const [loadedWorkOrder, setLoadedWorkOrder] = useState<{ id: number; workOrderNumber: string } | null>(null);
+  const workOrderLoadedRef = useRef(false);
+  useEffect(() => {
+    if (workOrderLoadedRef.current) return;
+    const raw = sessionStorage.getItem("nexxus_pending_work_order");
+    if (!raw) return;
+    if (!products) return; // wait for catalog so part lines resolve
+    workOrderLoadedRef.current = true;
+    sessionStorage.removeItem("nexxus_pending_work_order");
+    try {
+      const pending = JSON.parse(raw) as {
+        id: number;
+        workOrderNumber?: string;
+        items: Array<{
+          type: "part" | "labor";
+          productId?: number;
+          description: string;
+          price: number;
+          quantity: number;
+          isTaxable?: boolean;
+        }>;
+        discountAmount?: number;
+        customerId?: number | null;
+        notes?: string;
+      };
+      const productMap = new Map((products ?? []).map((p) => [p.id, p]));
+      setCart(
+        pending.items.flatMap((item, idx): CartItem[] => {
+          const p = item.type === "part" && item.productId ? productMap.get(item.productId) : undefined;
+          if (p && item.price > p.price) {
+            // WO part priced ABOVE catalog: overrides are markdown-only, so keep
+            // the catalog line (stock still deducts) and add the difference as a
+            // separate custom surcharge line so the charged total matches the WO.
+            return [
+              {
+                cartKey: `${p.id}:wo:${Date.now()}:${idx}`,
+                productId: p.id,
+                productName: p.name,
+                basePrice: p.price,
+                effectivePrice: p.price,
+                quantity: item.quantity,
+                itemDiscount: 0,
+                variantChoices: [],
+                modifierChoices: [],
+                isTaxable: item.isTaxable ?? p.isTaxable ?? true,
+              } as CartItem,
+              {
+                cartKey: `custom:wo-adj:${Date.now()}:${idx}`,
+                productId: 0,
+                productName: `${p.name} — work order price adjustment`,
+                basePrice: item.price - p.price,
+                effectivePrice: item.price - p.price,
+                quantity: item.quantity,
+                itemDiscount: 0,
+                variantChoices: [],
+                modifierChoices: [],
+                isCustom: true,
+                isTaxable: item.isTaxable ?? p.isTaxable ?? true,
+              } as CartItem,
+            ];
+          }
+          if (p) {
+            // Catalog part: keep the productId so stock deducts at checkout; pin
+            // the work-order price via a price override (markdown-only payload).
+            return [{
+              cartKey: `${p.id}:wo:${Date.now()}:${idx}`,
+              productId: p.id,
+              productName: p.name,
+              basePrice: p.price,
+              effectivePrice: p.price,
+              quantity: item.quantity,
+              itemDiscount: 0,
+              variantChoices: [],
+              modifierChoices: [],
+              isTaxable: item.isTaxable ?? p.isTaxable ?? true,
+              ...(item.price < p.price ? { priceOverrideValue: item.price, priceOverrideBy: "Work Order" } : {}),
+            } as CartItem];
+          }
+          // Labor (or a part whose product no longer exists): custom line.
+          return [{
+            cartKey: `custom:wo:${Date.now()}:${idx}`,
+            productId: 0,
+            productName: item.description,
+            basePrice: item.price,
+            effectivePrice: item.price,
+            quantity: item.quantity,
+            itemDiscount: 0,
+            variantChoices: [],
+            modifierChoices: [],
+            isCustom: true,
+            isTaxable: item.isTaxable ?? true,
+          } as CartItem];
+        }),
+      );
+      if (pending.discountAmount && pending.discountAmount > 0) {
+        setDiscountType("fixed");
+        setDiscountAmount(pending.discountAmount);
+      }
+      if (pending.customerId) setSelectedCustomerId(pending.customerId);
+      if (pending.notes) setNotes(pending.notes);
+      setLoadedWorkOrder({ id: pending.id, workOrderNumber: pending.workOrderNumber ?? "" });
+      toast({
+        title: "Work order loaded",
+        description: `${pending.workOrderNumber ?? "Work order"} loaded into cart — complete checkout to mark it collected.`,
+      });
+    } catch {
+      toast({ title: "Could not load work order", variant: "destructive" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products]);
   const cartBottomRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // Re-focus the search bar whenever the cart changes (item added/removed/cleared)
@@ -1666,6 +1779,7 @@ export function POS() {
 
   const resetCart = () => {
     setCart([]);
+    setLoadedWorkOrder(null);
     scaleLabelIdsRef.current = [];
     setBarcodeAmbiguity(null);
     // Snap focus back to the search bar so the next sale starts immediately.
@@ -2039,6 +2153,20 @@ export function POS() {
                 variant: "destructive",
               });
             });
+          }
+          // If this sale was loaded from a work order, mark it collected.
+          if (loadedWorkOrder && (data as { id?: number })?.id) {
+            updateWorkOrder.mutate(
+              { id: loadedWorkOrder.id, convertedOrderId: (data as { id: number }).id, status: "collected" },
+              {
+                onError: () =>
+                  toast({
+                    title: "Work order not updated",
+                    description: `The sale completed, but ${loadedWorkOrder.workOrderNumber || "the work order"} could not be marked collected. Update it manually from Work Orders.`,
+                    variant: "destructive",
+                  }),
+              },
+            );
           }
           setReceiptOrder(data);
           if (settings?.auto_print_receipt === "true") {

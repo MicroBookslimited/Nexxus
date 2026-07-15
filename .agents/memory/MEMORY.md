@@ -55,4 +55,6 @@
 - [billing.ts restricted-role gap](billing-restricted-role-gap.md) — billing.ts's local getTenantFromAuth does NOT block technician-restricted tokens; subscription-mutating handlers must call requireFullTenant explicitly.
 - [Scale weight-label lifecycle](scale-label-lifecycle.md) — scanned scale labels need full reserve/sold/release lifecycle in every POS cart; holds can't carry label ownership, so block holding them.
 - [Platform email BCC](platform-email-bcc.md) — platform emails (tenantId 0 / platformCopy) BCC accounts@; tenant→customer emails never copied; new platform senders must opt in.
+- [Module toggle gating](module-toggle-gating.md) — tenant-setting module toggles must gate the page component itself; nav hiding alone leaves routes reachable by URL.
+- [WO→POS handoff pricing](wo-pos-handoff-pricing.md) — POS payload is markdown-only; doc lines above catalog price need catalog line + custom surcharge line (below = override, labor = custom).
 - [Subscription invoice idempotency](subscription-invoice-idempotency.md) — auto-issued billing PDFs dedupe per (tenant,provider,providerRef) via partial unique index + onConflictDoNothing; every payment path must pass a stable non-null providerRef.

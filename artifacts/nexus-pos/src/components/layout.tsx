@@ -6,7 +6,7 @@ import {
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
   FlaskConical, Factory, Store, Cpu, Landmark, Banknote, ClipboardList, Smartphone,
-  Scale, CheckCircle, Tag, FileText, Ticket, LifeBuoy,
+  Scale, CheckCircle, Tag, FileText, Ticket, LifeBuoy, PiggyBank, Wrench,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -35,6 +35,8 @@ type NavItem = {
   permission: string | null;
   /** Hide unless tenant business type is restaurant or hybrid. */
   restaurantOnly?: boolean;
+  /** Hide unless this tenant setting key is "true". */
+  settingKey?: string;
   children?: never;
 };
 
@@ -54,6 +56,8 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/pos",          label: "POS",             icon: ShoppingCart,    color: "text-emerald-400", permission: "pos.sale",           alwaysShowLabel: true },
   { href: "/orders",       label: "Order List",      icon: ListOrdered,     color: "text-purple-400",  permission: "orders.view",        alwaysShowLabel: true },
   { href: "/quotations",   label: "Quotations",      icon: FileText,        color: "text-teal-300",    permission: "orders.view" },
+  { href: "/layaway",      label: "Layaway",         icon: PiggyBank,       color: "text-violet-300",  permission: "orders.view",        settingKey: "layaway_enabled" },
+  { href: "/work-orders",  label: "Work Orders",     icon: Wrench,          color: "text-amber-300",   permission: "orders.view",        settingKey: "work_orders_enabled" },
   { href: "/gift-vouchers",label: "Gift Vouchers",   icon: Ticket,          color: "text-fuchsia-300", permission: "vouchers.manage" },
   { href: "/cash",         label: "Cash Mgmt",       icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session",  alwaysShowLabel: true },
   { href: "/clock",        label: "Time Clock",      icon: Clock,           color: "text-emerald-400", permission: null },
@@ -301,6 +305,7 @@ export function Layout({ children }: { children: ReactNode }) {
   // Technicians (limited tenant session) only see Inventory/Hardware/Reports/Settings/Audit.
   const canSeeItem = (item: NavItem): boolean => {
     if (item.restaurantOnly && !isRestaurant) return false;
+    if (item.settingKey && tenantSettings?.[item.settingKey] !== "true") return false;
     if (technicianMode && !TECHNICIAN_ALLOWED_PATHS.some(p => item.href === p || item.href.startsWith(`${p}/`))) return false;
     return !item.permission || can(item.permission);
   };
