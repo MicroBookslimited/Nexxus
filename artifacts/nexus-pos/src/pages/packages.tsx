@@ -153,6 +153,15 @@ export default function PackagesPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // If a routing-only chunk lands in the tracking field without a trailing
+  // Enter, auto-clear it after a short debounce so the tracking chunk that
+  // follows lands in an empty field.
+  useEffect(() => {
+    if (!receiveOpen || !isRoutingOnlyBarcode(form.trackingNumber.trim())) return;
+    const t = setTimeout(() => setForm((f) => ({ ...f, trackingNumber: "" })), 250);
+    return () => clearTimeout(t);
+  }, [receiveOpen, form.trackingNumber]);
+
   // Scan flow: look the code up first. If the package exists, filter the list
   // to it and show its details; only open the Receive form when it's new.
   async function handleScannedCode(rawCode: string) {
@@ -237,9 +246,17 @@ export default function PackagesPage() {
   }
 
   function buildPayload(): ReceivePackageInput | null {
-    const trackingNumber = form.trackingNumber.trim();
+    const trackingNumber = cleanScannedTracking(form.trackingNumber);
     if (!trackingNumber) {
       toast({ title: "Tracking number is required", variant: "destructive" });
+      return null;
+    }
+    if (isRoutingOnlyBarcode(trackingNumber)) {
+      toast({
+        title: "That's the routing barcode, not the tracking number",
+        description: "Scan the barcode under \"USPS TRACKING #\" (or type the printed tracking number).",
+        variant: "destructive",
+      });
       return null;
     }
     const fee = parseFloat(form.fee);
@@ -460,7 +477,17 @@ export default function PackagesPage() {
               <Input
                 ref={trackingInputRef}
                 value={form.trackingNumber}
-                onChange={(e) => set("trackingNumber", e.target.value)}
+                onChange={(e) => set("trackingNumber", cleanScannedTracking(e.target.value))}
+                onKeyDown={(e) => {
+                  // Scanner sent the routing-only chunk (420+ZIP) followed by
+                  // Enter: swallow it so the form isn't saved with a useless
+                  // "tracking number" — the real tracking chunk follows.
+                  if (e.key === "Enter" && isRoutingOnlyBarcode(form.trackingNumber.trim())) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    set("trackingNumber", "");
+                  }
+                }}
                 placeholder="Scan or type tracking number"
               />
             </div>
