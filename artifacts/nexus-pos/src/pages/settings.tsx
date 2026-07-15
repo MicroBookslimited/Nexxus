@@ -13,6 +13,7 @@ import {
   Settings, Mail, Building2, Receipt, CheckCircle2, AlertCircle, DollarSign, Bell, Send, Briefcase,
   ShieldCheck, Plus, Trash2, ChevronDown, ChevronRight, Edit2, Check, X, QrCode, Copy, Download, ExternalLink,
   Boxes, UserCog, KeyRound, Eye, EyeOff, MailOpen, Crown, UserPlus, Loader2, Link, CreditCard, Star, StarOff,
+  Search, SearchX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY,
@@ -21,12 +22,46 @@ import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { QRCodeSVG } from "qrcode.react";
 import { ShopifyIntegrationCard } from "@/components/ShopifyIntegrationCard";
 
+/* ── Settings sections: nav labels + search keywords ──────────────────────
+ * `keywords` powers the settings search box: a section stays visible when
+ * every word of the query appears in its label or keyword list. */
+const SETTINGS_SECTIONS: { id: string; label: string; icon: ElementType; keywords: string }[] = [
+  { id: "section-business", label: "Business", icon: Building2, keywords: "business info name address phone contact company logo details" },
+  { id: "section-industry", label: "Industry & Features", icon: Briefcase, keywords: "industry features business type profile restaurant retail hardware supermarket pharmacy feature toggles" },
+  { id: "section-receipt", label: "Receipt", icon: Receipt, keywords: "receipt printing printer header footer message paper auto print thank you logo" },
+  { id: "section-currency", label: "Currency", icon: DollarSign, keywords: "currency tax rate tax mode inclusive exclusive exchange jmd usd money rounding" },
+  { id: "section-email", label: "Email", icon: Mail, keywords: "email sender address notifications smtp resend outgoing mail" },
+  { id: "section-digest", label: "Notifications", icon: Bell, keywords: "notifications daily digest summary alerts low stock email reports" },
+  { id: "section-inventory", label: "Inventory", icon: Boxes, keywords: "inventory stock tracking locations deduction negative batch lot expiry fifo lifo warehouse" },
+  { id: "section-pos-security", label: "POS Security", icon: ShieldCheck, keywords: "security pin manager override supermarket mode cashier lock kiosk protection" },
+  { id: "section-pos-interface", label: "POS Interface", icon: Settings, keywords: "interface layout hardware supermarket retail scan search display theme pos screen" },
+  { id: "section-optional-modules", label: "Optional Modules", icon: Boxes, keywords: "optional modules layaway work orders packages shipping package pickup quotations addons" },
+  { id: "section-payments", label: "Payment Methods", icon: CreditCard, keywords: "payment methods cash card credit split gift voucher paypal powertranz tender" },
+  { id: "section-qr", label: "QR Code", icon: QrCode, keywords: "qr code online menu ordering link customer" },
+  { id: "section-admins", label: "Admin Users", icon: UserCog, keywords: "admin users invite password accounts access login" },
+  { id: "section-automation", label: "Automation", icon: MailOpen, keywords: "email automation templates triggers events campaigns unsubscribe marketing" },
+  { id: "section-integrations", label: "Integrations", icon: Link, keywords: "integrations shopify quickbooks sync connect third party" },
+  { id: "section-roles", label: "Roles", icon: ShieldCheck, keywords: "roles permissions staff access control cashier manager" },
+];
 
 export function AdminSettings() {
   const { data: settings, isLoading } = useGetSettings();
   const updateSettings = useUpdateSettings();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Settings search: every word of the query must appear in a section's
+  // label or keyword list for it to stay visible.
+  const [settingsSearch, setSettingsSearch] = useState("");
+  const searchWords = settingsSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const sectionMatches = (id: string) => {
+    if (searchWords.length === 0) return true;
+    const s = SETTINGS_SECTIONS.find((x) => x.id === id);
+    const haystack = s ? `${s.label} ${s.keywords}`.toLowerCase() : "";
+    return searchWords.every((w) => haystack.includes(w));
+  };
+  const hideCls = (id: string) => (sectionMatches(id) ? undefined : "hidden");
+  const visibleSections = SETTINGS_SECTIONS.filter((s) => sectionMatches(s.id));
 
   const [emailProvider, setEmailProvider] = useState<"system" | "smtp">("system");
   const [fromName, setFromName] = useState("NEXXUS POS");
@@ -262,7 +297,7 @@ export function AdminSettings() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 sm:py-8 space-y-6 sm:space-y-8">
+    <div className="w-full px-4 sm:px-8 py-5 sm:py-8 space-y-6 sm:space-y-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
@@ -280,27 +315,31 @@ export function AdminSettings() {
         </Button>
       </div>
 
-      {/* ─── Section Navigation ─── */}
-      <div className="sticky top-0 z-10 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-background/90 backdrop-blur border-b border-border">
+      {/* ─── Search + Section Navigation ─── */}
+      <div className="sticky top-0 z-10 -mx-4 sm:-mx-8 px-4 sm:px-8 py-2 bg-background/90 backdrop-blur border-b border-border space-y-2">
+        <div className="relative max-w-xl">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            type="text"
+            value={settingsSearch}
+            onChange={(e) => setSettingsSearch(e.target.value)}
+            placeholder="Search settings… (e.g. tax, receipt, pin, layaway)"
+            aria-label="Search settings"
+            className="pl-9 pr-9"
+          />
+          {settingsSearch && (
+            <button
+              type="button"
+              onClick={() => setSettingsSearch("")}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
         <nav className="flex gap-1.5 overflow-x-auto scrollbar-none">
-          {([
-            { id: "section-business", label: "Business", icon: Building2 },
-            { id: "section-industry", label: "Industry & Features", icon: Briefcase },
-            { id: "section-receipt", label: "Receipt", icon: Receipt },
-            { id: "section-currency", label: "Currency", icon: DollarSign },
-            { id: "section-email", label: "Email", icon: Mail },
-            { id: "section-digest", label: "Notifications", icon: Bell },
-            { id: "section-inventory", label: "Inventory", icon: Boxes },
-            { id: "section-pos-security", label: "POS Security", icon: ShieldCheck },
-            { id: "section-pos-interface", label: "POS Interface", icon: Settings },
-            { id: "section-optional-modules", label: "Optional Modules", icon: Boxes },
-            { id: "section-payments", label: "Payment Methods", icon: CreditCard },
-            { id: "section-qr", label: "QR Code", icon: QrCode },
-            { id: "section-admins", label: "Admin Users", icon: UserCog },
-            { id: "section-automation", label: "Automation", icon: MailOpen },
-            { id: "section-integrations", label: "Integrations", icon: Link },
-            { id: "section-roles", label: "Roles", icon: ShieldCheck },
-          ] as { id: string; label: string; icon: ElementType }[]).map(({ id, label, icon: Icon }) => (
+          {visibleSections.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               type="button"
@@ -319,11 +358,20 @@ export function AdminSettings() {
         </nav>
       </div>
 
+      {/* No sections match the search */}
+      {visibleSections.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
+          <SearchX className="h-8 w-8 mb-3" />
+          <p className="text-sm font-medium">No settings match “{settingsSearch}”</p>
+          <p className="text-xs mt-1">Try a different word, like “tax”, “receipt” or “pin”.</p>
+        </div>
+      )}
+
       {/* Industry & Features (multi-industry POS) */}
-      <BusinessProfileCard />
+      <div className={hideCls("section-industry")}><BusinessProfileCard /></div>
 
       {/* Business Info */}
-      <Card id="section-business">
+      <Card id="section-business" className={hideCls("section-business")}>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Building2 className="h-4 w-4 text-primary" />
@@ -466,7 +514,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Receipt Settings */}
-      <Card id="section-receipt">
+      <Card id="section-receipt" className={hideCls("section-receipt")}>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Receipt className="h-4 w-4 text-primary" />
@@ -983,7 +1031,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Currency Settings */}
-      <Card id="section-currency">
+      <Card id="section-currency" className={hideCls("section-currency")}>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-primary" />
@@ -1049,7 +1097,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Email Provider */}
-      <Card id="section-email">
+      <Card id="section-email" className={hideCls("section-email")}>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Mail className="h-4 w-4 text-primary" />
@@ -1199,7 +1247,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Daily Digest */}
-      <Card id="section-digest">
+      <Card id="section-digest" className={hideCls("section-digest")}>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Bell className="h-4 w-4 text-primary" />
@@ -1397,7 +1445,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Inventory */}
-      <Card id="section-inventory">
+      <Card id="section-inventory" className={hideCls("section-inventory")}>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Boxes className="h-4 w-4 text-primary" />
@@ -1461,7 +1509,7 @@ export function AdminSettings() {
       </Card>
 
       {/* POS Security */}
-      <Card id="section-pos-security">
+      <Card id="section-pos-security" className={hideCls("section-pos-security")}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Boxes className="h-4 w-4 text-primary" />
@@ -1510,7 +1558,7 @@ export function AdminSettings() {
       </Card>
 
       {/* POS Interface */}
-      <Card id="section-pos-interface">
+      <Card id="section-pos-interface" className={hideCls("section-pos-interface")}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Boxes className="h-4 w-4 text-primary" />
@@ -1748,7 +1796,7 @@ export function AdminSettings() {
       </Card>
 
       {/* Optional Modules */}
-      <Card id="section-optional-modules">
+      <Card id="section-optional-modules" className={hideCls("section-optional-modules")}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Boxes className="h-4 w-4 text-primary" />
@@ -1834,12 +1882,12 @@ export function AdminSettings() {
       </Card>
 
       {/* Payment Methods */}
-      <div id="section-payments">
+      <div id="section-payments" className={hideCls("section-payments")}>
         <PaymentMethodsSection />
       </div>
 
       {/* QR Code / Online Menu */}
-      <div id="section-qr">
+      <div id="section-qr" className={hideCls("section-qr")}>
         {tenantSlug && <QRCodeSection slug={tenantSlug} />}
       </div>
 
@@ -1853,10 +1901,10 @@ export function AdminSettings() {
         </Button>
       </div>
 
-      <div id="section-admins"><AdminUsersSettings /></div>
-      <div id="section-automation"><EmailAutomationSettings /></div>
-      <ShopifyIntegrationCard />
-      <div id="section-roles"><RolesSettings /></div>
+      <div id="section-admins" className={hideCls("section-admins")}><AdminUsersSettings /></div>
+      <div id="section-automation" className={hideCls("section-automation")}><EmailAutomationSettings /></div>
+      <div className={hideCls("section-integrations")}><ShopifyIntegrationCard /></div>
+      <div id="section-roles" className={hideCls("section-roles")}><RolesSettings /></div>
     </div>
   );
 }
