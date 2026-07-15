@@ -72,6 +72,7 @@ export function AdminSettings() {
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
   const [layawayEnabled, setLayawayEnabled] = useState(false);
   const [workOrdersEnabled, setWorkOrdersEnabled] = useState(false);
+  const [packagesEnabled, setPackagesEnabled] = useState(false);
   const [showProductSize, setShowProductSize] = useState(false);
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
   const [receiptLogoSize, setReceiptLogoSize] = useState("90");
@@ -135,6 +136,7 @@ export function AdminSettings() {
     setKioskLockEnabled(settings.kiosk_lock_enabled === "true");
     setLayawayEnabled(settings.layaway_enabled === "true");
     setWorkOrdersEnabled(settings.work_orders_enabled === "true");
+    setPackagesEnabled(settings.packages_enabled === "true");
     setShowProductSize(settings.show_product_size === "true");
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
     setReceiptLogoSize(settings.receipt_logo_size ?? "90");
@@ -192,6 +194,7 @@ export function AdminSettings() {
           kiosk_lock_enabled: kioskLockEnabled ? "true" : "false",
           layaway_enabled: layawayEnabled ? "true" : "false",
           work_orders_enabled: workOrdersEnabled ? "true" : "false",
+          packages_enabled: packagesEnabled ? "true" : "false",
           show_product_size: showProductSize ? "true" : "false",
           stock_method: stockMethod,
           receipt_logo_size: receiptLogoSize,
@@ -1800,6 +1803,30 @@ export function AdminSettings() {
               <span className={cn(
                 "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
                 workOrdersEnabled ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Package / Shipping Service</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Receive customer packages into the store by scanning the tracking number, then scan them out at the POS like a product when the customer collects. Each tracking number is unique and can only be scanned out once. The pickup fee is set per package when it is received.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={packagesEnabled}
+              onClick={() => { setPackagesEnabled(!packagesEnabled); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                packagesEnabled ? "bg-sky-500" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                packagesEnabled ? "translate-x-5" : "translate-x-0"
               )} />
             </button>
           </div>

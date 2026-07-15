@@ -28,6 +28,8 @@ import {
   useUpdateTable,
   useCreateProduct,
   useUpdateWorkOrder,
+  lookupPackage,
+  collectPackage,
 } from "@workspace/api-client-react";
 import { PinPad } from "@/components/PinPad";
 import type { GetOrderResponse } from "@workspace/api-zod";
@@ -113,6 +115,8 @@ type CartItem = {
   /** A custom / miscellaneous item entered via the calculator (not in the catalog).
    * Sent to the server with no productId; productId is the sentinel 0 locally. */
   isCustom?: boolean;
+  /** When this line is a package pickup fee, the package id — collected on checkout success. */
+  packagePickupId?: number;
 };
 
 const VARIANT_COLORS = [
@@ -1377,6 +1381,79 @@ export function POS() {
     }
   };
 
+  // ── Package pickup (Package / Shipping Service module) ───────────────────
+  // When an unmatched code is scanned and the packages module is enabled, try
+  // to resolve it as a package tracking number and add its pickup fee to the
+  // cart as a custom line. The package is marked collected only after the
+  // order is created (checkout success), so an abandoned cart never consumes it.
+  const packagesEnabled = settings?.packages_enabled === "true";
+
+  const tryAddPackagePickup = async (code: string): Promise<boolean> => {
+    try {
+      const pkg = await lookupPackage(code);
+      if (pkg.status === "collected") {
+        toast({
+          title: "Package already collected",
+          description: `${pkg.trackingNumber} was already scanned out and cannot be collected again.`,
+          variant: "destructive",
+        });
+        setSearchTerm("");
+        return true;
+      }
+      if (pkg.status !== "received") {
+        toast({
+          title: "Package unavailable",
+          description: `${pkg.trackingNumber} is ${pkg.status} and cannot be collected.`,
+          variant: "destructive",
+        });
+        setSearchTerm("");
+        return true;
+      }
+      let duplicate = false;
+      setCart((prev) => {
+        if (prev.some((i) => i.packagePickupId === pkg.id)) {
+          duplicate = true;
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            cartKey: `pkg:${pkg.id}`,
+            productId: 0,
+            productName: `Package pickup: ${pkg.trackingNumber}${pkg.customerName ? ` (${pkg.customerName})` : ""}`,
+            basePrice: pkg.fee,
+            effectivePrice: pkg.fee,
+            quantity: 1,
+            itemDiscount: 0,
+            variantChoices: [],
+            modifierChoices: [],
+            isTaxable: true,
+            isCustom: true,
+            packagePickupId: pkg.id,
+          },
+        ];
+      });
+      toast(
+        duplicate
+          ? { title: "Package already in cart", description: pkg.trackingNumber }
+          : {
+              title: "Package added",
+              description: `${pkg.trackingNumber}${pkg.shelfLocation ? ` — shelf ${pkg.shelfLocation}` : ""}`,
+            },
+      );
+      setSearchTerm("");
+      return true;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return false;
+      toast({
+        title: "Package lookup failed",
+        description: (err as Error).message || "Could not look up that tracking number.",
+        variant: "destructive",
+      });
+      return false;
+    }
+  };
+
   // Normalize a barcode for equality checks. Trim whitespace (some HID
   // scanners append spaces/tabs) and lowercase (so "ABC123" and "abc123"
   // count as the same code). This MUST mirror the predicate used in
@@ -1485,6 +1562,12 @@ export function POS() {
       // weight/multi-unit products through their pickers, just like a tap.
       if (filteredProducts && filteredProducts.length === 1) {
         void handleProductTap(filteredProducts[0]);
+        return;
+      }
+      // No product matched at all: with the packages module on, try the code
+      // as a package tracking number (scan-out at POS).
+      if (packagesEnabled && (!filteredProducts || filteredProducts.length === 0)) {
+        void tryAddPackagePickup(searchTerm.trim());
       }
     }
   };
@@ -1530,6 +1613,8 @@ export function POS() {
     setCart((prev) =>
       prev.map((item) => {
         if (item.cartKey !== cartKey) return item;
+        // Package pickups are one physical package — quantity is locked at 1.
+        if (item.packagePickupId) return item;
         // Multi-unit lines step by their unit factor (e.g. +1 Case = +24 base units).
         const step = item.unitFactor ?? 1;
         const minQty = step;
@@ -1568,6 +1653,8 @@ export function POS() {
     setCart((prev) =>
       prev.map((item) => {
         if (item.cartKey !== cartKey) return item;
+        // Package pickups are one physical package — quantity is locked at 1.
+        if (item.packagePickupId) return item;
         // Multi-unit lines (Case/Dozen/etc.) snap to the nearest whole
         // multiple of `unitFactor` so a Case(24) line cannot end up at
         // 25 or 1.
@@ -2091,6 +2178,13 @@ export function POS() {
       } else {
         setReceiptCustomerInfo(null);
       }
+      if (cart.some((i) => i.packagePickupId)) {
+        toast({
+          title: "Package not marked collected",
+          description: "You're offline, so the package pickup could not be marked collected. Mark it manually from the Packages page once you're back online.",
+          variant: "destructive",
+        });
+      }
       resetCart();
       toast({
         title: "Sale Recorded Offline",
@@ -2153,6 +2247,23 @@ export function POS() {
                 variant: "destructive",
               });
             });
+          }
+          // Mark any package-pickup lines as collected (scan-out once).
+          {
+            const pkgIds = cart.filter((i) => i.packagePickupId).map((i) => i.packagePickupId!);
+            const orderId = (data as { id?: number })?.id;
+            for (const pkgId of pkgIds) {
+              collectPackage(pkgId, {
+                orderId,
+                ...(sessionStaff ? { staffId: sessionStaff.id, staffName: sessionStaff.name } : {}),
+              }).catch(() => {
+                toast({
+                  title: "Package not marked collected",
+                  description: "The sale completed, but a package pickup could not be marked collected. Update it manually from Packages.",
+                  variant: "destructive",
+                });
+              });
+            }
           }
           // If this sale was loaded from a work order, mark it collected.
           if (loadedWorkOrder && (data as { id?: number })?.id) {
@@ -2341,6 +2452,16 @@ export function POS() {
 
   const handleHoldOrder = () => {
     if (cart.length === 0) return;
+    // Package pickups can't survive a hold/recall round-trip (held orders only
+    // store product/qty), so the collect link would be lost silently.
+    if (cart.some((item) => item.packagePickupId)) {
+      toast({
+        title: "Package pickup in cart",
+        description: "Package pickups can't be held. Remove the package line or check out directly.",
+        variant: "destructive",
+      });
+      return;
+    }
     createHeldOrder.mutate(
       {
         data: {
@@ -2952,6 +3073,11 @@ export function POS() {
                           </Button>
                         </div>
                         <div className="flex items-center gap-1 mt-1.5">
+                          {item.packagePickupId ? (
+                            // Package pickups are one physical package — no qty controls.
+                            <span className="h-7 w-14 flex items-center justify-center text-sm font-bold font-mono text-muted-foreground">1</span>
+                          ) : (
+                          <>
                           <Button
                             size="icon"
                             variant="default"
@@ -2981,6 +3107,8 @@ export function POS() {
                           >
                             <Plus className="h-3 w-3" />
                           </Button>
+                          </>
+                          )}
                           <button
                             onClick={() => setEditingNoteKey((k) => k === item.cartKey ? null : item.cartKey)}
                             title="Add item note"

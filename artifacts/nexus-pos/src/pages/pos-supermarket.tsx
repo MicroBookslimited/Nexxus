@@ -15,6 +15,8 @@ import {
   useCreateHeldOrder,
   useDeleteHeldOrder,
   getListHeldOrdersQueryKey,
+  lookupPackage,
+  collectPackage,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
@@ -152,6 +154,11 @@ type CartLine = {
   // Set for sell-by-weight lines: quantity is a decimal weight in this unit
   // (lb/kg/oz/g). Weight lines never merge and skip the +/- quantity controls.
   weightUnit?: string | null;
+  // Custom (non-catalog) line — checkout sends customName/customPrice.
+  isCustom?: boolean;
+  // Set for package-pickup fee lines: quantity is locked at 1 and the package
+  // is marked collected on checkout success.
+  packagePickupId?: number;
 };
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -178,6 +185,7 @@ export function PosSupermarket({
   const businessLogoUrl = settings?.business_logo_url;
   const businessDisplayName = settings?.business_name;
   const supermarketMode = settings?.supermarket_mode === "true";
+  const packagesEnabled = settings?.packages_enabled === "true";
 
   // The active cash session's location drives per-location pricing (so a product
   // with a location-specific price_override is rung up at that price, not the
@@ -396,9 +404,9 @@ export function PosSupermarket({
 
   const executeSupermarketAction = (action: SupermarketAction) => {
     if (action.type === "decrease") {
-      // Decreasing a weight line by 1 makes no sense — treat it as removal.
+      // Decreasing a weight or package line by 1 makes no sense — treat it as removal.
       const target = cart.find((c) => c.cartKey === action.cartKey);
-      if (target?.weightUnit) {
+      if (target?.weightUnit || target?.packagePickupId) {
         releaseLabelsForKeys([action.cartKey]);
         setCart((prev) => prev.filter((c) => c.cartKey !== action.cartKey));
         setSelectedKey((k) => (k === action.cartKey ? null : k));
@@ -419,7 +427,8 @@ export function PosSupermarket({
       if (action.qty <= 0) releaseLabelsForKeys([action.cartKey]);
       setCart((prev) =>
         prev
-          .map((c) => (c.cartKey === action.cartKey ? { ...c, quantity: action.qty } : c))
+          // Package pickups are qty-locked at 1: setting 0 removes, anything else is ignored.
+          .map((c) => (c.cartKey === action.cartKey && !(c.packagePickupId && action.qty > 0) ? { ...c, quantity: action.qty } : c))
           .filter((c) => c.quantity > 0),
       );
       setSelectedKey((k) => (action.qty <= 0 && k === action.cartKey ? null : k));
@@ -678,7 +687,8 @@ export function PosSupermarket({
   };
 
   const incQty = (cartKey: string) => {
-    setCart((prev) => prev.map((c) => (c.cartKey === cartKey ? { ...c, quantity: c.quantity + 1 } : c)));
+    // Package pickups are one physical package — quantity is locked at 1.
+    setCart((prev) => prev.map((c) => (c.cartKey === cartKey && !c.packagePickupId ? { ...c, quantity: c.quantity + 1 } : c)));
     focusScanInput();
   };
 
@@ -718,6 +728,16 @@ export function PosSupermarket({
       toast({
         title: "Weight labels can't be held",
         description: "Complete the sale or remove the scanned weight-label items before holding this bill.",
+        variant: "destructive",
+      });
+      return;
+    }
+    // Package pickups can't survive a hold/recall round-trip either — the
+    // collect link (packagePickupId) is not persisted on held orders.
+    if (cart.some((c) => c.packagePickupId)) {
+      toast({
+        title: "Package pickup in cart",
+        description: "Package pickups can't be held. Remove the package line or check out directly.",
         variant: "destructive",
       });
       return;
@@ -855,6 +875,77 @@ export function PosSupermarket({
     focusScanInput();
   };
 
+  // When an unmatched code is scanned and the packages module is enabled, try
+  // to resolve it as a package tracking number and add its pickup fee to the
+  // cart as a custom line. The package is marked collected only after the
+  // order is created (checkout success), so an abandoned cart never consumes it.
+  const tryAddPackagePickup = async (code: string): Promise<boolean> => {
+    try {
+      const pkg = await lookupPackage(code);
+      if (pkg.status === "collected") {
+        playScanErrorTone();
+        toast({
+          title: "Package already collected",
+          description: `${pkg.trackingNumber} was already scanned out and cannot be collected again.`,
+          variant: "destructive",
+        });
+        setSearchTerm("");
+        return true;
+      }
+      if (pkg.status !== "received") {
+        playScanErrorTone();
+        toast({
+          title: "Package unavailable",
+          description: `${pkg.trackingNumber} is ${pkg.status} and cannot be collected.`,
+          variant: "destructive",
+        });
+        setSearchTerm("");
+        return true;
+      }
+      let duplicate = false;
+      setCart((prev) => {
+        if (prev.some((c) => c.packagePickupId === pkg.id)) {
+          duplicate = true;
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            cartKey: `pkg:${pkg.id}`,
+            productId: 0,
+            productName: `Package pickup: ${pkg.trackingNumber}${pkg.customerName ? ` (${pkg.customerName})` : ""}`,
+            barcode: null,
+            price: pkg.fee,
+            quantity: 1,
+            isTaxable: true,
+            isCustom: true,
+            packagePickupId: pkg.id,
+          },
+        ];
+      });
+      toast(
+        duplicate
+          ? { title: "Package already in cart", description: pkg.trackingNumber }
+          : {
+              title: "Package added",
+              description: `${pkg.trackingNumber}${pkg.shelfLocation ? ` — shelf ${pkg.shelfLocation}` : ""}`,
+            },
+      );
+      setSearchTerm("");
+      focusScanInput();
+      return true;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return false;
+      playScanErrorTone();
+      toast({
+        title: "Package lookup failed",
+        description: (err as Error).message || "Could not look up that tracking number.",
+        variant: "destructive",
+      });
+      return false;
+    }
+  };
+
   /* ── Scanner: Enter on a code adds the matching product ───────────────── */
   const handleSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
@@ -894,18 +985,24 @@ export function PosSupermarket({
         return;
       }
       if (searchResults.length > 1) return;
-      // No matches at all — offer an inline quick-add for this code instead of
-      // sending the cashier off to the Products page.
-      playScanErrorTone();
-      openQuickAdd(code);
+      // No matches at all — try a package tracking number first (when the
+      // module is on), then offer an inline quick-add for this code.
+      void (async () => {
+        if (packagesEnabled && (await tryAddPackagePickup(code))) return;
+        playScanErrorTone();
+        openQuickAdd(code);
+      })();
       return;
     }
-    playScanErrorTone();
-    toast({
-      title: "No product found",
-      description: `Nothing matches “${code}”.`,
-      variant: "destructive",
-    });
+    void (async () => {
+      if (packagesEnabled && (await tryAddPackagePickup(code))) return;
+      playScanErrorTone();
+      toast({
+        title: "No product found",
+        description: `Nothing matches “${code}”.`,
+        variant: "destructive",
+      });
+    })();
   };
 
   // Shared scan / search box (with optional name-search dropdown). Rendered in
@@ -1159,7 +1256,11 @@ export function PosSupermarket({
           paymentMethod: effectivePaymentMethod,
           cardType: !voucherCoversAll && (paymentMethod === "card" || paymentMethod === "split") ? cardType ?? undefined : undefined,
           staffId: sessionStaff?.id ?? undefined,
-          items: cart.map((c) => ({ productId: c.productId, quantity: c.quantity })),
+          items: cart.map((c) =>
+            c.isCustom
+              ? { customName: c.productName, customPrice: c.price, quantity: c.quantity }
+              : { productId: c.productId, quantity: c.quantity },
+          ),
           cashTendered: !voucherCoversAll && paymentMethod === "cash" ? cashTendered : undefined,
           splitCashAmount: !voucherCoversAll && paymentMethod === "split" ? splitCash : undefined,
           splitCardAmount: !voucherCoversAll && paymentMethod === "split" ? splitCard : undefined,
@@ -1184,6 +1285,19 @@ export function PosSupermarket({
           scaleLabelIdsRef.current.clear();
           if (soldLabelIds.length > 0) {
             void markWeightLabelsSold(soldLabelIds, data?.id).catch(() => {});
+          }
+          // Mark any package-pickup lines as collected (scan-out once).
+          for (const pkgId of cart.filter((c) => c.packagePickupId).map((c) => c.packagePickupId!)) {
+            collectPackage(pkgId, {
+              orderId: (data as { id?: number })?.id,
+              ...(sessionStaff ? { staffId: sessionStaff.id, staffName: sessionStaff.name } : {}),
+            }).catch(() => {
+              toast({
+                title: "Package not marked collected",
+                description: "The sale completed, but a package pickup could not be marked collected. Update it manually from Packages.",
+                variant: "destructive",
+              });
+            });
           }
           setReceiptOrder(data);
           if (settings?.auto_print_receipt === "true") {
@@ -1502,6 +1616,9 @@ export function PosSupermarket({
                         <span className="font-mono text-lg font-extrabold text-center text-foreground whitespace-nowrap px-2">
                           {c.quantity.toFixed(3)} {c.weightUnit}
                         </span>
+                      ) : c.packagePickupId ? (
+                        // Package pickups are one physical package — no qty controls.
+                        <span className="font-mono text-xl font-extrabold w-10 text-center text-foreground">1</span>
                       ) : (
                       <>
                       <button

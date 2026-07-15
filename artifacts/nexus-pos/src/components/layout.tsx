@@ -6,7 +6,7 @@ import {
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
   FlaskConical, Factory, Store, Cpu, Landmark, Banknote, ClipboardList, Smartphone,
-  Scale, CheckCircle, Tag, FileText, Ticket, LifeBuoy, PiggyBank, Wrench,
+  Scale, CheckCircle, Tag, FileText, Ticket, LifeBuoy, PiggyBank, Wrench, PackageCheck,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -58,6 +58,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/quotations",   label: "Quotations",      icon: FileText,        color: "text-teal-300",    permission: "orders.view" },
   { href: "/layaway",      label: "Layaway",         icon: PiggyBank,       color: "text-violet-300",  permission: "orders.view",        settingKey: "layaway_enabled" },
   { href: "/work-orders",  label: "Work Orders",     icon: Wrench,          color: "text-amber-300",   permission: "orders.view",        settingKey: "work_orders_enabled" },
+  { href: "/packages",     label: "Packages",        icon: PackageCheck,    color: "text-sky-300",     permission: "orders.view",        settingKey: "packages_enabled" },
   { href: "/gift-vouchers",label: "Gift Vouchers",   icon: Ticket,          color: "text-fuchsia-300", permission: "vouchers.manage" },
   { href: "/cash",         label: "Cash Mgmt",       icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session",  alwaysShowLabel: true },
   { href: "/clock",        label: "Time Clock",      icon: Clock,           color: "text-emerald-400", permission: null },

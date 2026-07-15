@@ -16,6 +16,8 @@ import {
   getListCustomersQueryKey,
   getListHeldOrdersQueryKey,
   getListQuotationsQueryKey,
+  lookupPackage,
+  collectPackage,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
@@ -144,6 +146,9 @@ type CartLine = {
   /** A custom / miscellaneous item entered via the calculator (not in the catalog).
    * Sent to the server with no productId; productId is the sentinel 0 locally. */
   isCustom?: boolean;
+  /** Set for package-pickup fee lines: quantity is locked at 1 and the package
+   * is marked collected on checkout success. */
+  packagePickupId?: number;
 };
 
 /* Category → icon map (hardware-store flavoured). Falls back to a box icon. */
@@ -209,6 +214,7 @@ export function PosHardware() {
   const taxPct = Math.round(taxRate * 100);
   const businessLogoUrl = settings?.business_logo_url;
   const businessDisplayName = settings?.business_name;
+  const packagesEnabled = settings?.packages_enabled === "true";
 
   // The active cash session's location drives per-location pricing (so a product
   // with a location-specific price_override is rung up at that price, not the
@@ -477,7 +483,8 @@ export function PosHardware() {
     setCart((prev) =>
       prev
         .map((c) =>
-          c.cartKey === cartKey
+          // Package pickups are one physical package — quantity is locked at 1.
+          c.cartKey === cartKey && !c.packagePickupId
             ? { ...c, quantity: Math.max(0, c.quantity + delta * (c.unitFactor ?? 1)) }
             : c,
         )
@@ -490,6 +497,11 @@ export function PosHardware() {
   /** Set an absolute display-unit quantity on a cart line, converting back to
    *  base units and snapping to whole multiples (multi-unit gotcha). */
   const setAbsoluteQty = (cartKey: string, displayQty: number) => {
+    // Package pickups are one physical package — quantity is locked at 1.
+    if (cart.find((c) => c.cartKey === cartKey)?.packagePickupId) {
+      setQtyEdit((prev) => { const next = { ...prev }; delete next[cartKey]; return next; });
+      return;
+    }
     const factor = cart.find((c) => c.cartKey === cartKey)?.unitFactor ?? 1;
     const baseQty = Math.max(0, Math.round(displayQty)) * factor;
     if (baseQty <= 0) {
@@ -583,6 +595,16 @@ export function PosHardware() {
   const handleHoldBill = () => {
     if (cart.length === 0) {
       toast({ title: "Cart is empty", description: "Add items before holding a bill.", variant: "destructive" });
+      return;
+    }
+    // Package pickups can't survive a hold/recall round-trip (held orders only
+    // store product/qty), so the collect link would be lost silently.
+    if (cart.some((c) => c.packagePickupId)) {
+      toast({
+        title: "Package pickup in cart",
+        description: "Package pickups can't be held. Remove the package line or check out directly.",
+        variant: "destructive",
+      });
       return;
     }
     createHeldOrder.mutate(
@@ -865,6 +887,77 @@ export function PosHardware() {
         addToCart(match.id);
       }
       setSearchTerm("");
+      return;
+    }
+    // No product matched — try a package tracking number (packages module).
+    if (packagesEnabled) void tryAddPackagePickup(code);
+  };
+
+  // When an unmatched code is scanned and the packages module is enabled, try
+  // to resolve it as a package tracking number and add its pickup fee to the
+  // cart as a custom line. The package is marked collected only after the
+  // order is created (checkout success), so an abandoned cart never consumes it.
+  const tryAddPackagePickup = async (code: string): Promise<boolean> => {
+    try {
+      const pkg = await lookupPackage(code);
+      if (pkg.status === "collected") {
+        toast({
+          title: "Package already collected",
+          description: `${pkg.trackingNumber} was already scanned out and cannot be collected again.`,
+          variant: "destructive",
+        });
+        setSearchTerm("");
+        return true;
+      }
+      if (pkg.status !== "received") {
+        toast({
+          title: "Package unavailable",
+          description: `${pkg.trackingNumber} is ${pkg.status} and cannot be collected.`,
+          variant: "destructive",
+        });
+        setSearchTerm("");
+        return true;
+      }
+      let duplicate = false;
+      setCart((prev) => {
+        if (prev.some((c) => c.packagePickupId === pkg.id)) {
+          duplicate = true;
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            cartKey: `pkg:${pkg.id}`,
+            productId: 0,
+            productName: `Package pickup: ${pkg.trackingNumber}${pkg.customerName ? ` (${pkg.customerName})` : ""}`,
+            barcode: null,
+            price: pkg.fee,
+            quantity: 1,
+            isTaxable: true,
+            imageUrl: null,
+            isCustom: true,
+            packagePickupId: pkg.id,
+          },
+        ];
+      });
+      toast(
+        duplicate
+          ? { title: "Package already in cart", description: pkg.trackingNumber }
+          : {
+              title: "Package added",
+              description: `${pkg.trackingNumber}${pkg.shelfLocation ? ` — shelf ${pkg.shelfLocation}` : ""}`,
+            },
+      );
+      setSearchTerm("");
+      return true;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return false;
+      toast({
+        title: "Package lookup failed",
+        description: (err as Error).message || "Could not look up that tracking number.",
+        variant: "destructive",
+      });
+      return false;
     }
   };
 
@@ -1124,6 +1217,19 @@ export function PosHardware() {
       },
       {
         onSuccess: (data) => {
+          // Mark any package-pickup lines as collected (scan-out once).
+          for (const pkgId of cart.filter((c) => c.packagePickupId).map((c) => c.packagePickupId!)) {
+            collectPackage(pkgId, {
+              orderId: (data as { id?: number })?.id,
+              ...(sessionStaff ? { staffId: sessionStaff.id, staffName: sessionStaff.name } : {}),
+            }).catch(() => {
+              toast({
+                title: "Package not marked collected",
+                description: "The sale completed, but a package pickup could not be marked collected. Update it manually from Packages.",
+                variant: "destructive",
+              });
+            });
+          }
           setReceiptOrder(data);
           if (settings?.auto_print_receipt === "true") {
             const ro = receiptOrderFrom(data, {
@@ -1196,6 +1302,16 @@ export function PosHardware() {
   const handleSaveAsQuote = () => {
     if (cart.length === 0) {
       toast({ title: "Cart is empty", description: "Add items before saving a quote.", variant: "destructive" });
+      return;
+    }
+    // Package pickups cannot be quoted: reloading a quote would lose the link
+    // to the package, so the fee would be charged without marking it collected.
+    if (cart.some((c) => c.packagePickupId)) {
+      toast({
+        title: "Package pickup in cart",
+        description: "Package pickups can't be saved to a quote. Remove the package line or check out directly.",
+        variant: "destructive",
+      });
       return;
     }
     const expiryIso = quoteExpiry ? new Date(`${quoteExpiry}T23:59:59`).toISOString() : null;
@@ -1621,6 +1737,11 @@ export function PosHardware() {
                         : c.barcode ?? `#${c.productId}`}
                     </div>
                     <div className="mt-1 flex items-center gap-1">
+                      {c.packagePickupId ? (
+                        // Package pickups are one physical package — no qty controls.
+                        <span className="font-mono text-xs font-semibold w-14 text-center text-slate-100">1</span>
+                      ) : (
+                      <>
                       <button
                         onClick={() => changeQty(c.cartKey, -1)}
                         className="h-6 w-6 rounded-md bg-[#0a1a2a] border border-white/10 text-slate-300 hover:bg-rose-500/10 hover:text-rose-300 transition flex items-center justify-center"
@@ -1670,6 +1791,8 @@ export function PosHardware() {
                       >
                         <Plus className="h-3 w-3" />
                       </button>
+                      </>
+                      )}
                       <button
                         onClick={() => openLineOverride(c, "discount")}
                         className={`h-6 w-6 rounded-md border transition flex items-center justify-center ${
