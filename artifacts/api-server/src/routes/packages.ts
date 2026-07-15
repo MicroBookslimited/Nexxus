@@ -80,8 +80,8 @@ router.get("/packages", async (req, res): Promise<void> => {
   res.json(rows);
 });
 
-// Lookup by exact tracking number (POS scan-out path). Also matches AWB as a
-// fallback so either barcode on the parcel works.
+// Lookup by tracking number (POS scan-out path). Matches Tracking Number, AWB,
+// or Purchase Tracking Number (case-insensitive) so any barcode on the parcel works.
 router.get("/packages/lookup/:tracking", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
@@ -93,7 +93,11 @@ router.get("/packages/lookup/:tracking", async (req, res): Promise<void> => {
     .from(packagesTable)
     .where(and(
       eq(packagesTable.tenantId, tenantId),
-      or(eq(packagesTable.trackingNumber, tracking), eq(packagesTable.awb, tracking))!,
+      or(
+        sql`lower(${packagesTable.trackingNumber}) = lower(${tracking})`,
+        sql`lower(${packagesTable.awb}) = lower(${tracking})`,
+        sql`lower(${packagesTable.purchaseTrackingNumber}) = lower(${tracking})`,
+      )!,
     ))
     .limit(1);
   if (!pkg) { res.status(404).json({ error: "Package not found" }); return; }
