@@ -142,6 +142,17 @@ export default function PackagesPage() {
     setTimeout(() => trackingInputRef.current?.focus(), 50);
   }
 
+  // Some scanners emit the USPS routing chunk ("420"+ZIP) as its own burst
+  // WITHOUT a trailing Enter, leaving it stranded in the search box. Auto-clear
+  // it after a short debounce so the tracking-number chunk lands in an empty
+  // input. The debounce means a longer code merely passing through this state
+  // mid-scan is never wiped.
+  useEffect(() => {
+    if (!isRoutingOnlyBarcode(search.trim())) return;
+    const t = setTimeout(() => setSearch(""), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
   // Scan flow: look the code up first. If the package exists, filter the list
   // to it and show its details; only open the Receive form when it's new.
   async function handleScannedCode(rawCode: string) {

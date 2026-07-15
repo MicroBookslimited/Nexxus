@@ -1389,6 +1389,17 @@ export function POS() {
   // order is created (checkout success), so an abandoned cart never consumes it.
   const packagesEnabled = settings?.packages_enabled === "true";
 
+  // Some scanners emit the USPS routing chunk ("420"+ZIP) as its own burst
+  // WITHOUT a trailing Enter, leaving it stranded in the search box. Auto-clear
+  // it after a short debounce so the tracking-number chunk lands in an empty
+  // input. The debounce means a longer code merely passing through this state
+  // mid-scan is never wiped.
+  useEffect(() => {
+    if (!isRoutingOnlyBarcode(searchTerm.trim())) return;
+    const t = setTimeout(() => setSearchTerm(""), 250);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
   const tryAddPackagePickup = async (code: string): Promise<boolean> => {
     // Routing-only barcode chunk (420+ZIP, no tracking digits): swallow it so
     // it doesn't fall through to product-not-found handling.
