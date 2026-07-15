@@ -128,8 +128,21 @@ export default function PackagesPage() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  // USPS IMpb barcodes prepend routing digits ("420" + 5- or 9-digit ZIP) to
+  // the tracking number; the human-readable number omits them. Strip the
+  // routing prefix so the stored tracking number matches the printed one.
+  function cleanScannedTracking(raw: string): string {
+    const code = raw.trim();
+    const m = code.match(/^420(?:\d{9}|\d{5})(9\d{21,})$/);
+    return m ? m[1] : code;
+  }
+
   function openReceive(prefillTracking?: string) {
-    setForm(prefillTracking ? { ...EMPTY_FORM, trackingNumber: prefillTracking } : EMPTY_FORM);
+    setForm(
+      prefillTracking
+        ? { ...EMPTY_FORM, trackingNumber: cleanScannedTracking(prefillTracking) }
+        : EMPTY_FORM,
+    );
     setEditing(null);
     setReceiveOpen(true);
     setTimeout(() => trackingInputRef.current?.focus(), 50);

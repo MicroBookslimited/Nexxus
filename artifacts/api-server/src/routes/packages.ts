@@ -45,6 +45,33 @@ const CollectPackageBody = z.object({
   staffName: z.string().max(200).optional(),
 });
 
+/* ─── Barcode normalization ───
+ * The same parcel can yield different scan strings depending on which barcode
+ * is scanned (e.g. USPS IMpb barcodes prepend routing digits "420" + ZIP to the
+ * tracking number, while the human-readable number omits them). We match on
+ * normalized values: lowercase, alphanumerics only, and treat codes as equal
+ * when one is a suffix of the other (min 10 chars to avoid false hits). */
+function normalizeCode(raw: string): string {
+  return raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** SQL: normalized column value (lowercase, alphanumerics only). */
+function normCol(col: unknown) {
+  return sql`regexp_replace(lower(${col}), '[^a-z0-9]', '', 'g')`;
+}
+
+/** Match a scanned code against a tracking-ish column, tolerant of routing prefixes. */
+function codeMatches(col: unknown, q: string) {
+  const conds = [sql`${normCol(col)} = ${q}`];
+  if (q.length >= 10) {
+    // scanned code carries a routing prefix (e.g. 420+ZIP) before the stored number
+    conds.push(sql`length(${normCol(col)}) >= 10 AND ${q} LIKE '%' || ${normCol(col)}`);
+    // stored value carries the prefix and the bare number was scanned
+    conds.push(sql`${normCol(col)} LIKE '%' || ${q}`);
+  }
+  return or(...conds)!;
+}
+
 /* ─── Routes ─── */
 
 // List packages (newest first). Optional ?status= and ?search= filters.
@@ -59,16 +86,23 @@ router.get("/packages", async (req, res): Promise<void> => {
   if (status && status !== "all") conds.push(eq(packagesTable.status, status));
   if (search) {
     const pat = `%${search}%`;
-    conds.push(
-      or(
-        ilike(packagesTable.trackingNumber, pat),
-        ilike(packagesTable.awb, pat),
-        ilike(packagesTable.purchaseTrackingNumber, pat),
-        ilike(packagesTable.customerName, pat),
-        ilike(packagesTable.customerPhone, pat),
-        ilike(packagesTable.courier, pat),
-      )!,
-    );
+    const q = normalizeCode(search);
+    const searchConds = [
+      ilike(packagesTable.trackingNumber, pat),
+      ilike(packagesTable.awb, pat),
+      ilike(packagesTable.purchaseTrackingNumber, pat),
+      ilike(packagesTable.customerName, pat),
+      ilike(packagesTable.customerPhone, pat),
+      ilike(packagesTable.courier, pat),
+    ];
+    if (q) {
+      searchConds.push(
+        codeMatches(packagesTable.trackingNumber, q),
+        codeMatches(packagesTable.awb, q),
+        codeMatches(packagesTable.purchaseTrackingNumber, q),
+      );
+    }
+    conds.push(or(...searchConds)!);
   }
 
   const rows = await db
@@ -94,9 +128,9 @@ router.get("/packages/lookup/:tracking", async (req, res): Promise<void> => {
     .where(and(
       eq(packagesTable.tenantId, tenantId),
       or(
-        sql`lower(${packagesTable.trackingNumber}) = lower(${tracking})`,
-        sql`lower(${packagesTable.awb}) = lower(${tracking})`,
-        sql`lower(${packagesTable.purchaseTrackingNumber}) = lower(${tracking})`,
+        codeMatches(packagesTable.trackingNumber, normalizeCode(tracking)),
+        codeMatches(packagesTable.awb, normalizeCode(tracking)),
+        codeMatches(packagesTable.purchaseTrackingNumber, normalizeCode(tracking)),
       )!,
     ))
     .limit(1);
