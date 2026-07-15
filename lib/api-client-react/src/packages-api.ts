@@ -59,7 +59,10 @@ export type CollectPackageInput = {
 
 const PACKAGES_KEY = "packages";
 
-export function useListPackages(filters?: { status?: string; search?: string }) {
+export function useListPackages(
+  filters?: { status?: string; search?: string },
+  opts?: { enabled?: boolean },
+) {
   const params = new URLSearchParams();
   if (filters?.status) params.set("status", filters.status);
   if (filters?.search) params.set("search", filters.search);
@@ -67,6 +70,7 @@ export function useListPackages(filters?: { status?: string; search?: string }) 
   return useQuery<StorePackage[]>({
     queryKey: [PACKAGES_KEY, filters?.status ?? "all", filters?.search ?? ""],
     queryFn: () => customFetch<StorePackage[]>(`/api/packages${qs ? `?${qs}` : ""}`),
+    enabled: opts?.enabled ?? true,
   });
 }
 

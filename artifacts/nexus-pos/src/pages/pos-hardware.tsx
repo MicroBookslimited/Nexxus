@@ -909,6 +909,21 @@ export function PosHardware() {
     return () => clearTimeout(t);
   }, [searchTerm]);
 
+  // Some scanners send the tracking chunk WITHOUT a trailing Enter, leaving it
+  // stranded in the search box. When the module is on and the input looks like
+  // a scanned parcel tracking code (never partial product typing), auto-run the
+  // package lookup after a short pause. A 404 stays silent.
+  useEffect(() => {
+    if (!packagesEnabled) return;
+    const code = cleanScannedTracking(searchTerm.trim());
+    if (!/^(9\d{21,25}|TBA\w{10,})$/i.test(code)) return;
+    const t = setTimeout(() => {
+      void tryAddPackagePickup(searchTerm.trim());
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, packagesEnabled]);
+
   const tryAddPackagePickup = async (code: string): Promise<boolean> => {
     // Routing-only barcode chunk (420+ZIP, no tracking digits): swallow it so
     // it doesn't fall through to product-not-found handling.

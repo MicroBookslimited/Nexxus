@@ -34,7 +34,7 @@ const SETTINGS_SECTIONS: { id: string; label: string; icon: ElementType; keyword
   { id: "section-digest", label: "Notifications", icon: Bell, keywords: "notifications daily digest summary alerts low stock email reports" },
   { id: "section-inventory", label: "Inventory", icon: Boxes, keywords: "inventory stock tracking locations deduction negative batch lot expiry fifo lifo warehouse" },
   { id: "section-pos-security", label: "POS Security", icon: ShieldCheck, keywords: "security pin manager override supermarket mode cashier lock kiosk protection" },
-  { id: "section-pos-interface", label: "POS Interface", icon: Settings, keywords: "interface layout hardware supermarket retail scan search display theme pos screen" },
+  { id: "section-pos-interface", label: "POS Interface", icon: Settings, keywords: "interface layout hardware supermarket retail courier shipping package scan search display theme pos screen" },
   { id: "section-optional-modules", label: "Optional Modules", icon: Boxes, keywords: "optional modules layaway work orders packages shipping package pickup quotations addons" },
   { id: "section-payments", label: "Payment Methods", icon: CreditCard, keywords: "payment methods cash card credit split gift voucher paypal powertranz tender" },
   { id: "section-qr", label: "QR Code", icon: QrCode, keywords: "qr code online menu ordering link customer" },
@@ -104,6 +104,7 @@ export function AdminSettings() {
   const [supermarketUiMode, setSupermarketUiMode] = useState(false);
   const [supermarketSearchMode, setSupermarketSearchMode] = useState(false);
   const [retailUiMode, setRetailUiMode] = useState(false);
+  const [courierUiMode, setCourierUiMode] = useState(false);
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
   const [layawayEnabled, setLayawayEnabled] = useState(false);
   const [workOrdersEnabled, setWorkOrdersEnabled] = useState(false);
@@ -168,6 +169,7 @@ export function AdminSettings() {
     setSupermarketUiMode(settings.supermarket_ui_mode === "true");
     setSupermarketSearchMode(settings.supermarket_search_mode === "true");
     setRetailUiMode(settings.retail_ui_mode === "true");
+    setCourierUiMode(settings.courier_ui_mode === "true");
     setKioskLockEnabled(settings.kiosk_lock_enabled === "true");
     setLayawayEnabled(settings.layaway_enabled === "true");
     setWorkOrdersEnabled(settings.work_orders_enabled === "true");
@@ -226,6 +228,7 @@ export function AdminSettings() {
           supermarket_ui_mode: supermarketUiMode ? "true" : "false",
           supermarket_search_mode: supermarketSearchMode ? "true" : "false",
           retail_ui_mode: retailUiMode ? "true" : "false",
+          courier_ui_mode: courierUiMode ? "true" : "false",
           kiosk_lock_enabled: kioskLockEnabled ? "true" : "false",
           layaway_enabled: layawayEnabled ? "true" : "false",
           work_orders_enabled: workOrdersEnabled ? "true" : "false",
@@ -1583,7 +1586,7 @@ export function AdminSettings() {
               onClick={() => {
                 const next = !hardwareUiMode;
                 setHardwareUiMode(next);
-                if (next) { setSupermarketUiMode(false); setSupermarketSearchMode(false); setRetailUiMode(false); }
+                if (next) { setSupermarketUiMode(false); setSupermarketSearchMode(false); setRetailUiMode(false); setCourierUiMode(false); }
                 markDirty();
               }}
               className={cn(
@@ -1623,7 +1626,7 @@ export function AdminSettings() {
               onClick={() => {
                 const next = !supermarketUiMode;
                 setSupermarketUiMode(next);
-                if (next) { setHardwareUiMode(false); setSupermarketSearchMode(false); setRetailUiMode(false); }
+                if (next) { setHardwareUiMode(false); setSupermarketSearchMode(false); setRetailUiMode(false); setCourierUiMode(false); }
                 markDirty();
               }}
               className={cn(
@@ -1664,7 +1667,7 @@ export function AdminSettings() {
               onClick={() => {
                 const next = !supermarketSearchMode;
                 setSupermarketSearchMode(next);
-                if (next) { setHardwareUiMode(false); setSupermarketUiMode(false); setRetailUiMode(false); }
+                if (next) { setHardwareUiMode(false); setSupermarketUiMode(false); setRetailUiMode(false); setCourierUiMode(false); }
                 markDirty();
               }}
               className={cn(
@@ -1705,7 +1708,7 @@ export function AdminSettings() {
               onClick={() => {
                 const next = !retailUiMode;
                 setRetailUiMode(next);
-                if (next) { setHardwareUiMode(false); setSupermarketUiMode(false); setSupermarketSearchMode(false); }
+                if (next) { setHardwareUiMode(false); setSupermarketUiMode(false); setSupermarketSearchMode(false); setCourierUiMode(false); }
                 markDirty();
               }}
               className={cn(
@@ -1727,6 +1730,48 @@ export function AdminSettings() {
                 <li>• Search by barcode, product name, or SKU — the pick list drops down over the bill area</li>
                 <li>• Scanning still auto-adds on an exact barcode/SKU match</li>
                 <li>• Variant/modifier products fall back to the standard POS</li>
+                <li>• Disable this toggle to return to the standard POS layout</li>
+              </ul>
+            </div>
+          )}
+
+          {/* Courier / Shipping Mode */}
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Courier / Shipping Mode</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Same layout as Retail Store Mode, focused on package pickup and cash-out: adds a "Packages in Store" button so staff can browse parcels awaiting pickup and tap one straight onto the bill. Scanning a tracking barcode still adds the pickup fee automatically. Requires the Package / Shipping Service module. Off by default.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={courierUiMode}
+              onClick={() => {
+                const next = !courierUiMode;
+                setCourierUiMode(next);
+                if (next) { setHardwareUiMode(false); setSupermarketUiMode(false); setSupermarketSearchMode(false); setRetailUiMode(false); }
+                markDirty();
+              }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                courierUiMode ? "bg-cyan-500" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                courierUiMode ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+          {courierUiMode && (
+            <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/20 p-3 text-xs text-cyan-700 dark:text-cyan-400 space-y-1">
+              <p className="font-medium">Courier / Shipping Mode is active</p>
+              <ul className="space-y-0.5 ml-2">
+                <li>• /pos opens the retail layout with a "Packages in Store" browser</li>
+                <li>• Scan a parcel's tracking barcode to add its pickup fee to the bill</li>
+                <li>• Regular products can still be scanned and sold as usual</li>
+                <li>• Turn on the Package / Shipping Service module for receiving and lookups</li>
                 <li>• Disable this toggle to return to the standard POS layout</li>
               </ul>
             </div>

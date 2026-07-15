@@ -17,6 +17,7 @@ import {
   getListHeldOrdersQueryKey,
   lookupPackage,
   collectPackage,
+  useListPackages,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQueries } from "@tanstack/react-query";
 import { useStaff } from "@/contexts/StaffContext";
@@ -62,6 +63,7 @@ import {
   PauseCircle,
   PlayCircle,
   PackagePlus,
+  Package as PackageIcon,
 } from "lucide-react";
 import { buildReceiptHtml, receiptOrderFrom } from "@/lib/receipt";
 import { CardTypeDialog, type CardType } from "@/components/card-type-dialog";
@@ -169,10 +171,13 @@ type CartLine = {
 export function PosSupermarket({
   enableNameSearch = false,
   retailLayout = false,
-}: { enableNameSearch?: boolean; retailLayout?: boolean } = {}) {
+  courierLayout = false,
+}: { enableNameSearch?: boolean; retailLayout?: boolean; courierLayout?: boolean } = {}) {
   // Retail Store Mode is the supermarket layout + item-name search, with the
   // scan box moved into the wide left area (larger, centered) so the product
   // suggestion dropdown has room to open freely.
+  // Courier Mode is the retail layout focused on package pickup/cash-out: it
+  // adds a "Packages in Store" browser so staff can tap a parcel onto the bill.
   const nameSearch = enableNameSearch || retailLayout;
   const [, navigate] = useLocation();
   const { staff: sessionStaff, setStaff, clearStaff, can } = useStaff();
@@ -187,6 +192,22 @@ export function PosSupermarket({
   const businessDisplayName = settings?.business_name;
   const supermarketMode = settings?.supermarket_mode === "true";
   const packagesEnabled = settings?.packages_enabled === "true";
+
+  // Courier Mode: in-store (received) packages browser.
+  const [pkgListOpen, setPkgListOpen] = useState(false);
+  const [pkgListSearch, setPkgListSearch] = useState("");
+  const { data: storePackages = [] } = useListPackages(
+    { status: "received" },
+    { enabled: courierLayout && packagesEnabled },
+  );
+  const filteredStorePackages = useMemo(() => {
+    const q = pkgListSearch.trim().toLowerCase();
+    if (!q) return storePackages;
+    return storePackages.filter((p) =>
+      [p.trackingNumber, p.awb, p.purchaseTrackingNumber, p.customerName, p.customerPhone, p.shelfLocation]
+        .some((v) => (v ?? "").toLowerCase().includes(q)),
+    );
+  }, [storePackages, pkgListSearch]);
 
   // The active cash session's location drives per-location pricing (so a product
   // with a location-specific price_override is rung up at that price, not the
@@ -891,6 +912,21 @@ export function PosSupermarket({
     return () => clearTimeout(t);
   }, [searchTerm]);
 
+  // Some scanners send the tracking chunk WITHOUT a trailing Enter, leaving it
+  // stranded in the search box. When the module is on and the input looks like
+  // a scanned parcel tracking code (never partial product typing), auto-run the
+  // package lookup after a short pause. A 404 stays silent.
+  useEffect(() => {
+    if (!packagesEnabled) return;
+    const code = cleanScannedTracking(searchTerm.trim());
+    if (!/^(9\d{21,25}|TBA\w{10,})$/i.test(code)) return;
+    const t = setTimeout(() => {
+      void tryAddPackagePickup(searchTerm.trim());
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, packagesEnabled]);
+
   const tryAddPackagePickup = async (code: string): Promise<boolean> => {
     // Routing-only barcode chunk (420+ZIP, no tracking digits): swallow it so
     // it doesn't fall through to product-not-found handling.
@@ -1407,7 +1443,7 @@ export function PosSupermarket({
             ) : (
               <>
                 <img src={nexxusLogoUrl} alt="NEXXUS POS" className="h-16 w-auto" />
-                <p className="text-sm text-cyan-300">Supermarket Mode</p>
+                <p className="text-sm text-cyan-300">{courierLayout ? "Courier Mode" : "Supermarket Mode"}</p>
               </>
             )}
           </div>
@@ -1456,7 +1492,7 @@ export function PosSupermarket({
           <img src={nexxusLogoUrl} alt="NEXXUS POS" className="h-9 w-auto" />
           <div className="hidden md:flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 px-3 py-1 shadow-sm">
             <Store className="h-3.5 w-3.5 text-white" />
-            <span className="text-xs font-semibold text-white tracking-wide">Supermarket Mode</span>
+            <span className="text-xs font-semibold text-white tracking-wide">{courierLayout ? "Courier Mode" : "Supermarket Mode"}</span>
           </div>
           {cashSession?.session?.stationNumber != null && (
             <div className="flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1 shadow-sm">
@@ -1753,6 +1789,22 @@ export function PosSupermarket({
               Price Check
             </button>
 
+            {/* Courier Mode: browse in-store packages and tap one onto the bill */}
+            {courierLayout && packagesEnabled && (
+              <button
+                onClick={() => { setPkgListSearch(""); setPkgListOpen(true); }}
+                className="w-full rounded-xl border border-cyan-600 bg-cyan-500 px-3 h-12 text-sm font-bold text-white hover:bg-cyan-600 transition flex items-center justify-center gap-2"
+              >
+                <PackageIcon className="h-4 w-4" />
+                Packages in Store
+                {storePackages.length > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-white/25 text-white text-[11px] font-mono font-bold">
+                    {storePackages.length}
+                  </span>
+                )}
+              </button>
+            )}
+
             {/* Quantity / cash keypad */}
             <div className="rounded-2xl bg-muted/50 border border-border p-3">
               <div className="flex items-center justify-between mb-2 px-1">
@@ -2006,6 +2058,58 @@ export function PosSupermarket({
               toast({ title: "Override approved", description: `Authorized by ${staff.name}` });
             }}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Courier Mode: packages in store — tap one onto the bill ─────── */}
+      <Dialog open={pkgListOpen} onOpenChange={(o) => { setPkgListOpen(o); if (!o) focusScanInput(); }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PackageIcon className="h-4 w-4 text-cyan-500" />
+              Packages in Store
+            </DialogTitle>
+            <DialogDescription>
+              Tap a package to add its pickup fee to the bill, or scan its tracking barcode at any time.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={pkgListSearch}
+            onChange={(e) => setPkgListSearch(e.target.value)}
+            placeholder="Search tracking #, customer, phone, shelf…"
+          />
+          <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-border divide-y divide-border">
+            {filteredStorePackages.length === 0 ? (
+              <p className="p-6 text-sm text-muted-foreground text-center">
+                {storePackages.length === 0 ? "No packages awaiting pickup." : "No packages match this search."}
+              </p>
+            ) : (
+              filteredStorePackages.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setPkgListOpen(false);
+                    void tryAddPackagePickup(p.trackingNumber);
+                  }}
+                  className="w-full text-left px-4 py-3 hover:bg-muted/60 transition flex items-center gap-4"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-mono text-sm font-semibold truncate">{p.trackingNumber}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {[p.customerName, p.customerPhone, p.courier].filter(Boolean).join(" · ") || "No customer details"}
+                    </p>
+                  </div>
+                  {p.shelfLocation && (
+                    <span className="shrink-0 rounded-md bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-xs font-semibold text-cyan-600 dark:text-cyan-300">
+                      {p.shelfLocation}
+                    </span>
+                  )}
+                  <span className="shrink-0 font-mono text-sm font-bold">{formatCurrency(p.fee, baseCurrency)}</span>
+                </button>
+              ))
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
