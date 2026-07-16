@@ -93,7 +93,7 @@ import { SplitPaymentDialog } from "@/components/split-payment-dialog";
 import { printQuotation } from "@/lib/quotation-doc";
 import { printOrderReceipt } from "@/lib/print-receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, getPurchaseUnits, type PurchaseUnit, getPricingTiers, previewTierPrice, type PricingTier, lookupGiftVoucher, type VoucherLookupResult, ApiError } from "@/lib/saas-api";
-import { isRoutingOnlyBarcode, cleanScannedTracking } from "@/lib/package-barcode";
+import { isRoutingOnlyBarcode, cleanScannedTracking, extractTracking } from "@/lib/package-barcode";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -915,8 +915,7 @@ export function PosHardware() {
   // package lookup after a short pause. A 404 stays silent.
   useEffect(() => {
     if (!packagesEnabled) return;
-    const code = cleanScannedTracking(searchTerm.trim());
-    if (!/^(9\d{21,25}|TBA\w{10,})$/i.test(code)) return;
+    if (!extractTracking(searchTerm)) return;
     const t = setTimeout(() => {
       void tryAddPackagePickup(searchTerm.trim());
     }, 400);
@@ -932,7 +931,7 @@ export function PosHardware() {
       return true;
     }
     try {
-      const pkg = await lookupPackage(cleanScannedTracking(code));
+      const pkg = await lookupPackage(extractTracking(code) ?? cleanScannedTracking(code));
       if (pkg.status === "collected") {
         toast({
           title: "Package already collected",

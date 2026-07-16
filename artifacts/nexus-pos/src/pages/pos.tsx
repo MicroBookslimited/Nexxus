@@ -48,7 +48,7 @@ import {
   ChevronDown, ChevronUp, LayoutGrid,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions, lookupGiftVoucher, type VoucherLookupResult, fetchCustomerByCard, closeTable } from "@/lib/saas-api";
-import { isRoutingOnlyBarcode, cleanScannedTracking } from "@/lib/package-barcode";
+import { isRoutingOnlyBarcode, cleanScannedTracking, extractTracking } from "@/lib/package-barcode";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
@@ -1406,8 +1406,7 @@ export function POS() {
   // package lookup after a short pause. A 404 stays silent.
   useEffect(() => {
     if (!packagesEnabled) return;
-    const code = cleanScannedTracking(searchTerm.trim());
-    if (!/^(9\d{21,25}|TBA\w{10,})$/i.test(code)) return;
+    if (!extractTracking(searchTerm)) return;
     const t = setTimeout(() => {
       void tryAddPackagePickup(searchTerm.trim());
     }, 400);
@@ -1423,7 +1422,7 @@ export function POS() {
       return true;
     }
     try {
-      const pkg = await lookupPackage(cleanScannedTracking(code));
+      const pkg = await lookupPackage(extractTracking(code) ?? cleanScannedTracking(code));
       if (pkg.status === "collected") {
         toast({
           title: "Package already collected",
