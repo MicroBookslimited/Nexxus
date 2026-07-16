@@ -4382,7 +4382,7 @@ export function Products() {
                 <Card className={`group hover:border-primary/50 transition-colors ${isOut ? "border-destructive/30" : isLow ? "border-yellow-500/30" : ""}`}>
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">
-                      <CardTitle className="text-sm font-semibold leading-snug flex-1 truncate">{product.name}</CardTitle>
+                      <CardTitle className={`text-sm font-semibold leading-snug flex-1 truncate ${canManage ? "cursor-pointer hover:text-primary active:text-primary" : ""}`} onClick={() => canManage && openEdit(product)}>{product.name}</CardTitle>
                       <Badge variant="outline" className="text-[10px] shrink-0">{product.category}</Badge>
                     </div>
                     {product.sku && <p className="text-[11px] text-muted-foreground/80 font-mono truncate mt-0.5">SKU: {product.sku}</p>}
@@ -4417,7 +4417,7 @@ export function Products() {
                         )}
                       </div>
                     </div>
-                    <div className="flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-3 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
                       <Button size="sm" variant="outline" className="h-9 px-3 text-sm" title="Print Label" onClick={() => setPrintProduct(product)}>
                         <Printer className="h-4 w-4" />
                       </Button>
@@ -4511,8 +4511,8 @@ export function Products() {
                     />
                   ) : <span />}
                   {/* Name + description */}
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold truncate flex items-center gap-1.5">
+                  <div className={`min-w-0 ${canManage ? "cursor-pointer" : ""}`} onClick={() => canManage && openEdit(product)}>
+                    <p className={`text-sm font-semibold truncate flex items-center gap-1.5 ${canManage ? "hover:text-primary active:text-primary" : ""}`}>
                       {product.archivedAt && <Badge variant="secondary" className="text-[9px] h-4 px-1 gap-0.5 shrink-0"><Archive className="h-2.5 w-2.5" />Archived</Badge>}
                       <span className="truncate">{product.name}</span>
                     </p>
@@ -4564,7 +4564,7 @@ export function Products() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex gap-2 justify-end opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
                     <Button size="icon" variant="outline" className="h-9 w-9" title="Print Label" onClick={() => setPrintProduct(product)}>
                       <Printer className="h-4 w-4" />
                     </Button>
@@ -4749,7 +4749,7 @@ export function Products() {
                         <p className="text-xs text-muted-foreground">
                           {new Date(bill.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                         </p>
-                        <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex gap-1 justify-end opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
                           <Button size="icon" variant="outline" className="h-7 w-7" title="View" onClick={() => setViewBillId(bill.id)}>
                             <Eye className="h-3 w-3" />
                           </Button>
@@ -5242,7 +5242,7 @@ export function Products() {
                             ? new Date(po.expectedDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                             : "—"}
                         </p>
-                        <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex gap-1 justify-end opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
                           <Button size="icon" variant="outline" className="h-7 w-7" title="View" onClick={() => setViewPoId(po.id)}>
                             <Eye className="h-3 w-3" />
                           </Button>
