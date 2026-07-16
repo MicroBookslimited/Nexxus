@@ -1559,6 +1559,13 @@ export function PosSupermarket({
           >
             <LockKeyhole className="h-4 w-4" />
           </button>
+          <button
+            onClick={() => navigate("/cash?close=1")}
+            className="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-md hover:brightness-110 active:scale-[0.98] transition"
+            title="Close shift"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
       </div>
 

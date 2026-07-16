@@ -108,19 +108,66 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
     }
   }
 
+  // Last-admin guard: never allow the only active admin to be downgraded or
+  // deactivated — the tenant would lock itself out of admin functions.
+  const losesAdmin =
+    (parsed.data.role !== undefined && parsed.data.role.toLowerCase() !== "admin") ||
+    parsed.data.isActive === false;
+  if (losesAdmin) {
+    const [target] = await db.select({ role: staffTable.role, isActive: staffTable.isActive })
+      .from(staffTable)
+      .where(and(eq(staffTable.id, id), eq(staffTable.tenantId, tenantId)));
+    if (target && target.isActive && (target.role ?? "").toLowerCase() === "admin") {
+      const others = await db.select({ id: staffTable.id })
+        .from(staffTable)
+        .where(and(
+          eq(staffTable.tenantId, tenantId),
+          eq(staffTable.isActive, true),
+          sql`LOWER(${staffTable.role}) = 'admin'`,
+        ));
+      if (!others.some(o => o.id !== id)) {
+        res.status(409).json({ error: "You can't remove the last admin. Promote another staff member to admin first." });
+        return;
+      }
+    }
+  }
+
   const updates: Partial<typeof staffTable.$inferInsert> = {};
   if (parsed.data.name !== undefined) updates.name = parsed.data.name;
   if (parsed.data.pin !== undefined) updates.pin = parsed.data.pin;
   if (parsed.data.role !== undefined) updates.role = parsed.data.role;
   if (parsed.data.isActive !== undefined) updates.isActive = parsed.data.isActive;
 
+  // Atomic re-check inside the UPDATE itself so two concurrent requests can't
+  // both slip past the pre-check and remove every admin: when this update
+  // would strip admin from an active admin, the row only matches if another
+  // active admin still exists.
+  const guardCondition = losesAdmin
+    ? sql`(LOWER(${staffTable.role}) <> 'admin' OR ${staffTable.isActive} = false OR EXISTS (
+        SELECT 1 FROM staff s2
+        WHERE s2.tenant_id = ${tenantId} AND s2.is_active = true
+          AND LOWER(s2.role) = 'admin' AND s2.id <> ${id}
+      ))`
+    : undefined;
+
   const [member] = await db
     .update(staffTable)
     .set(updates)
-    .where(and(eq(staffTable.id, id), eq(staffTable.tenantId, tenantId)))
+    .where(and(eq(staffTable.id, id), eq(staffTable.tenantId, tenantId), guardCondition))
     .returning();
 
-  if (!member) { res.status(404).json({ error: "Staff member not found" }); return; }
+  if (!member) {
+    if (losesAdmin) {
+      const [exists] = await db.select({ id: staffTable.id }).from(staffTable)
+        .where(and(eq(staffTable.id, id), eq(staffTable.tenantId, tenantId)));
+      if (exists) {
+        res.status(409).json({ error: "You can't remove the last admin. Promote another staff member to admin first." });
+        return;
+      }
+    }
+    res.status(404).json({ error: "Staff member not found" });
+    return;
+  }
 
   await logAudit({ tenantId, action: "staff.update", entityType: "staff", entityId: id, details: { name: member.name, role: member.role, isActive: member.isActive } });
   res.json(sanitizeStaff(member));
@@ -133,9 +180,42 @@ router.delete("/staff/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid staff id" }); return; }
 
-  await db.update(staffTable)
-    .set({ isActive: false })
+  // Last-admin guard: deleting (deactivating) the only active admin is blocked.
+  const [target] = await db.select({ role: staffTable.role, isActive: staffTable.isActive })
+    .from(staffTable)
     .where(and(eq(staffTable.id, id), eq(staffTable.tenantId, tenantId)));
+  if (target && target.isActive && (target.role ?? "").toLowerCase() === "admin") {
+    const others = await db.select({ id: staffTable.id })
+      .from(staffTable)
+      .where(and(
+        eq(staffTable.tenantId, tenantId),
+        eq(staffTable.isActive, true),
+        sql`LOWER(${staffTable.role}) = 'admin'`,
+      ));
+    if (!others.some(o => o.id !== id)) {
+      res.status(409).json({ error: "You can't remove the last admin. Promote another staff member to admin first." });
+      return;
+    }
+  }
+
+  // Atomic re-check (same rationale as PATCH): only deactivate an active admin
+  // if another active admin still exists at write time.
+  const deleted = await db.update(staffTable)
+    .set({ isActive: false })
+    .where(and(
+      eq(staffTable.id, id),
+      eq(staffTable.tenantId, tenantId),
+      sql`(LOWER(${staffTable.role}) <> 'admin' OR ${staffTable.isActive} = false OR EXISTS (
+        SELECT 1 FROM staff s2
+        WHERE s2.tenant_id = ${tenantId} AND s2.is_active = true
+          AND LOWER(s2.role) = 'admin' AND s2.id <> ${id}
+      ))`,
+    ))
+    .returning({ id: staffTable.id });
+  if (deleted.length === 0 && target) {
+    res.status(409).json({ error: "You can't remove the last admin. Promote another staff member to admin first." });
+    return;
+  }
   await logAudit({ tenantId, action: "staff.delete", entityType: "staff", entityId: id });
   res.status(204).send();
 });

@@ -540,7 +540,10 @@ export function Staff() {
       { id },
       {
         onSuccess: () => { toast({ title: "Staff member deactivated" }); invalidate(); },
-        onError: () => toast({ title: "Error", description: "Could not deactivate staff member", variant: "destructive" }),
+        onError: (err: any) => {
+          const msg = err?.data?.error ?? err?.message ?? "Could not deactivate staff member";
+          toast({ title: "Could not deactivate staff member", description: msg, variant: "destructive" });
+        },
       },
     );
   };
