@@ -178,7 +178,7 @@ export function PosSupermarket({
   // suggestion dropdown has room to open freely.
   // Courier Mode is the retail layout focused on package pickup/cash-out: it
   // adds a "Packages in Store" browser so staff can tap a parcel onto the bill.
-  const nameSearch = enableNameSearch || retailLayout;
+  const nameSearch = (enableNameSearch || retailLayout) && !courierLayout;
   const [, navigate] = useLocation();
   const { staff: sessionStaff, setStaff, clearStaff, can } = useStaff();
   const [locked, setLocked] = useState(() => !sessionStaff);
@@ -1053,11 +1053,19 @@ export function PosSupermarket({
     void (async () => {
       if (packagesEnabled && (await tryAddPackagePickup(code))) return;
       playScanErrorTone();
-      toast({
-        title: "No product found",
-        description: `Nothing matches “${code}”.`,
-        variant: "destructive",
-      });
+      toast(
+        courierLayout
+          ? {
+              title: "No package found",
+              description: `No package in house matches “${code}”. Check the tracking number or receive it first.`,
+              variant: "destructive",
+            }
+          : {
+              title: "No product found",
+              description: `Nothing matches “${code}”.`,
+              variant: "destructive",
+            },
+      );
     })();
   };
 
@@ -1067,7 +1075,7 @@ export function PosSupermarket({
   const renderScanBox = (large = false) => (
     <div className={`relative ${large ? "w-full max-w-2xl" : ""}`}>
       <Label className="text-xs text-muted-foreground mb-1.5 block">
-        {nameSearch ? "Search by name, SKU, or barcode" : "Scan or type SKU / barcode"}
+        {courierLayout ? "Search for package" : nameSearch ? "Search by name, SKU, or barcode" : "Scan or type SKU / barcode"}
       </Label>
       <div className="relative">
         <ScanBarcode className={`absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500 pointer-events-none ${large ? "h-6 w-6" : "h-5 w-5"}`} />
@@ -1077,7 +1085,7 @@ export function PosSupermarket({
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           onKeyDown={handleSearchKey}
-          placeholder={nameSearch ? "Search or scan a product…" : "Scan a barcode…"}
+          placeholder={courierLayout ? "Scan package / tracking number…" : nameSearch ? "Search or scan a product…" : "Scan a barcode…"}
           className={`bg-white border-cyan-500/40 focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20 text-gray-900 placeholder:text-gray-400 rounded-xl ${large ? "pl-12 pr-11 h-16 text-xl" : "pl-11 pr-10 h-14 text-lg"}`}
           autoComplete="off"
         />
@@ -1623,8 +1631,8 @@ export function PosSupermarket({
             {cart.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-8">
                 <ScanBarcode className="h-14 w-14 text-muted-foreground/40" />
-                <p className="text-lg font-semibold text-muted-foreground">Scan an item to begin</p>
-                <p className="text-sm text-muted-foreground/70">Use the scanner or type a barcode and press Enter.</p>
+                <p className="text-lg font-semibold text-muted-foreground">{courierLayout ? "Scan a package to begin" : "Scan an item to begin"}</p>
+                <p className="text-sm text-muted-foreground/70">{courierLayout ? "Scan the tracking barcode or type a tracking number." : "Use the scanner or type a barcode and press Enter."}</p>
               </div>
             ) : (
               cart.map((c) => {
