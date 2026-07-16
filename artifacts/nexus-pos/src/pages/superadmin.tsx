@@ -15,7 +15,7 @@ import { SuperadminAnalyticsTab } from "./superadmin-analytics-tab";
 import { TechniciansTab } from "./superadmin-technicians-tab";
 import { SuperadminSupportTab } from "./superadmin-support-tab";
 import { SuperadminCouponsTab } from "./superadmin-coupons-tab";
-import { SuperadminSubscriptionsTab } from "./superadmin-subscriptions-tab";
+import { SuperadminSubscriptionsTab, effectiveEnd, daysUntil, countdownText } from "./superadmin-subscriptions-tab";
 import {
   SUPERADMIN_TOKEN_KEY, TENANT_TOKEN_KEY,
   superadminLogin, superadminStats, superadminTenants,
@@ -145,7 +145,7 @@ function ManualPaymentStatusBadge({ status }: { status: string }) {
 }
 
 function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; plans: { id: number; name: string; slug: string; priceMonthly: number; priceAnnual: number }[]; onClose: () => void; onUpdate: () => void }) {
-  const [innerTab, setInnerTab] = useState<"settings" | "payments" | "staff">("settings");
+  const [innerTab, setInnerTab] = useState<"settings" | "payments" | "staff" | "subscription">("settings");
 
   const [tenantStatus, setTenantStatus] = useState(tenant.status);
   const [subStatus, setSubStatus] = useState(tenant.subscriptionStatus ?? "trial");
@@ -206,6 +206,15 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
   }, [tenant.id]);
 
   useEffect(() => { if (innerTab === "staff") loadStaff(); }, [innerTab, loadStaff]);
+
+  // Live clock for the Subscription tab countdown (minute granularity).
+  const [subNow, setSubNow] = useState(() => new Date());
+  useEffect(() => {
+    if (innerTab !== "subscription") return;
+    setSubNow(new Date());
+    const t = setInterval(() => setSubNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, [innerTab]);
 
   async function handleCreateStaff(e: React.FormEvent) {
     e.preventDefault();
@@ -288,7 +297,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
 
         {/* Inner tabs */}
         <div className="flex gap-1 px-6 pt-4 pb-0 border-b border-[#2a3a55] shrink-0">
-          {([["settings", "Settings"], ["payments", "Offline Payments"], ["staff", "PIN Users"]] as const).map(([id, label]) => (
+          {([["settings", "Settings"], ["payments", "Offline Payments"], ["staff", "PIN Users"], ["subscription", "Subscription"]] as const).map(([id, label]) => (
             <button key={id} onClick={() => setInnerTab(id)}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${innerTab === id ? "border-[#3b82f6] text-[#3b82f6]" : "border-transparent text-[#475569] hover:text-white"}`}>
               {label}
@@ -518,6 +527,53 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
             </div>
           )}
 
+          {/* ── Subscription tab ── */}
+          {innerTab === "subscription" && (() => {
+            const subLike = { status: tenant.subscriptionStatus ?? "trial", trialEndsAt: tenant.trialEndsAt ?? null, currentPeriodEnd: tenant.currentPeriodEnd ?? null };
+            const end = effectiveEnd(subLike);
+            const d = end ? daysUntil(end, subNow) : null;
+            const c = countdownText(subLike, subNow);
+            const urgency =
+              d === null ? "border-[#2a3a55] bg-[#0f1729]"
+              : d < 0 ? "border-red-500/40 bg-red-500/10"
+              : d === 0 ? "border-red-500/40 bg-red-500/10"
+              : d <= 5 ? "border-orange-500/40 bg-orange-500/10"
+              : d <= 14 ? "border-yellow-500/30 bg-yellow-500/5"
+              : "border-emerald-500/30 bg-emerald-500/5";
+            return (
+              <div className="p-6 space-y-4">
+                <div className={`border rounded-xl p-4 ${urgency}`}>
+                  <p className="text-xs text-[#94a3b8] mb-1">Subscription expiry</p>
+                  <p className="text-lg font-semibold text-white">
+                    {end ? end.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "No expiry date on record"}
+                  </p>
+                  {c && <p className={`text-sm mt-1 ${c.cls}`}>{c.text}</p>}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-[#0f1729] border border-[#2a3a55] rounded-lg p-3">
+                    <p className="text-[10px] text-[#475569] uppercase tracking-wide mb-1">Status</p>
+                    <p className="text-sm text-white capitalize">{tenant.subscriptionStatus ?? "trial"}</p>
+                  </div>
+                  <div className="bg-[#0f1729] border border-[#2a3a55] rounded-lg p-3">
+                    <p className="text-[10px] text-[#475569] uppercase tracking-wide mb-1">Plan</p>
+                    <p className="text-sm text-white">{tenant.planName ?? "—"}</p>
+                  </div>
+                  <div className="bg-[#0f1729] border border-[#2a3a55] rounded-lg p-3">
+                    <p className="text-[10px] text-[#475569] uppercase tracking-wide mb-1">Billing cycle</p>
+                    <p className="text-sm text-white capitalize">{tenant.billingCycle ?? "—"}</p>
+                  </div>
+                  <div className="bg-[#0f1729] border border-[#2a3a55] rounded-lg p-3">
+                    <p className="text-[10px] text-[#475569] uppercase tracking-wide mb-1">Period start</p>
+                    <p className="text-sm text-white">{tenant.currentPeriodStart ? new Date(tenant.currentPeriodStart).toLocaleDateString() : "—"}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-[#475569]">
+                  To change the plan, status, or record a payment, use the Settings or Offline Payments tabs.
+                </p>
+              </div>
+            );
+          })()}
+
           {/* ── PIN Users tab ── */}
           {innerTab === "staff" && (
             <div className="p-6 space-y-4">
@@ -604,7 +660,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
             </button>
           </div>
         )}
-        {(innerTab === "payments" || innerTab === "staff") && (
+        {(innerTab === "payments" || innerTab === "staff" || innerTab === "subscription") && (
           <div className="px-6 py-4 border-t border-[#2a3a55] shrink-0">
             <button onClick={onClose} className="w-full bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Close</button>
           </div>

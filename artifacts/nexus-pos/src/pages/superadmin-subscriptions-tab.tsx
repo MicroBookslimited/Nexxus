@@ -27,6 +27,72 @@ function fromDateInput(v: string): string | null {
 
 const STATUS_OPTIONS: SubscriptionUpdate["status"][] = ["trial", "active", "past_due", "cancelled", "expired"];
 
+/* ── Expiry categorization ── */
+// Effective expiry date: trial subs run off trialEndsAt, everything else off currentPeriodEnd.
+export function effectiveEnd(s: { status: string; trialEndsAt?: string | null; currentPeriodEnd?: string | null }): Date | null {
+  const raw = s.status === "trial" ? (s.trialEndsAt ?? s.currentPeriodEnd) : (s.currentPeriodEnd ?? s.trialEndsAt);
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Whole calendar days from today until the end date (0 = today, negative = past).
+export function daysUntil(end: Date, now: Date): number {
+  const a = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const b = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime();
+  return Math.round((b - a) / 86400000);
+}
+
+type ExpiryBucket = { key: string; label: string; accent: string };
+const EXPIRY_BUCKETS: ExpiryBucket[] = [
+  { key: "expired", label: "Expired", accent: "text-red-400 border-red-500/30 bg-red-500/10" },
+  { key: "today", label: "Expiring Today", accent: "text-red-400 border-red-500/30 bg-red-500/10" },
+  { key: "d1", label: "Expiring in 1 Day", accent: "text-orange-400 border-orange-500/30 bg-orange-500/10" },
+  { key: "d2", label: "Expiring in 2 Days", accent: "text-orange-400 border-orange-500/30 bg-orange-500/10" },
+  { key: "d3", label: "Expiring in 3 Days", accent: "text-orange-400 border-orange-500/30 bg-orange-500/10" },
+  { key: "d4", label: "Expiring in 4 Days", accent: "text-amber-400 border-amber-500/30 bg-amber-500/10" },
+  { key: "d5", label: "Expiring in 5 Days", accent: "text-amber-400 border-amber-500/30 bg-amber-500/10" },
+  { key: "d7", label: "Expiring Within 7 Days", accent: "text-yellow-400 border-yellow-500/30 bg-yellow-500/10" },
+  { key: "d14", label: "Expiring Within 14 Days", accent: "text-lime-400 border-lime-500/30 bg-lime-500/10" },
+  { key: "d30", label: "Expiring Within 30 Days", accent: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10" },
+  { key: "later", label: "Expiring Later", accent: "text-[#94a3b8] border-[#2a3a55] bg-[#0f1729]" },
+  { key: "none", label: "No Expiry Date", accent: "text-[#94a3b8] border-[#2a3a55] bg-[#0f1729]" },
+];
+
+function bucketKey(s: SubscriptionRow, now: Date): string {
+  const end = effectiveEnd(s);
+  if (s.status === "expired") return "expired";
+  if (!end) return "none";
+  const d = daysUntil(end, now);
+  if (d < 0) return "expired";
+  if (d === 0) return "today";
+  if (d <= 5) return `d${d}`;
+  if (d <= 7) return "d7";
+  if (d <= 14) return "d14";
+  if (d <= 30) return "d30";
+  return "later";
+}
+
+// Human countdown chip text for a row.
+export function countdownText(s: { status: string; trialEndsAt?: string | null; currentPeriodEnd?: string | null }, now: Date): { text: string; cls: string } | null {
+  const end = effectiveEnd(s);
+  if (s.status === "expired") return { text: "Expired", cls: "text-red-400" };
+  if (!end) return null;
+  const d = daysUntil(end, now);
+  if (d < 0) return { text: `Expired ${-d === 1 ? "1 day" : `${-d} days`} ago`, cls: "text-red-400" };
+  if (d === 0) {
+    const endOfDay = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999);
+    const ms = Math.max(0, endOfDay.getTime() - now.getTime());
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return { text: `Expires today — ${h}h ${m}m left`, cls: "text-red-400 font-semibold" };
+  }
+  if (d <= 5) return { text: `${d} ${d === 1 ? "day" : "days"} left`, cls: "text-orange-400" };
+  if (d <= 14) return { text: `${d} days left`, cls: "text-yellow-400" };
+  if (d <= 30) return { text: `${d} days left`, cls: "text-emerald-400" };
+  return null;
+}
+
 function statusBadge(status: string): string {
   switch (status) {
     case "active": return "bg-green-500/15 text-green-400";
@@ -176,6 +242,30 @@ export function SuperadminSubscriptionsTab() {
     });
   }, [subs, search, statusFilter]);
 
+  // Ticks every minute so the "expiring today" countdown stays live.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  const groups = useMemo(() => {
+    const byKey = new Map<string, SubscriptionRow[]>();
+    for (const s of filtered) {
+      const k = bucketKey(s, now);
+      const arr = byKey.get(k) ?? [];
+      arr.push(s);
+      byKey.set(k, arr);
+    }
+    // Within each bucket, soonest expiry first.
+    for (const arr of byKey.values()) {
+      arr.sort((a, b) => (effectiveEnd(a)?.getTime() ?? Infinity) - (effectiveEnd(b)?.getTime() ?? Infinity));
+    }
+    return EXPIRY_BUCKETS
+      .map(b => ({ ...b, items: byKey.get(b.key) ?? [] }))
+      .filter(b => b.items.length > 0);
+  }, [filtered, now]);
+
   const [invoiceBusy, setInvoiceBusy] = useState<{ id: number; action: "send" | "download" } | null>(null);
 
   async function sendInvoice(s: SubscriptionRow) {
@@ -280,7 +370,16 @@ export function SuperadminSubscriptionsTab() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(s => (
+                {groups.map(g => [
+                  <tr key={`hdr-${g.key}`} className="border-b border-[#2a3a55]/50 bg-[#0f1729]/60">
+                    <td colSpan={7} className="px-4 py-2">
+                      <span className={`inline-flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-full border ${g.accent}`}>
+                        {g.label}
+                        <span className="opacity-70 font-normal">({g.items.length})</span>
+                      </span>
+                    </td>
+                  </tr>,
+                  ...g.items.map(s => (
                   <tr key={s.id} className="border-b border-[#2a3a55]/50 last:border-0 hover:bg-[#0f1729]/40">
                     <td className="px-4 py-3">
                       <div className="text-white truncate max-w-[220px]">{s.businessName ?? `Tenant #${s.tenantId}`}</div>
@@ -290,7 +389,10 @@ export function SuperadminSubscriptionsTab() {
                     <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full ${statusBadge(s.status)}`}>{s.status}</span></td>
                     <td className="px-4 py-3 text-[#94a3b8]">{s.billingCycle}</td>
                     <td className="px-4 py-3 text-[#94a3b8]">{fmtDate(s.currentPeriodStart)}</td>
-                    <td className="px-4 py-3 text-[#94a3b8]">{fmtDate(s.currentPeriodEnd)}</td>
+                    <td className="px-4 py-3">
+                      <div className="text-[#94a3b8]">{fmtDate(effectiveEnd(s)?.toISOString() ?? s.currentPeriodEnd)}</div>
+                      {(() => { const c = countdownText(s, now); return c ? <div className={`text-[11px] mt-0.5 ${c.cls}`}>{c.text}</div> : null; })()}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1.5 justify-end">
                         <button onClick={() => sendInvoice(s)} title="Send invoice" disabled={invoiceBusy !== null}
@@ -312,14 +414,22 @@ export function SuperadminSubscriptionsTab() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )),
+                ])}
               </tbody>
             </table>
           </div>
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-3">
-            {filtered.map(s => (
+            {groups.map(g => [
+              <div key={`hdr-${g.key}`} className="pt-1">
+                <span className={`inline-flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-full border ${g.accent}`}>
+                  {g.label}
+                  <span className="opacity-70 font-normal">({g.items.length})</span>
+                </span>
+              </div>,
+              ...g.items.map(s => (
               <div key={s.id} className="bg-[#1a2332] border border-[#2a3a55] rounded-xl p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -332,8 +442,9 @@ export function SuperadminSubscriptionsTab() {
                   <div><span className="text-[#475569]">Plan: </span><span className="text-[#94a3b8]">{s.planName ?? "—"}</span></div>
                   <div><span className="text-[#475569]">Cycle: </span><span className="text-[#94a3b8]">{s.billingCycle}</span></div>
                   <div><span className="text-[#475569]">Start: </span><span className="text-[#94a3b8]">{fmtDate(s.currentPeriodStart)}</span></div>
-                  <div><span className="text-[#475569]">End: </span><span className="text-[#94a3b8]">{fmtDate(s.currentPeriodEnd)}</span></div>
+                  <div><span className="text-[#475569]">End: </span><span className="text-[#94a3b8]">{fmtDate(effectiveEnd(s)?.toISOString() ?? s.currentPeriodEnd)}</span></div>
                 </div>
+                {(() => { const c = countdownText(s, now); return c ? <div className={`text-[11px] mt-2 ${c.cls}`}>{c.text}</div> : null; })()}
                 <div className="flex gap-2 mt-3 pt-3 border-t border-[#2a3a55]">
                   <button onClick={() => sendInvoice(s)} disabled={invoiceBusy !== null}
                     className="flex-1 flex items-center justify-center gap-1.5 bg-[#0f1729] border border-[#2a3a55] text-emerald-400 py-1.5 rounded-lg text-xs disabled:opacity-50">
@@ -353,7 +464,8 @@ export function SuperadminSubscriptionsTab() {
                     className="flex-1 flex items-center justify-center gap-1.5 bg-[#0f1729] border border-[#2a3a55] text-red-400 py-1.5 rounded-lg text-xs"><Trash2 size={12} /> Delete</button>
                 </div>
               </div>
-            ))}
+              )),
+            ])}
           </div>
         </>
       )}
