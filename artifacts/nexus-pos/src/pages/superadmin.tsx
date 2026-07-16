@@ -27,6 +27,7 @@ import {
   superadminGetPlans, superadminCreatePlan, superadminUpdatePlan, superadminDeletePlan,
   superadminGetGatewaySettings, superadminUpdateGatewaySettings, superadminGetImpersonationLogs, superadminCloseImpersonationSession,
   superadminGetManualPayments, superadminCreateManualPayment, superadminCancelManualPayment,
+  superadminGetTenantStaff, superadminCreateTenantStaff, type SuperadminStaffRow,
   type TenantRow, type BankAccount, type TransferProofRow, type Plan, type UserRow, type GatewaySettings, type ImpersonationLog, type ManualPayment,
 } from "@/lib/saas-api";
 
@@ -144,7 +145,7 @@ function ManualPaymentStatusBadge({ status }: { status: string }) {
 }
 
 function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; plans: { id: number; name: string; slug: string; priceMonthly: number; priceAnnual: number }[]; onClose: () => void; onUpdate: () => void }) {
-  const [innerTab, setInnerTab] = useState<"settings" | "payments">("settings");
+  const [innerTab, setInnerTab] = useState<"settings" | "payments" | "staff">("settings");
 
   const [tenantStatus, setTenantStatus] = useState(tenant.status);
   const [subStatus, setSubStatus] = useState(tenant.subscriptionStatus ?? "trial");
@@ -188,6 +189,41 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
   }, [tenant.id]);
 
   useEffect(() => { if (innerTab === "payments") loadPayments(); }, [innerTab, loadPayments]);
+
+  // ── PIN staff (Cashier / Admin) ──
+  const [staffRows, setStaffRows] = useState<SuperadminStaffRow[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffForm, setStaffForm] = useState({ name: "", pin: "", role: "Cashier" as "Cashier" | "Admin" });
+  const [creatingStaff, setCreatingStaff] = useState(false);
+  const [staffError, setStaffError] = useState("");
+  const [staffSuccess, setStaffSuccess] = useState("");
+
+  const loadStaff = useCallback(async () => {
+    setStaffLoading(true);
+    try { setStaffRows(await superadminGetTenantStaff(tenant.id)); }
+    catch { /* ignore */ }
+    finally { setStaffLoading(false); }
+  }, [tenant.id]);
+
+  useEffect(() => { if (innerTab === "staff") loadStaff(); }, [innerTab, loadStaff]);
+
+  async function handleCreateStaff(e: React.FormEvent) {
+    e.preventDefault();
+    setStaffError(""); setStaffSuccess("");
+    if (!staffForm.name.trim()) { setStaffError("Name is required"); return; }
+    if (!/^\d{4,8}$/.test(staffForm.pin)) { setStaffError("PIN must be 4–8 digits"); return; }
+    setCreatingStaff(true);
+    try {
+      const created = await superadminCreateTenantStaff(tenant.id, {
+        name: staffForm.name.trim(), pin: staffForm.pin, role: staffForm.role,
+      });
+      setStaffSuccess(`${created.role} "${created.name}" created`);
+      setStaffForm({ name: "", pin: "", role: "Cashier" });
+      await loadStaff();
+    } catch (e) {
+      setStaffError(e instanceof Error ? e.message : "Failed to create PIN user");
+    } finally { setCreatingStaff(false); }
+  }
 
   async function handleSave() {
     setSaving(true); setSaveError("");
@@ -252,7 +288,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
 
         {/* Inner tabs */}
         <div className="flex gap-1 px-6 pt-4 pb-0 border-b border-[#2a3a55] shrink-0">
-          {([["settings", "Settings"], ["payments", "Offline Payments"]] as const).map(([id, label]) => (
+          {([["settings", "Settings"], ["payments", "Offline Payments"], ["staff", "PIN Users"]] as const).map(([id, label]) => (
             <button key={id} onClick={() => setInnerTab(id)}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${innerTab === id ? "border-[#3b82f6] text-[#3b82f6]" : "border-transparent text-[#475569] hover:text-white"}`}>
               {label}
@@ -481,6 +517,81 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
               )}
             </div>
           )}
+
+          {/* ── PIN Users tab ── */}
+          {innerTab === "staff" && (
+            <div className="p-6 space-y-4">
+              <div className="bg-[#0f1729] border border-[#2a3a55] rounded-lg p-3 text-xs text-[#94a3b8]">
+                Create PIN-based staff logins for this business. <span className="text-white font-medium">Cashier</span> users can ring up sales;
+                <span className="text-white font-medium"> Admin</span> users have full access in the POS.
+              </div>
+
+              {/* Create form */}
+              <form onSubmit={handleCreateStaff} className="bg-[#0f1729] border border-[#2a3a55] rounded-lg p-4 space-y-3">
+                <p className="text-sm font-semibold text-white">Create PIN User</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-[#94a3b8] mb-1">Full Name</label>
+                    <input value={staffForm.name} onChange={e => setStaffForm(f => ({ ...f, name: e.target.value }))}
+                      placeholder="e.g. Jane Smith"
+                      className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[#94a3b8] mb-1">PIN (4–8 digits)</label>
+                    <input value={staffForm.pin} inputMode="numeric" maxLength={8}
+                      onChange={e => setStaffForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, "") }))}
+                      placeholder="e.g. 1234"
+                      className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none font-mono" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-[#94a3b8] mb-1">Role</label>
+                  <select value={staffForm.role} onChange={e => setStaffForm(f => ({ ...f, role: e.target.value as "Cashier" | "Admin" }))}
+                    className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none">
+                    <option value="Cashier">Cashier</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                </div>
+                {staffError && (
+                  <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{staffError}</div>
+                )}
+                {staffSuccess && (
+                  <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">{staffSuccess}</div>
+                )}
+                <button type="submit" disabled={creatingStaff}
+                  className="w-full bg-[#3b82f6] hover:bg-blue-500 text-white py-2 rounded-lg transition-colors text-sm font-medium disabled:opacity-60">
+                  {creatingStaff ? "Creating…" : "Create PIN User"}
+                </button>
+              </form>
+
+              {/* Existing staff list */}
+              <div>
+                <p className="text-sm font-semibold text-white mb-2">Existing PIN Users</p>
+                {staffLoading ? (
+                  <p className="text-xs text-[#475569]">Loading…</p>
+                ) : staffRows.length === 0 ? (
+                  <p className="text-xs text-[#475569]">No PIN users yet.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {staffRows.map(s => (
+                      <div key={s.id} className={`flex items-center justify-between gap-2 bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 ${s.isActive ? "" : "opacity-50"}`}>
+                        <div className="min-w-0">
+                          <p className="text-sm text-white truncate">{s.name}</p>
+                          <p className="text-[10px] text-[#475569]">Since {new Date(s.createdAt).toLocaleDateString()}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {!s.isActive && <span className="text-[10px] text-[#94a3b8] border border-[#2a3a55] rounded-full px-2 py-0.5">Inactive</span>}
+                          <span className={`text-[10px] font-semibold rounded-full px-2 py-0.5 border ${s.role.toLowerCase() === "admin" ? "text-amber-400 border-amber-500/30 bg-amber-500/10" : "text-cyan-400 border-cyan-500/30 bg-cyan-500/10"}`}>
+                            {s.role}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -493,7 +604,7 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
             </button>
           </div>
         )}
-        {innerTab === "payments" && (
+        {(innerTab === "payments" || innerTab === "staff") && (
           <div className="px-6 py-4 border-t border-[#2a3a55] shrink-0">
             <button onClick={onClose} className="w-full bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg transition-colors text-sm font-medium">Close</button>
           </div>

@@ -1405,4 +1405,75 @@ router.delete("/superadmin/subscriptions/:id", async (req, res): Promise<void> =
   res.json({ success: true });
 });
 
+/* ─── Tenant PIN staff (Cashier / Admin) ─── */
+import { staffTable } from "@workspace/db";
+import { seedDefaultRoles } from "./roles";
+import { logAudit } from "./audit";
+
+router.get("/superadmin/tenants/:id/staff", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "");
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const staff = await db.select({
+    id: staffTable.id,
+    name: staffTable.name,
+    role: staffTable.role,
+    isActive: staffTable.isActive,
+    createdAt: staffTable.createdAt,
+  }).from(staffTable)
+    .where(eq(staffTable.tenantId, id))
+    .orderBy(staffTable.name);
+  res.json(staff);
+});
+
+const SuperadminCreateStaffBody = z.object({
+  name: z.string().min(1),
+  pin: z.string().regex(/^\d{4,8}$/, "PIN must be 4–8 digits"),
+  role: z.enum(["Admin", "Cashier"]),
+});
+
+router.post("/superadmin/tenants/:id/staff", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = parseInt(req.params["id"] ?? "");
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = SuperadminCreateStaffBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
+    return;
+  }
+
+  const [tenant] = await db.select({ id: tenantsTable.id }).from(tenantsTable).where(eq(tenantsTable.id, id));
+  if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
+
+  // New tenants may not have their default roles seeded yet.
+  await seedDefaultRoles(id);
+
+  const conflict = await db.select({ id: staffTable.id })
+    .from(staffTable)
+    .where(and(eq(staffTable.tenantId, id), eq(staffTable.pin, parsed.data.pin), eq(staffTable.isActive, true)));
+  if (conflict.length > 0) {
+    res.status(409).json({ error: "A staff member with this PIN already exists for this business" });
+    return;
+  }
+
+  const [member] = await db.insert(staffTable).values({
+    tenantId: id,
+    name: parsed.data.name,
+    pin: parsed.data.pin,
+    role: parsed.data.role,
+    isActive: true,
+  }).returning();
+
+  await logAudit({
+    tenantId: id,
+    action: "staff.create",
+    entityType: "staff",
+    entityId: member?.id,
+    details: { name: parsed.data.name, role: parsed.data.role, createdBy: "superadmin" },
+  });
+  res.status(201).json({ id: member!.id, name: member!.name, role: member!.role, isActive: member!.isActive, createdAt: member!.createdAt });
+});
+
 export default router;

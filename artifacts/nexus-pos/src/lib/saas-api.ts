@@ -213,6 +213,14 @@ export const superadminCreateTenant = (data: {
 export const superadminUpdateTenant = (id: number, data: { status?: string; subscriptionStatus?: string; planId?: number; billingCycle?: "monthly" | "annual" }) =>
   api<{ success: boolean }>(`/superadmin/tenants/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: superadminAuthHeaders() });
 
+export interface SuperadminStaffRow { id: number; name: string; role: string; isActive: boolean; createdAt: string; }
+export const superadminGetTenantStaff = (tenantId: number) =>
+  api<SuperadminStaffRow[]>(`/superadmin/tenants/${tenantId}/staff`, { headers: superadminAuthHeaders() });
+export const superadminCreateTenantStaff = (tenantId: number, data: { name: string; pin: string; role: "Admin" | "Cashier" }) =>
+  api<SuperadminStaffRow>(`/superadmin/tenants/${tenantId}/staff`, {
+    method: "POST", body: JSON.stringify(data), headers: superadminAuthHeaders(),
+  });
+
 /* ─── Superadmin Plan CRUD ─── */
 type PlanInput = {
   name: string; slug: string; description?: string;
