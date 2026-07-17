@@ -712,6 +712,7 @@ export function Orders() {
                 <TableHead>Date</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Items</TableHead>
+                <TableHead>Payment</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right pr-6 w-[180px]">Actions</TableHead>
               </TableRow>
@@ -742,6 +743,11 @@ export function Orders() {
                       <TableCell className="text-muted-foreground">
                         {d.items.length} item{d.items.length !== 1 ? "s" : ""}
                       </TableCell>
+                      <TableCell className="text-muted-foreground capitalize text-sm">
+                        {d.paymentMethod === "split"
+                          ? "Split"
+                          : (d.paymentMethod?.replace(/_/g, " ") ?? "—")}
+                      </TableCell>
                       <TableCell className="text-right font-mono font-medium">
                         {formatCurrency(d.total)}
                       </TableCell>
@@ -749,7 +755,7 @@ export function Orders() {
                     </TableRow>
                     {isExpanded && (
                       <TableRow className="bg-amber-500/5 hover:bg-amber-500/5">
-                        <TableCell colSpan={7} className="p-0 border-b border-amber-500/20">
+                        <TableCell colSpan={8} className="p-0 border-b border-amber-500/20">
                           <motion.div
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: "auto", opacity: 1 }}
@@ -824,7 +830,7 @@ export function Orders() {
               {isLoading ? (
                 [...Array(5)].map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={7} className="h-16">
+                    <TableCell colSpan={8} className="h-16">
                       <div className="h-4 bg-muted animate-pulse rounded w-full" />
                     </TableCell>
                   </TableRow>
@@ -853,6 +859,11 @@ export function Orders() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {order.items.length} items
+                    </TableCell>
+                    <TableCell className="text-muted-foreground capitalize text-sm">
+                      {order.paymentMethod === "split"
+                        ? "Split"
+                        : (order.paymentMethod?.replace(/_/g, " ") ?? "—")}
                     </TableCell>
                     <TableCell className="text-right font-mono font-medium">
                       {formatCurrency(order.total)}
@@ -970,7 +981,7 @@ export function Orders() {
                   
                   {expandedOrderId === order.id && (
                     <TableRow className="bg-muted/20 hover:bg-muted/20">
-                      <TableCell colSpan={7} className="p-0 border-b">
+                      <TableCell colSpan={8} className="p-0 border-b">
                         <motion.div 
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: 'auto', opacity: 1 }}
@@ -1053,7 +1064,7 @@ export function Orders() {
               ))}
               {!isLoading && (!filteredOrders || filteredOrders.length === 0) && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center h-32 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center h-32 text-muted-foreground">
                     No orders found.
                   </TableCell>
                 </TableRow>
@@ -1072,7 +1083,8 @@ export function Orders() {
                   <TableCell className="text-muted-foreground text-sm text-center py-3">
                     {filteredOrders?.reduce((s, o) => s + o.items.length, 0) ?? 0} items
                   </TableCell>
-                  <TableCell className="text-right font-mono font-bold text-base py-3" colSpan={2}>
+                  <TableCell />
+                  <TableCell className="text-right font-mono font-bold text-base py-3">
                     {formatCurrency(totals.total)}
                   </TableCell>
                   <TableCell className="py-3">
