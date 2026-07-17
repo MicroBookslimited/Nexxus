@@ -58,13 +58,20 @@ const PRESETS: { label: string; value: Preset }[] = [
   { label: "Custom",     value: "custom" },
 ];
 
+// Converts a local-midnight Date (e.g. startOfDay) to a UTC ISO string so the
+// server receives boundaries anchored to the user's local timezone, not UTC.
+function localIso(d: Date): string { return d.toISOString(); }
+
 function getRange(preset: Preset, cf: string, ct: string) {
   const now = new Date();
-  if (preset === "today")     return { from: format(startOfDay(now), "yyyy-MM-dd"), to: format(endOfDay(now), "yyyy-MM-dd") };
-  if (preset === "yesterday") { const y = subDays(now, 1); return { from: format(startOfDay(y), "yyyy-MM-dd"), to: format(endOfDay(y), "yyyy-MM-dd") }; }
-  if (preset === "week")      return { from: format(subDays(now, 6), "yyyy-MM-dd"), to: format(now, "yyyy-MM-dd") };
-  if (preset === "month")     return { from: format(subDays(now, 29), "yyyy-MM-dd"), to: format(now, "yyyy-MM-dd") };
-  return { from: cf, to: ct };
+  if (preset === "today")     return { from: localIso(startOfDay(now)), to: localIso(endOfDay(now)) };
+  if (preset === "yesterday") { const y = subDays(now, 1); return { from: localIso(startOfDay(y)), to: localIso(endOfDay(y)) }; }
+  if (preset === "week")      return { from: localIso(startOfDay(subDays(now, 6))), to: localIso(endOfDay(now)) };
+  if (preset === "month")     return { from: localIso(startOfDay(subDays(now, 29))), to: localIso(endOfDay(now)) };
+  // Custom: date-input values are "yyyy-MM-dd" — treat as local midnight.
+  const fromDate = cf ? new Date(cf + "T00:00:00") : subDays(now, 29);
+  const toDate   = ct ? new Date(ct + "T00:00:00") : now;
+  return { from: localIso(startOfDay(fromDate)), to: localIso(endOfDay(toDate)) };
 }
 
 const COLORS = ["#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444","#06b6d4","#f97316","#ec4899","#84cc16","#a78bfa"];
