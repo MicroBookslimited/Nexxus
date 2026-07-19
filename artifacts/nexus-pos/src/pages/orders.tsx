@@ -471,6 +471,7 @@ export function Orders() {
       ? `${fromDate || "start"} → ${toDate || "today"}`
       : "All Time";
     const showStaff = canViewAllOrders && Object.keys(staffById).length > 0;
+    const showCashier = canViewAllOrders;
     const rows = (filteredOrders ?? []).map(o => `
       <tr>
         <td>${o.orderNumber}</td>
@@ -711,6 +712,7 @@ export function Orders() {
                 <TableHead>Order Number</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Status</TableHead>
+                {showCashier && <TableHead>Cashier</TableHead>}
                 <TableHead>Items</TableHead>
                 <TableHead>Payment</TableHead>
                 <TableHead className="text-right">Total</TableHead>
@@ -740,6 +742,7 @@ export function Orders() {
                           Pending Sync
                         </Badge>
                       </TableCell>
+                      {showCashier && <TableCell className="text-muted-foreground text-sm">—</TableCell>}
                       <TableCell className="text-muted-foreground">
                         {d.items.length} item{d.items.length !== 1 ? "s" : ""}
                       </TableCell>
@@ -755,7 +758,7 @@ export function Orders() {
                     </TableRow>
                     {isExpanded && (
                       <TableRow className="bg-amber-500/5 hover:bg-amber-500/5">
-                        <TableCell colSpan={8} className="p-0 border-b border-amber-500/20">
+                        <TableCell colSpan={showCashier ? 9 : 8} className="p-0 border-b border-amber-500/20">
                           <motion.div
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: "auto", opacity: 1 }}
@@ -830,7 +833,7 @@ export function Orders() {
               {isLoading ? (
                 [...Array(5)].map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={8} className="h-16">
+                    <TableCell colSpan={showCashier ? 9 : 8} className="h-16">
                       <div className="h-4 bg-muted animate-pulse rounded w-full" />
                     </TableCell>
                   </TableRow>
@@ -841,15 +844,8 @@ export function Orders() {
                     <TableCell className="pl-4 text-muted-foreground">
                       {expandedOrderId === order.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </TableCell>
-                    <TableCell className="font-medium">
-                      <div className="flex flex-col gap-0.5">
-                        <span>{order.orderNumber}</span>
-                        {canViewAllOrders && order.staffId && staffById[order.staffId] && (
-                          <span className="text-[10px] text-primary/70 font-normal">
-                            {staffById[order.staffId]}
-                          </span>
-                        )}
-                      </div>
+                    <TableCell className="font-medium font-mono">
+                      {order.orderNumber}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {format(new Date(order.createdAt), "dd/MM/yyyy, h:mm a")}
@@ -857,6 +853,11 @@ export function Orders() {
                     <TableCell>
                       {getStatusBadge(order.status, order.refundedTotal)}
                     </TableCell>
+                    {showCashier && (
+                      <TableCell className="text-muted-foreground text-sm">
+                        {order.staffId && staffById[order.staffId] ? staffById[order.staffId] : "—"}
+                      </TableCell>
+                    )}
                     <TableCell className="text-muted-foreground">
                       {order.items.length} items
                     </TableCell>
@@ -981,7 +982,7 @@ export function Orders() {
                   
                   {expandedOrderId === order.id && (
                     <TableRow className="bg-muted/20 hover:bg-muted/20">
-                      <TableCell colSpan={8} className="p-0 border-b">
+                      <TableCell colSpan={showCashier ? 9 : 8} className="p-0 border-b">
                         <motion.div 
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: 'auto', opacity: 1 }}
@@ -1064,7 +1065,7 @@ export function Orders() {
               ))}
               {!isLoading && (!filteredOrders || filteredOrders.length === 0) && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center h-32 text-muted-foreground">
+                  <TableCell colSpan={showCashier ? 9 : 8} className="text-center h-32 text-muted-foreground">
                     No orders found.
                   </TableCell>
                 </TableRow>
@@ -1083,6 +1084,7 @@ export function Orders() {
                   <TableCell className="text-muted-foreground text-sm text-center py-3">
                     {filteredOrders?.reduce((s, o) => s + o.items.length, 0) ?? 0} items
                   </TableCell>
+                  {showCashier && <TableCell />}
                   <TableCell />
                   <TableCell className="text-right font-mono font-bold text-base py-3">
                     {formatCurrency(totals.total)}
