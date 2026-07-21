@@ -622,6 +622,11 @@ export const superadminResetPassword = (tenantId: number, newPassword: string) =
     method: "POST", body: JSON.stringify({ newPassword }), headers: superadminAuthHeaders(),
   });
 
+export const superadminUpdateTenantCredentials = (tenantId: number, data: { email?: string; newPassword?: string }) =>
+  api<{ success: boolean }>(`/superadmin/tenants/${tenantId}/credentials`, {
+    method: "PUT", body: JSON.stringify(data), headers: superadminAuthHeaders(),
+  });
+
 export const superadminResetAdminUserPassword = (adminUserId: number, newPassword: string) =>
   api<{ success: boolean }>(`/superadmin/admin-users/${adminUserId}/reset-password`, {
     method: "POST", body: JSON.stringify({ newPassword }), headers: superadminAuthHeaders(),

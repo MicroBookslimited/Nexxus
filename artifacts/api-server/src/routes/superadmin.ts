@@ -567,7 +567,57 @@ router.post("/superadmin/tenants/:id/reset-password", async (req, res): Promise<
   if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
 
   const passwordHash = await bcryptjs.hash(parsed.data.newPassword, 12);
-  await db.update(tenantsTable).set({ passwordHash, updatedAt: new Date() }).where(eq(tenantsTable.id, id));
+  const now = new Date();
+  await db.update(tenantsTable).set({ passwordHash, updatedAt: now }).where(eq(tenantsTable.id, id));
+  await db.update(tenantAdminUsersTable).set({ passwordHash, updatedAt: now })
+    .where(and(eq(tenantAdminUsersTable.tenantId, id), eq(tenantAdminUsersTable.isPrimary, true)));
+
+  res.json({ success: true });
+});
+
+/* ─── Update Tenant Credentials (email + password) ─── */
+const UpdateCredentialsBody = z.object({
+  email: z.string().email().optional(),
+  newPassword: z.string().min(6).optional(),
+}).refine(d => d.email || d.newPassword, { message: "Provide at least an email or a new password" });
+
+router.put("/superadmin/tenants/:id/credentials", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res)) return;
+
+  const id = parseInt(req.params["id"] ?? "");
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = UpdateCredentialsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }); return; }
+
+  const { email, newPassword } = parsed.data;
+
+  const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.id, id));
+  if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
+
+  if (email && email.toLowerCase() !== tenant.email.toLowerCase()) {
+    const [existing] = await db.select({ id: tenantsTable.id }).from(tenantsTable)
+      .where(eq(tenantsTable.email, email.toLowerCase()));
+    if (existing) { res.status(409).json({ error: "Email already in use by another account" }); return; }
+  }
+
+  const now = new Date();
+  const tenantPatch: Record<string, unknown> = { updatedAt: now };
+  const adminPatch: Record<string, unknown> = { updatedAt: now };
+
+  if (email) {
+    tenantPatch["email"] = email.toLowerCase();
+    adminPatch["email"] = email.toLowerCase();
+  }
+  if (newPassword) {
+    const passwordHash = await bcryptjs.hash(newPassword, 12);
+    tenantPatch["passwordHash"] = passwordHash;
+    adminPatch["passwordHash"] = passwordHash;
+  }
+
+  await db.update(tenantsTable).set(tenantPatch).where(eq(tenantsTable.id, id));
+  await db.update(tenantAdminUsersTable).set(adminPatch)
+    .where(and(eq(tenantAdminUsersTable.tenantId, id), eq(tenantAdminUsersTable.isPrimary, true)));
 
   res.json({ success: true });
 });

@@ -22,7 +22,7 @@ import {
   superadminUpdateTenant, superadminCreateTenant, superadminGetBankAccounts,
   superadminCreateBankAccount, superadminUpdateBankAccount, superadminDeleteBankAccount,
   superadminGetTransferProofs, superadminReviewTransferProof,
-  superadminGetUsers, superadminImpersonate, superadminResetPassword, superadminResetAdminUserPassword,
+  superadminGetUsers, superadminImpersonate, superadminResetPassword, superadminResetAdminUserPassword, superadminUpdateTenantCredentials,
   superadminForceLogoutTenant, superadminForceLogoutAdminUser,
   superadminGetPlans, superadminCreatePlan, superadminUpdatePlan, superadminDeletePlan,
   superadminGetGatewaySettings, superadminUpdateGatewaySettings, superadminGetImpersonationLogs, superadminCloseImpersonationSession,
@@ -207,6 +207,14 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
 
   useEffect(() => { if (innerTab === "staff") loadStaff(); }, [innerTab, loadStaff]);
 
+  // ── Credentials (email + password) ──
+  const [credEmail, setCredEmail] = useState(tenant.email);
+  const [credPassword, setCredPassword] = useState("");
+  const [credConfirm, setCredConfirm] = useState("");
+  const [credSaving, setCredSaving] = useState(false);
+  const [credError, setCredError] = useState("");
+  const [credSuccess, setCredSuccess] = useState("");
+
   // Live clock for the Subscription tab countdown (minute granularity).
   const [subNow, setSubNow] = useState(() => new Date());
   useEffect(() => {
@@ -232,6 +240,30 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
     } catch (e) {
       setStaffError(e instanceof Error ? e.message : "Failed to create PIN user");
     } finally { setCreatingStaff(false); }
+  }
+
+  async function handleUpdateCredentials(e: React.FormEvent) {
+    e.preventDefault();
+    setCredError(""); setCredSuccess("");
+    const emailChanged = credEmail.trim().toLowerCase() !== tenant.email.toLowerCase();
+    const hasPassword = credPassword.length > 0;
+    if (!emailChanged && !hasPassword) { setCredError("Nothing to update"); return; }
+    if (hasPassword && credPassword.length < 6) { setCredError("Password must be at least 6 characters"); return; }
+    if (hasPassword && credPassword !== credConfirm) { setCredError("Passwords do not match"); return; }
+    if (credEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(credEmail.trim())) { setCredError("Invalid email address"); return; }
+    setCredSaving(true);
+    try {
+      await superadminUpdateTenantCredentials(tenant.id, {
+        ...(emailChanged ? { email: credEmail.trim() } : {}),
+        ...(hasPassword ? { newPassword: credPassword } : {}),
+      });
+      setCredSuccess("Credentials updated");
+      setCredPassword(""); setCredConfirm("");
+      onUpdate();
+      setTimeout(() => setCredSuccess(""), 3000);
+    } catch (e) {
+      setCredError(e instanceof Error ? e.message : "Failed to update credentials");
+    } finally { setCredSaving(false); }
   }
 
   async function handleSave() {
@@ -359,6 +391,55 @@ function TenantModal({ tenant, plans, onClose, onUpdate }: { tenant: TenantRow; 
               {saveError && (
                 <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{saveError}</div>
               )}
+
+              <hr className="border-[#2a3a55]" />
+
+              {/* Credentials */}
+              <div>
+                <p className="text-sm font-semibold text-white mb-3">Login Credentials</p>
+                <form onSubmit={handleUpdateCredentials} className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-[#94a3b8] mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={credEmail}
+                      onChange={e => { setCredEmail(e.target.value); setCredError(""); setCredSuccess(""); }}
+                      className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-[#94a3b8] mb-1">New Password</label>
+                      <input
+                        type="password"
+                        value={credPassword}
+                        onChange={e => { setCredPassword(e.target.value); setCredError(""); setCredSuccess(""); }}
+                        placeholder="Leave blank to keep"
+                        className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-[#94a3b8] mb-1">Confirm Password</label>
+                      <input
+                        type="password"
+                        value={credConfirm}
+                        onChange={e => { setCredConfirm(e.target.value); setCredError(""); setCredSuccess(""); }}
+                        placeholder="Repeat new password"
+                        className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm focus:border-[#3b82f6] outline-none"
+                      />
+                    </div>
+                  </div>
+                  {credError && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{credError}</p>}
+                  {credSuccess && <p className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2">{credSuccess}</p>}
+                  <button
+                    type="submit"
+                    disabled={credSaving}
+                    className="w-full bg-[#1e3a5f] hover:bg-[#2a4a7f] border border-[#3b82f6]/40 text-[#3b82f6] py-2 rounded-lg transition-colors text-sm font-medium disabled:opacity-60"
+                  >
+                    {credSaving ? "Updating…" : "Update Credentials"}
+                  </button>
+                </form>
+              </div>
             </div>
           )}
 
