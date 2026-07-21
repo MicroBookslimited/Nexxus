@@ -160,6 +160,7 @@ export function Orders() {
   const staffById = Object.fromEntries(
     (staffList ?? []).map((s) => [s.id, s.name])
   );
+  const showCashier = canViewAllOrders;
   const updateStatus = useUpdateOrderStatus();
   const refundItems = useRefundOrderItems();
   const chargeOrder = useChargeOrder();
@@ -471,7 +472,6 @@ export function Orders() {
       ? `${fromDate || "start"} → ${toDate || "today"}`
       : "All Time";
     const showStaff = canViewAllOrders && Object.keys(staffById).length > 0;
-    const showCashier = canViewAllOrders;
     const rows = (filteredOrders ?? []).map(o => `
       <tr>
         <td>${o.orderNumber}</td>
