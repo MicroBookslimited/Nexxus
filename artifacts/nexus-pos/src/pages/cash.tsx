@@ -458,7 +458,21 @@ function CloseShiftDialog({
           queryClient.invalidateQueries({ queryKey: [`/api/cash/sessions/${sessionId}`] });
           onClosed(sessionId);
         },
-        onError: () => toast({ title: "Error", description: "Could not close session", variant: "destructive" }),
+        onError: (err: any) => {
+          const alreadyClosed = err?.response?.status === 404 || err?.status === 404;
+          toast({
+            title: alreadyClosed ? "Session already closed" : "Error",
+            description: alreadyClosed
+              ? "This session was already closed. Refreshing…"
+              : "Could not close session",
+            variant: "destructive",
+          });
+          if (alreadyClosed) {
+            queryClient.removeQueries({ queryKey: ["/api/cash/sessions/current"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
+            onClose();
+          }
+        },
       },
     );
   };
@@ -1678,7 +1692,7 @@ export function CashManagement() {
     query: { retry: false, enabled: !!sessionStaff?.id, queryKey: ["/api/cash/sessions/current", sessionStaff?.id ?? null] },
     request: sessionStaff?.id ? { headers: { "x-staff-id": String(sessionStaff.id) } } : undefined,
   });
-  const { data: sessions } = useListCashSessions();
+  const { data: sessions } = useListCashSessions({ query: { refetchInterval: 30000, queryKey: ["/api/cash/sessions"] } });
   const openSession = useOpenCashSession();
   const { toast } = useToast();
   const queryClient = useQueryClient();

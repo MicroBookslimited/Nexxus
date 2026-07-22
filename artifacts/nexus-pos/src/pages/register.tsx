@@ -213,7 +213,20 @@ function CloseSessionDialog({ row, onClose, onClosed }: {
           queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
           onClosed();
         },
-        onError: () => toast({ title: "Error", description: "Could not close session", variant: "destructive" }),
+        onError: (err: any) => {
+          const alreadyClosed = err?.response?.status === 404 || err?.status === 404;
+          toast({
+            title: alreadyClosed ? "Session already closed" : "Error",
+            description: alreadyClosed
+              ? "This session was already closed. Refreshing…"
+              : "Could not close session",
+            variant: "destructive",
+          });
+          if (alreadyClosed) {
+            queryClient.invalidateQueries({ queryKey: ["/api/cash/sessions"] });
+            onClose();
+          }
+        },
       }
     );
   };
