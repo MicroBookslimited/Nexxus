@@ -83,9 +83,3 @@ id = "q429JeH5GThEThc7gNLI0"
 uri = "file://.local/nexxus_backup_20260623_002215.sql.gz"
 type = "unspecified"
 title = "NEXXUS POS Database Backup — 2026-06-23 (gzip)"
-
-[[outputs]]
-id = "M-H7Z2z3y65EgjQ8NF0Bb"
-uri = "file://backups/nexxus_prod_20260718_050336.zip"
-type = "unspecified"
-title = "NEXXUS POS Production DB Backup — 2026-07-18"
