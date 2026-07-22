@@ -477,7 +477,7 @@ export function Orders() {
         <td>${o.orderNumber}</td>
         <td>${format(new Date(o.createdAt), "dd/MM/yyyy, h:mm a")}</td>
         <td style="text-transform:capitalize">${o.status}</td>
-        ${showStaff ? `<td>${o.staffId ? (staffById[o.staffId] ?? "—") : "—"}</td>` : ""}
+        ${showStaff ? `<td>${o.staffName ?? (o.staffId ? staffById[o.staffId] : undefined) ?? "—"}</td>` : ""}
         <td style="text-align:center">${o.items.length}</td>
         <td style="text-align:right">${formatCurrency(o.subtotal)}</td>
         <td style="text-align:right;color:#f59e0b">${o.discountValue && o.discountValue > 0 ? `-${formatCurrency(o.discountValue)}` : "—"}</td>
@@ -543,7 +543,7 @@ export function Orders() {
         o.tax.toFixed(2),
         o.total.toFixed(2),
         o.paymentMethod ?? "",
-        o.staffId ? (staffById[o.staffId] ?? "") : "",
+        o.staffName ?? (o.staffId ? staffById[o.staffId] : undefined) ?? "",
         o.notes ?? "",
       ]),
       ["", "", "TOTALS", totals.count, totals.subtotal.toFixed(2), totals.discount.toFixed(2), totals.tax.toFixed(2), totals.total.toFixed(2), "", "", ""],
@@ -855,7 +855,7 @@ export function Orders() {
                     </TableCell>
                     {showCashier && (
                       <TableCell className="text-muted-foreground text-sm">
-                        {order.staffId && staffById[order.staffId] ? staffById[order.staffId] : "—"}
+                        {order.staffName ?? (order.staffId ? staffById[order.staffId] : undefined) ?? "—"}
                       </TableCell>
                     )}
                     <TableCell className="text-muted-foreground">
