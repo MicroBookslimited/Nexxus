@@ -302,6 +302,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "numeric", minute: "2-digit",
     hour12: true,
+    timeZone: "America/Jamaica",
   });
 
   // Last 3 digits of order number (the prominent pickup number)
@@ -1532,8 +1533,14 @@ function buildStapleReceiptHtml(
 
   // Parse time for the SALE row
   const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
-  const saleTime  = `${createdAt.getHours().toString().padStart(2,"0")}:${createdAt.getMinutes().toString().padStart(2,"0")}`;
-  const saleDate  = `${(createdAt.getMonth()+1).toString().padStart(2,"0")}/${createdAt.getDate().toString().padStart(2,"0")}/${createdAt.getFullYear()}`;
+  const _jmParts  = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Jamaica",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+    month: "2-digit", day: "2-digit", year: "numeric",
+  }).formatToParts(createdAt);
+  const _jmGet    = (type: string) => _jmParts.find(p => p.type === type)?.value ?? "00";
+  const saleTime  = `${_jmGet("hour")}:${_jmGet("minute")}`;
+  const saleDate  = `${_jmGet("month")}/${_jmGet("day")}/${_jmGet("year")}`;
 
   // SKU: use barcode if present, else productId padded, else hash
   const itemSku = (item: ReceiptOrderItem, idx: number): string => {
@@ -2095,6 +2102,7 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "numeric", minute: "2-digit",
     hour12: true,
+    timeZone: "America/Jamaica",
   });
 
   const orderNum  = String(order.orderNumber);
@@ -2246,6 +2254,7 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
   const dateStr   = createdAt.toLocaleString("en-JM", {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "numeric", minute: "2-digit", hour12: true,
+    timeZone: "America/Jamaica",
   });
   const orderNum  = String(order.orderNumber);
 
