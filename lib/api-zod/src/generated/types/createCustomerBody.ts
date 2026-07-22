@@ -16,4 +16,5 @@ export interface CreateCustomerBody {
   state?: string;
   postalCode?: string;
   notes?: string;
+  openingBalance?: number;
 }

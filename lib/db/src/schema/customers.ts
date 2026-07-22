@@ -20,6 +20,10 @@ export const customersTable = pgTable(
     // auto-assigned on create and backfilled for existing customers. Unique
     // per tenant (NULLs are distinct in Postgres, so unassigned rows coexist).
     cardNumber: text("card_number"),
+    // Opening balance carried over from a previous system (e.g. QuickBooks
+    // POS "Account Balance") at migration time. Informational — not part of
+    // the live A/R ledger.
+    openingBalance: real("opening_balance").notNull().default(0),
     loyaltyPoints: integer("loyalty_points").notNull().default(0),
     totalSpent: real("total_spent").notNull().default(0),
     orderCount: integer("order_count").notNull().default(0),

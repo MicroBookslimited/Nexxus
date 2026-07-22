@@ -62,6 +62,7 @@ type CustomerForm = {
   state: string;
   postalCode: string;
   notes: string;
+  openingBalance: string;
 };
 const emptyForm = (): CustomerForm => ({
   name: "",
@@ -73,6 +74,7 @@ const emptyForm = (): CustomerForm => ({
   state: "",
   postalCode: "",
   notes: "",
+  openingBalance: "",
 });
 
 function formatCurrency(v: number) {
@@ -117,14 +119,15 @@ const CUSTOMER_IMPORT_FIELDS = [
   { key: "address",    label: "Address" },
   { key: "city",       label: "City" },
   { key: "state",      label: "State / Province" },
-  { key: "postalCode", label: "Postal Code" },
-  { key: "notes",      label: "Notes" },
+  { key: "postalCode",     label: "Postal Code" },
+  { key: "notes",          label: "Notes" },
+  { key: "openingBalance", label: "Opening Balance" },
 ];
 
 const CUSTOMER_TEMPLATE_ROWS = [
-  ["Name", "Company", "Email", "Phone", "Address", "City", "State", "Postal Code", "Notes"],
-  ["Jane Smith", "Acme Inc.", "jane@example.com", "+1 555 000 0001", "123 Main St", "Nassau", "NP", "00000", "VIP customer"],
-  ["John Brown", "", "john@example.com", "+1 555 000 0002", "456 Bay St", "Freeport", "GB", "00000", ""],
+  ["Name", "Company", "Email", "Phone", "Address", "City", "State", "Postal Code", "Notes", "Opening Balance"],
+  ["Jane Smith", "Acme Inc.", "jane@example.com", "+1 555 000 0001", "123 Main St", "Nassau", "NP", "00000", "VIP customer", "0.00"],
+  ["John Brown", "", "john@example.com", "+1 555 000 0002", "456 Bay St", "Freeport", "GB", "00000", "", "1500.00"],
 ];
 
 /**
@@ -152,6 +155,18 @@ const QUICKBOOKS_CUSTOMER_TEMPLATE_ROWS = [
     "Mr. JOHN BROWN", "Wholesale", "john@example.com", "100,000.00", "0",
   ],
 ];
+
+/** Parse a spreadsheet balance like "5,421.00", "$1,200", "(500)" or "680-" into a number. */
+function parseImportedBalance(raw: string | undefined): number | undefined {
+  if (!raw?.trim()) return undefined;
+  const s = raw.trim();
+  const negative = /^\(.*\)$/.test(s) || /-\s*$/.test(s) || s.startsWith("-");
+  const cleaned = s.replace(/[^0-9.]/g, "");
+  if (!cleaned) return undefined;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return undefined;
+  return negative ? -n : n;
+}
 
 function downloadCustomerTemplate()           { csvDownload(CUSTOMER_TEMPLATE_ROWS,            "NEXUS_Customer_Import_Template.csv"); }
 function downloadQuickbooksCustomerTemplate() { csvDownload(QUICKBOOKS_CUSTOMER_TEMPLATE_ROWS, "NEXUS_QuickBooks_POS_Customer_Template.csv"); }
@@ -212,7 +227,8 @@ function ImportCustomersDialog({ open, onClose, onImported }: {
         else if (l === "bill to state")                                                     auto[h] = "state";
         else if (l === "bill to zip")                                                       auto[h] = "postalCode";
         else if (l === "customer type")                                                     auto[h] = "notes";
-        else if (l === "title" || l === "account balance" || l === "account limit" || l === "past due" || l === "alt. contact" || l === "alt contact") auto[h] = "__skip__";
+        else if (l === "account balance" || l === "opening balance" || l === "balance")     auto[h] = "openingBalance";
+        else if (l === "title" || l === "account limit" || l === "past due" || l === "alt. contact" || l === "alt contact") auto[h] = "__skip__";
         else if (l === "first name" || l === "first" || l === "given name")                 auto[h] = "firstName";
         else if (l === "last name" || l === "last" || l === "surname" || l === "family name") auto[h] = "lastName";
         else if (l === "name" || l === "full name" || l === "customer name" || l === "customer") auto[h] = "name";
@@ -286,6 +302,7 @@ function ImportCustomersDialog({ open, onClose, onImported }: {
         state: d.state?.trim() || undefined,
         postalCode: d.postalCode?.trim() || undefined,
         notes: d.notes?.trim() || undefined,
+        openingBalance: parseImportedBalance(d.openingBalance),
       };
       try {
         await new Promise<void>((resolve, reject) => {
@@ -555,6 +572,7 @@ export function Customers() {
       state: c.state ?? "",
       postalCode: c.postalCode ?? "",
       notes: c.notes ?? "",
+      openingBalance: c.openingBalance ? String(c.openingBalance) : "",
     });
     setDialogOpen(true);
   };
@@ -575,6 +593,7 @@ export function Customers() {
       state: form.state.trim() || undefined,
       postalCode: form.postalCode.trim() || undefined,
       notes: form.notes.trim() || undefined,
+      openingBalance: form.openingBalance.trim() !== "" && Number.isFinite(Number(form.openingBalance)) ? Number(form.openingBalance) : undefined,
     };
 
     if (editingCustomer) {
@@ -766,6 +785,11 @@ export function Customers() {
             <div className="grid gap-1.5">
               <Label>Notes</Label>
               <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Opening Balance</Label>
+              <Input type="number" step="0.01" value={form.openingBalance} onChange={(e) => setForm((f) => ({ ...f, openingBalance: e.target.value }))} placeholder="0.00" />
+              <p className="text-xs text-muted-foreground">Balance carried over from a previous system (e.g. QuickBooks Account Balance).</p>
             </div>
           </div>
           <DialogFooter>

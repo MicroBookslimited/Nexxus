@@ -2826,6 +2826,7 @@ export const ListCustomersResponseItem = zod.object({
   postalCode: zod.string().nullish(),
   notes: zod.string().nullish(),
   cardNumber: zod.string().nullish(),
+  openingBalance: zod.number(),
   loyaltyPoints: zod.number(),
   totalSpent: zod.number(),
   orderCount: zod.number(),
@@ -2846,6 +2847,7 @@ export const CreateCustomerBody = zod.object({
   state: zod.string().optional(),
   postalCode: zod.string().optional(),
   notes: zod.string().optional(),
+  openingBalance: zod.number().optional(),
 });
 
 /**
@@ -2867,6 +2869,7 @@ export const GetCustomerByCardResponse = zod.object({
   postalCode: zod.string().nullish(),
   notes: zod.string().nullish(),
   cardNumber: zod.string().nullish(),
+  openingBalance: zod.number(),
   loyaltyPoints: zod.number(),
   totalSpent: zod.number(),
   orderCount: zod.number(),
@@ -2892,6 +2895,7 @@ export const GetCustomerResponse = zod.object({
   postalCode: zod.string().nullish(),
   notes: zod.string().nullish(),
   cardNumber: zod.string().nullish(),
+  openingBalance: zod.number(),
   loyaltyPoints: zod.number(),
   totalSpent: zod.number(),
   orderCount: zod.number(),
@@ -2915,6 +2919,7 @@ export const UpdateCustomerBody = zod.object({
   state: zod.string().optional(),
   postalCode: zod.string().optional(),
   notes: zod.string().optional(),
+  openingBalance: zod.number().optional(),
 });
 
 export const UpdateCustomerResponse = zod.object({
@@ -2929,6 +2934,7 @@ export const UpdateCustomerResponse = zod.object({
   postalCode: zod.string().nullish(),
   notes: zod.string().nullish(),
   cardNumber: zod.string().nullish(),
+  openingBalance: zod.number(),
   loyaltyPoints: zod.number(),
   totalSpent: zod.number(),
   orderCount: zod.number(),

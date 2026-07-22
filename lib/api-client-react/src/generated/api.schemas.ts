@@ -880,6 +880,7 @@ export interface Customer {
   postalCode?: string | null;
   notes?: string | null;
   cardNumber?: string | null;
+  openingBalance: number;
   loyaltyPoints: number;
   totalSpent: number;
   orderCount: number;
@@ -896,6 +897,7 @@ export interface CreateCustomerBody {
   state?: string;
   postalCode?: string;
   notes?: string;
+  openingBalance?: number;
 }
 
 export interface ReportSummary {

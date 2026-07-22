@@ -18,6 +18,7 @@ export interface Customer {
   postalCode?: string | null;
   notes?: string | null;
   cardNumber?: string | null;
+  openingBalance: number;
   loyaltyPoints: number;
   totalSpent: number;
   orderCount: number;

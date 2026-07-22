@@ -3807,6 +3807,9 @@ components:
         cardNumber:
           type: string
           nullable: true
+        openingBalance:
+          type: number
+          format: float
         loyaltyPoints:
           type: integer
         totalSpent:
@@ -3820,6 +3823,7 @@ components:
       required:
         - id
         - name
+        - openingBalance
         - loyaltyPoints
         - totalSpent
         - orderCount
@@ -3846,6 +3850,9 @@ components:
           type: string
         notes:
           type: string
+        openingBalance:
+          type: number
+          format: float
       required:
         - name
 

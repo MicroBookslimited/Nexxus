@@ -109,6 +109,7 @@ router.post("/customers", async (req, res): Promise<void> => {
       state: parsed.data.state,
       postalCode: parsed.data.postalCode,
       notes: parsed.data.notes,
+      openingBalance: parsed.data.openingBalance ?? 0,
       cardNumber,
     })
     .returning();
@@ -272,6 +273,7 @@ router.put("/customers/:id", async (req, res): Promise<void> => {
       state: parsed.data.state,
       postalCode: parsed.data.postalCode,
       notes: parsed.data.notes,
+      ...(parsed.data.openingBalance !== undefined ? { openingBalance: parsed.data.openingBalance } : {}),
     })
     .where(and(eq(customersTable.id, params.data.id), eq(customersTable.tenantId, tenantId)))
     .returning();
