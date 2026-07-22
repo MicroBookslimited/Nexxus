@@ -231,6 +231,9 @@ router.post("/ar/:id/payments", async (req, res) => {
     if (!ar) return res.status(404).json({ error: "Not found" });
 
     const remaining = Math.round((ar.amount - ar.amountPaid) * 100) / 100;
+    if (remaining <= 0) {
+      return res.status(400).json({ error: "This record is already fully paid" });
+    }
     const applied = Math.min(payAmt, remaining);
 
     await db.insert(arPaymentsTable).values({

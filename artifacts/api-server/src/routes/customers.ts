@@ -42,6 +42,76 @@ function normalizeCustomer(c: typeof customersTable.$inferSelect) {
   };
 }
 
+/**
+ * Keep a customer's opening balance mirrored as an Accounts Receivable
+ * record so it shows up as a brought-forward / outstanding balance in the
+ * A/R page, A/R summary, and receipt "Account Balance Due" — and so
+ * payments can be recorded against it like any other A/R entry.
+ *
+ * The synthetic record is identified by orderNumber "OPENING-{customerId}"
+ * (no linked order). Editing the customer's opening balance adjusts the
+ * record's amount while preserving any payments already made against it.
+ */
+async function syncOpeningBalanceAr(
+  tenantId: number,
+  customer: { id: number; name: string; openingBalance: number },
+): Promise<void> {
+  const orderNumber = `OPENING-${customer.id}`;
+  const bal = Math.round((customer.openingBalance ?? 0) * 100) / 100;
+
+  const [existing] = await db
+    .select()
+    .from(accountsReceivableTable)
+    .where(
+      and(
+        eq(accountsReceivableTable.tenantId, tenantId),
+        eq(accountsReceivableTable.customerId, customer.id),
+        eq(accountsReceivableTable.orderNumber, orderNumber),
+      ),
+    );
+
+  if (!existing) {
+    if (bal > 0) {
+      // Unique index ar_opening_tenant_order_uq makes this race-safe.
+      await db
+        .insert(accountsReceivableTable)
+        .values({
+          tenantId,
+          customerId: customer.id,
+          customerName: customer.name,
+          orderNumber,
+          amount: bal,
+          amountPaid: 0,
+          status: "open",
+          notes: "Opening balance brought forward",
+        })
+        .onConflictDoNothing();
+    }
+    return;
+  }
+
+  // Balance zeroed out and nothing was ever paid → remove the record.
+  if (bal <= 0 && existing.amountPaid === 0) {
+    await db.delete(accountsReceivableTable).where(eq(accountsReceivableTable.id, existing.id));
+    return;
+  }
+
+  // Never let amount drop below what was already paid — clamp instead, so
+  // the row stays consistent (amountPaid <= amount) and the payments
+  // endpoint can't compute a negative remaining balance.
+  const amount = Math.max(bal, existing.amountPaid, 0);
+  const status =
+    existing.amountPaid >= amount
+      ? "paid"
+      : existing.amountPaid > 0
+        ? "partial"
+        : "open";
+  await db
+    .update(accountsReceivableTable)
+    .set({ amount, status, customerName: customer.name })
+    .where(eq(accountsReceivableTable.id, existing.id));
+}
+
 /* ─── Loyalty card numbers ───
  * Format: "LM" + 10 digits (e.g. "LM0481739204"). The "LM" prefix lets the
  * POS scan handler recognise a customer card vs a product barcode. Unique per
@@ -113,6 +183,10 @@ router.post("/customers", async (req, res): Promise<void> => {
       cardNumber,
     })
     .returning();
+
+  if (customer && customer.openingBalance > 0) {
+    await syncOpeningBalanceAr(tenantId, customer);
+  }
 
   if (customer?.email) {
     const businessName = (await getSetting("business_name", tenantId)) ?? "NEXXUS POS";
@@ -281,6 +355,10 @@ router.put("/customers/:id", async (req, res): Promise<void> => {
   if (!customer) {
     res.status(404).json({ error: "Customer not found" });
     return;
+  }
+
+  if (parsed.data.openingBalance !== undefined) {
+    await syncOpeningBalanceAr(tenantId, customer);
   }
 
   res.json(UpdateCustomerResponse.parse(normalizeCustomer(customer)));
