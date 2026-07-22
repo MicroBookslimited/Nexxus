@@ -128,14 +128,29 @@ const CUSTOMER_TEMPLATE_ROWS = [
 ];
 
 /**
- * QuickBooks Desktop Point of Sale customer-list export format. A user can
- * export their customer list from QuickBooks POS and import it here as-is —
- * auto-mapping below combines First Name + Last Name into the NEXXUS name.
+ * QuickBooks Desktop Point of Sale customer-list export format (matches the
+ * exact column layout QuickBooks POS produces when you export the Customer
+ * List to Excel). A user can export from QuickBooks POS and upload the file
+ * as-is — the importer skips the report-title preamble rows, finds the real
+ * header row, and auto-maps every recognizable column. First + Last name are
+ * combined automatically when no usable Full Name is present.
  */
 const QUICKBOOKS_CUSTOMER_TEMPLATE_ROWS = [
-  ["First Name", "Last Name", "Company", "Phone", "Email", "Address Line 1", "City", "State", "ZIP", "Notes"],
-  ["Jane", "Smith", "Acme Inc.", "+1 555 000 0001", "jane@example.com", "123 Main St", "Nassau", "NP", "00000", "VIP customer"],
-  ["John", "Brown", "", "+1 555 000 0002", "john@example.com", "456 Bay St", "Freeport", "GB", "00000", ""],
+  [
+    "Last Name", "First Name", "Bill To Street", "Bill To City", "Bill To State", "Bill To ZIP",
+    "Account Balance", "Company", "Title", "Phone", "Mobile", "Alt. Phone", "Alt. Contact",
+    "Full Name", "Customer Type", "E-Mail", "Account Limit", "Past Due",
+  ],
+  [
+    "Smith", "Jane", "123 Main St", "Kingston", "", "00000",
+    "0.00", "Acme Inc.", "Mrs.", "8765550001", "", "", "",
+    "Mrs. JANE SMITH", "Retail", "jane@example.com", "50,000.00", "0",
+  ],
+  [
+    "Brown", "John", "456 Bay St", "Montego Bay", "", "00000",
+    "0.00", "", "Mr.", "", "8765550002", "", "",
+    "Mr. JOHN BROWN", "Wholesale", "john@example.com", "100,000.00", "0",
+  ],
 ];
 
 function downloadCustomerTemplate()           { csvDownload(CUSTOMER_TEMPLATE_ROWS,            "NEXUS_Customer_Import_Template.csv"); }
@@ -153,26 +168,52 @@ function ImportCustomersDialog({ open, onClose, onImported }: {
   const [step, setStep]           = useState<"upload" | "map" | "done">("upload");
   const [headers, setHeaders]     = useState<string[]>([]);
   const [rows, setRows]           = useState<string[][]>([]);
+  const [headerRowIdx, setHeaderRowIdx] = useState(0);
   const [mapping, setMapping]     = useState<Record<string, string>>({});
   const [importing, setImporting] = useState(false);
   const [progress, setProgress]   = useState(0);
   const [results, setResults]     = useState<ImportResult[]>([]);
 
-  const reset = () => { setStep("upload"); setHeaders([]); setRows([]); setMapping({}); setImporting(false); setProgress(0); setResults([]); };
+  const reset = () => { setStep("upload"); setHeaders([]); setRows([]); setHeaderRowIdx(0); setMapping({}); setImporting(false); setProgress(0); setResults([]); };
   const handleClose = () => { reset(); onClose(); };
+
+  /**
+   * QuickBooks POS exports start with report-title preamble rows (store name,
+   * date, "Customer List") before the real header row. Scan the first rows and
+   * pick the one with the most recognizable header tokens as the header.
+   */
+  const findHeaderRowIndex = (data: string[][]): number => {
+    const known = /^(last name|first name|full name|name|customer name|company|phone|mobile|alt\.? phone|alt\.? contact|title|e-?mail|email|customer type|bill to street|bill to city|bill to state|bill to zip|address(?: line 1)?|street|city|state|zip|zip code|postal code|notes?|account balance|account limit|past due)$/;
+    let bestIdx = 0, bestScore = 0;
+    const limit = Math.min(data.length, 15);
+    for (let i = 0; i < limit; i++) {
+      const score = data[i].filter(c => known.test(String(c ?? "").trim().toLowerCase())).length;
+      if (score > bestScore) { bestScore = score; bestIdx = i; }
+    }
+    return bestScore >= 2 ? bestIdx : 0;
+  };
 
   const parseFile = async (file: File) => {
     try {
       const data = await parseSpreadsheet(file) as string[][];
       if (!data.length) { toast({ title: "Empty file", variant: "destructive" }); return; }
-      const [hdr, ...body] = data;
+      const headerIdx = findHeaderRowIndex(data);
+      setHeaderRowIdx(headerIdx);
+      const hdr = data[headerIdx];
+      const body = data.slice(headerIdx + 1);
       const clean = hdr.map(h => String(h).trim());
       setHeaders(clean);
       setRows(body.filter(r => r.some(c => c !== null && c !== undefined && String(c).trim() !== "")));
       const auto: Record<string, string> = {};
       clean.forEach(h => {
         const l = h.toLowerCase().replace(/\s*\[[^\]]*\]\s*$/, "").trim();
-        if      (l === "first name" || l === "first" || l === "given name")                 auto[h] = "firstName";
+        if      (l === "bill to street")                                                    auto[h] = "address";
+        else if (l === "bill to city")                                                      auto[h] = "city";
+        else if (l === "bill to state")                                                     auto[h] = "state";
+        else if (l === "bill to zip")                                                       auto[h] = "postalCode";
+        else if (l === "customer type")                                                     auto[h] = "notes";
+        else if (l === "title" || l === "account balance" || l === "account limit" || l === "past due" || l === "alt. contact" || l === "alt contact") auto[h] = "__skip__";
+        else if (l === "first name" || l === "first" || l === "given name")                 auto[h] = "firstName";
         else if (l === "last name" || l === "last" || l === "surname" || l === "family name") auto[h] = "lastName";
         else if (l === "name" || l === "full name" || l === "customer name" || l === "customer") auto[h] = "name";
         else if (l === "company" || l === "company name" || l === "business")               auto[h] = "company";
@@ -210,7 +251,15 @@ function ImportCustomersDialog({ open, onClose, onImported }: {
 
   const extractRow = (row: string[]): Record<string, string> => {
     const obj: Record<string, string> = {};
-    headers.forEach((h, i) => { const f = mapping[h]; if (f && f !== "__skip__") obj[f] = String(row[i] ?? "").trim(); });
+    headers.forEach((h, i) => {
+      const f = mapping[h];
+      if (!f || f === "__skip__") return;
+      const val = String(row[i] ?? "").trim();
+      // When several columns map to the same field (e.g. Phone + Mobile +
+      // Alt. Phone in a QuickBooks export), keep the first non-empty value
+      // instead of letting a later empty column wipe out an earlier one.
+      if (val && !obj[f]) obj[f] = val;
+    });
     const combined = [obj.firstName, obj.lastName].filter(Boolean).join(" ").trim();
     const name = (obj.name ?? "").trim() || combined;
     return { ...obj, name };
@@ -225,7 +274,8 @@ function ImportCustomersDialog({ open, onClose, onImported }: {
     for (let i = 0; i < rows.length; i++) {
       const d = extractRow(rows[i]);
       setProgress(i + 1);
-      if (!d.name?.trim()) { out.push({ row: i + 2, name: `Row ${i + 2}`, status: "error", error: "Name is required" }); continue; }
+      const sheetRow = headerRowIdx + i + 2;
+      if (!d.name?.trim()) { out.push({ row: sheetRow, name: `Row ${sheetRow}`, status: "error", error: "Name is required" }); continue; }
       const payload = {
         name: d.name.trim(),
         email: d.email?.trim() || undefined,
@@ -241,8 +291,8 @@ function ImportCustomersDialog({ open, onClose, onImported }: {
         await new Promise<void>((resolve, reject) => {
           createCustomer.mutate({ data: payload }, { onSuccess: () => resolve(), onError: (e) => reject(e) });
         });
-        out.push({ row: i + 2, name: d.name, status: "ok" });
-      } catch { out.push({ row: i + 2, name: d.name, status: "error", error: "Server error" }); }
+        out.push({ row: sheetRow, name: d.name, status: "ok" });
+      } catch { out.push({ row: sheetRow, name: d.name, status: "error", error: "Server error" }); }
     }
     setResults(out);
     setImporting(false);
@@ -309,7 +359,7 @@ function ImportCustomersDialog({ open, onClose, onImported }: {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">Migrating from QuickBooks POS?</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Download the QuickBooks-format template, or export your customer list from QuickBooks Point of Sale and upload it as-is — First &amp; Last name are combined automatically.
+                    Export your customer list from QuickBooks Point of Sale and upload it as-is — the report-title rows are skipped automatically, columns are auto-matched, and First &amp; Last name are combined when needed.
                   </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); downloadQuickbooksCustomerTemplate(); }} className="shrink-0 border-indigo-500/40 hover:bg-indigo-500/10">
