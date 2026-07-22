@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, tenantsTable, subscriptionsTable, subscriptionPlansTable, resellersTable, tenantAdminUsersTable, subscriptionManualPaymentsTable } from "@workspace/db";
+import { db, tenantsTable, subscriptionsTable, subscriptionPlansTable, resellersTable, tenantAdminUsersTable, subscriptionManualPaymentsTable, appSettingsTable } from "@workspace/db";
 import { eq, and, sql, asc } from "drizzle-orm";
 import { applyDueManualPayments } from "../utils/manual-payments";
 import { z } from "zod";
@@ -712,12 +712,30 @@ router.patch("/saas/onboarding", async (req, res): Promise<void> => {
     return;
   }
 
-  const { step, ...fields } = req.body as { step: number; [key: string]: unknown };
+  const { step, timezone } = req.body as { step: number; timezone?: string; [key: string]: unknown };
+
+  // Only these tenant columns may be set through onboarding — never spread
+  // the raw body into the update (mass-assignment protection).
+  const allowed: Record<string, unknown> = {};
+  for (const key of ["phone", "address", "country"] as const) {
+    const v = (req.body as Record<string, unknown>)[key];
+    if (typeof v === "string") allowed[key] = v.trim();
+  }
 
   await db
     .update(tenantsTable)
-    .set({ ...fields, onboardingStep: step, updatedAt: new Date() })
+    .set({ ...allowed, onboardingStep: step, updatedAt: new Date() })
     .where(eq(tenantsTable.id, payload.tenantId));
+
+  // Timezone lives in app_settings (not a tenants column) so the Settings
+  // page and receipt rendering pick it up via GET /settings.
+  if (typeof timezone === "string" && timezone.trim()) {
+    const dbKey = `${payload.tenantId}:timezone`;
+    await db
+      .insert(appSettingsTable)
+      .values({ key: dbKey, tenantId: payload.tenantId, value: timezone.trim(), updatedAt: new Date() })
+      .onConflictDoUpdate({ target: appSettingsTable.key, set: { value: timezone.trim(), updatedAt: new Date() } });
+  }
 
   if (step >= 5) {
     await db.update(tenantsTable).set({ onboardingComplete: true }).where(eq(tenantsTable.id, payload.tenantId));

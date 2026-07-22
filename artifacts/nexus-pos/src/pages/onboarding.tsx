@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Check, ChevronRight, CreditCard, Zap, ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck, ShoppingBag, Cpu, Code2 } from "lucide-react";
 import { TENANT_TOKEN_KEY, saasRegister, saasMe, saasUpdateOnboarding, createFirstStaff, getPlans, createPayPalOrder, capturePayPalOrder, initiatePowerTranz, type Plan } from "@/lib/saas-api";
+import { TIMEZONES, DEFAULT_TIMEZONE } from "@/lib/timezones";
 import { loadScript } from "@paypal/paypal-js";
 import { TermsDialog } from "@/components/TermsDialog";
 
@@ -24,6 +25,7 @@ export function Onboarding() {
   const [form, setForm] = useState({
     businessName: "", ownerName: "", email: "", password: "",
     phone: "", address: "", country: "United States",
+    timezone: DEFAULT_TIMEZONE,
   });
 
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -146,7 +148,7 @@ export function Onboarding() {
     e.preventDefault();
     setError(""); setIsLoading(true);
     try {
-      await saasUpdateOnboarding(3, { phone: form.phone, address: form.address, country: form.country });
+      await saasUpdateOnboarding(3, { phone: form.phone, address: form.address, country: form.country, timezone: form.timezone });
       setStep(3);
     } catch (e) {
       setError(String(e));
@@ -388,6 +390,14 @@ export function Onboarding() {
                     className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none">
                     {COUNTRIES.map(c => <option key={c}>{c}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-[#94a3b8] mb-1">Timezone</label>
+                  <select value={form.timezone} onChange={e => updateForm("timezone", e.target.value)}
+                    className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none">
+                    {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+                  </select>
+                  <p className="text-xs text-[#64748b] mt-1">Used for the date &amp; time printed on receipts and reports.</p>
                 </div>
               </div>
               <div className="flex gap-3 mt-6">

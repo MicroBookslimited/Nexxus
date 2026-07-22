@@ -16,6 +16,7 @@ import {
   Search, SearchX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TIMEZONES } from "@/lib/timezones";
 import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY,
   setBusinessType, setBusinessFeature, type BusinessType } from "@/lib/saas-api";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
@@ -26,7 +27,7 @@ import { ShopifyIntegrationCard } from "@/components/ShopifyIntegrationCard";
  * `keywords` powers the settings search box: a section stays visible when
  * every word of the query appears in its label or keyword list. */
 const SETTINGS_SECTIONS: { id: string; label: string; icon: ElementType; keywords: string }[] = [
-  { id: "section-business", label: "Business", icon: Building2, keywords: "business info name address phone contact company logo details" },
+  { id: "section-business", label: "Business", icon: Building2, keywords: "business info name address phone contact company logo details timezone time zone clock" },
   { id: "section-industry", label: "Industry & Features", icon: Briefcase, keywords: "industry features business type profile restaurant retail hardware supermarket pharmacy feature toggles" },
   { id: "section-receipt", label: "Receipt", icon: Receipt, keywords: "receipt printing printer header footer message paper auto print thank you logo" },
   { id: "section-currency", label: "Currency", icon: DollarSign, keywords: "currency tax rate tax mode inclusive exclusive exchange jmd usd money rounding" },
@@ -84,6 +85,7 @@ export function AdminSettings() {
   const [serviceChargeEnabled, setServiceChargeEnabled] = useState(false);
   const [serviceChargeRate, setServiceChargeRate] = useState("");
   const [receiptFooter, setReceiptFooter] = useState("");
+  const [timezone, setTimezone] = useState("America/Jamaica");
   const [receiptSize, setReceiptSize] = useState<"58mm" | "80mm">("80mm");
   const [receiptTemplate, setReceiptTemplate] = useState<"classic" | "modern" | "minimal" | "bold" | "supermarket" | "convenience" | "staple" | "restaurant" | "hardware">("classic");
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
@@ -149,6 +151,7 @@ export function AdminSettings() {
     setServiceChargeEnabled(settings.service_charge_enabled === "true");
     setServiceChargeRate(settings.service_charge_rate ?? "");
     setReceiptFooter(settings.receipt_footer ?? "Thank you for your business!");
+    setTimezone(settings.timezone ?? "America/Jamaica");
     setReceiptSize((settings.receipt_size as "58mm" | "80mm") ?? "80mm");
     setAutoPrintReceipt(settings.auto_print_receipt === "true");
     setReceiptBarcode(settings.receipt_barcode === "true");
@@ -208,6 +211,7 @@ export function AdminSettings() {
           service_charge_enabled: serviceChargeEnabled ? "true" : "false",
           service_charge_rate: serviceChargeRate.trim(),
           receipt_footer: receiptFooter,
+          timezone,
           receipt_size: receiptSize,
           auto_print_receipt: autoPrintReceipt ? "true" : "false",
           receipt_barcode: receiptBarcode ? "true" : "false",
@@ -426,6 +430,19 @@ export function AdminSettings() {
               placeholder="e.g. 000-000-000"
             />
             <p className="text-xs text-muted-foreground">Shown on every receipt after the business address.</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="biz-timezone">Timezone</Label>
+            <select
+              id="biz-timezone"
+              value={timezone}
+              onChange={(e) => { setTimezone(e.target.value); markDirty(); }}
+              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            >
+              {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+            </select>
+            <p className="text-xs text-muted-foreground">Used for the date &amp; time printed on receipts.</p>
           </div>
 
           {/* Business Logo */}

@@ -51,6 +51,7 @@ const DEFAULTS: Record<string, string> = {
   topup_enabled: "false",
   topup_commission_rate: "5",
   topup_default_country: "JM",
+  timezone: "America/Jamaica",
 };
 
 function makeDbKey(tenantId: number, key: string): string {

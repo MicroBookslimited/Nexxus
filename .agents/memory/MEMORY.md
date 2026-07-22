@@ -57,4 +57,5 @@
 - [Platform email BCC](platform-email-bcc.md) — platform emails (tenantId 0 / platformCopy) BCC accounts@; tenant→customer emails never copied; new platform senders must opt in.
 - [Module toggle gating](module-toggle-gating.md) — tenant-setting module toggles must gate the page component itself; nav hiding alone leaves routes reachable by URL.
 - [WO→POS handoff pricing](wo-pos-handoff-pricing.md) — POS payload is markdown-only; doc lines above catalog price need catalog line + custom surcharge line (below = override, labor = custom).
+- [Receipt timezone setting](receipt-timezone-setting.md) — tenant `timezone` app_setting drives ALL 6 receipt date sites via receiptTimeZone(); onboarding PATCH writes it to app_settings and must stay allowlisted (no body spread).
 - [Subscription invoice idempotency](subscription-invoice-idempotency.md) — auto-issued billing PDFs dedupe per (tenant,provider,providerRef) via partial unique index + onConflictDoNothing; every payment path must pass a stable non-null providerRef.

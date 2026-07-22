@@ -17,6 +17,19 @@ export interface ReceiptSettings {
   receipt_barcode?: string;    // "true" | "false" — print a CODE128 barcode of the receipt number in the footer
   show_product_size?: string;  // "true" | "false" — surface the optional product size label on line items
   receipt_logo_size?: string;  // logo height in px, e.g. "90" (default). Width scales proportionally.
+  timezone?: string;           // IANA timezone for receipt timestamps, e.g. "America/Jamaica" (default)
+}
+
+/** Resolve the tenant's IANA timezone for receipt timestamps (falls back to Jamaica). */
+export function receiptTimeZone(settings: ReceiptSettings): string {
+  const tz = settings.timezone?.trim();
+  if (!tz) return "America/Jamaica";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return "America/Jamaica";
+  }
 }
 
 /** Build a logo <div> for any receipt template using the tenant's logo size setting. */
@@ -302,7 +315,7 @@ export function buildReceiptHtml(order: ReceiptOrder, settings: ReceiptSettings 
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "numeric", minute: "2-digit",
     hour12: true,
-    timeZone: "America/Jamaica",
+    timeZone: receiptTimeZone(settings),
   });
 
   // Last 3 digits of order number (the prominent pickup number)
@@ -1534,7 +1547,7 @@ function buildStapleReceiptHtml(
   // Parse time for the SALE row
   const createdAt = typeof order.createdAt === "string" ? new Date(order.createdAt) : order.createdAt;
   const _jmParts  = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Jamaica",
+    timeZone: receiptTimeZone(settings),
     hour: "2-digit", minute: "2-digit", hour12: false,
     month: "2-digit", day: "2-digit", year: "numeric",
   }).formatToParts(createdAt);
@@ -2102,7 +2115,7 @@ export function buildWhatsAppText(order: ReceiptOrder, settings: ReceiptSettings
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "numeric", minute: "2-digit",
     hour12: true,
-    timeZone: "America/Jamaica",
+    timeZone: receiptTimeZone(settings),
   });
 
   const orderNum  = String(order.orderNumber);
@@ -2254,7 +2267,7 @@ export function buildPlainReceiptHtml(order: ReceiptOrder, settings: ReceiptSett
   const dateStr   = createdAt.toLocaleString("en-JM", {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "numeric", minute: "2-digit", hour12: true,
-    timeZone: "America/Jamaica",
+    timeZone: receiptTimeZone(settings),
   });
   const orderNum  = String(order.orderNumber);
 
@@ -2552,6 +2565,7 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, settings: Receip
     return dt.toLocaleString("en-JM", {
       day: "2-digit", month: "2-digit", year: "numeric",
       hour: "numeric", minute: "2-digit", hour12: true,
+      timeZone: receiptTimeZone(settings),
     });
   };
 
@@ -2690,6 +2704,7 @@ export function buildBillHtml(
   const dateStr = now.toLocaleString("en-JM", {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "numeric", minute: "2-digit", hour12: true,
+    timeZone: receiptTimeZone(settings),
   });
 
   const fmt = (n: number, currency = baseCurrency) => {
