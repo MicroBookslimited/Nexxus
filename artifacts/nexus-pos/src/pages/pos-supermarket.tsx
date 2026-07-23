@@ -335,7 +335,7 @@ export function PosSupermarket({
   /* ── Cart ──────────────────────────────────────────────────────────────── */
   const [cart, setCart] = useState<CartLine[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "split">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "credit" | "split">("cash");
   // Debit/credit choice for card (and the card portion of a split); printed on the receipt.
   const [cardType, setCardType] = useState<CardType | null>(null);
   const [cardTypeDialogOpen, setCardTypeDialogOpen] = useState(false);
@@ -1222,7 +1222,7 @@ export function PosSupermarket({
     (splitCard < 0.005 || !!cardType);
 
   // Pick a payment method; the split popup collects card type + card + cash.
-  const selectPayment = (m: "cash" | "card" | "split") => {
+  const selectPayment = (m: "cash" | "card" | "credit" | "split") => {
     setPaymentMethod(m);
     if (m === "card") { setCardType(null); setCardTypeDialogOpen(true); }
     else if (m === "split") {
@@ -1288,6 +1288,10 @@ export function PosSupermarket({
     // When a voucher fully covers the sale, the remainder method is irrelevant —
     // send the "gift_voucher" sentinel and skip remainder-method validation.
     const effectivePaymentMethod = voucherCoversAll ? "gift_voucher" : paymentMethod;
+    if (!voucherCoversAll && paymentMethod === "credit" && !selectedCustomerId) {
+      toast({ title: "Customer required", description: "Select a customer to process a credit sale.", variant: "destructive" });
+      return;
+    }
     if (!voucherCoversAll && paymentMethod === "split" && !isSplitValid) {
       setSplitDialogOpen(true);
       toast({
@@ -1940,7 +1944,7 @@ export function PosSupermarket({
             </div>
 
             {/* Payment method */}
-            <div className={`grid grid-cols-3 gap-2 ${voucherCoversAll ? "opacity-40 pointer-events-none" : ""}`}>
+            <div className={`grid grid-cols-2 gap-2 ${voucherCoversAll ? "opacity-40 pointer-events-none" : ""}`}>
               <button
                 onClick={() => selectPayment("cash")}
                 className={`h-14 rounded-xl text-sm font-bold transition flex flex-col items-center justify-center gap-1 ${
@@ -1964,6 +1968,17 @@ export function PosSupermarket({
                 Card
               </button>
               <button
+                onClick={() => selectPayment("credit")}
+                className={`h-14 rounded-xl text-sm font-bold transition flex flex-col items-center justify-center gap-1 ${
+                  paymentMethod === "credit"
+                    ? "bg-amber-500 text-white shadow-md shadow-amber-500/30"
+                    : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                <BookOpen className="h-5 w-5" />
+                Credit
+              </button>
+              <button
                 onClick={() => selectPayment("split")}
                 className={`h-14 rounded-xl text-sm font-bold transition flex flex-col items-center justify-center gap-1 ${
                   paymentMethod === "split"
@@ -1975,6 +1990,13 @@ export function PosSupermarket({
                 Split
               </button>
             </div>
+
+            {/* Credit: customer required notice */}
+            {paymentMethod === "credit" && !selectedCustomerId && (
+              <p className="text-amber-500 text-[11px] font-medium -mt-1">
+                ⚠ Select a customer above to enable credit sale
+              </p>
+            )}
 
             {/* Cash: tendered + quick suggestions */}
             {paymentMethod === "cash" && (
@@ -2029,7 +2051,7 @@ export function PosSupermarket({
             {/* Checkout */}
             <button
               onClick={handleCheckout}
-              disabled={cart.length === 0 || createOrder.isPending || (!voucherCoversAll && paymentMethod === "split" && !isSplitValid)}
+              disabled={cart.length === 0 || createOrder.isPending || (!voucherCoversAll && paymentMethod === "split" && !isSplitValid) || (!voucherCoversAll && paymentMethod === "credit" && !selectedCustomerId)}
               className="w-full h-16 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-lg font-extrabold shadow-lg shadow-cyan-500/20 hover:brightness-110 active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
             >
               <ShoppingCart className="h-6 w-6" />
