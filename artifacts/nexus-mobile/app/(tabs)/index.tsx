@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import {
   useAuthenticateStaff,
   useCreateOrder,
+  useGetCurrentCashSession,
   useGetSettings,
   useListCustomers,
   useListProducts,
@@ -40,7 +41,6 @@ import {
 } from "@/components/ui";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { CustomizeSheet } from "@/components/CustomizeSheet";
-import { useAuth } from "@/context/AuthContext";
 import { useCart, type CartLine } from "@/context/CartContext";
 import { usePrinter } from "@/context/PrinterContext";
 import { useStaff } from "@/context/StaffContext";
@@ -122,26 +122,23 @@ export default function SellScreen() {
   const cart = useCart();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { staff, setStaff, clearStaff } = useStaff();
-  const { signOut } = useAuth();
+  const { staff, setStaff } = useStaff();
   const [staffPinOpen, setStaffPinOpen] = useState(false);
 
-  // Tenant logout: clears the business token/cache AND the staff session (so the
-  // next tenant doesn't inherit a stale cashier) then returns to the login
-  // screen so a different tenant account can sign in.
-  const confirmSignOut = () => {
-    Alert.alert("Log out", "Sign out of this business account?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log out",
-        style: "destructive",
-        onPress: () => {
-          clearStaff();
-          void signOut();
-        },
-      },
-    ]);
-  };
+  // Register gate: sales require a signed-in cashier AND an open cash shift.
+  // Poll the shift so a shift closed elsewhere re-locks this register soon after.
+  // Scoped by x-staff-id so the register only unlocks for THIS cashier's own
+  // open shift — another cashier's session must not satisfy the gate.
+  const sessionQuery = useGetCurrentCashSession({
+    query: {
+      retry: false,
+      queryKey: ["cash", "current-session", staff?.id ?? "none"],
+      refetchInterval: 30_000,
+      enabled: !!staff,
+    },
+    request: staff ? { headers: { "x-staff-id": String(staff.id) } } : undefined,
+  });
+  const hasShift = !!staff && !!sessionQuery.data?.session && !sessionQuery.isError;
 
   const { data: products, isLoading, error, refetch } = useListProducts();
   const [search, setSearch] = useState("");
@@ -266,6 +263,80 @@ export default function SellScreen() {
       <View style={{ flex: 1, backgroundColor: c.background }}>
         <AppHeader title="Sell" />
         <ErrorState message="Could not load products." onRetry={refetch} />
+      </View>
+    );
+  }
+
+  // ── Register gate ──────────────────────────────────────────────────────
+  // The register only opens for a signed-in cashier with an open cash shift.
+  if (!staff || sessionQuery.isLoading || !hasShift) {
+    const shiftMissing = !!staff && !sessionQuery.isLoading && !hasShift;
+    return (
+      <View style={{ flex: 1, backgroundColor: c.background }}>
+        <AppHeader title="Sell" subtitle="Register locked" />
+        {sessionQuery.isLoading && staff ? (
+          <LoadingState label="Checking shift…" />
+        ) : (
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+            <Card style={{ width: "100%", maxWidth: 420, alignItems: "center", gap: 14, padding: 24 }}>
+              <View
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 32,
+                  backgroundColor: c.secondary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather name={!staff ? "lock" : "clock"} size={28} color={c.accent} />
+              </View>
+              <Text style={{ color: c.foreground, fontSize: 20, fontFamily: fontFamily("bold"), textAlign: "center" }}>
+                {!staff ? "Sign in to open the register" : "No open shift"}
+              </Text>
+              <Text
+                style={{
+                  color: c.mutedForeground,
+                  fontSize: 14,
+                  fontFamily: fontFamily("regular"),
+                  textAlign: "center",
+                  lineHeight: 20,
+                }}
+              >
+                {!staff
+                  ? "Enter your staff PIN to start selling. Every sale is recorded under the signed-in cashier."
+                  : `${staff.name}, open a cash shift before making sales so cash in the drawer is tracked.`}
+              </Text>
+              {!staff ? (
+                <Button label="Enter Staff PIN" icon="unlock" onPress={() => setStaffPinOpen(true)} style={{ alignSelf: "stretch" }} />
+              ) : (
+                <Button
+                  label="Open a Shift"
+                  icon="dollar-sign"
+                  onPress={() => router.navigate("/(tabs)/cash")}
+                  style={{ alignSelf: "stretch" }}
+                />
+              )}
+              {shiftMissing ? (
+                <Pressable onPress={() => setStaffPinOpen(true)} hitSlop={8}>
+                  <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("medium") }}>
+                    Not {staff!.name}? Switch staff
+                  </Text>
+                </Pressable>
+              ) : null}
+            </Card>
+          </View>
+        )}
+        <StaffPinModal
+          visible={staffPinOpen}
+          title={staff ? "Switch Staff" : "Sign In Staff"}
+          subtitle="Enter your staff PIN to open the register."
+          onSuccess={(s) => {
+            setStaff({ id: s.id, name: s.name, role: s.role });
+            setStaffPinOpen(false);
+          }}
+          onClose={() => setStaffPinOpen(false)}
+        />
       </View>
     );
   }
@@ -423,11 +494,8 @@ export default function SellScreen() {
           {staff ? staff.name : "Sign in"}
         </Text>
       </Pressable>
-      <Pressable onPress={() => router.push("/subscription")} hitSlop={8}>
-        <Feather name="user" size={22} color={c.mutedForeground} />
-      </Pressable>
-      <Pressable onPress={confirmSignOut} hitSlop={8}>
-        <Feather name="log-out" size={20} color={c.mutedForeground} />
+      <Pressable onPress={() => router.push("/settings")} hitSlop={8}>
+        <Feather name="settings" size={21} color={c.mutedForeground} />
       </Pressable>
     </View>
   );

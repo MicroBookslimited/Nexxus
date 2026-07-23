@@ -35,9 +35,16 @@ export default function CashScreen() {
   const c = useColors();
   const pad = useScreenPadding();
   const lay = useResponsive();
+  const { staff } = useStaff();
 
+  // Scope by the signed-in cashier (x-staff-id) so this screen shows THEIR
+  // shift — matching the Sell register gate. Another cashier's open shift must
+  // not hide the open-shift form, or this cashier could never start selling.
+  // With no cashier signed in, fall back to the tenant-wide latest open shift
+  // (e.g. a manager reviewing/closing a shift).
   const sessionQuery = useGetCurrentCashSession({
-    query: { retry: false, queryKey: ["cash", "current-session"] },
+    query: { retry: false, queryKey: ["cash", "current-session", staff?.id ?? "any"] },
+    request: staff ? { headers: { "x-staff-id": String(staff.id) } } : undefined,
   });
   const detail = sessionQuery.data;
   const hasSession = !!detail?.session && !sessionQuery.isError;
