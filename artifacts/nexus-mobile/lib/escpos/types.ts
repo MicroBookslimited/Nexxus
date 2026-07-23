@@ -47,6 +47,33 @@ export interface ReceiptOrder {
 
 export type PrinterTransport = "network" | "bluetooth" | "usb";
 
+/** Kitchen printers support network (ethernet/wifi) and Bluetooth only. */
+export type KitchenTransport = "network" | "bluetooth";
+
+export interface KitchenPrinterConfig {
+  /** Master switch for the kitchen printer — independent of the receipt printer. */
+  enabled: boolean;
+  /** Print a kitchen ticket automatically when a sale completes. */
+  autoPrint: boolean;
+  transport: KitchenTransport;
+  /** 32 cols = 58mm paper, 42 cols = 80mm paper. */
+  paperWidth: 32 | 42;
+  /** Network transport. */
+  host?: string;
+  port?: number;
+  /** Bluetooth (BLE) transport. */
+  deviceId?: string;
+  deviceName?: string;
+}
+
+export const DEFAULT_KITCHEN_PRINTER_CONFIG: KitchenPrinterConfig = {
+  enabled: false,
+  autoPrint: true,
+  transport: "network",
+  paperWidth: 42,
+  port: 9100,
+};
+
 export interface PrinterConfig {
   /** Master switch — when false, no printing is attempted. */
   enabled: boolean;
@@ -61,6 +88,8 @@ export interface PrinterConfig {
   /** Bluetooth (BLE) transport. */
   deviceId?: string;
   deviceName?: string;
+  /** Optional second printer for kitchen tickets (restaurants/bars). */
+  kitchen?: KitchenPrinterConfig;
 }
 
 export const DEFAULT_PRINTER_CONFIG: PrinterConfig = {
@@ -69,4 +98,5 @@ export const DEFAULT_PRINTER_CONFIG: PrinterConfig = {
   transport: "network",
   paperWidth: 42,
   port: 9100,
+  kitchen: DEFAULT_KITCHEN_PRINTER_CONFIG,
 };

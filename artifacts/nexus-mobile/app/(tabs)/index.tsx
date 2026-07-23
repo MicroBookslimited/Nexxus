@@ -47,7 +47,7 @@ import { useStaff } from "@/context/StaffContext";
 import { StaffPinModal } from "@/components/StaffPinModal";
 import { useColors } from "@/hooks/useColors";
 import { useResponsive } from "@/hooks/useResponsive";
-import { printReceipt, type ReceiptItem, type ReceiptOrder, type ReceiptSettings } from "@/lib/escpos";
+import { printKitchenTicket, printReceipt, type ReceiptItem, type ReceiptOrder, type ReceiptSettings } from "@/lib/escpos";
 import { formatMoney } from "@/lib/format";
 import {
   getPurchaseUnits,
@@ -553,8 +553,9 @@ function CheckoutContent({
   const createOrder = useCreateOrder();
   const { data: customers } = useListCustomers();
   const { data: settingsData } = useGetSettings();
-  const { config: printerConfig, ready: printerReady } = usePrinter();
+  const { config: printerConfig, kitchen: kitchenConfig, ready: printerReady } = usePrinter();
   const [printing, setPrinting] = useState(false);
+  const [kitchenPrinting, setKitchenPrinting] = useState(false);
 
   // Payment method value matches the web POS: built-in types ("cash", "card",
   // "split", "credit") use their type as the value; custom methods (e.g.
@@ -782,6 +783,20 @@ function CheckoutContent({
     }
   };
 
+  const doKitchenPrint = async (order: ReceiptOrder) => {
+    setKitchenPrinting(true);
+    try {
+      await printKitchenTicket(kitchenConfig, order);
+    } catch (e) {
+      Alert.alert(
+        "Kitchen print failed",
+        e instanceof Error ? e.message : "Could not print the kitchen ticket.",
+      );
+    } finally {
+      setKitchenPrinting(false);
+    }
+  };
+
   const charge = async () => {
     if (cart.lines.length === 0) return;
     // When a voucher covers the whole balance, the server takes a sentinel
@@ -876,6 +891,14 @@ function CheckoutContent({
       if (printerReady && printerConfig.enabled && printerConfig.autoPrint) {
         void doPrint(receiptOrder);
       }
+      if (printerReady && kitchenConfig.enabled && kitchenConfig.autoPrint) {
+        void printKitchenTicket(kitchenConfig, receiptOrder).catch((e) => {
+          Alert.alert(
+            "Kitchen print failed",
+            e instanceof Error ? e.message : "Could not print the kitchen ticket.",
+          );
+        });
+      }
     } catch (e) {
       const { title, message } = friendlyCheckoutError(e);
       Alert.alert(title, message);
@@ -967,6 +990,16 @@ function CheckoutContent({
               variant="secondary"
               loading={printing}
               onPress={() => void doPrint(receipt)}
+              style={{ width: "100%" }}
+            />
+          ) : null}
+          {kitchenConfig.enabled ? (
+            <Button
+              label={kitchenPrinting ? "Printing…" : "Print kitchen ticket"}
+              icon="coffee"
+              variant="secondary"
+              loading={kitchenPrinting}
+              onPress={() => void doKitchenPrint(receipt)}
               style={{ width: "100%" }}
             />
           ) : null}

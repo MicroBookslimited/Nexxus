@@ -161,6 +161,57 @@ export function buildReceiptText(
 }
 
 /**
+ * Kitchen ticket layout — for the second (kitchen) printer in restaurants/bars.
+ * No prices: order number, time, order type, staff, customer, then items with
+ * quantities, variant/modifier choices and preparation notes.
+ */
+export function buildKitchenTicketText(
+  order: ReceiptOrder,
+  width = 42,
+): string {
+  const W = width;
+
+  const ts = (() => {
+    const d = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
+    if (isNaN(d.getTime())) return String(order.createdAt);
+    return d.toLocaleString("en-JM");
+  })();
+
+  const lines: string[] = [];
+
+  lines.push(center("*** KITCHEN ***", W));
+  lines.push(divider(W, "="));
+  lines.push(lr("Order:", order.orderNumber, W));
+  lines.push(lr("Time:", ts, W));
+  if (order.orderType) lines.push(lr("Mode:", order.orderType, W));
+  if (order.staffName) lines.push(lr("Server:", order.staffName, W));
+  if (order.customerName) lines.push(lr("Customer:", order.customerName, W));
+  lines.push(divider(W, "="));
+  lines.push("");
+
+  for (const it of order.items) {
+    wrap(`${it.quantity} x ${it.productName}`, W).forEach((l, i) =>
+      lines.push(i === 0 ? l : "  " + l),
+    );
+    (it.variantChoices ?? []).forEach((v) => lines.push("   " + v.optionName.slice(0, W - 3)));
+    (it.modifierChoices ?? []).forEach((m) => lines.push("   + " + m.optionName.slice(0, W - 5)));
+    if (it.notes) wrap("** " + it.notes + " **", W - 3).forEach((l) => lines.push("   " + l));
+    lines.push("");
+  }
+
+  if (order.notes) {
+    lines.push(divider(W));
+    wrap("NOTE: " + order.notes, W).forEach((l) => lines.push(l));
+  }
+
+  lines.push(divider(W, "="));
+  lines.push("");
+  lines.push("");
+
+  return lines.join("\n");
+}
+
+/**
  * Fold non-ASCII characters down to printer-safe ASCII so raw byte transports
  * (network/Bluetooth) never emit multi-byte UTF-8 the printer can't render.
  */

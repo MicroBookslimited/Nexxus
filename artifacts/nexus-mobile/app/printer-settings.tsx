@@ -8,7 +8,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Badge, Button, Card, Field, fontFamily } from "@/components/ui";
 import { usePrinter } from "@/context/PrinterContext";
 import { useColors } from "@/hooks/useColors";
-import { scanBleDevices, testPrint, type BleDevice, type PrinterTransport } from "@/lib/escpos";
+import {
+  scanBleDevices,
+  testKitchenPrint,
+  testPrint,
+  type BleDevice,
+  type KitchenTransport,
+  type PrinterTransport,
+} from "@/lib/escpos";
 
 const TRANSPORTS: { value: PrinterTransport; label: string; icon: React.ComponentProps<typeof Feather>["name"] }[] = [
   { value: "network", label: "Network", icon: "wifi" },
@@ -16,16 +23,24 @@ const TRANSPORTS: { value: PrinterTransport; label: string; icon: React.Componen
   { value: "usb", label: "USB", icon: "link" },
 ];
 
+const KITCHEN_TRANSPORTS: { value: KitchenTransport; label: string; icon: React.ComponentProps<typeof Feather>["name"] }[] = [
+  { value: "network", label: "Network", icon: "wifi" },
+  { value: "bluetooth", label: "Bluetooth", icon: "bluetooth" },
+];
+
 export default function PrinterSettings() {
   const c = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { config, update } = usePrinter();
+  const { config, kitchen, update, updateKitchen } = usePrinter();
   const { data: settings } = useGetSettings();
 
   const [scanning, setScanning] = useState(false);
   const [devices, setDevices] = useState<BleDevice[]>([]);
   const [testing, setTesting] = useState(false);
+  const [kitchenScanning, setKitchenScanning] = useState(false);
+  const [kitchenDevices, setKitchenDevices] = useState<BleDevice[]>([]);
+  const [kitchenTesting, setKitchenTesting] = useState(false);
 
   const receiptSettings = {
     business_name: settings?.business_name,
@@ -60,6 +75,32 @@ export default function PrinterSettings() {
       Alert.alert("Test print failed", e instanceof Error ? e.message : "Could not print.");
     } finally {
       setTesting(false);
+    }
+  };
+
+  const kitchenScan = async () => {
+    setKitchenScanning(true);
+    setKitchenDevices([]);
+    try {
+      const found = await scanBleDevices(6000);
+      setKitchenDevices(found);
+      if (found.length === 0) Alert.alert("No printers found", "Make sure the printer is on and in range.");
+    } catch (e) {
+      Alert.alert("Scan failed", e instanceof Error ? e.message : "Could not scan for devices.");
+    } finally {
+      setKitchenScanning(false);
+    }
+  };
+
+  const runKitchenTest = async () => {
+    setKitchenTesting(true);
+    try {
+      await testKitchenPrint(kitchen);
+      Alert.alert("Test sent", "A test kitchen ticket was sent to the kitchen printer.");
+    } catch (e) {
+      Alert.alert("Test print failed", e instanceof Error ? e.message : "Could not print.");
+    } finally {
+      setKitchenTesting(false);
     }
   };
 
@@ -215,6 +256,153 @@ export default function PrinterSettings() {
         </Card>
 
         <Button label={testing ? "Printing…" : "Test print"} icon="printer" loading={testing} onPress={runTest} />
+
+        {/* ---------- Kitchen printer (second printer) ---------- */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 }}>
+          <Feather name="coffee" size={18} color={c.foreground} />
+          <Text style={{ color: c.foreground, fontSize: 18, fontFamily: fontFamily("bold") }}>Kitchen Printer</Text>
+        </View>
+        <Text style={{ color: c.mutedForeground, fontSize: 12, fontFamily: fontFamily("regular"), marginTop: -8 }}>
+          For restaurants and bars — send a kitchen ticket (items only, no prices) to a second printer.
+        </Text>
+
+        <Card style={{ gap: 14 }}>
+          <ToggleRow
+            label="Enable kitchen printer"
+            hint="Print kitchen tickets to a second printer."
+            value={kitchen.enabled}
+            onChange={(v) => updateKitchen({ enabled: v })}
+          />
+          <ToggleRow
+            label="Auto-print kitchen ticket"
+            hint="Send the ticket automatically when checkout completes."
+            value={kitchen.autoPrint}
+            onChange={(v) => updateKitchen({ autoPrint: v })}
+          />
+        </Card>
+
+        <Card style={{ gap: 12 }}>
+          <Text style={{ color: c.foreground, fontFamily: fontFamily("semibold"), fontSize: 15 }}>Kitchen connection</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {KITCHEN_TRANSPORTS.map((t) => {
+              const active = kitchen.transport === t.value;
+              return (
+                <Pressable
+                  key={t.value}
+                  onPress={() => updateKitchen({ transport: t.value })}
+                  style={{
+                    flex: 1,
+                    alignItems: "center",
+                    gap: 6,
+                    paddingVertical: 12,
+                    borderRadius: c.radius,
+                    backgroundColor: active ? c.primary : c.secondary,
+                  }}
+                >
+                  <Feather name={t.icon} size={20} color={active ? "#FFFFFF" : c.secondaryForeground} />
+                  <Text style={{ color: active ? "#FFFFFF" : c.secondaryForeground, fontFamily: fontFamily("medium"), fontSize: 13 }}>
+                    {t.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {kitchen.transport === "network" ? (
+            <View style={{ gap: 12 }}>
+              <Field
+                label="Kitchen printer IP address"
+                value={kitchen.host ?? ""}
+                onChangeText={(v) => updateKitchen({ host: v })}
+                placeholder="192.168.1.51"
+                keyboardType="numbers-and-punctuation"
+                autoCapitalize="none"
+              />
+              <Field
+                label="Port"
+                value={String(kitchen.port ?? 9100)}
+                onChangeText={(v) => updateKitchen({ port: Number(v.replace(/[^0-9]/g, "")) || 9100 })}
+                placeholder="9100"
+                keyboardType="number-pad"
+              />
+            </View>
+          ) : null}
+
+          {kitchen.transport === "bluetooth" ? (
+            <View style={{ gap: 10 }}>
+              {kitchen.deviceId ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Badge label="Selected" tone="success" />
+                  <Text style={{ color: c.foreground, fontFamily: fontFamily("medium"), flexShrink: 1 }}>
+                    {kitchen.deviceName ?? kitchen.deviceId}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("regular") }}>
+                  No kitchen printer selected. Scan and pick a BLE printer.
+                </Text>
+              )}
+              <Button
+                label={kitchenScanning ? "Scanning…" : "Scan for printers"}
+                icon="search"
+                variant="secondary"
+                loading={kitchenScanning}
+                onPress={kitchenScan}
+              />
+              {kitchenDevices.map((d) => (
+                <Pressable
+                  key={d.id}
+                  onPress={() => updateKitchen({ deviceId: d.id, deviceName: d.name })}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: 12,
+                    borderRadius: c.radius,
+                    backgroundColor: c.secondary,
+                  }}
+                >
+                  <Text style={{ color: c.foreground, fontFamily: fontFamily("medium"), flexShrink: 1 }}>{d.name}</Text>
+                  {kitchen.deviceId === d.id ? <Feather name="check" size={18} color={c.accent} /> : null}
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </Card>
+
+        <Card style={{ gap: 12 }}>
+          <Text style={{ color: c.foreground, fontFamily: fontFamily("semibold"), fontSize: 15 }}>Kitchen paper width</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {([32, 42] as const).map((w) => {
+              const active = kitchen.paperWidth === w;
+              return (
+                <Pressable
+                  key={w}
+                  onPress={() => updateKitchen({ paperWidth: w })}
+                  style={{
+                    flex: 1,
+                    alignItems: "center",
+                    paddingVertical: 12,
+                    borderRadius: c.radius,
+                    backgroundColor: active ? c.primary : c.secondary,
+                  }}
+                >
+                  <Text style={{ color: active ? "#FFFFFF" : c.secondaryForeground, fontFamily: fontFamily("medium") }}>
+                    {w === 32 ? "58 mm" : "80 mm"}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Card>
+
+        <Button
+          label={kitchenTesting ? "Printing…" : "Test kitchen ticket"}
+          icon="printer"
+          variant="secondary"
+          loading={kitchenTesting}
+          onPress={runKitchenTest}
+        />
 
         <Text style={{ color: c.mutedForeground, fontSize: 12, fontFamily: fontFamily("regular"), textAlign: "center" }}>
           Direct printing needs a native development build — it does not work in Expo Go or the web preview.

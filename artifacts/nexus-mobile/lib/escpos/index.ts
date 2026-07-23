@@ -6,16 +6,16 @@
  * module is safe to import anywhere (including in Expo Go); only an actual print
  * call will surface a "requires a development build" error there.
  */
-import { buildReceiptBytes, buildReceiptText } from "./builder";
+import { buildKitchenTicketText, buildReceiptBytes, buildReceiptText } from "./builder";
 import { printBluetooth, scanBleDevices, type BleDevice } from "./transports/bluetooth";
 import { printNetwork } from "./transports/network";
 import { printUsb } from "./transports/usb";
-import type { PrinterConfig, ReceiptOrder, ReceiptSettings } from "./types";
+import type { KitchenPrinterConfig, PrinterConfig, ReceiptOrder, ReceiptSettings } from "./types";
 
 export { scanBleDevices };
 export type { BleDevice };
 export * from "./types";
-export { buildReceiptText } from "./builder";
+export { buildKitchenTicketText, buildReceiptText } from "./builder";
 
 async function dispatch(config: PrinterConfig, text: string): Promise<void> {
   if (config.transport === "usb") {
@@ -37,6 +37,43 @@ export async function printReceipt(
 ): Promise<void> {
   const text = buildReceiptText(order, settings, config.paperWidth);
   await dispatch(config, text);
+}
+
+/** Dispatch a kitchen ticket to the second (kitchen) printer. */
+export async function printKitchenTicket(
+  kitchen: KitchenPrinterConfig,
+  order: ReceiptOrder,
+): Promise<void> {
+  if (kitchen.transport === "network" && !kitchen.host?.trim()) {
+    throw new Error("Kitchen printer IP address is not set. Enter it in Printer Settings.");
+  }
+  if (kitchen.transport === "bluetooth" && !kitchen.deviceId) {
+    throw new Error("No kitchen Bluetooth printer selected. Scan and pick one in Printer Settings.");
+  }
+  const text = buildKitchenTicketText(order, kitchen.paperWidth);
+  const bytes = buildReceiptBytes(text);
+  if (kitchen.transport === "network") {
+    await printNetwork(bytes, { host: kitchen.host, port: kitchen.port });
+  } else {
+    await printBluetooth(bytes, { deviceId: kitchen.deviceId });
+  }
+}
+
+export async function testKitchenPrint(kitchen: KitchenPrinterConfig): Promise<void> {
+  const now = new Date();
+  const order: ReceiptOrder = {
+    orderNumber: "TEST-KITCHEN",
+    createdAt: now,
+    orderType: "Dine-in",
+    items: [
+      { quantity: 1, productName: "Test dish", lineTotal: 0, notes: "No onions" },
+      { quantity: 2, productName: "Another test dish", lineTotal: 0 },
+    ],
+    subtotal: 0,
+    tax: 0,
+    total: 0,
+  };
+  await printKitchenTicket(kitchen, order);
 }
 
 export async function testPrint(config: PrinterConfig, settings: ReceiptSettings = {}): Promise<void> {
