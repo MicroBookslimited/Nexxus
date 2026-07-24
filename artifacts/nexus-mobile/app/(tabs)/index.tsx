@@ -368,13 +368,15 @@ export default function SellScreen() {
             onPress={() => void onAdd(item)}
             style={({ pressed }) => ({
               flex: 1 / gridColumns,
+              aspectRatio: 1, // square tiles, matching the desktop POS grid
               backgroundColor: bg,
               borderRadius: c.radius + 2,
               padding: 8,
+              justifyContent: "space-between",
               opacity: pressed ? 0.85 : out ? 0.7 : 1,
             })}
           >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
               <View
                 style={{
                   width: 28,
@@ -390,12 +392,12 @@ export default function SellScreen() {
               {out ? <Badge label="Out" tone="danger" /> : <Badge label={`${item.stockCount}`} tone="success" />}
             </View>
             <Text
-              numberOfLines={2}
-              style={{ color: "#FFFFFF", fontSize: 12, fontFamily: fontFamily("semibold"), minHeight: 30 }}
+              numberOfLines={3}
+              style={{ color: "#FFFFFF", fontSize: 12, fontFamily: fontFamily("semibold") }}
             >
               {item.name}
             </Text>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
               <Text style={{ color: "#FFFFFF", fontSize: 13, fontFamily: fontFamily("bold") }}>
                 {formatMoney(item.price)}
               </Text>
@@ -1426,13 +1428,109 @@ function CheckoutContent({
 
             {!voucherCoversAll && paymentMethod === "cash" ? (
               <Card style={{ gap: 10 }}>
-                <Field
-                  label="Amount tendered (optional)"
-                  value={cashTendered}
-                  onChangeText={setCashTendered}
-                  placeholder={String(amountDue)}
-                  keyboardType="decimal-pad"
-                />
+                <Text style={{ color: c.mutedForeground, fontSize: 12, fontFamily: fontFamily("medium") }}>
+                  Amount tendered
+                </Text>
+                <View
+                  style={{
+                    borderWidth: 1,
+                    borderColor: c.border,
+                    borderRadius: c.radius,
+                    backgroundColor: c.secondary,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: cashTendered ? c.foreground : c.mutedForeground,
+                      fontSize: 20,
+                      fontFamily: fontFamily("bold"),
+                    }}
+                  >
+                    {cashTendered || formatMoney(amountDue)}
+                  </Text>
+                  {cashTendered ? (
+                    <Pressable onPress={() => setCashTendered("")} hitSlop={8}>
+                      <Feather name="x-circle" size={20} color={c.mutedForeground} />
+                    </Pressable>
+                  ) : null}
+                </View>
+
+                {/* Quick tender buttons, like the desktop POS */}
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  {[
+                    { label: "Exact", value: amountDue },
+                    ...[100, 500, 1000, 5000]
+                      .filter((v) => v >= amountDue)
+                      .slice(0, 3)
+                      .map((v) => ({ label: formatMoney(v), value: v })),
+                  ].map((q) => (
+                    <Pressable
+                      key={q.label}
+                      onPress={() => setCashTendered(String(Math.round(q.value * 100) / 100))}
+                      style={({ pressed }) => ({
+                        flex: 1,
+                        paddingVertical: 10,
+                        borderRadius: c.radius,
+                        backgroundColor: c.secondary,
+                        borderWidth: 1,
+                        borderColor: c.border,
+                        alignItems: "center",
+                        opacity: pressed ? 0.8 : 1,
+                      })}
+                    >
+                      <Text style={{ color: c.accent, fontSize: 13, fontFamily: fontFamily("semibold") }} numberOfLines={1}>
+                        {q.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {/* Number keypad, like the desktop POS */}
+                <View style={{ gap: 8 }}>
+                  {[
+                    ["7", "8", "9"],
+                    ["4", "5", "6"],
+                    ["1", "2", "3"],
+                    [".", "0", "⌫"],
+                  ].map((row) => (
+                    <View key={row.join("")} style={{ flexDirection: "row", gap: 8 }}>
+                      {row.map((k) => (
+                        <Pressable
+                          key={k}
+                          onPress={() =>
+                            setCashTendered((cur) => {
+                              if (k === "⌫") return cur.slice(0, -1);
+                              if (k === "." && (cur.includes(".") || cur === "")) return cur === "" ? "0." : cur;
+                              const next = cur + k;
+                              // cap at 2 decimal places
+                              const dot = next.indexOf(".");
+                              if (dot >= 0 && next.length - dot - 1 > 2) return cur;
+                              return next.length > 10 ? cur : next;
+                            })
+                          }
+                          style={({ pressed }) => ({
+                            flex: 1,
+                            paddingVertical: 14,
+                            borderRadius: c.radius,
+                            backgroundColor: pressed ? c.border : c.secondary,
+                            borderWidth: 1,
+                            borderColor: c.border,
+                            alignItems: "center",
+                          })}
+                        >
+                          <Text style={{ color: c.foreground, fontSize: 18, fontFamily: fontFamily("semibold") }}>
+                            {k}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ))}
+                </View>
                 {tenderedAmount > 0 ? (
                   <Text
                     style={{
