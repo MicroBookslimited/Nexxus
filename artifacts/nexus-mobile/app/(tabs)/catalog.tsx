@@ -71,7 +71,7 @@ export default function CatalogScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>
       <AppHeader
-        title="Catalog"
+        title="Products"
         subtitle={`${filtered.length} products`}
         right={
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
