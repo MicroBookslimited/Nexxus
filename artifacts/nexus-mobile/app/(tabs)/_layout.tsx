@@ -23,6 +23,7 @@ const TABS: {
   { name: "inventory", title: "Inventory", feather: "package", sf: "shippingbox", sfSelected: "shippingbox.fill" },
   { name: "purchases", title: "Purchases", feather: "truck", sf: "cart.badge.plus", sfSelected: "cart.badge.plus" },
   { name: "customers", title: "Customers", feather: "users", sf: "person.2", sfSelected: "person.2.fill" },
+  { name: "orders", title: "Orders", feather: "list", sf: "list.bullet.rectangle", sfSelected: "list.bullet.rectangle.fill" },
   { name: "cash", title: "Cash", feather: "dollar-sign", sf: "dollarsign.circle", sfSelected: "dollarsign.circle.fill" },
   { name: "reports", title: "Reports", feather: "bar-chart-2", sf: "chart.bar", sfSelected: "chart.bar.fill" },
 ];
