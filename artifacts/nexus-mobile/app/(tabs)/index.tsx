@@ -605,6 +605,20 @@ export default function SellScreen() {
   );
 }
 
+// Receipt-style row for the paper bill preview (dark text on white).
+function BillRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+      <Text style={{ color: bold ? "#111" : "#555", fontSize: bold ? 13 : 12, fontFamily: fontFamily(bold ? "bold" : "regular") }}>
+        {label}
+      </Text>
+      <Text style={{ color: "#111", fontSize: bold ? 13 : 12, fontFamily: fontFamily(bold ? "bold" : "medium") }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 function CheckoutContent({
   embedded,
   onClose,
@@ -1169,6 +1183,104 @@ function CheckoutContent({
                 </Card>
               );
             })}
+
+            {/* Bill preview — paper-receipt style, everything on the invoice */}
+            {!empty ? (
+              <View
+                style={{
+                  backgroundColor: "#FFFFFF",
+                  borderRadius: c.radius,
+                  padding: 16,
+                  gap: 6,
+                  borderWidth: 1,
+                  borderColor: c.border,
+                }}
+              >
+                <Text style={{ color: "#111", fontSize: 15, fontFamily: fontFamily("bold"), textAlign: "center" }}>
+                  {settingsData?.business_name || "Bill Preview"}
+                </Text>
+                {settingsData?.business_address ? (
+                  <Text style={{ color: "#555", fontSize: 11, textAlign: "center" }}>
+                    {settingsData.business_address}
+                  </Text>
+                ) : null}
+                <Text style={{ color: "#555", fontSize: 11, textAlign: "center" }}>
+                  {new Date().toLocaleDateString()}
+                  {staff ? ` · ${staff.name}` : ""}
+                  {selectedCustomer ? ` · ${selectedCustomer.name}` : ""}
+                </Text>
+                <View style={{ borderBottomWidth: 1, borderBottomColor: "#DDD", marginVertical: 4 }} />
+
+                {cart.lines.map((l) => {
+                  const lineTotal = Math.max(0, l.effectiveUnitPrice * l.quantity - l.lineDiscount);
+                  const uf = l.unitFactor && l.unitFactor > 1 ? l.unitFactor : 1;
+                  const qtyLabel =
+                    uf > 1 && l.unitLabel
+                      ? `${Math.round(l.quantity / uf)} × ${l.unitLabel}`
+                      : `${l.quantity} × ${formatMoney(l.effectiveUnitPrice)}`;
+                  const choices = [...l.variantChoices, ...l.modifierChoices]
+                    .map((ch) => ch.optionName)
+                    .join(", ");
+                  return (
+                    <View key={l.lineKey} style={{ gap: 1 }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+                        <Text style={{ color: "#111", fontSize: 12, fontFamily: fontFamily("medium"), flex: 1 }} numberOfLines={2}>
+                          {l.product.name}
+                        </Text>
+                        <Text style={{ color: "#111", fontSize: 12, fontFamily: fontFamily("semibold") }}>
+                          {formatMoney(lineTotal)}
+                        </Text>
+                      </View>
+                      <Text style={{ color: "#777", fontSize: 11 }}>
+                        {qtyLabel}
+                        {l.lineDiscount > 0 ? `  (disc −${formatMoney(l.lineDiscount)})` : ""}
+                      </Text>
+                      {choices ? (
+                        <Text style={{ color: "#777", fontSize: 11 }} numberOfLines={2}>
+                          {choices}
+                        </Text>
+                      ) : null}
+                      {l.note ? (
+                        <Text style={{ color: "#777", fontSize: 11, fontStyle: "italic" }} numberOfLines={1}>
+                          “{l.note}”
+                        </Text>
+                      ) : null}
+                    </View>
+                  );
+                })}
+
+                <View style={{ borderBottomWidth: 1, borderBottomColor: "#DDD", marginVertical: 4 }} />
+                <BillRow label="Subtotal" value={formatMoney(cart.subtotal)} />
+                {discountValue > 0 ? <BillRow label="Discount" value={`−${formatMoney(discountValue)}`} /> : null}
+                {loyaltyDiscount > 0 ? (
+                  <BillRow label={`Loyalty (${loyaltyPointsToRedeem} pts)`} value={`−${formatMoney(loyaltyDiscount)}`} />
+                ) : null}
+                <BillRow
+                  label={`${settingsData?.tax_name || "Tax"}${taxMode === "inclusive" ? " (incl.)" : ""}`}
+                  value={formatMoney(tax)}
+                />
+                <View style={{ borderBottomWidth: 1, borderBottomColor: "#DDD", marginVertical: 4 }} />
+                <BillRow label="Total" value={formatMoney(total)} bold />
+                {voucherApplied > 0 ? (
+                  <>
+                    <BillRow label={`Voucher ${appliedVoucher?.code ?? ""}`} value={`−${formatMoney(voucherApplied)}`} />
+                    <BillRow label="Amount due" value={formatMoney(amountDue)} bold />
+                  </>
+                ) : null}
+                {!voucherCoversAll && paymentMethod === "cash" && tenderedAmount > 0 ? (
+                  <>
+                    <BillRow label="Cash tendered" value={formatMoney(tenderedAmount)} />
+                    <BillRow label="Change" value={formatMoney(changeDue)} bold />
+                  </>
+                ) : null}
+                <BillRow label="Payment" value={voucherCoversAll ? "Gift Voucher" : paymentLabel} />
+                {settingsData?.receipt_footer ? (
+                  <Text style={{ color: "#777", fontSize: 11, textAlign: "center", marginTop: 4 }}>
+                    {settingsData.receipt_footer}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
 
             {/* Customer */}
             <Card style={{ gap: 10 }}>
