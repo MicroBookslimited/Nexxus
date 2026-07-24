@@ -343,9 +343,11 @@ export default function SellScreen() {
 
   const onCheckoutComplete = () => queryClient.invalidateQueries();
 
-  // Column count for the product grid. Compact tiles: portrait phones show 3
-  // columns (≈6 cards visible at once), landscape 4, and wide tablets 5.
-  const gridColumns = r.isWide ? 5 : r.isLandscape ? 4 : 3;
+  // Column count for the product grid. More columns → smaller tiles → more rows
+  // visible. Landscape tablets show 6 cols so ~5 rows fit without scrolling;
+  // wide (≥1024 px) tablets use 7. Portrait tablet uses 4. Phones: 4/3.
+  const splitView = r.isTablet && (r.isLandscape || r.isWide);
+  const gridColumns = r.isWide ? 7 : splitView ? 6 : r.isTablet ? 4 : r.isLandscape ? 4 : 3;
 
   const productGrid = (
     <FlatList
@@ -353,10 +355,10 @@ export default function SellScreen() {
       data={filtered}
       keyExtractor={(p) => String(p.id)}
       numColumns={gridColumns}
-      columnWrapperStyle={{ gap: 8, paddingHorizontal: 12 }}
+      columnWrapperStyle={{ gap: 5, paddingHorizontal: 8 }}
       contentContainerStyle={{
-        gap: 8,
-        paddingBottom: r.isTablet ? pad.bottom + 16 : pad.bottom + (cart.count > 0 ? 90 : 16),
+        gap: 5,
+        paddingBottom: r.isTablet ? pad.bottom + 8 : pad.bottom + (cart.count > 0 ? 90 : 8),
       }}
       ListEmptyComponent={<EmptyState icon="search" title="No products found" />}
       renderItem={({ item }) => {
@@ -368,10 +370,10 @@ export default function SellScreen() {
             onPress={() => void onAdd(item)}
             style={({ pressed }) => ({
               flex: 1 / gridColumns,
-              aspectRatio: 1, // square tiles, matching the desktop POS grid
+              aspectRatio: 1,
               backgroundColor: bg,
               borderRadius: c.radius + 2,
-              padding: 8,
+              padding: 5,
               justifyContent: "space-between",
               opacity: pressed ? 0.85 : out ? 0.7 : 1,
             })}
@@ -379,29 +381,29 @@ export default function SellScreen() {
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
               <View
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 8,
+                  width: 20,
+                  height: 20,
+                  borderRadius: 5,
                   backgroundColor: "rgba(255,255,255,0.22)",
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <Feather name="box" size={15} color="#FFFFFF" />
+                <Feather name="box" size={11} color="#FFFFFF" />
               </View>
               {out ? <Badge label="Out" tone="danger" /> : <Badge label={`${item.stockCount}`} tone="success" />}
             </View>
             <Text
-              numberOfLines={3}
-              style={{ color: "#FFFFFF", fontSize: 12, fontFamily: fontFamily("semibold") }}
+              numberOfLines={2}
+              style={{ color: "#FFFFFF", fontSize: 10, fontFamily: fontFamily("semibold") }}
             >
               {item.name}
             </Text>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <Text style={{ color: "#FFFFFF", fontSize: 13, fontFamily: fontFamily("bold") }}>
+              <Text style={{ color: "#FFFFFF", fontSize: 11, fontFamily: fontFamily("bold") }}>
                 {formatMoney(item.price)}
               </Text>
-              {!simple ? <Feather name="layers" size={13} color="rgba(255,255,255,0.85)" /> : null}
+              {!simple ? <Feather name="layers" size={10} color="rgba(255,255,255,0.85)" /> : null}
             </View>
           </Pressable>
         );
@@ -410,7 +412,7 @@ export default function SellScreen() {
   );
 
   const searchRow = (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 16, paddingBottom: 8 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10, paddingTop: 6, paddingBottom: 4 }}>
       <View style={{ flex: 1 }}>
         <SearchBar value={search} onChangeText={setSearch} placeholder="Search products, SKU, barcode" />
       </View>
@@ -503,7 +505,6 @@ export default function SellScreen() {
   );
 
   if (r.isTablet) {
-    const panelWidth = r.isWide ? 420 : 340;
     return (
       <View style={{ flex: 1, backgroundColor: c.background }}>
         <AppHeader title="Sell" subtitle="Tap products to build a sale" right={accountButton} />
@@ -512,16 +513,23 @@ export default function SellScreen() {
             {searchRow}
             {productGrid}
           </View>
-          <View
-            style={{
-              width: panelWidth,
-              borderLeftWidth: 1,
-              borderLeftColor: c.border,
-              backgroundColor: c.background,
-            }}
-          >
-            <CheckoutContent embedded onComplete={onCheckoutComplete} />
-          </View>
+          {splitView ? (
+            /* Landscape/wide tablet: CheckoutContent renders itself as two
+               side-by-side columns (cart items | bill + keypad). */
+            <CheckoutContent embedded splitEmbedded onComplete={onCheckoutComplete} />
+          ) : (
+            /* Portrait tablet: single panel, standard scroll. */
+            <View
+              style={{
+                width: 320,
+                borderLeftWidth: 1,
+                borderLeftColor: c.border,
+                backgroundColor: c.background,
+              }}
+            >
+              <CheckoutContent embedded onComplete={onCheckoutComplete} />
+            </View>
+          )}
         </View>
         {overlays}
       </View>
@@ -621,10 +629,12 @@ function BillRow({ label, value, bold }: { label: string; value: string; bold?: 
 
 function CheckoutContent({
   embedded,
+  splitEmbedded,
   onClose,
   onComplete,
 }: {
   embedded?: boolean;
+  splitEmbedded?: boolean;
   onClose?: () => void;
   onComplete: () => void;
 }) {
@@ -990,6 +1000,362 @@ function CheckoutContent({
   };
 
   const empty = cart.lines.length === 0;
+
+  // ── 3-column split layout for landscape/wide tablet ─────────────────────
+  if (splitEmbedded && embedded) {
+    const CART_W = 260;
+    const BILL_W = 320;
+
+    const appendDigit = (d: string) =>
+      setCashTendered((prev) => {
+        if (d === "." && prev.includes(".")) return prev;
+        const next = prev + d;
+        const parts = next.split(".");
+        if (parts[1] && parts[1].length > 2) return prev;
+        if (next.replace(".", "").length > 10) return prev;
+        return next;
+      });
+    const deleteDigit = () => setCashTendered((prev) => prev.slice(0, -1));
+
+    const quickTenders = [
+      { label: "Exact", value: amountDue },
+      ...[100, 500, 1000, 5000].filter((v) => v >= amountDue).slice(0, 3).map((v) => ({ label: formatMoney(v), value: v })),
+    ].slice(0, 4);
+
+    return (
+      <>
+        {/* ── Column 1: Cart items ─────────────────────────────────── */}
+        <View style={{ width: CART_W, borderLeftWidth: 1, borderLeftColor: c.border, backgroundColor: c.background }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("bold") }}>Current sale</Text>
+            {!empty ? (
+              <Pressable onPress={() => cart.clear()} hitSlop={8}>
+                <Text style={{ color: c.destructive, fontSize: 13, fontFamily: fontFamily("medium") }}>Clear</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          {empty ? (
+            <View style={{ flex: 1, justifyContent: "center" }}>
+              <EmptyState icon="shopping-cart" title="Cart is empty" subtitle="Tap products to add them." />
+            </View>
+          ) : (
+            <ScrollView contentContainerStyle={{ padding: 8, gap: 6, paddingBottom: 16 }}>
+              {cart.lines.map((l) => {
+                const choices = [...l.variantChoices, ...l.modifierChoices].map((ch) => ch.optionName).join(" · ");
+                const lineTotal = Math.max(0, l.effectiveUnitPrice * l.quantity - l.lineDiscount);
+                const tierSavings = l.unitPrice - l.effectiveUnitPrice;
+                const unitFactor = l.unitFactor && l.unitFactor > 1 ? l.unitFactor : 1;
+                const displayCount = unitFactor > 1 ? Math.round(l.quantity / unitFactor) : l.quantity;
+                return (
+                  <Card key={l.lineKey} style={{ gap: 6, padding: 8 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, fontFamily: fontFamily("semibold") }}>{l.product.name}</Text>
+                        {l.unitLabel && unitFactor > 1 ? (
+                          <Text numberOfLines={1} style={{ color: c.mutedForeground, fontSize: 11, marginTop: 1 }}>{`${l.unitLabel} · ${unitFactor} each`}</Text>
+                        ) : null}
+                        {choices ? <Text numberOfLines={1} style={{ color: c.mutedForeground, fontSize: 11, marginTop: 1 }}>{choices}</Text> : null}
+                        <Text style={{ color: c.accent, fontSize: 12, fontFamily: fontFamily("medium"), marginTop: 1 }}>
+                          {formatMoney(lineTotal)}
+                          {l.lineDiscount > 0 ? <Text style={{ color: c.mutedForeground, fontSize: 11 }}>{`  (−${formatMoney(l.lineDiscount)})`}</Text> : null}
+                        </Text>
+                        {tierSavings > 0.0001 ? (
+                          <Text style={{ color: c.primary, fontSize: 11, fontFamily: fontFamily("medium") }}>{`${formatMoney(l.effectiveUnitPrice)} ea · save ${formatMoney(tierSavings * l.quantity)}`}</Text>
+                        ) : null}
+                      </View>
+                      <Stepper value={displayCount} onChange={(v) => cart.setQty(l.lineKey, unitFactor > 1 ? v * unitFactor : v)} />
+                    </View>
+                    {l.note ? <Text style={{ color: c.mutedForeground, fontSize: 11, fontStyle: "italic" }}>"{l.note}"</Text> : null}
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                        <Pressable onPress={() => setDiscountFor(l.lineKey)} hitSlop={6} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <Feather name="tag" size={12} color={c.mutedForeground} />
+                          <Text style={{ color: c.mutedForeground, fontSize: 11, fontFamily: fontFamily("medium") }}>{l.lineDiscount > 0 ? "Edit disc" : "Discount"}</Text>
+                        </Pressable>
+                        <Pressable onPress={() => setNoteFor(l.lineKey)} hitSlop={6} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <Feather name="edit-3" size={12} color={c.mutedForeground} />
+                          <Text style={{ color: c.mutedForeground, fontSize: 11, fontFamily: fontFamily("medium") }}>{l.note ? "Edit note" : "Note"}</Text>
+                        </Pressable>
+                      </View>
+                      <Pressable onPress={() => cart.remove(l.lineKey)} hitSlop={6}>
+                        <Feather name="trash-2" size={14} color={c.destructive} />
+                      </Pressable>
+                    </View>
+                  </Card>
+                );
+              })}
+
+              {/* Customer */}
+              <Card style={{ gap: 8, padding: 8 }}>
+                <Pressable onPress={() => setShowCustomers((s) => !s)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Feather name="user" size={14} color={c.accent} />
+                    <Text style={{ color: c.foreground, fontSize: 12, fontFamily: fontFamily("medium") }} numberOfLines={1}>
+                      {selectedCustomer ? selectedCustomer.name : "Attach customer"}
+                    </Text>
+                  </View>
+                  <Feather name={showCustomers ? "chevron-up" : "chevron-down"} size={16} color={c.mutedForeground} />
+                </Pressable>
+                {selectedCustomer ? (
+                  <Pressable onPress={() => setCustomerId(null)}>
+                    <Text style={{ color: c.destructive, fontSize: 11, fontFamily: fontFamily("medium") }}>Remove customer</Text>
+                  </Pressable>
+                ) : null}
+                {showCustomers ? (
+                  <View style={{ gap: 6 }}>
+                    <SearchBar value={custSearch} onChangeText={setCustSearch} placeholder="Search customers" />
+                    {filteredCustomers.map((cust) => (
+                      <Pressable key={cust.id} onPress={() => { setCustomerId(cust.id); setShowCustomers(false); }} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.border }}>
+                        <Text style={{ color: c.foreground, fontSize: 12, fontFamily: fontFamily("medium") }}>{cust.name}</Text>
+                        {cust.phone ? <Text style={{ color: c.mutedForeground, fontSize: 11 }}>{cust.phone}</Text> : null}
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+              </Card>
+
+              {/* Order discount */}
+              <Card style={{ gap: 8, padding: 8 }}>
+                <Pressable onPress={() => setDiscountOpen(true)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Feather name="percent" size={14} color={c.accent} />
+                    <Text style={{ color: c.foreground, fontSize: 12, fontFamily: fontFamily("medium") }} numberOfLines={1}>
+                      {discountValue > 0 ? `Disc: ${discountType === "percent" ? `${discountAmount}%` : formatMoney(discountAmount)} (−${formatMoney(discountValue)})` : "Add order discount"}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={16} color={c.mutedForeground} />
+                </Pressable>
+                {discountValue > 0 ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    {discountAuthorizedBy ? <Text style={{ color: c.mutedForeground, fontSize: 11 }}>By {discountAuthorizedBy}</Text> : <View />}
+                    <Pressable onPress={() => { setDiscountType(null); setDiscountAmount(0); setDiscountAuthorizedBy(null); }}>
+                      <Text style={{ color: c.destructive, fontSize: 11, fontFamily: fontFamily("medium") }}>Remove</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </Card>
+
+              {/* Loyalty */}
+              {selectedCustomer && selectedCustomer.loyaltyPoints > 0 ? (
+                <Card style={{ gap: 8, padding: 8 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Feather name="star" size={14} color={c.accent} />
+                    <Text style={{ color: c.foreground, fontSize: 12, fontFamily: fontFamily("medium") }}>Loyalty · {selectedCustomer.loyaltyPoints} pts</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
+                    <View style={{ flex: 1 }}>
+                      <Field label="Points to redeem" value={loyaltyPointsToRedeem ? String(loyaltyPointsToRedeem) : ""} onChangeText={(t) => { const n = Math.floor(parseFloat(t) || 0); setLoyaltyPointsToRedeem(Math.max(0, Math.min(n, maxRedeemable))); }} placeholder="0" keyboardType="number-pad" />
+                    </View>
+                    <Button label="Max" variant="secondary" onPress={() => setLoyaltyPointsToRedeem(maxRedeemable)} style={{ marginBottom: 2 }} />
+                  </View>
+                </Card>
+              ) : null}
+
+              {/* Gift voucher */}
+              <Card style={{ gap: 8, padding: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Feather name="gift" size={14} color={c.accent} />
+                  <Text style={{ color: c.foreground, fontSize: 12, fontFamily: fontFamily("medium") }}>Gift voucher</Text>
+                </View>
+                {appliedVoucher ? (
+                  <View style={{ gap: 4 }}>
+                    <Row label={`Voucher ${appliedVoucher.code}`} value={`−${formatMoney(voucherApplied)}`} />
+                    <Pressable onPress={() => { setAppliedVoucher(null); setVoucherCode(""); }}>
+                      <Text style={{ color: c.destructive, fontSize: 11, fontFamily: fontFamily("medium") }}>Remove</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
+                    <View style={{ flex: 1 }}>
+                      <Field label="Code" value={voucherCode} onChangeText={setVoucherCode} placeholder="GV-XXXX" autoCapitalize="characters" />
+                    </View>
+                    <Button label="Apply" variant="secondary" loading={voucherBusy} onPress={async () => {
+                      const code = voucherCode.trim();
+                      if (!code) return;
+                      setVoucherBusy(true);
+                      try {
+                        const v = await lookupGiftVoucher(code);
+                        if (v.status !== "active") { Alert.alert("Voucher unavailable", `This voucher is ${v.status}.`); return; }
+                        if (v.balance <= 0) { Alert.alert("No balance", "This voucher has no remaining balance."); return; }
+                        setAppliedVoucher(v);
+                      } catch (e) {
+                        Alert.alert("Voucher not found", e instanceof Error ? e.message : "Could not find that voucher.");
+                      } finally { setVoucherBusy(false); }
+                    }} style={{ marginBottom: 2 }} />
+                  </View>
+                )}
+              </Card>
+            </ScrollView>
+          )}
+        </View>
+
+        {/* ── Column 2: Bill preview + payment + keypad ─────────────── */}
+        <View style={{ width: BILL_W, borderLeftWidth: 1, borderLeftColor: c.border, backgroundColor: c.background, flex: 0 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("bold") }}>Bill preview</Text>
+            <Pressable onPress={() => router.push("/printer-settings")} hitSlop={8}>
+              <Feather name="printer" size={18} color={c.mutedForeground} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 10, gap: 10 }}>
+            {/* Paper receipt preview */}
+            {!empty ? (
+              <View style={{ backgroundColor: "#FFFFFF", borderRadius: c.radius, padding: 12, gap: 5, borderWidth: 1, borderColor: c.border }}>
+                <Text style={{ color: "#111", fontSize: 14, fontFamily: fontFamily("bold"), textAlign: "center" }}>
+                  {settingsData?.business_name || "Bill Preview"}
+                </Text>
+                {settingsData?.business_address ? (
+                  <Text style={{ color: "#555", fontSize: 10, textAlign: "center" }}>{settingsData.business_address}</Text>
+                ) : null}
+                <Text style={{ color: "#555", fontSize: 10, textAlign: "center" }}>
+                  {new Date().toLocaleDateString()}{staff ? ` · ${staff.name}` : ""}{selectedCustomer ? ` · ${selectedCustomer.name}` : ""}
+                </Text>
+                <View style={{ borderBottomWidth: 1, borderBottomColor: "#DDD", marginVertical: 3 }} />
+                {cart.lines.map((l) => {
+                  const lineTotal = Math.max(0, l.effectiveUnitPrice * l.quantity - l.lineDiscount);
+                  const uf = l.unitFactor && l.unitFactor > 1 ? l.unitFactor : 1;
+                  const qtyLabel = uf > 1 && l.unitLabel ? `${Math.round(l.quantity / uf)} × ${l.unitLabel}` : `${l.quantity} × ${formatMoney(l.effectiveUnitPrice)}`;
+                  const choices = [...l.variantChoices, ...l.modifierChoices].map((ch) => ch.optionName).join(", ");
+                  return (
+                    <View key={l.lineKey} style={{ gap: 1 }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 6 }}>
+                        <Text style={{ color: "#111", fontSize: 11, fontFamily: fontFamily("medium"), flex: 1 }} numberOfLines={2}>{l.product.name}</Text>
+                        <Text style={{ color: "#111", fontSize: 11, fontFamily: fontFamily("semibold") }}>{formatMoney(lineTotal)}</Text>
+                      </View>
+                      <Text style={{ color: "#777", fontSize: 10 }}>{qtyLabel}{l.lineDiscount > 0 ? `  (−${formatMoney(l.lineDiscount)})` : ""}</Text>
+                      {choices ? <Text style={{ color: "#777", fontSize: 10 }} numberOfLines={1}>{choices}</Text> : null}
+                      {l.note ? <Text style={{ color: "#777", fontSize: 10, fontStyle: "italic" }} numberOfLines={1}>"{l.note}"</Text> : null}
+                    </View>
+                  );
+                })}
+                <View style={{ borderBottomWidth: 1, borderBottomColor: "#DDD", marginVertical: 3 }} />
+                <BillRow label="Subtotal" value={formatMoney(cart.subtotal)} />
+                {discountValue > 0 ? <BillRow label="Discount" value={`−${formatMoney(discountValue)}`} /> : null}
+                {loyaltyDiscount > 0 ? <BillRow label={`Loyalty (${loyaltyPointsToRedeem} pts)`} value={`−${formatMoney(loyaltyDiscount)}`} /> : null}
+                <BillRow label={`${settingsData?.tax_name || "Tax"}${taxMode === "inclusive" ? " (incl.)" : ""}`} value={formatMoney(tax)} />
+                <View style={{ borderBottomWidth: 1, borderBottomColor: "#DDD", marginVertical: 3 }} />
+                <BillRow label="Total" value={formatMoney(total)} bold />
+                {voucherApplied > 0 ? (
+                  <>
+                    <BillRow label={`Voucher ${appliedVoucher?.code ?? ""}`} value={`−${formatMoney(voucherApplied)}`} />
+                    <BillRow label="Amount due" value={formatMoney(amountDue)} bold />
+                  </>
+                ) : null}
+                {!voucherCoversAll && paymentMethod === "cash" && tenderedAmount > 0 ? (
+                  <>
+                    <BillRow label="Tendered" value={formatMoney(tenderedAmount)} />
+                    <BillRow label="Change" value={formatMoney(changeDue)} bold />
+                  </>
+                ) : null}
+                <BillRow label="Payment" value={voucherCoversAll ? "Gift Voucher" : paymentLabel} />
+                {settingsData?.receipt_footer ? (
+                  <Text style={{ color: "#777", fontSize: 10, textAlign: "center", marginTop: 3 }}>{settingsData.receipt_footer}</Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* Payment method */}
+            <Text style={{ color: c.mutedForeground, fontSize: 11, fontFamily: fontFamily("medium") }}>PAYMENT METHOD</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {paymentMethods.map((m) => {
+                const value = m.type === "custom" ? m.name : m.type;
+                const active = paymentMethod === value;
+                const label = m.type === "card" && active ? (cardType === "debit" ? "Debit Card" : cardType === "credit" ? "Credit Card" : "Card") : m.name;
+                return <Chip key={m.id} label={label} active={active} onPress={() => selectPaymentMethod(m)} />;
+              })}
+            </View>
+            {paymentMethod === "credit" && !customerId ? (
+              <Text style={{ color: "#F59E0B", fontSize: 11, fontFamily: fontFamily("medium") }}>⚠ Attach a customer to record an on-account sale.</Text>
+            ) : null}
+            {paymentMethod === "split" ? (
+              <Card style={{ gap: 8 }}>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <Field label="Card amount" value={splitCard} onChangeText={setSplitCard} placeholder="0" keyboardType="decimal-pad" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Field label="Cash amount" value={splitCash} onChangeText={setSplitCash} placeholder="0" keyboardType="decimal-pad" />
+                  </View>
+                </View>
+                <Text style={{ color: isSplitValid ? c.mutedForeground : "#F59E0B", fontSize: 11, fontFamily: fontFamily("medium") }}>
+                  {isSplitValid ? `Card + Cash = ${formatMoney(amountDue)} ✓` : `Must equal ${formatMoney(amountDue)}`}
+                </Text>
+              </Card>
+            ) : null}
+            <Card style={{ gap: 6 }}>
+              <Field label="Order note (optional)" value={orderNote} onChangeText={setOrderNote} placeholder="Internal note for this sale" />
+            </Card>
+          </ScrollView>
+
+          {/* Fixed bottom: cash tender + keypad + charge button */}
+          {!empty ? (
+            <View style={{ borderTopWidth: 1, borderTopColor: c.border, padding: 10, gap: 7 }}>
+              {!voucherCoversAll && paymentMethod === "cash" ? (
+                <>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingHorizontal: 12, paddingVertical: 8 }}>
+                    <Text style={{ color: cashTendered ? c.foreground : c.mutedForeground, fontSize: 18, fontFamily: fontFamily("bold") }}>
+                      {cashTendered || formatMoney(amountDue)}
+                    </Text>
+                    {cashTendered ? (
+                      <Pressable onPress={() => setCashTendered("")} hitSlop={8}>
+                        <Feather name="x-circle" size={18} color={c.mutedForeground} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  {tenderedAmount > 0 ? (
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ color: c.mutedForeground, fontSize: 12 }}>Change</Text>
+                      <Text style={{ color: changeDue > 0 ? "#16A34A" : c.mutedForeground, fontSize: 12, fontFamily: fontFamily("bold") }}>{formatMoney(changeDue)}</Text>
+                    </View>
+                  ) : null}
+                  <View style={{ flexDirection: "row", gap: 5 }}>
+                    {quickTenders.map((qt) => (
+                      <Pressable key={qt.label} onPress={() => setCashTendered(String(qt.value))} style={({ pressed }) => ({ flex: 1, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingVertical: 5, alignItems: "center", opacity: pressed ? 0.8 : 1 })}>
+                        <Text style={{ color: c.foreground, fontSize: 10, fontFamily: fontFamily("semibold") }}>{qt.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  {([ ["7", "8", "9"], ["4", "5", "6"], ["1", "2", "3"], [".", "0", "⌫"] ] as string[][]).map((row, ri) => (
+                    <View key={ri} style={{ flexDirection: "row", gap: 5 }}>
+                      {row.map((key) => (
+                        <Pressable key={key} onPress={() => key === "⌫" ? deleteDigit() : appendDigit(key)} style={({ pressed }) => ({ flex: 1, backgroundColor: key === "⌫" ? c.secondary : c.card, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingVertical: 9, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.7 : 1 })}>
+                          <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold") }}>{key}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ))}
+                </>
+              ) : null}
+              <Button label={voucherCoversAll ? "Complete sale (paid by voucher)" : `Charge ${formatMoney(amountDue)}`} icon="credit-card" onPress={charge} loading={createOrder.isPending} disabled={empty} />
+            </View>
+          ) : null}
+        </View>
+
+        {/* Modals */}
+        <LineDiscountModal
+          line={cart.lines.find((l) => l.lineKey === discountFor) ?? null}
+          onClose={() => setDiscountFor(null)}
+          onSave={(amt) => { if (discountFor) cart.setDiscount(discountFor, amt); setDiscountFor(null); }}
+        />
+        <LineNoteModal
+          line={cart.lines.find((l) => l.lineKey === noteFor) ?? null}
+          onClose={() => setNoteFor(null)}
+          onSave={(note) => { if (noteFor) cart.setNote(noteFor, note); setNoteFor(null); }}
+        />
+        <OrderDiscountModal
+          visible={discountOpen}
+          subtotal={cart.subtotal}
+          authenticate={async (pin) => {
+            const s = await authStaff.mutateAsync({ data: { pin, requiredRoles: ["manager", "admin", "supervisor"] } });
+            return s?.name ?? null;
+          }}
+          onClose={() => setDiscountOpen(false)}
+          onApply={(type, amount, authorizedBy) => { setDiscountType(type); setDiscountAmount(amount); setDiscountAuthorizedBy(authorizedBy); setDiscountOpen(false); }}
+        />
+      </>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: c.background, paddingTop: embedded ? 0 : insets.top }}>
