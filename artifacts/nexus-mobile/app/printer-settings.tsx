@@ -136,6 +136,12 @@ export default function PrinterSettings() {
             value={config.autoPrint}
             onChange={(v) => update({ autoPrint: v })}
           />
+          <ToggleRow
+            label="Open cash drawer"
+            hint="Kick the drawer connected to the printer when a receipt prints."
+            value={config.openDrawer !== false}
+            onChange={(v) => update({ openDrawer: v })}
+          />
         </Card>
 
         <Card style={{ gap: 12 }}>

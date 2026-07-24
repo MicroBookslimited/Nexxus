@@ -24,7 +24,7 @@ function loadThermal(): any {
   }
 }
 
-export async function printUsb(text: string): Promise<void> {
+export async function printUsb(text: string, opts?: { openDrawer?: boolean }): Promise<void> {
   if (Platform.OS !== "android") {
     throw new Error("USB printing is only supported on Android.");
   }
@@ -37,6 +37,6 @@ export async function printUsb(text: string): Promise<void> {
   await ThermalPrinter.printUsb({
     payload: text,
     autoCut: true,
-    openCashbox: false,
+    openCashbox: opts?.openDrawer === true,
   });
 }

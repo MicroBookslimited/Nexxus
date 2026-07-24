@@ -232,9 +232,16 @@ const ESC = 0x1b;
 const GS = 0x1d;
 
 /** Wrap receipt text in ESC/POS control codes: init, body, feed, partial cut. */
-export function buildReceiptBytes(text: string): Uint8Array {
+export function buildReceiptBytes(text: string, opts?: { openDrawer?: boolean }): Uint8Array {
   const body = asciiFold(text);
   const head = [ESC, 0x40]; // ESC @  → initialize
+  if (opts?.openDrawer) {
+    // ESC p m t1 t2 → kick cash drawer. Send the pulse on BOTH connector pins
+    // (m=0 and m=1) since drawers may be wired to either; a pulse on an
+    // unconnected pin is harmless. t1/t2 = 25/250 (~50ms on, ~500ms off).
+    head.push(ESC, 0x70, 0x00, 0x19, 0xfa);
+    head.push(ESC, 0x70, 0x01, 0x19, 0xfa);
+  }
   const bodyBytes: number[] = [];
   for (let i = 0; i < body.length; i++) bodyBytes.push(body.charCodeAt(i) & 0x7f);
   const tail = [0x0a, 0x0a, 0x0a, 0x0a, GS, 0x56, 0x42, 0x00]; // feed + GS V B 0 (partial cut)

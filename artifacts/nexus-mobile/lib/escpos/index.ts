@@ -18,11 +18,14 @@ export * from "./types";
 export { buildKitchenTicketText, buildReceiptText } from "./builder";
 
 async function dispatch(config: PrinterConfig, text: string): Promise<void> {
+  // Default ON when unset (existing saved configs predate this field): kicking
+  // the drawer on receipt print is the expected POS behavior.
+  const openDrawer = config.openDrawer !== false;
   if (config.transport === "usb") {
-    await printUsb(text);
+    await printUsb(text, { openDrawer });
     return;
   }
-  const bytes = buildReceiptBytes(text);
+  const bytes = buildReceiptBytes(text, { openDrawer });
   if (config.transport === "network") {
     await printNetwork(bytes, { host: config.host, port: config.port });
   } else {

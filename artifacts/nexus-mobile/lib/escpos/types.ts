@@ -88,6 +88,8 @@ export interface PrinterConfig {
   /** Bluetooth (BLE) transport. */
   deviceId?: string;
   deviceName?: string;
+  /** Kick the cash drawer connected to the printer when a receipt prints. */
+  openDrawer?: boolean;
   /** Optional second printer for kitchen tickets (restaurants/bars). */
   kitchen?: KitchenPrinterConfig;
 }
@@ -98,5 +100,6 @@ export const DEFAULT_PRINTER_CONFIG: PrinterConfig = {
   transport: "network",
   paperWidth: 42,
   port: 9100,
+  openDrawer: true,
   kitchen: DEFAULT_KITCHEN_PRINTER_CONFIG,
 };
