@@ -44,6 +44,11 @@ import {
   VolumePricingEditor,
 } from "@/components/PricingUnitsEditor";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
+import { VariantsEditor } from "@/components/product-tabs/VariantsEditor";
+import { ModifiersEditor } from "@/components/product-tabs/ModifiersEditor";
+import { LocationsEditor } from "@/components/product-tabs/LocationsEditor";
+import { CompositeEditor } from "@/components/product-tabs/CompositeEditor";
+import { StockHistoryView } from "@/components/product-tabs/StockHistoryView";
 import { useColors } from "@/hooks/useColors";
 import {
   getPricingTiers,
@@ -58,6 +63,8 @@ type WeightUnit = "kg" | "lb" | "oz" | "g";
 const WEIGHT_UNITS: WeightUnit[] = ["kg", "lb", "oz", "g"];
 
 type StockMethod = "" | "fifo" | "lifo";
+
+type FormTab = "details" | "variants" | "modifiers" | "locations" | "composite" | "history";
 
 function toNum(s: string): number | undefined {
   const n = parseFloat(s.replace(/,/g, ""));
@@ -275,7 +282,9 @@ export function ProductForm({ productId }: { productId?: number }) {
   const [isTaxable,     setIsTaxable]     = useState(true);
   const [tiers,         setTiers]         = useState<TierDraft[]>([]);
   const [units,         setUnits]         = useState<UnitDraft[]>([]);
+  const [structureType, setStructureType] = useState<"simple" | "composite">("simple");
   const [scannerOpen,   setScannerOpen]   = useState(false);
+  const [tab,           setTab]           = useState<FormTab>("details");
   const [seeded,        setSeeded]        = useState(false);
   const createdIdRef = useRef<number | null>(null);
 
@@ -304,6 +313,7 @@ export function ProductForm({ productId }: { productId?: number }) {
     setStockMethod(((existing as any).stockMethodOverride as StockMethod) ?? "");
     setIsTaxable(existing.isTaxable !== false);
     setDescription(existing.description ?? "");
+    setStructureType(((existing as any).structureType as "simple" | "composite") === "composite" ? "composite" : "simple");
     setSeeded(true);
   }, [existing, isEdit, seeded]);
 
@@ -418,6 +428,7 @@ export function ProductForm({ productId }: { productId?: number }) {
       unitOfMeasure: soldByWeight ? unitOfMeasure : undefined,
       trackBatches,
       stockMethodOverride: stockMethod === "" ? null : stockMethod,
+      structureType,
       isTaxable,
     };
 
@@ -459,10 +470,68 @@ export function ProductForm({ productId }: { productId?: number }) {
       ? (((pr - cur) / pr) * 100).toFixed(1)
       : null;
 
+  const tabs: { key: FormTab; label: string }[] = [
+    { key: "details",   label: "Details"   },
+    { key: "variants",  label: "Variants"  },
+    { key: "modifiers", label: "Modifiers" },
+    { key: "locations", label: "Locations" },
+    ...(structureType === "composite" ? [{ key: "composite" as FormTab, label: "Composite" }] : []),
+    { key: "history",   label: "History"   },
+  ];
+
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>
       <AppHeader title={isEdit ? "Edit product" : "New product"} onBack={() => router.back()} />
 
+      {isEdit ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0 }}
+          contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingVertical: 10 }}
+        >
+          {tabs.map((t) => {
+            const active = tab === t.key;
+            return (
+              <Pressable
+                key={t.key}
+                onPress={() => setTab(t.key)}
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  backgroundColor: active ? c.primary : c.secondary,
+                  borderWidth: 1,
+                  borderColor: active ? c.primary : c.border,
+                }}
+              >
+                <Text
+                  style={{
+                    color: active ? c.primaryForeground : c.mutedForeground,
+                    fontSize: 13,
+                    fontFamily: fontFamily(active ? "semibold" : "medium"),
+                  }}
+                >
+                  {t.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      ) : null}
+
+      {isEdit && tab !== "details" ? (
+        <ScrollView
+          contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: pad.bottom + 32 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {tab === "variants"  ? <VariantsEditor  productId={productId as number} /> : null}
+          {tab === "modifiers" ? <ModifiersEditor productId={productId as number} /> : null}
+          {tab === "locations" ? <LocationsEditor productId={productId as number} /> : null}
+          {tab === "composite" ? <CompositeEditor productId={productId as number} /> : null}
+          {tab === "history"   ? <StockHistoryView productId={productId as number} /> : null}
+        </ScrollView>
+      ) : (
       <ScrollView
         contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: pad.bottom + 32 }}
         keyboardShouldPersistTaps="handled"
@@ -657,6 +726,27 @@ export function ProductForm({ productId }: { productId?: number }) {
           />
         </Card>
 
+        {/* ── Product structure ──────────────────────────────────────────── */}
+        <SectionHeader title="Product structure" />
+        <Card style={{ gap: 10 }}>
+          <OptionChips
+            label="Structure"
+            options={[
+              { label: "Simple",             value: "simple"    as const },
+              { label: "Composite (bundle)", value: "composite" as const },
+            ]}
+            value={structureType}
+            onChange={setStructureType}
+          />
+          <Text style={{ color: c.mutedForeground, fontSize: 12 }}>
+            {structureType === "composite"
+              ? isEdit
+                ? "This is a bundle made of other products. Manage its components in the Composite tab."
+                : "This is a bundle made of other products. Save the product first, then add components in the Composite tab."
+              : "Standard product that tracks its own stock."}
+          </Text>
+        </Card>
+
         {/* ── 6. Tax ─────────────────────────────────────────────────────── */}
         <SectionHeader title="Tax" />
         <Card>
@@ -681,6 +771,7 @@ export function ProductForm({ productId }: { productId?: number }) {
           loading={saving}
         />
       </ScrollView>
+      )}
 
       {/* Barcode scanner */}
       <BarcodeScannerModal

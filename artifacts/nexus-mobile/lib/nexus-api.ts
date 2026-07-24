@@ -396,3 +396,40 @@ export function confirmPurchaseBill(id: number): Promise<PurchaseBillWithItems &
 export function deletePurchaseBill(id: number): Promise<void> {
   return request(`/api/purchase-bills/${id}`, { method: "DELETE" });
 }
+
+/* ───────────── Product locations ───────────── */
+
+export interface ProductLocationRow {
+  locationId: number;
+  locationName: string;
+  isAvailable: boolean;
+  priceOverride: number | null;
+  markupOverride: number | null;
+  stockCount: number | null;
+}
+
+export function getProductLocations(productId: number): Promise<ProductLocationRow[]> {
+  return request(`/api/products/${productId}/locations`);
+}
+
+export function saveProductLocation(
+  productId: number,
+  locationId: number,
+  body: { isAvailable: boolean; priceOverride: number | null; markupOverride: number | null },
+): Promise<void> {
+  return request(`/api/products/${productId}/locations/${locationId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function setLocationInventory(
+  locationId: number,
+  productId: number,
+  stockCount: number,
+): Promise<void> {
+  return request(`/api/locations/${locationId}/inventory/${productId}`, {
+    method: "PUT",
+    body: JSON.stringify({ stockCount }),
+  });
+}
