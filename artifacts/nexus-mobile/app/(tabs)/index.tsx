@@ -1187,7 +1187,7 @@ function CheckoutContent({
             </Pressable>
           </View>
 
-          <ScrollView style={{ maxHeight: 220 }} contentContainerStyle={{ padding: 10, gap: 10 }}>
+          <ScrollView style={{ maxHeight: 160 }} contentContainerStyle={{ padding: 10, gap: 10 }}>
             {/* Paper receipt preview */}
             {!empty ? (
               <View style={{ backgroundColor: "#FFFFFF", borderRadius: c.radius, padding: 12, gap: 5, borderWidth: 1, borderColor: c.border }}>
@@ -1245,12 +1245,12 @@ function CheckoutContent({
             ) : null}
           </ScrollView>
 
-          {/* ── Always-visible bottom: payment + keypad + charge ────── */}
+          {/* ── Always-visible bottom: payment + charge ────────────── */}
           {!empty ? (
-            <View style={{ borderTopWidth: 1, borderTopColor: c.border }}>
+            <View style={{ flex: 1, borderTopWidth: 1, borderTopColor: c.border }}>
 
-              {/* Payment method chips + split + order note */}
-              <View style={{ paddingHorizontal: 10, paddingTop: 8, paddingBottom: 4, gap: 6 }}>
+              {/* Scrollable section: payment chips + note + tender */}
+              <ScrollView contentContainerStyle={{ paddingHorizontal: 10, paddingTop: 8, paddingBottom: 4, gap: 6 }}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                   {paymentMethods.map((m) => {
                     const value = m.type === "custom" ? m.name : m.type;
@@ -1278,35 +1278,35 @@ function CheckoutContent({
                   </View>
                 ) : null}
                 <Field label="Order note (optional)" value={orderNote} onChangeText={setOrderNote} placeholder="Internal note for this sale" />
-              </View>
 
-              {/* Cash tender: typed amount (numeric keyboard) + quick amounts */}
-              {!voucherCoversAll && paymentMethod === "cash" ? (
-                <View style={{ paddingHorizontal: 10, gap: 5 }}>
-                  <Field
-                    label="Amount tendered"
-                    value={cashTendered}
-                    onChangeText={(v) => setCashTendered(v.replace(/[^0-9.]/g, ""))}
-                    placeholder={formatMoney(amountDue)}
-                    keyboardType="decimal-pad"
-                  />
-                  {tenderedAmount > 0 ? (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text style={{ color: c.mutedForeground, fontSize: 11 }}>Change</Text>
-                      <Text style={{ color: changeDue > 0 ? "#16A34A" : c.mutedForeground, fontSize: 11, fontFamily: fontFamily("bold") }}>{formatMoney(changeDue)}</Text>
+                {/* Cash tender: typed amount + quick amounts */}
+                {!voucherCoversAll && paymentMethod === "cash" ? (
+                  <View style={{ gap: 5 }}>
+                    <Field
+                      label="Amount tendered"
+                      value={cashTendered}
+                      onChangeText={(v) => setCashTendered(v.replace(/[^0-9.]/g, ""))}
+                      placeholder={formatMoney(amountDue)}
+                      keyboardType="decimal-pad"
+                    />
+                    {tenderedAmount > 0 ? (
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ color: c.mutedForeground, fontSize: 11 }}>Change</Text>
+                        <Text style={{ color: changeDue > 0 ? "#16A34A" : c.mutedForeground, fontSize: 11, fontFamily: fontFamily("bold") }}>{formatMoney(changeDue)}</Text>
+                      </View>
+                    ) : null}
+                    <View style={{ flexDirection: "row", gap: 4 }}>
+                      {quickTenders.map((qt) => (
+                        <Pressable key={qt.label} onPress={() => setCashTendered(String(qt.value))} style={({ pressed }) => ({ flex: 1, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingVertical: 4, alignItems: "center", opacity: pressed ? 0.8 : 1 })}>
+                          <Text style={{ color: c.foreground, fontSize: 10, fontFamily: fontFamily("semibold") }}>{qt.label}</Text>
+                        </Pressable>
+                      ))}
                     </View>
-                  ) : null}
-                  <View style={{ flexDirection: "row", gap: 4 }}>
-                    {quickTenders.map((qt) => (
-                      <Pressable key={qt.label} onPress={() => setCashTendered(String(qt.value))} style={({ pressed }) => ({ flex: 1, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingVertical: 4, alignItems: "center", opacity: pressed ? 0.8 : 1 })}>
-                        <Text style={{ color: c.foreground, fontSize: 10, fontFamily: fontFamily("semibold") }}>{qt.label}</Text>
-                      </Pressable>
-                    ))}
                   </View>
-                </View>
-              ) : null}
+                ) : null}
+              </ScrollView>
 
-              {/* Charge button — always visible, pinned at bottom */}
+              {/* Charge button — pinned outside scroll, always visible */}
               <View style={{ padding: 10, paddingTop: 6 }}>
                 <Button label={voucherCoversAll ? "Complete sale (paid by voucher)" : `Charge ${formatMoney(amountDue)}`} icon="credit-card" onPress={charge} loading={createOrder.isPending} disabled={empty} />
               </View>
