@@ -5,7 +5,7 @@ import { Tabs } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
+import { Platform, StyleSheet, Text, View, useColorScheme } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 
@@ -61,14 +61,23 @@ function ClassicTabLayout() {
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.border,
           elevation: 0,
-          ...(isWeb ? { height: 84 } : {}),
+          ...(isWeb ? { height: 90 } : { height: 62 }),
         },
-        tabBarBackground: () =>
-          isIOS ? (
-            <BlurView intensity={100} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
-          ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]} />
-          ),
+        tabBarItemStyle: { paddingBottom: 10 },
+        tabBarBackground: () => (
+          <>
+            {isIOS ? (
+              <BlurView intensity={100} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
+            ) : (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]} />
+            )}
+            <View style={{ position: "absolute", bottom: 2, left: 0, right: 0, alignItems: "center" }}>
+              <Text style={{ fontSize: 9, color: colors.mutedForeground, fontFamily: "Inter_400Regular", letterSpacing: 0.2 }}>
+                Powered by MicroBooks
+              </Text>
+            </View>
+          </>
+        ),
       }}
     >
       {TABS.map((t) => (

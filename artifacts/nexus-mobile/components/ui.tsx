@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import React from "react";
 import {
   ActivityIndicator,
+  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useGetSettings } from "@workspace/api-client-react";
 import { useColors } from "@/hooks/useColors";
 
 type FeatherName = React.ComponentProps<typeof Feather>["name"];
@@ -61,45 +63,59 @@ export function AppHeader({
 }) {
   const c = useColors();
   const { top } = useScreenPadding();
+  const { data: settings } = useGetSettings();
+  const businessName = settings?.business_name;
+
   return (
     <View
       style={{
-        paddingTop: top + 8,
-        paddingBottom: 14,
-        paddingHorizontal: 16,
+        paddingTop: top + 3,
+        paddingBottom: 5,
+        paddingHorizontal: 12,
         backgroundColor: c.card,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: c.border,
         flexDirection: "row",
         alignItems: "center",
-        gap: 12,
+        gap: 8,
       }}
     >
-      {onBack ? (
-        <Pressable onPress={onBack} hitSlop={10} style={{ padding: 4 }}>
-          <Feather name="chevron-left" size={26} color={c.foreground} />
-        </Pressable>
-      ) : (
-        <View
-          style={{
-            width: 10,
-            height: 26,
-            borderRadius: 5,
-            backgroundColor: c.accent,
-          }}
-        />
-      )}
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: c.foreground, fontSize: 22, fontFamily: fontFamily("bold") }}>
-          {title}
+      {/* Left: logo or back button */}
+      <View style={{ width: 72, alignItems: "flex-start", justifyContent: "center" }}>
+        {onBack ? (
+          <Pressable onPress={onBack} hitSlop={10} style={{ padding: 4 }}>
+            <Feather name="chevron-left" size={24} color={c.foreground} />
+          </Pressable>
+        ) : (
+          <View style={{ width: 68, height: 20, overflow: "hidden" }}>
+            <Image
+              source={require("../assets/nexxus-logo.png")}
+              style={{ width: 68, height: 20, resizeMode: "contain" }}
+            />
+          </View>
+        )}
+      </View>
+
+      {/* Center: NEXXUS POS · Business Name (+ per-screen title below) */}
+      <View style={{ flex: 1, alignItems: "center" }}>
+        <Text
+          numberOfLines={1}
+          style={{ color: c.foreground, fontSize: 13, fontFamily: fontFamily("bold"), letterSpacing: 0.3 }}
+        >
+          NEXXUS POS{businessName ? `  ·  ${businessName}` : ""}
         </Text>
-        {subtitle ? (
-          <Text style={{ color: c.mutedForeground, fontSize: 13, fontFamily: fontFamily("regular") }}>
-            {subtitle}
+        {title ? (
+          <Text
+            numberOfLines={1}
+            style={{ color: c.mutedForeground, fontSize: 11, fontFamily: fontFamily("regular") }}
+          >
+            {title}{subtitle ? `  ·  ${subtitle}` : ""}
           </Text>
         ) : null}
       </View>
-      {right}
+
+      {/* Right: caller-supplied actions */}
+      <View style={{ width: 72, alignItems: "flex-end" }}>{right}</View>
     </View>
   );
 }
