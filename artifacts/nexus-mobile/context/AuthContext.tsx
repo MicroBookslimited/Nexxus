@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQueryClient } from "@tanstack/react-query";
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-import { loadToken, login, setToken, TENANT_KEY, type LoginResponse } from "@/lib/nexus-api";
+import { loadToken, login, signup, setToken, TENANT_KEY, type LoginResponse, type SignupPayload } from "@/lib/nexus-api";
 
 type Tenant = LoginResponse["tenant"];
 type Subscription = NonNullable<LoginResponse["subscription"]>;
@@ -15,6 +15,7 @@ interface AuthState {
   subscription: Subscription | null;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signUp: (payload: Omit<SignupPayload, "acceptedTerms">) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -42,9 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    const res = await login(email, password);
-    // Drop any cached data from a prior tenant before the new token is live.
+  const persist = async (res: LoginResponse) => {
     queryClient.clear();
     await setToken(res.token);
     await AsyncStorage.setItem(TENANT_KEY, JSON.stringify(res.tenant));
@@ -59,6 +58,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signIn = async (email: string, password: string) => {
+    const res = await login(email, password);
+    await persist(res);
+  };
+
+  const signUp = async (payload: Omit<SignupPayload, "acceptedTerms">) => {
+    const res = await signup({ ...payload, acceptedTerms: true });
+    await persist(res);
+  };
+
   const signOut = async () => {
     await setToken(null);
     await AsyncStorage.removeItem(TENANT_KEY);
@@ -71,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthCtx.Provider value={{ token, tenant, subscription, isLoading, signIn, signOut }}>
+    <AuthCtx.Provider value={{ token, tenant, subscription, isLoading, signIn, signUp, signOut }}>
       {children}
     </AuthCtx.Provider>
   );

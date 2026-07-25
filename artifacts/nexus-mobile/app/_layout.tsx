@@ -109,6 +109,7 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#0B1220" } }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="login" />
+      <Stack.Screen name="signup" />
       <Stack.Screen name="stock-count/[id]" />
       <Stack.Screen name="printer-settings" />
       <Stack.Screen name="product/[id]" />

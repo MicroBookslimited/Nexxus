@@ -1,9 +1,11 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   Text,
   View,
@@ -17,6 +19,7 @@ import { useColors } from "@/hooks/useColors";
 export default function LoginScreen() {
   const c = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -113,6 +116,16 @@ export default function LoginScreen() {
             ) : null}
 
             <Button label="Sign In" onPress={onSubmit} loading={loading} icon="log-in" />
+
+            <Pressable
+              onPress={() => router.push("/signup")}
+              style={{ alignItems: "center", paddingVertical: 6 }}
+            >
+              <Text style={{ color: c.mutedForeground, fontSize: 14, fontFamily: fontFamily("regular") }}>
+                Don't have an account?{" "}
+                <Text style={{ color: c.accent, fontFamily: fontFamily("semibold") }}>Sign up free</Text>
+              </Text>
+            </Pressable>
           </View>
           </View>
         </ScrollView>

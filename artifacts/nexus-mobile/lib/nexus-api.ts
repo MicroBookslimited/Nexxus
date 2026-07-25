@@ -80,6 +80,24 @@ export function login(email: string, password: string): Promise<LoginResponse> {
   });
 }
 
+export interface SignupPayload {
+  businessName: string;
+  ownerName: string;
+  email: string;
+  password: string;
+  phone?: string;
+  country?: string;
+  referralCode?: string;
+  acceptedTerms: true;
+}
+
+export function signup(payload: SignupPayload): Promise<LoginResponse> {
+  return request<LoginResponse>("/api/saas/register", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 /* ───────────── Payment methods ───────────── */
 
 export interface PaymentMethod {
