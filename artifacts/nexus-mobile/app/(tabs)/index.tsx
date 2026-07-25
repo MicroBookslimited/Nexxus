@@ -20,6 +20,7 @@ import {
   ScrollView,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -642,6 +643,9 @@ function CheckoutContent({
   const insets = useSafeAreaInsets();
   const pad = useScreenPadding();
   const router = useRouter();
+  // Used to give the split-embedded bill column an explicit height so that
+  // flex:1 children (scrollable payment section) are properly bounded.
+  const { width: winW, height: winH } = useWindowDimensions();
   const cart = useCart();
   const { staff } = useStaff();
   const createOrder = useCreateOrder();
@@ -1006,6 +1010,18 @@ function CheckoutContent({
     const CART_W = 260;
     const BILL_W = 320;
 
+    // Compute an explicit pixel height for the bill column so flex:1 children
+    // are properly bounded on both native and web.
+    // • winW/winH = real screen px (unaffected by ScaledApp transform)
+    // • s = scale factor applied by ScaledApp (0.85 for tablet landscape)
+    // • winH/s = virtual canvas height that layout uses
+    // • TAB_H = tab bar height in virtual px (matches _layout.tsx values)
+    // • APP_HEADER ≈ insets.top (virtual, already scaled) + 52 fixed px
+    const s = winW >= 768 && winW > winH ? 0.85 : 1;
+    const TAB_H = Platform.OS === "web" ? 68 : 78;
+    const APP_HEADER = insets.top + 52;
+    const colHeight = winH / s - TAB_H - APP_HEADER;
+
     const quickTenders = [
       { label: "Exact", value: amountDue },
       ...[100, 500, 1000, 5000].filter((v) => v >= amountDue).slice(0, 3).map((v) => ({ label: formatMoney(v), value: v })),
@@ -1179,7 +1195,7 @@ function CheckoutContent({
         </View>
 
         {/* ── Column 2: Bill preview + payment + keypad ─────────────── */}
-        <View style={{ width: BILL_W, borderLeftWidth: 1, borderLeftColor: c.border, backgroundColor: c.background, alignSelf: "stretch" }}>
+        <View style={{ width: BILL_W, height: colHeight, borderLeftWidth: 1, borderLeftColor: c.border, backgroundColor: c.background }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>
             <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("bold") }}>Bill preview</Text>
             <Pressable onPress={() => router.push("/printer-settings")} hitSlop={8}>
@@ -1187,7 +1203,7 @@ function CheckoutContent({
             </Pressable>
           </View>
 
-          <ScrollView style={{ maxHeight: 160 }} contentContainerStyle={{ padding: 10, gap: 10 }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 10, gap: 10 }}>
             {/* Paper receipt preview */}
             {!empty ? (
               <View style={{ backgroundColor: "#FFFFFF", borderRadius: c.radius, padding: 12, gap: 5, borderWidth: 1, borderColor: c.border }}>
