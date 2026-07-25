@@ -1190,7 +1190,7 @@ function CheckoutContent({
         </View>
 
         {/* ── Column 2: Bill preview + payment + keypad ─────────────── */}
-        <View style={{ width: BILL_W, borderLeftWidth: 1, borderLeftColor: c.border, backgroundColor: c.background, flex: 0 }}>
+        <View style={{ width: BILL_W, borderLeftWidth: 1, borderLeftColor: c.border, backgroundColor: c.background, alignSelf: "stretch" }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>
             <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("bold") }}>Bill preview</Text>
             <Pressable onPress={() => router.push("/printer-settings")} hitSlop={8}>
@@ -1254,80 +1254,85 @@ function CheckoutContent({
                 ) : null}
               </View>
             ) : null}
-
-            {/* Payment method */}
-            <Text style={{ color: c.mutedForeground, fontSize: 11, fontFamily: fontFamily("medium") }}>PAYMENT METHOD</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-              {paymentMethods.map((m) => {
-                const value = m.type === "custom" ? m.name : m.type;
-                const active = paymentMethod === value;
-                const label = m.type === "card" && active ? (cardType === "debit" ? "Debit Card" : cardType === "credit" ? "Credit Card" : "Card") : m.name;
-                return <Chip key={m.id} label={label} active={active} onPress={() => selectPaymentMethod(m)} />;
-              })}
-            </View>
-            {paymentMethod === "credit" && !customerId ? (
-              <Text style={{ color: "#F59E0B", fontSize: 11, fontFamily: fontFamily("medium") }}>⚠ Attach a customer to record an on-account sale.</Text>
-            ) : null}
-            {paymentMethod === "split" ? (
-              <Card style={{ gap: 8 }}>
-                <View style={{ flexDirection: "row", gap: 8 }}>
-                  <View style={{ flex: 1 }}>
-                    <Field label="Card amount" value={splitCard} onChangeText={setSplitCard} placeholder="0" keyboardType="decimal-pad" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Field label="Cash amount" value={splitCash} onChangeText={setSplitCash} placeholder="0" keyboardType="decimal-pad" />
-                  </View>
-                </View>
-                <Text style={{ color: isSplitValid ? c.mutedForeground : "#F59E0B", fontSize: 11, fontFamily: fontFamily("medium") }}>
-                  {isSplitValid ? `Card + Cash = ${formatMoney(amountDue)} ✓` : `Must equal ${formatMoney(amountDue)}`}
-                </Text>
-              </Card>
-            ) : null}
-            <Card style={{ gap: 6 }}>
-              <Field label="Order note (optional)" value={orderNote} onChangeText={setOrderNote} placeholder="Internal note for this sale" />
-            </Card>
           </ScrollView>
 
-          {/* Fixed bottom: cash tender + keypad + charge button */}
+          {/* ── Always-visible bottom: payment + keypad + charge ────── */}
           {!empty ? (
-            <View style={{ borderTopWidth: 1, borderTopColor: c.border, padding: 10, gap: 7 }}>
+            <View style={{ borderTopWidth: 1, borderTopColor: c.border }}>
+
+              {/* Payment method chips + split + order note */}
+              <View style={{ paddingHorizontal: 10, paddingTop: 8, paddingBottom: 4, gap: 6 }}>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                  {paymentMethods.map((m) => {
+                    const value = m.type === "custom" ? m.name : m.type;
+                    const active = paymentMethod === value;
+                    const label = m.type === "card" && active ? (cardType === "debit" ? "Debit Card" : cardType === "credit" ? "Credit Card" : "Card") : m.name;
+                    return <Chip key={m.id} label={label} active={active} onPress={() => selectPaymentMethod(m)} />;
+                  })}
+                </View>
+                {paymentMethod === "credit" && !customerId ? (
+                  <Text style={{ color: "#F59E0B", fontSize: 11, fontFamily: fontFamily("medium") }}>⚠ Attach a customer to record an on-account sale.</Text>
+                ) : null}
+                {paymentMethod === "split" ? (
+                  <View style={{ gap: 6 }}>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <View style={{ flex: 1 }}>
+                        <Field label="Card amount" value={splitCard} onChangeText={setSplitCard} placeholder="0" keyboardType="decimal-pad" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Field label="Cash amount" value={splitCash} onChangeText={setSplitCash} placeholder="0" keyboardType="decimal-pad" />
+                      </View>
+                    </View>
+                    <Text style={{ color: isSplitValid ? c.mutedForeground : "#F59E0B", fontSize: 11, fontFamily: fontFamily("medium") }}>
+                      {isSplitValid ? `Card + Cash = ${formatMoney(amountDue)} ✓` : `Must equal ${formatMoney(amountDue)}`}
+                    </Text>
+                  </View>
+                ) : null}
+                <Field label="Order note (optional)" value={orderNote} onChangeText={setOrderNote} placeholder="Internal note for this sale" />
+              </View>
+
+              {/* Cash tender + keypad (only for cash; compact row heights) */}
               {!voucherCoversAll && paymentMethod === "cash" ? (
-                <>
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingHorizontal: 12, paddingVertical: 8 }}>
-                    <Text style={{ color: cashTendered ? c.foreground : c.mutedForeground, fontSize: 18, fontFamily: fontFamily("bold") }}>
+                <View style={{ paddingHorizontal: 10, gap: 5 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingHorizontal: 10, paddingVertical: 6 }}>
+                    <Text style={{ color: cashTendered ? c.foreground : c.mutedForeground, fontSize: 16, fontFamily: fontFamily("bold") }}>
                       {cashTendered || formatMoney(amountDue)}
                     </Text>
                     {cashTendered ? (
                       <Pressable onPress={() => setCashTendered("")} hitSlop={8}>
-                        <Feather name="x-circle" size={18} color={c.mutedForeground} />
+                        <Feather name="x-circle" size={16} color={c.mutedForeground} />
                       </Pressable>
                     ) : null}
                   </View>
                   {tenderedAmount > 0 ? (
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text style={{ color: c.mutedForeground, fontSize: 12 }}>Change</Text>
-                      <Text style={{ color: changeDue > 0 ? "#16A34A" : c.mutedForeground, fontSize: 12, fontFamily: fontFamily("bold") }}>{formatMoney(changeDue)}</Text>
+                      <Text style={{ color: c.mutedForeground, fontSize: 11 }}>Change</Text>
+                      <Text style={{ color: changeDue > 0 ? "#16A34A" : c.mutedForeground, fontSize: 11, fontFamily: fontFamily("bold") }}>{formatMoney(changeDue)}</Text>
                     </View>
                   ) : null}
-                  <View style={{ flexDirection: "row", gap: 5 }}>
+                  <View style={{ flexDirection: "row", gap: 4 }}>
                     {quickTenders.map((qt) => (
-                      <Pressable key={qt.label} onPress={() => setCashTendered(String(qt.value))} style={({ pressed }) => ({ flex: 1, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingVertical: 5, alignItems: "center", opacity: pressed ? 0.8 : 1 })}>
+                      <Pressable key={qt.label} onPress={() => setCashTendered(String(qt.value))} style={({ pressed }) => ({ flex: 1, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingVertical: 4, alignItems: "center", opacity: pressed ? 0.8 : 1 })}>
                         <Text style={{ color: c.foreground, fontSize: 10, fontFamily: fontFamily("semibold") }}>{qt.label}</Text>
                       </Pressable>
                     ))}
                   </View>
                   {([ ["7", "8", "9"], ["4", "5", "6"], ["1", "2", "3"], [".", "0", "⌫"] ] as string[][]).map((row, ri) => (
-                    <View key={ri} style={{ flexDirection: "row", gap: 5 }}>
+                    <View key={ri} style={{ flexDirection: "row", gap: 4 }}>
                       {row.map((key) => (
-                        <Pressable key={key} onPress={() => key === "⌫" ? deleteDigit() : appendDigit(key)} style={({ pressed }) => ({ flex: 1, backgroundColor: key === "⌫" ? c.secondary : c.card, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingVertical: 9, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.7 : 1 })}>
-                          <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold") }}>{key}</Text>
+                        <Pressable key={key} onPress={() => key === "⌫" ? deleteDigit() : appendDigit(key)} style={({ pressed }) => ({ flex: 1, backgroundColor: key === "⌫" ? c.secondary : c.card, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingVertical: 7, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.7 : 1 })}>
+                          <Text style={{ color: c.foreground, fontSize: 14, fontFamily: fontFamily("semibold") }}>{key}</Text>
                         </Pressable>
                       ))}
                     </View>
                   ))}
-                </>
+                </View>
               ) : null}
-              <Button label={voucherCoversAll ? "Complete sale (paid by voucher)" : `Charge ${formatMoney(amountDue)}`} icon="credit-card" onPress={charge} loading={createOrder.isPending} disabled={empty} />
+
+              {/* Charge button — always visible, pinned at bottom */}
+              <View style={{ padding: 10, paddingTop: 6 }}>
+                <Button label={voucherCoversAll ? "Complete sale (paid by voucher)" : `Charge ${formatMoney(amountDue)}`} icon="credit-card" onPress={charge} loading={createOrder.isPending} disabled={empty} />
+              </View>
             </View>
           ) : null}
         </View>
