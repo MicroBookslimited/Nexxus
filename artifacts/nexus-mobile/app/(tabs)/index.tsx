@@ -1187,7 +1187,7 @@ function CheckoutContent({
             </Pressable>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 10, gap: 10 }}>
+          <ScrollView style={{ maxHeight: 220 }} contentContainerStyle={{ padding: 10, gap: 10 }}>
             {/* Paper receipt preview */}
             {!empty ? (
               <View style={{ backgroundColor: "#FFFFFF", borderRadius: c.radius, padding: 12, gap: 5, borderWidth: 1, borderColor: c.border }}>
