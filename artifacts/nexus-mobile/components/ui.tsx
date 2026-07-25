@@ -87,12 +87,10 @@ export function AppHeader({
             <Feather name="chevron-left" size={24} color={c.foreground} />
           </Pressable>
         ) : (
-          <View style={{ width: 68, height: 20, overflow: "hidden" }}>
-            <Image
-              source={require("../assets/nexxus-logo.png")}
-              style={{ width: 68, height: 20, resizeMode: "contain" }}
-            />
-          </View>
+          <Image
+            source={require("../assets/nexxus-logo.png")}
+            style={{ width: 34, height: 34, borderRadius: 8, resizeMode: "contain" }}
+          />
         )}
       </View>
 

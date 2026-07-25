@@ -1006,17 +1006,6 @@ function CheckoutContent({
     const CART_W = 260;
     const BILL_W = 320;
 
-    const appendDigit = (d: string) =>
-      setCashTendered((prev) => {
-        if (d === "." && prev.includes(".")) return prev;
-        const next = prev + d;
-        const parts = next.split(".");
-        if (parts[1] && parts[1].length > 2) return prev;
-        if (next.replace(".", "").length > 10) return prev;
-        return next;
-      });
-    const deleteDigit = () => setCashTendered((prev) => prev.slice(0, -1));
-
     const quickTenders = [
       { label: "Exact", value: amountDue },
       ...[100, 500, 1000, 5000].filter((v) => v >= amountDue).slice(0, 3).map((v) => ({ label: formatMoney(v), value: v })),
@@ -1291,19 +1280,16 @@ function CheckoutContent({
                 <Field label="Order note (optional)" value={orderNote} onChangeText={setOrderNote} placeholder="Internal note for this sale" />
               </View>
 
-              {/* Cash tender + keypad (only for cash; compact row heights) */}
+              {/* Cash tender: typed amount (numeric keyboard) + quick amounts */}
               {!voucherCoversAll && paymentMethod === "cash" ? (
                 <View style={{ paddingHorizontal: 10, gap: 5 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingHorizontal: 10, paddingVertical: 6 }}>
-                    <Text style={{ color: cashTendered ? c.foreground : c.mutedForeground, fontSize: 16, fontFamily: fontFamily("bold") }}>
-                      {cashTendered || formatMoney(amountDue)}
-                    </Text>
-                    {cashTendered ? (
-                      <Pressable onPress={() => setCashTendered("")} hitSlop={8}>
-                        <Feather name="x-circle" size={16} color={c.mutedForeground} />
-                      </Pressable>
-                    ) : null}
-                  </View>
+                  <Field
+                    label="Amount tendered"
+                    value={cashTendered}
+                    onChangeText={(v) => setCashTendered(v.replace(/[^0-9.]/g, ""))}
+                    placeholder={formatMoney(amountDue)}
+                    keyboardType="decimal-pad"
+                  />
                   {tenderedAmount > 0 ? (
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                       <Text style={{ color: c.mutedForeground, fontSize: 11 }}>Change</Text>
@@ -1317,15 +1303,6 @@ function CheckoutContent({
                       </Pressable>
                     ))}
                   </View>
-                  {([ ["7", "8", "9"], ["4", "5", "6"], ["1", "2", "3"], [".", "0", "⌫"] ] as string[][]).map((row, ri) => (
-                    <View key={ri} style={{ flexDirection: "row", gap: 4 }}>
-                      {row.map((key) => (
-                        <Pressable key={key} onPress={() => key === "⌫" ? deleteDigit() : appendDigit(key)} style={({ pressed }) => ({ flex: 1, backgroundColor: key === "⌫" ? c.secondary : c.card, borderWidth: 1, borderColor: c.border, borderRadius: c.radius, paddingVertical: 7, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.7 : 1 })}>
-                          <Text style={{ color: c.foreground, fontSize: 14, fontFamily: fontFamily("semibold") }}>{key}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  ))}
                 </View>
               ) : null}
 
