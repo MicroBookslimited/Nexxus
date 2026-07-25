@@ -7,10 +7,12 @@ import {
 } from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
+import * as NavigationBar from "expo-navigation-bar";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useMemo } from "react";
-import { View, useWindowDimensions } from "react-native";
+import { AppState, Platform, View, useWindowDimensions } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import {
@@ -33,6 +35,24 @@ setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
 setAuthTokenGetter(() => getToken());
 
 SplashScreen.preventAutoHideAsync();
+
+// Full-screen (immersive) mode on Android: hide the system status bar and
+// navigation bar so the POS uses the whole screen. Bars reappear with a swipe
+// from the edge and auto-hide again. Re-applied whenever the app returns to
+// the foreground, since Android restores the bars after some system dialogs.
+function useImmersiveMode() {
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const hideBars = () => {
+      NavigationBar.setVisibilityAsync("hidden").catch(() => {});
+    };
+    hideBars();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") hideBars();
+    });
+    return () => sub.remove();
+  }, []);
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -121,6 +141,7 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  useImmersiveMode();
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -138,6 +159,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      <StatusBar hidden />
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
