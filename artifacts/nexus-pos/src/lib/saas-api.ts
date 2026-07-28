@@ -1547,6 +1547,7 @@ export interface SupportTicketRow {
   stepsTaken: string[];
   additionalNotes: string | null;
   resolutionType: string | null;
+  reportSource: string | null;
   status: string;
   adminNotes: string | null;
   createdAt: string;
@@ -1579,6 +1580,29 @@ export const superadminGetSupportSettings = () =>
 export const superadminUpdateSupportSettings = (data: { supportInboxEmail: string }) =>
   api<{ supportInboxEmail: string }>("/superadmin/support/settings", {
     method: "PATCH",
+    body: JSON.stringify(data),
+    headers: superadminAuthHeaders(),
+  });
+
+export interface SuperadminCreateTicketInput {
+  businessName: string;
+  tenantId?: number;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  category: string;
+  subCategory: string;
+  impact?: string;
+  priority?: "CRITICAL" | "HIGH" | "NORMAL" | "LOW";
+  startedWhen?: string;
+  stepsTaken?: string[];
+  additionalNotes?: string;
+  reportSource?: string;
+}
+
+export const superadminCreateSupportTicket = (data: SuperadminCreateTicketInput) =>
+  api<SupportTicketRow>("/superadmin/support/tickets", {
+    method: "POST",
     body: JSON.stringify(data),
     headers: superadminAuthHeaders(),
   });

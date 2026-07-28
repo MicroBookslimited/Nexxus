@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   RefreshCw, Search, X, ChevronDown, ChevronUp, Mail,
   Phone, User, Tag, AlertTriangle, Clock, CheckCircle,
-  MessageSquare, Save, Settings2, LifeBuoy,
+  MessageSquare, Save, Settings2, LifeBuoy, Plus,
 } from "lucide-react";
 import {
   superadminGetSupportTickets,
@@ -10,8 +10,11 @@ import {
   superadminGetSupportSettings,
   superadminUpdateSupportSettings,
   superadminSendTicketReply,
+  superadminCreateSupportTicket,
   type SupportTicketRow,
 } from "@/lib/saas-api";
+
+const REPORT_SOURCES = ["Whatsapp", "Email", "Phone", "SMS", "Office Visit", "Client Visit", "Other"];
 
 const PRIORITY_COLORS: Record<string, string> = {
   CRITICAL: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -154,6 +157,7 @@ function TicketDetail({
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <div><span className="text-[#475569]">Category: </span><span className="text-[#94a3b8]">{ticket.category}</span></div>
               <div><span className="text-[#475569]">Sub-category: </span><span className="text-[#94a3b8]">{ticket.subCategory}</span></div>
+              {ticket.reportSource && <div><span className="text-[#475569]">Reported via: </span><span className="text-[#94a3b8]">{ticket.reportSource}</span></div>}
               {ticket.impact && <div className="col-span-2"><span className="text-[#475569]">Impact: </span><span className="text-[#94a3b8]">{ticket.impact}</span></div>}
               {ticket.startedWhen && <div className="col-span-2"><span className="text-[#475569]">Started: </span><span className="text-[#94a3b8]">{ticket.startedWhen}</span></div>}
             </div>
@@ -268,6 +272,143 @@ function TicketDetail({
   );
 }
 
+function NewTicketModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (t: SupportTicketRow) => void;
+}) {
+  const [businessName, setBusinessName] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [category, setCategory] = useState("");
+  const [subCategory, setSubCategory] = useState("");
+  const [priority, setPriority] = useState<"CRITICAL" | "HIGH" | "NORMAL" | "LOW">("NORMAL");
+  const [reportSource, setReportSource] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const canSubmit = businessName.trim() && category.trim() && subCategory.trim() && reportSource;
+
+  async function handleSubmit() {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const created = await superadminCreateSupportTicket({
+        businessName: businessName.trim(),
+        contactName: contactName.trim() || undefined,
+        contactPhone: contactPhone.trim() || undefined,
+        contactEmail: contactEmail.trim() || undefined,
+        category: category.trim(),
+        subCategory: subCategory.trim(),
+        priority,
+        reportSource,
+        additionalNotes: notes.trim() || undefined,
+      });
+      onCreated(created);
+      onClose();
+    } catch {
+      setError("Failed to create the ticket. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const inputCls = "w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-sm text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6]";
+  const labelCls = "block text-xs text-[#475569] mb-1";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-[#1a2332] border border-[#2a3a55] rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a3a55] sticky top-0 bg-[#1a2332] z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-[#3b82f6]/10 rounded-lg flex items-center justify-center">
+              <Plus size={18} className="text-[#3b82f6]" />
+            </div>
+            <div className="font-bold text-white">New Ticket</div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2 text-red-400 text-sm">{error}</div>
+          )}
+          <div>
+            <label className={labelCls}>Business name *</label>
+            <input value={businessName} onChange={e => setBusinessName(e.target.value)} maxLength={200} placeholder="Client business name" className={inputCls} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Report source *</label>
+              <select value={reportSource} onChange={e => setReportSource(e.target.value)} className={inputCls}>
+                <option value="">Select…</option>
+                {REPORT_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Priority</label>
+              <select value={priority} onChange={e => setPriority(e.target.value as typeof priority)} className={inputCls}>
+                <option value="CRITICAL">Critical</option>
+                <option value="HIGH">High</option>
+                <option value="NORMAL">Normal</option>
+                <option value="LOW">Low</option>
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Category *</label>
+              <input value={category} onChange={e => setCategory(e.target.value)} maxLength={120} placeholder="e.g. Sales / POS" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Sub-category *</label>
+              <input value={subCategory} onChange={e => setSubCategory(e.target.value)} maxLength={200} placeholder="e.g. Duplicate orders" className={inputCls} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Contact name</label>
+              <input value={contactName} onChange={e => setContactName(e.target.value)} maxLength={200} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Contact phone</label>
+              <input value={contactPhone} onChange={e => setContactPhone(e.target.value)} maxLength={50} className={inputCls} />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Contact email</label>
+            <input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} maxLength={200} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Notes / issue description</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} maxLength={4000} placeholder="Describe the issue as reported…" className={`${inputCls} resize-none`} />
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !canSubmit}
+              className="flex items-center gap-2 px-4 py-2 bg-[#3b82f6] hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              {submitting ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+              {submitting ? "Creating…" : "Create Ticket"}
+            </button>
+            <button onClick={onClose} className="px-4 py-2 rounded-lg text-[#94a3b8] hover:text-white hover:bg-[#2a3a55] transition-colors text-sm">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SuperadminSupportTab() {
   const [tickets, setTickets] = useState<SupportTicketRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -282,6 +423,7 @@ export function SuperadminSupportTab() {
   const [inboxSaved, setInboxSaved] = useState(false);
   const [inboxError, setInboxError] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [showNewTicket, setShowNewTicket] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -344,6 +486,12 @@ export function SuperadminSupportTab() {
           onUpdated={handleUpdated}
         />
       )}
+      {showNewTicket && (
+        <NewTicketModal
+          onClose={() => setShowNewTicket(false)}
+          onCreated={t => setTickets(prev => [t, ...prev])}
+        />
+      )}
 
       {/* Page header */}
       <div className="flex items-center justify-between mb-6">
@@ -352,6 +500,12 @@ export function SuperadminSupportTab() {
           <p className="text-[#94a3b8] text-sm">All tenant-submitted support requests</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowNewTicket(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-[#3b82f6] hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            <Plus size={15} /> New Ticket
+          </button>
           <button
             onClick={() => setShowSettings(v => !v)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors text-sm"

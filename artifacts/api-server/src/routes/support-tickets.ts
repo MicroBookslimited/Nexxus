@@ -331,6 +331,73 @@ router.post("/support/tickets", async (req, res) => {
   });
 });
 
+/* ─── Superadmin: create a ticket on behalf of a client ─── */
+const REPORT_SOURCES = ["Whatsapp", "Email", "Phone", "SMS", "Office Visit", "Client Visit", "Other"] as const;
+
+router.post("/superadmin/support/tickets", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res as never)) return;
+
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const businessName = s(b["businessName"], 200);
+  const category = s(b["category"], 120);
+  const subCategory = s(b["subCategory"], 200);
+  if (!businessName || !category || !subCategory) {
+    res.status(400).json({ error: "businessName, category and subCategory are required" });
+    return;
+  }
+  const reportSource = s(b["reportSource"], 50);
+  if (!reportSource || !(REPORT_SOURCES as readonly string[]).includes(reportSource)) {
+    res.status(400).json({ error: "reportSource is required and must be one of: " + REPORT_SOURCES.join(", ") });
+    return;
+  }
+  const tenantIdRaw = b["tenantId"];
+  const tenantId = typeof tenantIdRaw === "number" && Number.isInteger(tenantIdRaw) && tenantIdRaw > 0 ? tenantIdRaw : 0;
+
+  const priority = normalizePriority(b["priority"]);
+  const stepsTaken = Array.isArray(b["stepsTaken"])
+    ? (b["stepsTaken"] as unknown[]).filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 300)).slice(0, 20)
+    : [];
+
+  const record = {
+    tenantId,
+    businessName,
+    contactName: s(b["contactName"], 200),
+    contactPhone: s(b["contactPhone"], 50),
+    contactEmail: s(b["contactEmail"], 200),
+    category,
+    subCategory,
+    impact: s(b["impact"], 500),
+    priority,
+    startedWhen: s(b["startedWhen"], 200),
+    stepsTaken,
+    additionalNotes: s(b["additionalNotes"], 4000),
+    reportSource,
+  };
+
+  let inserted: typeof supportTicketsTable.$inferSelect | null = null;
+  for (let attempt = 0; attempt < 5 && !inserted; attempt++) {
+    const ticketRef = generateTicketRef();
+    try {
+      const [row] = await db
+        .insert(supportTicketsTable)
+        .values({ ...record, ticketRef })
+        .returning();
+      inserted = row ?? null;
+    } catch (err) {
+      if (isUniqueViolation(err)) continue;
+      req.log.error({ err }, "superadmin support ticket insert failed");
+      res.status(500).json({ error: "Could not save the ticket. Please try again." });
+      return;
+    }
+  }
+  if (!inserted) {
+    res.status(500).json({ error: "Could not generate a ticket reference. Please try again." });
+    return;
+  }
+
+  res.status(201).json(inserted);
+});
+
 /* ─── Superadmin: send a reply email to the ticket submitter ─── */
 router.post("/superadmin/support/tickets/:id/reply", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res as never)) return;
@@ -350,6 +417,7 @@ router.post("/superadmin/support/tickets/:id/reply", async (req, res): Promise<v
 
   const { fromAddress, fromName } = await getFromDetails(0);
   await sendMail({
+    platformCopy: false, // accounts@ is already CC'd explicitly — avoid a duplicate BCC copy
     to: ticket.contactEmail,
     cc: PLATFORM_COPY_ADDRESS,
     subject: `Re: [${ticket.ticketRef}] — ${ticket.businessName}: ${ticket.subCategory}`,
