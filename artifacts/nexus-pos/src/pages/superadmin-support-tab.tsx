@@ -9,6 +9,7 @@ import {
   superadminUpdateSupportTicket,
   superadminGetSupportSettings,
   superadminUpdateSupportSettings,
+  superadminSendTicketReply,
   type SupportTicketRow,
 } from "@/lib/saas-api";
 
@@ -60,6 +61,10 @@ function TicketDetail({
   const [notes, setNotes] = useState(ticket.adminNotes ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [replyMessage, setReplyMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [sendError, setSendError] = useState("");
 
   async function handleSave() {
     setSaving(true);
@@ -70,6 +75,22 @@ function TicketDetail({
       setTimeout(() => setSaved(false), 2500);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSendReply() {
+    if (!replyMessage.trim()) return;
+    setSending(true);
+    setSendError("");
+    try {
+      await superadminSendTicketReply(ticket.id, { message: replyMessage.trim() });
+      setSent(true);
+      setReplyMessage("");
+      setTimeout(() => setSent(false), 3000);
+    } catch {
+      setSendError("Failed to send. Please try again.");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -205,6 +226,42 @@ function TicketDetail({
               )}
             </div>
           </div>
+
+          {/* Send response email */}
+          {ticket.contactEmail && (
+            <div className="space-y-3 border-t border-[#2a3a55] pt-5">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#475569]">
+                <Mail size={12} /> Send Response Email
+              </div>
+              <p className="text-xs text-[#475569]">
+                Sends to <span className="text-[#94a3b8]">{ticket.contactEmail}</span>, CC'd to accounts@microbookssolutions.com.
+              </p>
+              <textarea
+                value={replyMessage}
+                onChange={e => setReplyMessage(e.target.value)}
+                rows={4}
+                maxLength={4000}
+                placeholder="Type your response to the tenant here…"
+                className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-3 py-2 text-sm text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6] resize-none"
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSendReply}
+                  disabled={sending || !replyMessage.trim()}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {sending ? <RefreshCw size={14} className="animate-spin" /> : <Mail size={14} />}
+                  {sending ? "Sending…" : "Send Response"}
+                </button>
+                {sent && (
+                  <span className="flex items-center gap-1 text-green-400 text-sm">
+                    <CheckCircle size={14} /> Sent
+                  </span>
+                )}
+                {sendError && <span className="text-red-400 text-sm">{sendError}</span>}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
 import { db, supportTicketsTable, appSettingsTable } from "@workspace/db";
 import { verifyTenantToken } from "./saas-auth";
-import { getFromDetails, sendMail } from "../lib/mail";
+import { getFromDetails, sendMail, PLATFORM_COPY_ADDRESS } from "../lib/mail";
 import jwt from "jsonwebtoken";
 import { getSetting } from "./settings";
 
@@ -144,7 +144,7 @@ function requireSuperAdmin(
 }
 
 const SUPPORT_INBOX_KEY = "support_inbox_email";
-const DEFAULT_SUPPORT_INBOX = "support@microbooks.com";
+const DEFAULT_SUPPORT_INBOX = "accounts@microbookssolutions.com";
 
 /** Resolves the current support inbox — DB setting takes precedence over constant. */
 async function getSupportInbox(): Promise<string> {
@@ -329,6 +329,51 @@ router.post("/support/tickets", async (req, res) => {
     priority,
     responseTarget: PRIORITY_RESPONSE[priority],
   });
+});
+
+/* ─── Superadmin: send a reply email to the ticket submitter ─── */
+router.post("/superadmin/support/tickets/:id/reply", async (req, res): Promise<void> => {
+  if (!requireSuperAdmin(req, res as never)) return;
+
+  const id = parseInt(req.params["id"] ?? "", 10);
+  if (!id || isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const message = s(b["message"], 4000);
+  if (!message) { res.status(400).json({ error: "message is required" }); return; }
+
+  const ticket = await db.query.supportTicketsTable.findFirst({
+    where: eq(supportTicketsTable.id, id),
+  });
+  if (!ticket) { res.status(404).json({ error: "Ticket not found" }); return; }
+  if (!ticket.contactEmail) { res.status(422).json({ error: "Ticket has no contact email" }); return; }
+
+  const { fromAddress, fromName } = await getFromDetails(0);
+  await sendMail({
+    to: ticket.contactEmail,
+    cc: PLATFORM_COPY_ADDRESS,
+    subject: `Re: [${ticket.ticketRef}] — ${ticket.businessName}: ${ticket.subCategory}`,
+    html: `
+      <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f1f5f9;padding:24px">
+        <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
+          <div style="background:#2563EB;padding:18px 24px">
+            <div style="color:#fff;font-size:13px;letter-spacing:1px;opacity:.85">NEXXUS POS SUPPORT · RESPONSE</div>
+            <div style="color:#fff;font-size:22px;font-weight:700;margin-top:2px">${esc(ticket.ticketRef)}</div>
+          </div>
+          <div style="padding:24px">
+            <p style="margin:0 0 16px;font-size:14px;color:#334155">Hi${ticket.contactName ? ` ${esc(ticket.contactName)}` : ""},</p>
+            <p style="margin:0 0 16px;font-size:14px;color:#334155">Thank you for contacting NEXXUS POS support. Here is our response regarding your ticket:</p>
+            <div style="background:#f8fafc;border-left:4px solid #2563EB;border-radius:4px;padding:16px;margin:0 0 16px;font-size:14px;color:#0f172a;white-space:pre-wrap">${esc(message)}</div>
+            <p style="margin:0;font-size:13px;color:#64748b">If you need further assistance, reply to this email or submit a new ticket.</p>
+          </div>
+        </div>
+      </div>`,
+    fromName,
+    fromAddress,
+    tenantId: 0,
+  });
+
+  res.json({ ok: true });
 });
 
 /* ─── Log a self-resolved FAQ hit (no email) ─── */

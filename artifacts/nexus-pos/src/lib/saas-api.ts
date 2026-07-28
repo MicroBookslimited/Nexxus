@@ -1583,6 +1583,13 @@ export const superadminUpdateSupportSettings = (data: { supportInboxEmail: strin
     headers: superadminAuthHeaders(),
   });
 
+export const superadminSendTicketReply = (id: number, data: { message: string }) =>
+  api<{ ok: boolean }>(`/superadmin/support/tickets/${id}/reply`, {
+    method: "POST",
+    body: JSON.stringify(data),
+    headers: superadminAuthHeaders(),
+  });
+
 export interface CreateSupportTicketInput {
   businessName: string;
   contactName?: string;
