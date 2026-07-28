@@ -1231,6 +1231,12 @@ export const CreateOrderBody = zod.object({
     .describe(
       "Open cash session's location. When set, catalog line prices are resolved against that location's price_override and stock is deducted from that location's inventory.",
     ),
+  clientRequestId: zod
+    .string()
+    .optional()
+    .describe(
+      "Client-generated idempotency key (UUID per checkout attempt). If a request with the same key was already processed for this tenant, the server returns the existing order instead of creating a duplicate.",
+    ),
 });
 
 /**

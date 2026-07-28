@@ -15,6 +15,13 @@ export const queryClient = new QueryClient({
         return failureCount < 2;
       },
     },
+    // NEVER retry mutations automatically. A checkout POST whose response is
+    // lost (flaky network) may have already been persisted server-side — an
+    // automatic retry would create a duplicate order. Reads are safe to
+    // retry; writes are not.
+    mutations: {
+      retry: false,
+    },
   },
 });
 

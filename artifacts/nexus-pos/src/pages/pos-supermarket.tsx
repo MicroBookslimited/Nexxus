@@ -1320,6 +1320,9 @@ export function PosSupermarket({
         // the generated CreateOrderBody type, so the body is cast (same pattern as
         // the other layouts).
         data: {
+          // Idempotency key: a replayed request (lost response) returns the
+          // existing order server-side instead of creating a duplicate sale.
+          clientRequestId: crypto.randomUUID(),
           paymentMethod: effectivePaymentMethod,
           cardType: !voucherCoversAll && (paymentMethod === "card" || paymentMethod === "split") ? cardType ?? undefined : undefined,
           staffId: sessionStaff?.id ?? undefined,

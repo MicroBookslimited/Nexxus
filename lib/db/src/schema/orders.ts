@@ -62,6 +62,11 @@ export const ordersTable = pgTable("orders", {
   // default), "shopify" for orders imported from a connected Shopify store,
   // "online" for the built-in online store. Lets reports distinguish channels.
   salesChannel: text("sales_channel").notNull().default("pos"),
+  // Client-generated idempotency key (UUID per checkout attempt). If a
+  // checkout POST is re-sent (lost response, offline-queue replay), the server
+  // finds the existing order by (tenantId, clientRequestId) and returns it
+  // instead of creating a duplicate. Null for legacy/imported orders.
+  clientRequestId: text("client_request_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 }, (t) => ({
@@ -72,6 +77,12 @@ export const ordersTable = pgTable("orders", {
   tenantOrderNumberUnique: uniqueIndex("orders_tenant_order_number_unique").on(
     t.tenantId,
     t.orderNumber,
+  ),
+  // Idempotent order creation: a replayed checkout request with the same
+  // clientRequestId must not create a second order.
+  tenantClientRequestUnique: uniqueIndex("orders_tenant_client_request_unique").on(
+    t.tenantId,
+    t.clientRequestId,
   ),
 }));
 

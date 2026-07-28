@@ -2081,8 +2081,14 @@ export function POS() {
       return;
     }
 
+    // One idempotency key per checkout attempt: if this exact request is
+    // replayed (lost response, offline-queue re-sync), the server returns the
+    // already-created order instead of duplicating the sale.
+    const clientRequestId = crypto.randomUUID();
+
     if (!isOnline) {
       const orderPayload = {
+        clientRequestId,
         paymentMethod,
         cardType: (paymentMethod === "card" || paymentMethod === "split") ? cardType ?? undefined : undefined,
         items: cart.map((item) => ({
@@ -2230,6 +2236,7 @@ export function POS() {
     createOrder.mutate(
       {
         data: {
+          clientRequestId,
           paymentMethod: effectivePaymentMethod,
           cardType: !voucherCoversAll && (paymentMethod === "card" || paymentMethod === "split") ? cardType ?? undefined : undefined,
           staffId: sessionStaff?.id ?? undefined,
@@ -2445,6 +2452,7 @@ export function POS() {
     createOrder.mutate(
       {
         data: {
+          clientRequestId: crypto.randomUUID(),
           staffId: sessionStaff?.id ?? undefined,
           items: cart.map((item) => ({
             // Custom/misc items have no catalog productId (sentinel 0 locally);

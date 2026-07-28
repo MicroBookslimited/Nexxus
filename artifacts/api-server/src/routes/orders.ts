@@ -66,6 +66,19 @@ class VoucherRedemptionError extends Error {
   }
 }
 
+/**
+ * Thrown inside the order-create transaction when the clientRequestId
+ * idempotency key matches an already-committed order (a retried/replayed
+ * checkout whose original response was lost). The route handler catches it
+ * and returns the EXISTING order as a success — never a duplicate.
+ */
+class DuplicateRequestError extends Error {
+  constructor(public existingOrderId: number) {
+    super("Duplicate order-create request");
+    this.name = "DuplicateRequestError";
+  }
+}
+
 import {
   CreateOrderBody,
   GetOrderParams,
@@ -306,6 +319,31 @@ router.post("/orders", async (req, res): Promise<void> => {
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
+  }
+
+  // ── Idempotent replay detection ─────────────────────────────────────────
+  // The POS sends a per-checkout-attempt UUID. If a request with the same
+  // key already created an order (lost response → client/offline-queue
+  // resend), return the existing order instead of creating a duplicate.
+  const clientRequestId = parsed.data.clientRequestId?.trim() || undefined;
+  if (clientRequestId) {
+    const [existing] = await db
+      .select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(and(
+        eq(ordersTable.tenantId, tenantId),
+        eq(ordersTable.clientRequestId, clientRequestId),
+      ));
+    if (existing) {
+      const fullOrder = await getOrderWithItems(existing.id);
+      if (!fullOrder) {
+        console.error(`Idempotent replay: order ${existing.id} vanished during hydration (tenant ${tenantId})`);
+        res.status(500).json({ error: "REPLAY_HYDRATION_FAILED" });
+        return;
+      }
+      res.status(201).json(GetOrderResponse.parse(fullOrder));
+      return;
+    }
   }
 
   // Reject any non-positive item quantity early. The DB column is `real`
@@ -613,6 +651,22 @@ router.post("/orders", async (req, res): Promise<void> => {
       // Jamaica is UTC-5 year-round; shift UTC time back 5 hours for the
       // local date so the counter resets at midnight Jamaica time.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${tenantId}, ${ORDER_CREATE_LOCK})`);
+      // Re-check the idempotency key now that we hold the per-tenant create
+      // lock: a racing duplicate that committed after the pre-tx check is
+      // visible here. Throwing a marker lets the outer catch return the
+      // existing order.
+      if (clientRequestId) {
+        const [existingByKey] = await tx
+          .select({ id: ordersTable.id })
+          .from(ordersTable)
+          .where(and(
+            eq(ordersTable.tenantId, tenantId),
+            eq(ordersTable.clientRequestId, clientRequestId),
+          ));
+        if (existingByKey) {
+          throw new DuplicateRequestError(existingByKey.id);
+        }
+      }
       const nowJamaica = new Date(Date.now() - 5 * 60 * 60 * 1000);
       const yymm = String(nowJamaica.getUTCFullYear()).slice(-2) + String(nowJamaica.getUTCMonth() + 1).padStart(2, "0");
       const dd = String(nowJamaica.getUTCDate()).padStart(2, "0");
@@ -1139,6 +1193,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           orderType: parsed.data.orderType ?? "counter",
           loyaltyPointsRedeemed: pointsToRedeem > 0 ? pointsToRedeem : undefined,
           loyaltyDiscount: loyaltyDiscount > 0 ? loyaltyDiscount : undefined,
+          clientRequestId,
           completedAt: isPaid ? new Date() : undefined,
         })
         .returning();
@@ -1323,6 +1378,18 @@ router.post("/orders", async (req, res): Promise<void> => {
         available: e.available,
         requested: e.requested,
       });
+      return;
+    }
+    if (e instanceof DuplicateRequestError) {
+      // Replayed checkout: the order already exists. Return it as success so
+      // the client stops retrying and shows the real receipt.
+      const fullOrder = await getOrderWithItems(e.existingOrderId);
+      if (!fullOrder) {
+        console.error(`Idempotent replay: order ${e.existingOrderId} vanished during hydration`);
+        res.status(500).json({ error: "REPLAY_HYDRATION_FAILED" });
+        return;
+      }
+      res.status(201).json(GetOrderResponse.parse(fullOrder));
       return;
     }
     if (e instanceof VoucherRedemptionError) {

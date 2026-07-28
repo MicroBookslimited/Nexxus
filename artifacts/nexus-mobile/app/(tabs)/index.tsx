@@ -918,6 +918,13 @@ function CheckoutContent({
       const lineSnapshot = cart.lines;
       const order = await createOrder.mutateAsync({
         data: {
+          // Idempotency key: a replayed request (lost response) returns the
+          // existing order server-side instead of creating a duplicate sale.
+          // Hermes may lack crypto.randomUUID, so fall back to a manual id.
+          clientRequestId:
+            typeof globalThis.crypto?.randomUUID === "function"
+              ? globalThis.crypto.randomUUID()
+              : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
           items: lineSnapshot.map((l) => {
             const discount = Math.min(Math.max(0, l.lineDiscount), l.effectiveUnitPrice * l.quantity);
             return {
