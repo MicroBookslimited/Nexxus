@@ -59,6 +59,8 @@ export async function sendMail(opts: {
   attachments?: MailAttachment[];
   /** Force (true) or suppress (false) the accounts@ BCC. Default: platform emails (tenantId 0) are copied. */
   platformCopy?: boolean;
+  /** Optional CC address (e.g. tenant contact email on support tickets). */
+  cc?: string;
 }): Promise<{ messageId?: string }> {
   const tenantId = opts.tenantId ?? 0;
   const provider = await getSetting("email_provider", tenantId);
@@ -82,7 +84,7 @@ export async function sendMail(opts: {
       ? `${smtp.fromName || opts.fromName} <${smtp.from}>`
       : `${opts.fromName} <${opts.fromAddress}>`;
     const info = await transport.sendMail({
-      from, to: opts.to, bcc: bccAddress, subject: opts.subject, html: opts.html,
+      from, to: opts.to, bcc: bccAddress, cc: opts.cc, subject: opts.subject, html: opts.html,
       attachments: attachments.map((a) => ({ filename: a.filename, content: a.content, contentType: a.mimeType })),
     });
     return { messageId: info.messageId };
@@ -97,6 +99,7 @@ export async function sendMail(opts: {
       from: { address: opts.fromAddress, name: opts.fromName },
       to: [{ email_address: { address: opts.to, name: "" } }],
       ...(bccAddress && { bcc: [{ email_address: { address: bccAddress, name: "" } }] }),
+      ...(opts.cc && { cc: [{ email_address: { address: opts.cc, name: "" } }] }),
       subject: opts.subject,
       htmlbody: opts.html,
       ...(attachments.length > 0 && {

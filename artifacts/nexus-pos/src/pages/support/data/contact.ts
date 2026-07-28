@@ -11,5 +11,5 @@
 export const SUPPORT_CONTACT = {
   whatsappNumber: "",
   phoneNumber: "",
-  email: "support@microbooks.com",
+  email: "accounts@microbookssolutions.com",
 };

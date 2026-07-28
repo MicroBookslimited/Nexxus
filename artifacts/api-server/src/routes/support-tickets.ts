@@ -9,7 +9,7 @@ import { getSetting } from "./settings";
 const router: IRouter = Router();
 
 /** Fixed destination inbox for all support tickets. */
-const SUPPORT_INBOX = "support@microbooks.com";
+const SUPPORT_INBOX = "accounts@microbookssolutions.com";
 
 const PRIORITIES = ["CRITICAL", "HIGH", "NORMAL", "LOW"] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -297,6 +297,7 @@ router.post("/support/tickets", async (req, res) => {
       await sendMail({
         platformCopy: true,
         to: SUPPORT_INBOX,
+        cc: record.contactEmail || undefined,
         subject: `[${priority}] ${inserted!.ticketRef} — ${businessName}: ${subCategory}`,
         html: buildTicketEmailHtml({
           ticketRef: inserted!.ticketRef,
