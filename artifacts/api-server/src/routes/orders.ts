@@ -587,30 +587,43 @@ router.post("/orders", async (req, res): Promise<void> => {
   const isOpenOrder = parsed.data.orderType === "dine-in" && !parsed.data.paymentMethod;
   const isPaid = !!parsed.data.paymentMethod;
 
-  // Generate sequential order number: ORD-YY-DD-XXXXXX
-  // Jamaica is UTC-5 year-round; shift UTC time back 5 hours to get local date
-  const nowJamaica = new Date(Date.now() - 5 * 60 * 60 * 1000);
-  const yymm = String(nowJamaica.getUTCFullYear()).slice(-2) + String(nowJamaica.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(nowJamaica.getUTCDate()).padStart(2, "0");
-  // Count orders already placed today (Jamaica time) for this tenant to get next seq
-  const dayStart = new Date(`${nowJamaica.getUTCFullYear()}-${String(nowJamaica.getUTCMonth() + 1).padStart(2, "0")}-${String(nowJamaica.getUTCDate()).padStart(2, "0")}T05:00:00.000Z`);
-  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-  const [{ todayCount }] = await db
-    .select({ todayCount: sql<number>`cast(count(*) as int)` })
-    .from(ordersTable)
-    .where(and(eq(ordersTable.tenantId, tenantId), gte(ordersTable.createdAt, dayStart), lt(ordersTable.createdAt, dayEnd)));
-  const seq = String((todayCount ?? 0) + 1).padStart(6, "0");
-  const orderNumber = `ORD-${yymm}-${dd}-${seq}`;
-
   // ──────────────────────────────────────────────────────────────────────
   // Everything that mutates the DB happens inside a single transaction.
   // If any per-item stock check fails (and overselling is off) we throw
   // InsufficientStockError; the transaction rolls back cleanly and the
   // POS gets a structured 409 it can surface in a modal.
   // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Advisory-lock namespace key for serializing per-tenant order creates.
+   * Distinct from other per-tenant locks (product create = 0x70726f64,
+   * quotation numbering uses (tenantId, year)).
+   */
+  const ORDER_CREATE_LOCK = 0x6f726472; // "ordr"
+
   let order: typeof ordersTable.$inferSelect;
   try {
     order = await db.transaction(async (tx) => {
+      // ── Serialized order-number generation ──────────────────────────────
+      // A transaction-scoped advisory lock (tenantId, ORDER_CREATE_LOCK)
+      // ensures only one concurrent create per tenant can read todayCount at
+      // a time. The unique index on (tenant_id, order_number) is the final
+      // backstop. This mirrors the pattern used by quotation numbering.
+      //
+      // Jamaica is UTC-5 year-round; shift UTC time back 5 hours for the
+      // local date so the counter resets at midnight Jamaica time.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${tenantId}, ${ORDER_CREATE_LOCK})`);
+      const nowJamaica = new Date(Date.now() - 5 * 60 * 60 * 1000);
+      const yymm = String(nowJamaica.getUTCFullYear()).slice(-2) + String(nowJamaica.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(nowJamaica.getUTCDate()).padStart(2, "0");
+      const dayStart = new Date(`${nowJamaica.getUTCFullYear()}-${String(nowJamaica.getUTCMonth() + 1).padStart(2, "0")}-${String(nowJamaica.getUTCDate()).padStart(2, "0")}T05:00:00.000Z`);
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+      const [{ todayCount }] = await tx
+        .select({ todayCount: sql<number>`cast(count(*) as int)` })
+        .from(ordersTable)
+        .where(and(eq(ordersTable.tenantId, tenantId), gte(ordersTable.createdAt, dayStart), lt(ordersTable.createdAt, dayEnd)));
+      const seq = String((todayCount ?? 0) + 1).padStart(6, "0");
+      const orderNumber = `ORD-${yymm}-${dd}-${seq}`;
       // 0. Pre-fetch structure type for every product in the order so
       //    the loops below can dispatch on simple vs composite without
       //    issuing N extra round-trips. Composite parents have stock

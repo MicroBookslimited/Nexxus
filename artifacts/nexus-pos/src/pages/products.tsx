@@ -2904,7 +2904,15 @@ function saveProductErrorToast(
   fallbackTitle: string,
 ): { title: string; description?: string; variant: "destructive" } {
   const apiErr = err as { status?: number; body?: unknown; data?: unknown; message?: string } | undefined;
-  const payload = (apiErr?.body ?? apiErr?.data) as { error?: string; message?: string } | undefined;
+  const payload = (apiErr?.body ?? apiErr?.data) as { error?: string; code?: string; message?: string; conflictProductName?: string } | undefined;
+  // Duplicate barcode: surface the server's message which already names the conflicting product.
+  if (apiErr?.status === 409 && payload?.code === "DUPLICATE_BARCODE") {
+    return {
+      title: "Duplicate barcode",
+      description: payload.error ?? `This barcode is already assigned to another product.`,
+      variant: "destructive",
+    };
+  }
   return {
     title: fallbackTitle,
     ...(payload?.message ? { description: payload.message } : {}),

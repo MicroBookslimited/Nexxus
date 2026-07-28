@@ -403,6 +403,29 @@ router.post("/products", async (req, res): Promise<void> => {
     return;
   }
 
+  // Duplicate barcode check: warn if another active product already carries
+  // the same barcode so staff know before saving.
+  if (parsed.data.barcode?.trim()) {
+    const [barcodeConflict] = await db
+      .select({ id: productsTable.id, name: productsTable.name })
+      .from(productsTable)
+      .where(and(
+        eq(productsTable.tenantId, tenantId),
+        eq(productsTable.barcode, parsed.data.barcode.trim()),
+        isNull(productsTable.archivedAt),
+      ))
+      .limit(1);
+    if (barcodeConflict) {
+      res.status(409).json({
+        error: `Barcode "${parsed.data.barcode.trim()}" is already assigned to "${barcodeConflict.name}". Each product must have a unique barcode.`,
+        code: "DUPLICATE_BARCODE",
+        conflictProductId: barcodeConflict.id,
+        conflictProductName: barcodeConflict.name,
+      });
+      return;
+    }
+  }
+
   // Composite parents have no inventory of their own — stock is derived
   // from child components. Force stockCount to 0 regardless of input so
   // POS / reports never see a misleading number on the parent row.
@@ -912,6 +935,30 @@ router.put("/products/:id", async (req, res): Promise<void> => {
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
+  }
+
+  // Duplicate barcode check on update: reject if another *different* active
+  // product already carries the same barcode.
+  if (parsed.data.barcode?.trim()) {
+    const [barcodeConflict] = await db
+      .select({ id: productsTable.id, name: productsTable.name })
+      .from(productsTable)
+      .where(and(
+        eq(productsTable.tenantId, tenantId),
+        eq(productsTable.barcode, parsed.data.barcode.trim()),
+        isNull(productsTable.archivedAt),
+        sql`${productsTable.id} != ${params.data.id}`,
+      ))
+      .limit(1);
+    if (barcodeConflict) {
+      res.status(409).json({
+        error: `Barcode "${parsed.data.barcode.trim()}" is already assigned to "${barcodeConflict.name}". Each product must have a unique barcode.`,
+        code: "DUPLICATE_BARCODE",
+        conflictProductId: barcodeConflict.id,
+        conflictProductName: barcodeConflict.name,
+      });
+      return;
+    }
   }
 
   // Build the update set so undefined fields don't overwrite existing

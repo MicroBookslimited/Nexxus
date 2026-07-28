@@ -64,7 +64,16 @@ export const ordersTable = pgTable("orders", {
   salesChannel: text("sales_channel").notNull().default("pos"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-});
+}, (t) => ({
+  // Per-tenant uniqueness on the human-facing order number. A transaction-scoped
+  // advisory lock inside the create handler serializes number generation; this
+  // unique index is the final backstop that causes a loud 23505 instead of a
+  // silent duplicate if two concurrent requests somehow both commit.
+  tenantOrderNumberUnique: uniqueIndex("orders_tenant_order_number_unique").on(
+    t.tenantId,
+    t.orderNumber,
+  ),
+}));
 
 export const orderItemsTable = pgTable("order_items", {
   id: serial("id").primaryKey(),
