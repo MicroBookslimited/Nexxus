@@ -34,3 +34,21 @@ export function extractTracking(raw: string): string | null {
   const m = code.match(/9\d{21,25}|TBA\w{10,}/i);
   return m ? m[0]! : null;
 }
+
+/**
+ * Heuristic: does this look like a scanned parcel code of ANY courier?
+ *
+ * extractTracking only recognizes USPS/Amazon formats, but parcels arrive with
+ * GoFo (GFUS…), FedEx (12 digits), UPS (1Z…), SpeedX (SPX…), DHL and other
+ * numbers. Any longish unbroken alphanumeric string is scan-like — humans
+ * searching type shorter fragments or words with spaces. Used to auto-run the
+ * package lookup when a scanner doesn't send a trailing Enter.
+ */
+export function looksLikeTrackingCode(raw: string): boolean {
+  const code = raw.trim();
+  if (code.length < 10 || /\s/.test(code)) return false;
+  if (isRoutingOnlyBarcode(code)) return false;
+  // Weight-embedded EAN-13 labels ("2" + 12 digits) are scale barcodes, not parcels.
+  if (/^2\d{12}$/.test(code)) return false;
+  return /^[A-Za-z0-9-]+$/.test(code);
+}

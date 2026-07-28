@@ -133,6 +133,13 @@ router.get("/packages/lookup/:tracking", async (req, res): Promise<void> => {
         codeMatches(packagesTable.purchaseTrackingNumber, normalizeCode(tracking)),
       )!,
     ))
+    // Duplicates exist (re-received parcels, shared AWBs): prefer the row the
+    // cashier can actually collect, then the newest, so a stray collected or
+    // cancelled twin never shadows a received package at scan-out.
+    .orderBy(
+      sql`CASE WHEN ${packagesTable.status} = 'received' THEN 0 ELSE 1 END`,
+      desc(packagesTable.receivedAt),
+    )
     .limit(1);
   if (!pkg) { res.status(404).json({ error: "Package not found" }); return; }
   res.json(pkg);

@@ -60,4 +60,5 @@
 - [Receipt timezone setting](receipt-timezone-setting.md) — tenant `timezone` app_setting drives ALL 6 receipt date sites via receiptTimeZone(); onboarding PATCH writes it to app_settings and must stay allowlisted (no body spread).
 - [Subscription invoice idempotency](subscription-invoice-idempotency.md) — auto-issued billing PDFs dedupe per (tenant,provider,providerRef) via partial unique index + onConflictDoNothing; every payment path must pass a stable non-null providerRef.
 - [Order-create idempotency](order-create-idempotency.md) — mutations never auto-retry; every checkout path must send clientRequestId or duplicates return; charge endpoint still unprotected.
+- [Package scan-out lookup](package-scanout-lookup.md) — scanners may not send Enter (debounced any-courier heuristic), clear box on miss, lookup must prefer status='received' over duplicate twins.
 - [Cash shift staff scoping](cash-shift-staff-scoping.md) — shift-gated UIs must send x-staff-id and key queries by staff id; gate + open-shift screens must share the same scope or cashiers dead-end.

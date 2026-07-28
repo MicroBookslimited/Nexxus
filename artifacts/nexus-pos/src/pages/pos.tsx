@@ -48,7 +48,7 @@ import {
   ChevronDown, ChevronUp, LayoutGrid,
 } from "lucide-react";
 import { saasMe, TENANT_TOKEN_KEY, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels, listPaymentMethods, ApiError, type PaymentMethod, getPurchaseUnits, type PurchaseUnit, fetchCustomerReceiptInfo, type CustomerReceiptInfo, listActivePromotions, lookupGiftVoucher, type VoucherLookupResult, fetchCustomerByCard, closeTable } from "@/lib/saas-api";
-import { isRoutingOnlyBarcode, cleanScannedTracking, extractTracking } from "@/lib/package-barcode";
+import { isRoutingOnlyBarcode, cleanScannedTracking, extractTracking, looksLikeTrackingCode } from "@/lib/package-barcode";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { enqueueRequest } from "@/lib/offline-queue";
@@ -1402,17 +1402,32 @@ export function POS() {
 
   // Some scanners send the tracking chunk WITHOUT a trailing Enter, leaving it
   // stranded in the search box. When the module is on and the input looks like
-  // a scanned parcel tracking code (never partial product typing), auto-run the
-  // package lookup after a short pause. A 404 stays silent.
+  // a scanned parcel tracking code — a known USPS/Amazon format, or ANY longish
+  // unbroken alphanumeric code (GoFo, FedEx, UPS, SpeedX…) that doesn't match a
+  // product barcode/SKU — auto-run the package lookup after a short pause.
+  // A 404 stays silent (the box doubles as product name search here).
   useEffect(() => {
     if (!packagesEnabled) return;
-    if (!extractTracking(searchTerm)) return;
+    const code = searchTerm.trim();
+    if (!extractTracking(code)) {
+      if (!looksLikeTrackingCode(code)) return;
+      const normalizedCode = normalizeBarcode(code);
+      const isProductCode = (products ?? []).some(
+        (p: NonNullable<typeof products>[number]) =>
+          normalizeBarcode(p.barcode) === normalizedCode ||
+          normalizeBarcode(p.sku) === normalizedCode,
+      );
+      if (isProductCode) return;
+    }
     const t = setTimeout(() => {
-      void tryAddPackagePickup(searchTerm.trim());
+      void tryAddPackagePickup(code);
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, packagesEnabled]);
+  }, [searchTerm, packagesEnabled, products]);
+
+  // Code currently being looked up as a package pickup (dedupes Enter vs debounce).
+  const packageLookupInFlightRef = useRef<string | null>(null);
 
   const tryAddPackagePickup = async (code: string): Promise<boolean> => {
     // Routing-only barcode chunk (420+ZIP, no tracking digits): swallow it so
@@ -1421,6 +1436,18 @@ export function POS() {
       setSearchTerm("");
       return true;
     }
+    // The Enter handler and the 400ms auto-lookup debounce can both fire for
+    // the same scan; skip the second call while the first is in flight.
+    if (packageLookupInFlightRef.current === code) return true;
+    packageLookupInFlightRef.current = code;
+    try {
+      return await doAddPackagePickup(code);
+    } finally {
+      packageLookupInFlightRef.current = null;
+    }
+  };
+
+  const doAddPackagePickup = async (code: string): Promise<boolean> => {
     try {
       const pkg = await lookupPackage(extractTracking(code) ?? cleanScannedTracking(code));
       if (pkg.status === "collected") {

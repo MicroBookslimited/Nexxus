@@ -70,7 +70,7 @@ import { CardTypeDialog, type CardType } from "@/components/card-type-dialog";
 import { SplitPaymentDialog } from "@/components/split-payment-dialog";
 import { printOrderReceipt } from "@/lib/print-receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, lookupGiftVoucher, type VoucherLookupResult, ApiError, getPricingTiers, previewTierPrice, type PricingTier, lookupWeightLabel, markWeightLabelsSold, releaseWeightLabels } from "@/lib/saas-api";
-import { isRoutingOnlyBarcode, cleanScannedTracking, extractTracking } from "@/lib/package-barcode";
+import { isRoutingOnlyBarcode, cleanScannedTracking, extractTracking, looksLikeTrackingCode } from "@/lib/package-barcode";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -256,6 +256,8 @@ export function PosSupermarket({
   const [searchTerm, setSearchTerm] = useState("");
   const { headerHidden, toggleHeader } = usePosChrome();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Code currently being looked up as a package pickup (dedupes Enter vs debounce).
+  const packageLookupInFlightRef = useRef<string | null>(null);
 
   // Re-focus the scan box so USB scanners keep working after any interaction
   // (keypad, cart buttons, dialog close). rAF avoids racing focus-capturing UI.
@@ -914,25 +916,52 @@ export function PosSupermarket({
 
   // Some scanners send the tracking chunk WITHOUT a trailing Enter, leaving it
   // stranded in the search box. When the module is on and the input looks like
-  // a scanned parcel tracking code (never partial product typing), auto-run the
-  // package lookup after a short pause. A 404 stays silent.
+  // a scanned parcel tracking code — a known USPS/Amazon format, or ANY longish
+  // unbroken alphanumeric code (GoFo, FedEx, UPS, SpeedX…) that isn't a product
+  // barcode/SKU — auto-run the package lookup after a short pause. In courier
+  // mode a miss shows the "No package found" toast and clears the box so the
+  // next scan lands clean; elsewhere a 404 stays silent.
   useEffect(() => {
     if (!packagesEnabled) return;
-    if (!extractTracking(searchTerm)) return;
+    const code = searchTerm.trim();
+    const isProductCode = productList.some(
+      (p) =>
+        (p.barcode ?? "").toLowerCase() === code.toLowerCase() ||
+        (p.sku ?? "").toLowerCase() === code.toLowerCase(),
+    );
+    if (!extractTracking(code) && !(looksLikeTrackingCode(code) && !isProductCode)) return;
     const t = setTimeout(() => {
-      void tryAddPackagePickup(searchTerm.trim());
+      void tryAddPackagePickup(code, { notifyNotFound: courierLayout });
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, packagesEnabled]);
+  }, [searchTerm, packagesEnabled, courierLayout]);
 
-  const tryAddPackagePickup = async (code: string): Promise<boolean> => {
+  const tryAddPackagePickup = async (
+    code: string,
+    opts?: { notifyNotFound?: boolean },
+  ): Promise<boolean> => {
     // Routing-only barcode chunk (420+ZIP, no tracking digits): swallow it so
     // it doesn't fall through to product-not-found handling.
     if (isRoutingOnlyBarcode(code)) {
       setSearchTerm("");
       return true;
     }
+    // The Enter handler and the 400ms auto-lookup debounce can both fire for
+    // the same scan; skip the second call while the first is in flight.
+    if (packageLookupInFlightRef.current === code) return true;
+    packageLookupInFlightRef.current = code;
+    try {
+      return await doAddPackagePickup(code, opts);
+    } finally {
+      packageLookupInFlightRef.current = null;
+    }
+  };
+
+  const doAddPackagePickup = async (
+    code: string,
+    opts?: { notifyNotFound?: boolean },
+  ): Promise<boolean> => {
     try {
       const pkg = await lookupPackage(extractTracking(code) ?? cleanScannedTracking(code));
       if (pkg.status === "collected") {
@@ -988,9 +1017,24 @@ export function PosSupermarket({
       focusScanInput();
       return true;
     } catch (err) {
-      // Not a package — stay silent and let the normal product-scan flow
-      // handle the code. (Check .status directly: two ApiError classes exist.)
-      if ((err as { status?: number } | null)?.status === 404) return false;
+      // Not a package. (Check .status directly: two ApiError classes exist.)
+      if ((err as { status?: number } | null)?.status === 404) {
+        if (opts?.notifyNotFound) {
+          // Courier-mode auto-lookup: tell the cashier and clear the box so
+          // the next scan lands clean instead of concatenating onto this one.
+          playScanErrorTone();
+          toast({
+            title: "No package found",
+            description: `No package in house matches “${code}”. Check the tracking number or receive it first.`,
+            variant: "destructive",
+          });
+          setSearchTerm("");
+          focusScanInput();
+          return true;
+        }
+        // Stay silent and let the normal product-scan flow handle the code.
+        return false;
+      }
       playScanErrorTone();
       toast({
         title: "Couldn't check that barcode",
@@ -1065,6 +1109,11 @@ export function PosSupermarket({
               variant: "destructive",
             },
       );
+      if (courierLayout) {
+        // Clear the box so the next scan lands clean instead of concatenating.
+        setSearchTerm("");
+        focusScanInput();
+      }
     })();
   };
 
