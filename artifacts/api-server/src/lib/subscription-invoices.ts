@@ -123,6 +123,63 @@ export async function renderInvoiceDocs(rec: SubscriptionInvoice): Promise<{ inv
 }
 
 /**
+ * Sends a friendly payment-failure email to the tenant's billing email address.
+ * Best-effort — never throws; logs and swallows errors so a send failure never
+ * breaks the checkout flow.
+ */
+export async function sendSubscriptionPaymentFailureEmail(params: {
+  tenantId: number;
+  planName: string;
+  reason: string;
+}): Promise<void> {
+  try {
+    const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.id, params.tenantId));
+    if (!tenant?.email) {
+      logger.warn({ tenantId: params.tenantId }, "sendSubscriptionPaymentFailureEmail: no tenant email");
+      return;
+    }
+
+    const name = tenant.businessName || tenant.ownerName || "there";
+    const { fromAddress } = await getFromDetails(0);
+
+    const html = `
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a1a">
+  <div style="border-bottom:3px solid #00AEEF;padding-bottom:12px;margin-bottom:20px">
+    <span style="font-size:22px;font-weight:bold;color:#00AEEF">MicroBooks</span>
+  </div>
+  <h2 style="margin:0 0 4px;color:#dc2626">Payment Unsuccessful</h2>
+  <p style="color:#6b7280;margin:0 0 20px">Hi ${name}, we were unable to process your NEXXUS POS subscription payment.</p>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px">
+    <tr>
+      <td style="padding:8px 0;color:#6b7280;border-bottom:1px solid #f3f4f6">Plan</td>
+      <td style="padding:8px 0;text-align:right;font-weight:600;border-bottom:1px solid #f3f4f6">${params.planName}</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;color:#6b7280">Reason</td>
+      <td style="padding:8px 0;text-align:right;color:#dc2626;font-weight:600">${params.reason}</td>
+    </tr>
+  </table>
+  <p style="margin:0 0 12px">To keep your subscription active, please try again with a different payment method or check with your bank if the card was declined.</p>
+  <p style="margin:0 0 20px">You can update your payment details by logging in to NEXXUS POS and visiting <strong>Settings → Subscription</strong>.</p>
+  <p style="color:#6b7280;font-size:13px;margin-top:20px">Need help? Reply to this email or reach us at <a href="mailto:accounts@microbookssolutions.com" style="color:#00AEEF">accounts@microbookssolutions.com</a>.</p>
+  <p style="color:#9ca3af;font-size:12px;margin-top:24px">MicroBooks Limited · Shop 15, 12A Molynes Road, Kingston 10, Jamaica · +1-876-787-1538</p>
+</div>`;
+
+    await sendMail({
+      to: tenant.email,
+      subject: `Action required: NEXXUS POS payment failed for ${params.planName}`,
+      html,
+      fromName: "MicroBooks",
+      fromAddress,
+      tenantId: 0,   // platform email → BCC accounts@ automatically
+    });
+  } catch (err) {
+    logger.error({ err: err instanceof Error ? err.message : String(err), tenantId: params.tenantId },
+      "sendSubscriptionPaymentFailureEmail: failed to send");
+  }
+}
+
+/**
  * Creates a billing document record for a subscription payment and emails the
  * Invoice + Receipt PDFs. Idempotent per (tenant, provider, providerRef).
  * Best-effort: never throws — a failure here must not break activation.

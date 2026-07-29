@@ -12,7 +12,7 @@ import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { getSetting } from "./settings";
 import { getActiveProductCount, planProductLimitError } from "../utils/plan-limits";
-import { issueSubscriptionInvoice, renderInvoiceDocs, sendInvoiceEmail } from "../lib/subscription-invoices";
+import { issueSubscriptionInvoice, renderInvoiceDocs, sendInvoiceEmail, sendSubscriptionPaymentFailureEmail } from "../lib/subscription-invoices";
 
 const router: IRouter = Router();
 
@@ -344,10 +344,13 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
 
     // Declined / validation error
     const errors = data.Errors as Array<{ Code: string; Message: string }> | undefined;
+    const declineMsg = (data.ResponseMessage as string) ?? errors?.[0]?.Message ?? "Payment declined";
+    // Fire-and-forget: email the tenant immediately so they know and can retry.
+    void sendSubscriptionPaymentFailureEmail({ tenantId: tenant.tenantId, planName: plan.name, reason: declineMsg });
     res.json({
       step: "declined", approved: false,
       responseCode: isoCode ?? data.ResponseCode ?? "unknown",
-      responseMessage: (data.ResponseMessage as string) ?? errors?.[0]?.Message ?? "Payment declined",
+      responseMessage: declineMsg,
     });
   } catch (err) {
     console.error("[PowerTranz] initiate error:", err);
@@ -378,6 +381,7 @@ router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> 
       const limitErr = planProductLimitError(pendingPlan, await getActiveProductCount(pending.tenantId));
       if (limitErr) {
         pending3DS.set(spiToken, { ...pending, status: "declined", message: limitErr.error });
+        void sendSubscriptionPaymentFailureEmail({ tenantId: pending.tenantId, planName: pending.planName ?? pendingPlan.name, reason: limitErr.error });
         res.send(closeScript("declined", limitErr.error));
         return;
       }
@@ -405,11 +409,20 @@ router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> 
     } else {
       const msg = (data.ResponseMessage as string) ?? "Payment was declined";
       pending3DS.set(spiToken, { ...pending, status: "declined", message: msg });
+      // Notify the tenant immediately — subscription payments only (not wallet funding).
+      if (pending.kind === "subscription") {
+        void sendSubscriptionPaymentFailureEmail({ tenantId: pending.tenantId, planName: pending.planName, reason: msg });
+      }
       res.send(closeScript("declined", msg, `,responseCode:${JSON.stringify(data.IsoResponseCode ?? data.ResponseCode ?? "")}`));
     }
   } catch (err) {
     console.error("[PowerTranz] 3ds-callback error:", err);
-    pending3DS.set(spiToken, { ...pending, status: "declined", message: String(err) });
+    const errMsg = String(err);
+    pending3DS.set(spiToken, { ...pending, status: "declined", message: errMsg });
+    // Notify the tenant on processing errors too — subscription only.
+    if (pending.kind === "subscription") {
+      void sendSubscriptionPaymentFailureEmail({ tenantId: pending.tenantId, planName: pending.planName, reason: "Payment processing error. Please try again or contact support." });
+    }
     res.send(closeScript("error", "Payment processing error. Please try again."));
   }
 });
