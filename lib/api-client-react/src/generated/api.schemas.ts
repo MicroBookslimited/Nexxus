@@ -1649,9 +1649,26 @@ export interface SendReceiptEmailBody {
   to: string;
 }
 
+export type SendEodReportEmailBodyReportType =
+  (typeof SendEodReportEmailBodyReportType)[keyof typeof SendEodReportEmailBodyReportType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SendEodReportEmailBodyReportType = {
+  summary: "summary",
+  detailed: "detailed",
+} as const;
+
 export interface SendEodReportEmailBody {
   sessionId: number;
   to: string;
+  /** Detailed includes the per-receipt transaction listing; summary omits it. */
+  reportType?: SendEodReportEmailBodyReportType;
+  /** Include the products-sold section. Defaults to true. */
+  includeProducts?: boolean;
+  /** Include the sales-by-brand section. Defaults to true. */
+  includeBrands?: boolean;
+  /** Include the sales-by-category section. Defaults to true. */
+  includeCategories?: boolean;
 }
 
 export interface EmailSentResponse {

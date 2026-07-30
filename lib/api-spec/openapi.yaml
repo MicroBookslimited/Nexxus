@@ -5238,6 +5238,19 @@ components:
         to:
           type: string
           format: email
+        reportType:
+          type: string
+          enum: [summary, detailed]
+          description: Detailed includes the per-receipt transaction listing; summary omits it.
+        includeProducts:
+          type: boolean
+          description: Include the products-sold section. Defaults to true.
+        includeBrands:
+          type: boolean
+          description: Include the sales-by-brand section. Defaults to true.
+        includeCategories:
+          type: boolean
+          description: Include the sales-by-category section. Defaults to true.
       required:
         - sessionId
         - to

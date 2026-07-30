@@ -216,8 +216,12 @@ function buildEodEmailHtml(data: {
   expectedCash: number;
   totalPayouts: number;
   businessName: string;
+  showTransactions?: boolean;
+  productSummary?: { productName: string; totalQty: number; totalRevenue: number }[] | null;
+  brandSummary?: { name: string; totalQty: number; totalRevenue: number }[] | null;
+  categorySummary?: { name: string; totalQty: number; totalRevenue: number }[] | null;
 }) {
-  const { session, payouts, orders, salesSummary, expectedCash, totalPayouts, businessName } = data;
+  const { session, payouts, orders, salesSummary, expectedCash, totalPayouts, businessName, showTransactions = true, productSummary, brandSummary, categorySummary } = data;
   const cashVariance = (session.actualCash ?? 0) - expectedCash;
   const cardVariance = (session.actualCard ?? 0) - salesSummary.cardSales;
 
@@ -226,6 +230,35 @@ function buildEodEmailHtml(data: {
 
   const varianceColor = cashVariance === 0 ? "#16a34a" : cashVariance > 0 ? "#2563eb" : "#dc2626";
   const varianceLabel = cashVariance === 0 ? "Balanced ✓" : cashVariance > 0 ? "Over" : "Short";
+
+  const summaryTable = (title: string, rows: { name: string; totalQty: number; totalRevenue: number }[]) => {
+    const totalQty = rows.reduce((s, r) => s + r.totalQty, 0);
+    const totalRev = rows.reduce((s, r) => s + r.totalRevenue, 0);
+    return `
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:10px;margin-bottom:10px;">
+      <div style="font-size:10px;font-weight:bold;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">${escHtml(title)}</div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="border-bottom:1px solid #e2e8f0;">
+          <th style="text-align:left;padding:2px 0;font-size:10px;color:#94a3b8;">Name</th>
+          <th style="text-align:right;padding:2px 0;font-size:10px;color:#94a3b8;">Qty</th>
+          <th style="text-align:right;padding:2px 0;font-size:10px;color:#94a3b8;">Revenue</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map((r) => `
+          <tr>
+            <td style="padding:2px 0;font-size:11px;">${escHtml(r.name)}</td>
+            <td style="padding:2px 0;font-size:11px;text-align:right;">${Math.round(r.totalQty * 100) / 100}</td>
+            <td style="padding:2px 0;font-size:11px;text-align:right;">${fmt(r.totalRevenue)}</td>
+          </tr>`).join("")}
+        </tbody>
+        <tfoot><tr style="border-top:1px dashed #ddd;">
+          <td style="padding:3px 0;font-size:11px;font-weight:bold;">Total</td>
+          <td style="padding:3px 0;font-size:11px;font-weight:bold;text-align:right;">${Math.round(totalQty * 100) / 100}</td>
+          <td style="padding:3px 0;font-size:11px;font-weight:bold;text-align:right;">${fmt(totalRev)}</td>
+        </tr></tfoot>
+      </table>
+    </div>`;
+  };
 
   const orderRows = orders.map((o) => `
     <tr>
@@ -298,7 +331,11 @@ function buildEodEmailHtml(data: {
     </div>
     ` : ""}
 
-    ${orders.length > 0 ? `
+    ${productSummary && productSummary.length > 0 ? summaryTable("Products Sold", productSummary.map((p) => ({ name: p.productName, totalQty: p.totalQty, totalRevenue: p.totalRevenue }))) : ""}
+    ${brandSummary && brandSummary.length > 0 ? summaryTable("Sales by Brand", brandSummary) : ""}
+    ${categorySummary && categorySummary.length > 0 ? summaryTable("Sales by Category", categorySummary) : ""}
+
+    ${showTransactions && orders.length > 0 ? `
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:10px;margin-bottom:10px;">
       <div style="font-size:10px;font-weight:bold;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Transactions</div>
       <table style="width:100%;border-collapse:collapse;">
@@ -546,6 +583,10 @@ const SendReceiptBody = z.object({
 const SendEodReportBody = z.object({
   sessionId: z.number().int().positive(),
   to: z.string().email(),
+  reportType: z.enum(["summary", "detailed"]).optional().default("detailed"),
+  includeProducts: z.boolean().optional().default(true),
+  includeBrands: z.boolean().optional().default(true),
+  includeCategories: z.boolean().optional().default(true),
 });
 
 router.post("/email/receipt", async (req, res): Promise<void> => {
@@ -723,6 +764,54 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
 
   const businessName = (await getSetting("business_name", tenantId)) || "NEXXUS POS";
 
+  const { reportType, includeProducts, includeBrands, includeCategories } = parsed.data;
+
+  // Product / brand / category summaries for the shift window (only computed when needed)
+  let productSummary: { productName: string; totalQty: number; totalRevenue: number }[] = [];
+  let brandSummary: { name: string; totalQty: number; totalRevenue: number }[] = [];
+  let categorySummary: { name: string; totalQty: number; totalRevenue: number }[] = [];
+
+  if (includeProducts || includeBrands || includeCategories) {
+    const itemRows = await db
+      .select({
+        productName: orderItemsTable.productName,
+        brand: productsTable.brand,
+        category: productsTable.category,
+        totalQty: sql<number>`sum(${orderItemsTable.quantity})`.as("total_qty"),
+        totalRevenue: sql<number>`sum(${orderItemsTable.lineTotal})`.as("total_revenue"),
+      })
+      .from(orderItemsTable)
+      .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+      .leftJoin(productsTable, and(eq(orderItemsTable.productId, productsTable.id), eq(productsTable.tenantId, tenantId)))
+      .where(
+        and(
+          eq(ordersTable.tenantId, tenantId),
+          gte(ordersTable.createdAt, session.openedAt),
+          lte(ordersTable.createdAt, closedAt),
+          isNotNull(ordersTable.paymentMethod),
+        )
+      )
+      .groupBy(orderItemsTable.productName, productsTable.brand, productsTable.category);
+
+    const rollup = (keyOf: (r: typeof itemRows[number]) => string) => {
+      const map = new Map<string, { name: string; totalQty: number; totalRevenue: number }>();
+      for (const r of itemRows) {
+        const name = keyOf(r);
+        const cur = map.get(name) ?? { name, totalQty: 0, totalRevenue: 0 };
+        cur.totalQty += Number(r.totalQty ?? 0);
+        cur.totalRevenue += Number(r.totalRevenue ?? 0);
+        map.set(name, cur);
+      }
+      return [...map.values()].sort((a, b) => b.totalRevenue - a.totalRevenue);
+    };
+
+    if (includeProducts) {
+      productSummary = rollup((r) => r.productName).map((r) => ({ productName: r.name, totalQty: r.totalQty, totalRevenue: r.totalRevenue }));
+    }
+    if (includeBrands) brandSummary = rollup((r) => (r.brand?.trim() ? r.brand.trim() : "No brand"));
+    if (includeCategories) categorySummary = rollup((r) => (r.category?.trim() ? r.category.trim() : "Uncategorized"));
+  }
+
   const html = buildEodEmailHtml({
     session,
     payouts,
@@ -731,6 +820,10 @@ router.post("/email/eod-report", async (req, res): Promise<void> => {
     expectedCash,
     totalPayouts,
     businessName,
+    showTransactions: reportType === "detailed",
+    productSummary: includeProducts ? productSummary : null,
+    brandSummary: includeBrands ? brandSummary : null,
+    categorySummary: includeCategories ? categorySummary : null,
   });
 
   const dateLabel = new Date(session.openedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });

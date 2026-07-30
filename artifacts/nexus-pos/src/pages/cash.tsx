@@ -933,6 +933,10 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
   const [eodCustomEmail, setEodCustomEmail] = useState("");
   const [eodFetching, setEodFetching] = useState(false);
   const [eodSending, setEodSending] = useState(false);
+  const [eodReportType, setEodReportType] = useState<"summary" | "detailed">("detailed");
+  const [eodIncludeProducts, setEodIncludeProducts] = useState(true);
+  const [eodIncludeBrands, setEodIncludeBrands] = useState(true);
+  const [eodIncludeCategories, setEodIncludeCategories] = useState(true);
   const sendEodEmail = useSendEodReportEmail();
   const { data: settings } = useGetSettings();
   const businessName = settings?.business_name || "NEXXUS POS";
@@ -1214,6 +1218,42 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
               </div>
             )}
 
+            {/* Report options */}
+            <div className="space-y-2 border-t border-border pt-2">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Report options</p>
+              <div className="flex gap-2">
+                {(["summary", "detailed"] as const).map(rt => (
+                  <label key={rt} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input
+                      type="radio"
+                      name="eod-report-type"
+                      checked={eodReportType === rt}
+                      onChange={() => setEodReportType(rt)}
+                      className="h-3.5 w-3.5 accent-primary"
+                    />
+                    <span className="capitalize">{rt}{rt === "detailed" ? " (with receipts)" : ""}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                {([
+                  ["Products sold", eodIncludeProducts, setEodIncludeProducts],
+                  ["Brands", eodIncludeBrands, setEodIncludeBrands],
+                  ["Categories", eodIncludeCategories, setEodIncludeCategories],
+                ] as const).map(([label, checked, setter]) => (
+                  <label key={label} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => setter(!checked)}
+                      className="h-3.5 w-3.5 accent-primary"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {/* Add custom email */}
             <div className="flex gap-2">
               <Input
@@ -1262,7 +1302,7 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
                 for (const t of targets) {
                   await new Promise<void>(resolve => {
                     sendEodEmail.mutate(
-                      { data: { sessionId, to: t.email } },
+                      { data: { sessionId, to: t.email, reportType: eodReportType, includeProducts: eodIncludeProducts, includeBrands: eodIncludeBrands, includeCategories: eodIncludeCategories } },
                       { onSuccess: () => { sent++; resolve(); }, onError: () => resolve() }
                     );
                   });
@@ -1293,7 +1333,7 @@ function EodReportModal({ sessionId, onClose }: { sessionId: number; onClose: ()
           <Button
             variant="outline"
             size="sm"
-            onClick={() => { setEodEmailOpen(true); setEodEmailAddr(""); }}
+            onClick={() => setEodEmailOpen(true)}
             className="flex-1 sm:flex-none gap-1.5"
           >
             <Mail className="h-3.5 w-3.5" />Email Report
