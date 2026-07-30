@@ -1585,8 +1585,7 @@ export const superadminUpdateSupportSettings = (data: { supportInboxEmail: strin
   });
 
 export interface SuperadminCreateTicketInput {
-  businessName: string;
-  tenantId?: number;
+  tenantId: number;
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;

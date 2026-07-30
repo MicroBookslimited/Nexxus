@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
-import { db, supportTicketsTable, appSettingsTable } from "@workspace/db";
+import { db, supportTicketsTable, appSettingsTable, tenantsTable } from "@workspace/db";
 import { verifyTenantToken } from "./saas-auth";
 import { getFromDetails, sendMail, PLATFORM_COPY_ADDRESS } from "../lib/mail";
 import jwt from "jsonwebtoken";
@@ -338,11 +338,30 @@ router.post("/superadmin/support/tickets", async (req, res): Promise<void> => {
   if (!requireSuperAdmin(req, res as never)) return;
 
   const b = (req.body ?? {}) as Record<string, unknown>;
-  const businessName = s(b["businessName"], 200);
+
+  // tenantId is required — businessName is derived from the tenant record
+  const tenantIdRaw = b["tenantId"];
+  const tenantId = typeof tenantIdRaw === "number" && Number.isInteger(tenantIdRaw) && tenantIdRaw > 0 ? tenantIdRaw : 0;
+  if (!tenantId) {
+    res.status(400).json({ error: "tenantId is required and must be a valid registered tenant" });
+    return;
+  }
+
+  const tenant = await db.select({ businessName: tenantsTable.businessName })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, tenantId))
+    .limit(1)
+    .then(r => r[0] ?? null);
+  if (!tenant) {
+    res.status(400).json({ error: "Tenant not found" });
+    return;
+  }
+  const businessName = tenant.businessName;
+
   const category = s(b["category"], 120);
   const subCategory = s(b["subCategory"], 200);
-  if (!businessName || !category || !subCategory) {
-    res.status(400).json({ error: "businessName, category and subCategory are required" });
+  if (!category || !subCategory) {
+    res.status(400).json({ error: "category and subCategory are required" });
     return;
   }
   const reportSource = s(b["reportSource"], 50);
@@ -350,8 +369,6 @@ router.post("/superadmin/support/tickets", async (req, res): Promise<void> => {
     res.status(400).json({ error: "reportSource is required and must be one of: " + REPORT_SOURCES.join(", ") });
     return;
   }
-  const tenantIdRaw = b["tenantId"];
-  const tenantId = typeof tenantIdRaw === "number" && Number.isInteger(tenantIdRaw) && tenantIdRaw > 0 ? tenantIdRaw : 0;
 
   const priority = normalizePriority(b["priority"]);
   const stepsTaken = Array.isArray(b["stepsTaken"])

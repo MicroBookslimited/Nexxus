@@ -11,7 +11,9 @@ import {
   superadminUpdateSupportSettings,
   superadminSendTicketReply,
   superadminCreateSupportTicket,
+  superadminSearchTenantsLite,
   type SupportTicketRow,
+  type TenantLite,
 } from "@/lib/saas-api";
 
 const REPORT_SOURCES = ["Whatsapp", "Email", "Phone", "SMS", "Office Visit", "Client Visit", "Other"];
@@ -272,6 +274,105 @@ function TicketDetail({
   );
 }
 
+function TenantPicker({
+  value,
+  onChange,
+  inputCls,
+}: {
+  value: TenantLite | null;
+  onChange: (t: TenantLite | null) => void;
+  inputCls: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<TenantLite[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    superadminSearchTenantsLite(query.trim() || undefined)
+      .then(setResults)
+      .catch(() => setResults([]))
+      .finally(() => setLoading(false));
+  }, [query, open]);
+
+  function select(t: TenantLite) {
+    onChange(t);
+    setOpen(false);
+    setQuery("");
+  }
+
+  function clear() {
+    onChange(null);
+    setQuery("");
+  }
+
+  if (value) {
+    return (
+      <div className="flex items-center gap-2 bg-[#0f1729] border border-[#3b82f6]/50 rounded-lg px-3 py-2">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-white font-medium truncate">{value.businessName}</div>
+          <div className="text-xs text-[#475569] truncate">{value.email}</div>
+        </div>
+        <button onClick={clear} className="shrink-0 p-0.5 text-[#475569] hover:text-white transition-colors">
+          <X size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#475569]" />
+        <input
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder="Search by business name or email…"
+          className={`${inputCls} pl-8`}
+        />
+      </div>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-[#1a2332] border border-[#2a3a55] rounded-xl shadow-xl overflow-hidden">
+          {loading ? (
+            <div className="px-4 py-3 text-sm text-[#475569] flex items-center gap-2">
+              <RefreshCw size={13} className="animate-spin" /> Loading…
+            </div>
+          ) : results.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-[#475569]">No tenants found</div>
+          ) : (
+            <ul className="max-h-52 overflow-y-auto divide-y divide-[#2a3a55]">
+              {results.map(t => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    onMouseDown={e => { e.preventDefault(); select(t); }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-[#2a3a55] transition-colors"
+                  >
+                    <div className="text-sm text-white font-medium">{t.businessName}</div>
+                    <div className="text-xs text-[#475569]">{t.email} · {t.status}</div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="px-4 py-2 border-t border-[#2a3a55]">
+            <button
+              type="button"
+              onMouseDown={e => { e.preventDefault(); setOpen(false); }}
+              className="text-xs text-[#475569] hover:text-white transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NewTicketModal({
   onClose,
   onCreated,
@@ -279,7 +380,7 @@ function NewTicketModal({
   onClose: () => void;
   onCreated: (t: SupportTicketRow) => void;
 }) {
-  const [businessName, setBusinessName] = useState("");
+  const [tenant, setTenant] = useState<TenantLite | null>(null);
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
@@ -291,15 +392,15 @@ function NewTicketModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const canSubmit = businessName.trim() && category.trim() && subCategory.trim() && reportSource;
+  const canSubmit = tenant && category.trim() && subCategory.trim() && reportSource;
 
   async function handleSubmit() {
-    if (!canSubmit) return;
+    if (!canSubmit || !tenant) return;
     setSubmitting(true);
     setError("");
     try {
       const created = await superadminCreateSupportTicket({
-        businessName: businessName.trim(),
+        tenantId: tenant.id,
         contactName: contactName.trim() || undefined,
         contactPhone: contactPhone.trim() || undefined,
         contactEmail: contactEmail.trim() || undefined,
@@ -341,8 +442,8 @@ function NewTicketModal({
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2 text-red-400 text-sm">{error}</div>
           )}
           <div>
-            <label className={labelCls}>Business name *</label>
-            <input value={businessName} onChange={e => setBusinessName(e.target.value)} maxLength={200} placeholder="Client business name" className={inputCls} />
+            <label className={labelCls}>Tenant (business) *</label>
+            <TenantPicker value={tenant} onChange={setTenant} inputCls={inputCls} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
