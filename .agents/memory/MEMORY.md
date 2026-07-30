@@ -62,3 +62,4 @@
 - [Order-create idempotency](order-create-idempotency.md) — mutations never auto-retry; every checkout path must send clientRequestId or duplicates return; charge endpoint still unprotected.
 - [Package scan-out lookup](package-scanout-lookup.md) — scanners may not send Enter (debounced any-courier heuristic), clear box on miss, lookup must prefer status='received' over duplicate twins.
 - [Cash shift staff scoping](cash-shift-staff-scoping.md) — shift-gated UIs must send x-staff-id and key queries by staff id; gate + open-shift screens must share the same scope or cashiers dead-end.
+- [Work Orders Phase 1 architecture](work-orders-phase1.md) — full module built; new tables, 7-status flow, notes/appointments/history API, list+kanban UI, job card HTML with CDN JsBarcode; add-on billing tables in place but self-serve purchase route not wired.

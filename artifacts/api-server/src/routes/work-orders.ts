@@ -1,6 +1,14 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, desc, sql } from "drizzle-orm";
-import { db, workOrdersTable, customersTable, staffTable } from "@workspace/db";
+import { and, eq, gte, desc, sql, inArray } from "drizzle-orm";
+import {
+  db,
+  workOrdersTable,
+  workOrderNotesTable,
+  workOrderStatusHistoryTable,
+  workOrderAppointmentsTable,
+  customersTable,
+  staffTable,
+} from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { getSetting } from "./settings";
@@ -14,65 +22,119 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
   return p ? p.tenantId : null;
 }
 
+function getStaffId(req: { headers: Record<string, string | undefined> }): number | null {
+  const raw = req.headers["x-staff-id"];
+  const n = raw ? parseInt(String(raw), 10) : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/* ─── Validation ─── */
+/* ─── Status constants ──────────────────────────────────────────────────────── */
+export const WORK_ORDER_STATUSES = [
+  "received",
+  "in_progress",
+  "awaiting_parts",
+  "on_hold",
+  "ready",
+  "collected",
+  "cancelled",
+] as const;
+export type WorkOrderStatus = (typeof WORK_ORDER_STATUSES)[number];
 
-const WorkOrderItem = z.object({
-  type: z.enum(["part", "labor"]),
+// Legal transitions. Converting to a sale may jump directly to collected.
+const STATUS_FLOW: Record<WorkOrderStatus, WorkOrderStatus[]> = {
+  received: ["in_progress", "awaiting_parts", "on_hold", "cancelled"],
+  in_progress: ["ready", "awaiting_parts", "on_hold", "received", "cancelled"],
+  awaiting_parts: ["in_progress", "on_hold", "cancelled"],
+  on_hold: ["in_progress", "awaiting_parts", "received", "cancelled"],
+  ready: ["collected", "in_progress", "cancelled"],
+  collected: [],
+  cancelled: [],
+};
+
+/* ─── Validation schemas ─────────────────────────────────────────────────────── */
+const WorkOrderItemSchema = z.object({
+  type: z.enum(["part", "labor", "fee"]),
   productId: z.number().int().positive().optional(),
   description: z.string().min(1),
   price: z.number().nonnegative().finite(),
   quantity: z.number().positive().finite(),
   isTaxable: z.boolean().optional(),
+  costPrice: z.number().nonnegative().optional(),
 });
 
 const CreateWorkOrderBody = z.object({
   customerId: z.number().int().optional(),
   contactName: z.string().max(200).optional(),
   contactPhone: z.string().max(50).optional(),
+  contactEmail: z.string().email().max(200).optional(),
   itemDescription: z.string().min(1).max(500),
+  brand: z.string().max(100).optional(),
+  model: z.string().max(100).optional(),
+  serialNumber: z.string().max(100).optional(),
+  imei: z.string().max(50).optional(),
+  assetTag: z.string().max(50).optional(),
+  colour: z.string().max(50).optional(),
+  conditionReceived: z.string().max(200).optional(),
+  accessoriesReceived: z.string().max(500).optional(),
   problemDescription: z.string().min(1).max(2000),
+  serviceType: z.string().max(100).optional(),
+  serviceChannel: z.enum(["in_store", "on_site", "pickup", "delivery", "remote"]).optional(),
+  priority: z.enum(["low", "normal", "high", "urgent", "emergency"]).optional(),
   assignedStaffId: z.number().int().optional(),
-  items: z.array(WorkOrderItem).default([]),
+  promisedDate: z.coerce.date().optional(),
+  appointmentDate: z.coerce.date().optional(),
+  storageLocation: z.string().max(100).optional(),
+  depositRequired: z.number().nonnegative().optional(),
+  items: z.array(WorkOrderItemSchema).default([]),
   discountType: z.enum(["percent", "fixed"]).optional(),
   discountAmount: z.number().nonnegative().optional(),
-  promisedDate: z.coerce.date().optional(),
   notes: z.string().max(2000).optional(),
+  internalNotes: z.string().max(2000).optional(),
 });
 
 const UpdateWorkOrderBody = z.object({
   customerId: z.number().int().nullable().optional(),
-  status: z.enum(["received", "in_progress", "ready", "collected", "cancelled"]).optional(),
-  diagnosis: z.string().max(2000).optional(),
-  assignedStaffId: z.number().int().nullable().optional(),
-  items: z.array(WorkOrderItem).optional(),
-  discountType: z.enum(["percent", "fixed"]).optional(),
-  discountAmount: z.number().nonnegative().optional(),
-  promisedDate: z.coerce.date().nullable().optional(),
-  notes: z.string().max(2000).optional(),
   contactName: z.string().max(200).optional(),
   contactPhone: z.string().max(50).optional(),
+  contactEmail: z.string().email().max(200).nullable().optional(),
+  status: z.enum(WORK_ORDER_STATUSES).optional(),
   itemDescription: z.string().min(1).max(500).optional(),
+  brand: z.string().max(100).nullable().optional(),
+  model: z.string().max(100).nullable().optional(),
+  serialNumber: z.string().max(100).nullable().optional(),
+  imei: z.string().max(50).nullable().optional(),
+  assetTag: z.string().max(50).nullable().optional(),
+  colour: z.string().max(50).nullable().optional(),
+  conditionReceived: z.string().max(200).nullable().optional(),
+  accessoriesReceived: z.string().max(500).nullable().optional(),
   problemDescription: z.string().min(1).max(2000).optional(),
+  diagnosis: z.string().max(2000).optional(),
+  serviceType: z.string().max(100).nullable().optional(),
+  serviceChannel: z.enum(["in_store", "on_site", "pickup", "delivery", "remote"]).optional(),
+  priority: z.enum(["low", "normal", "high", "urgent", "emergency"]).optional(),
+  assignedStaffId: z.number().int().nullable().optional(),
+  promisedDate: z.coerce.date().nullable().optional(),
+  appointmentDate: z.coerce.date().nullable().optional(),
+  storageLocation: z.string().max(100).nullable().optional(),
+  depositRequired: z.number().nonnegative().nullable().optional(),
+  depositPaid: z.number().nonnegative().optional(),
+  items: z.array(WorkOrderItemSchema).optional(),
+  discountType: z.enum(["percent", "fixed"]).nullable().optional(),
+  discountAmount: z.number().nonnegative().nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+  internalNotes: z.string().max(2000).nullable().optional(),
   convertedOrderId: z.number().int().optional(),
+  statusNote: z.string().max(500).optional(), // optional note attached to status change
 });
 
-// Legal transitions; converting to a sale sets "collected" via convertedOrderId.
-const STATUS_FLOW: Record<string, string[]> = {
-  received: ["in_progress", "ready", "cancelled"],
-  in_progress: ["ready", "received", "cancelled"],
-  ready: ["collected", "in_progress", "cancelled"],
-  collected: [],
-  cancelled: [],
-};
-
-/* ─── Totals (same math as quotations/layaways) ─── */
+/* ─── Financial helpers ──────────────────────────────────────────────────────── */
 async function computeTotals(
   tenantId: number,
   items: Array<{ price: number; quantity: number; isTaxable?: boolean }>,
-  discountInput: number | undefined,
-  discountType: "percent" | "fixed" | undefined,
+  discountInput: number | undefined | null,
+  discountType: "percent" | "fixed" | undefined | null,
 ) {
   const taxRate = parseFloat((await getSetting("tax_rate", tenantId)) || "15") / 100;
   const taxMode = ((await getSetting("tax_mode", tenantId)) ?? "exclusive") as "exclusive" | "inclusive";
@@ -95,7 +157,7 @@ async function computeTotals(
   return { subtotal: r2(subtotal), discount: r2(discount), tax: r2(tax), total: r2(total) };
 }
 
-/* ─── Numbering: WO-YY-NNNN ─── */
+/* ─── Numbering: WO-YY-NNNN ─────────────────────────────────────────────────── */
 async function nextWorkOrderNumber(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   tenantId: number,
@@ -113,24 +175,10 @@ async function nextWorkOrderNumber(
   return `WO-${yy}-${seq}`;
 }
 
-type WorkOrderRow = typeof workOrdersTable.$inferSelect;
-function normalize(
-  w: WorkOrderRow,
-  customerName?: string | null,
-  customerPhone?: string | null,
-  staffName?: string | null,
-) {
-  return {
-    ...w,
-    customerName: customerName ?? undefined,
-    customerPhone: customerPhone ?? undefined,
-    assignedStaffName: staffName ?? undefined,
-  };
-}
-
+/* ─── Validation helpers ─────────────────────────────────────────────────────── */
 async function validateRefs(
   tenantId: number,
-  customerId?: number,
+  customerId?: number | null,
   assignedStaffId?: number | null,
 ): Promise<string | null> {
   if (customerId != null) {
@@ -150,11 +198,35 @@ async function validateRefs(
   return null;
 }
 
-/* ─── Routes ─── */
+/* ─── Work order normalise ───────────────────────────────────────────────────── */
+type WorkOrderRow = typeof workOrdersTable.$inferSelect;
+function normalize(
+  w: WorkOrderRow,
+  customerName?: string | null,
+  customerPhone?: string | null,
+  staffName?: string | null,
+) {
+  return {
+    ...w,
+    customerName: customerName ?? undefined,
+    customerPhone: customerPhone ?? undefined,
+    assignedStaffName: staffName ?? undefined,
+  };
+}
 
+/* ─── Routes ─────────────────────────────────────────────────────────────────── */
+
+// LIST
 router.get("/work-orders", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const status = req.query.status ? String(req.query.status) : undefined;
+  const conditions = [eq(workOrdersTable.tenantId, tenantId)];
+  if (status && status !== "all" && WORK_ORDER_STATUSES.includes(status as WorkOrderStatus)) {
+    conditions.push(eq(workOrdersTable.status, status));
+  }
+
   const rows = await db
     .select({
       workOrder: workOrdersTable,
@@ -163,24 +235,22 @@ router.get("/work-orders", async (req, res): Promise<void> => {
       staffName: staffTable.name,
     })
     .from(workOrdersTable)
-    .leftJoin(
-      customersTable,
-      and(eq(workOrdersTable.customerId, customersTable.id), eq(customersTable.tenantId, tenantId)),
-    )
-    .leftJoin(
-      staffTable,
-      and(eq(workOrdersTable.assignedStaffId, staffTable.id), eq(staffTable.tenantId, tenantId)),
-    )
-    .where(eq(workOrdersTable.tenantId, tenantId))
-    .orderBy(desc(workOrdersTable.createdAt));
+    .leftJoin(customersTable, and(eq(workOrdersTable.customerId, customersTable.id), eq(customersTable.tenantId, tenantId)))
+    .leftJoin(staffTable, and(eq(workOrdersTable.assignedStaffId, staffTable.id), eq(staffTable.tenantId, tenantId)))
+    .where(and(...conditions))
+    .orderBy(desc(workOrdersTable.createdAt))
+    .limit(500);
+
   res.json(rows.map((r) => normalize(r.workOrder, r.customerName, r.customerPhone, r.staffName)));
 });
 
+// GET ONE
 router.get("/work-orders/:id", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
   const [row] = await db
     .select({
       workOrder: workOrdersTable,
@@ -189,19 +259,15 @@ router.get("/work-orders/:id", async (req, res): Promise<void> => {
       staffName: staffTable.name,
     })
     .from(workOrdersTable)
-    .leftJoin(
-      customersTable,
-      and(eq(workOrdersTable.customerId, customersTable.id), eq(customersTable.tenantId, tenantId)),
-    )
-    .leftJoin(
-      staffTable,
-      and(eq(workOrdersTable.assignedStaffId, staffTable.id), eq(staffTable.tenantId, tenantId)),
-    )
+    .leftJoin(customersTable, and(eq(workOrdersTable.customerId, customersTable.id), eq(customersTable.tenantId, tenantId)))
+    .leftJoin(staffTable, and(eq(workOrdersTable.assignedStaffId, staffTable.id), eq(staffTable.tenantId, tenantId)))
     .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
+
   if (!row) { res.status(404).json({ error: "Work order not found" }); return; }
   res.json(normalize(row.workOrder, row.customerName, row.customerPhone, row.staffName));
 });
 
+// CREATE
 router.post("/work-orders", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
@@ -210,6 +276,7 @@ router.post("/work-orders", async (req, res): Promise<void> => {
   const parsed = CreateWorkOrderBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const data = parsed.data;
+
   if (data.customerId == null && !data.contactName) {
     res.status(400).json({ error: "Link a customer or provide a contact name" });
     return;
@@ -229,9 +296,26 @@ router.post("/work-orders", async (req, res): Promise<void> => {
         customerId: data.customerId ?? null,
         contactName: data.contactName ?? null,
         contactPhone: data.contactPhone ?? null,
+        contactEmail: data.contactEmail ?? null,
         itemDescription: data.itemDescription,
+        brand: data.brand ?? null,
+        model: data.model ?? null,
+        serialNumber: data.serialNumber ?? null,
+        imei: data.imei ?? null,
+        assetTag: data.assetTag ?? null,
+        colour: data.colour ?? null,
+        conditionReceived: data.conditionReceived ?? null,
+        accessoriesReceived: data.accessoriesReceived ?? null,
         problemDescription: data.problemDescription,
+        serviceType: data.serviceType ?? null,
+        serviceChannel: data.serviceChannel ?? "in_store",
+        priority: data.priority ?? "normal",
         assignedStaffId: data.assignedStaffId ?? null,
+        promisedDate: data.promisedDate ?? null,
+        appointmentDate: data.appointmentDate ?? null,
+        storageLocation: data.storageLocation ?? null,
+        depositRequired: data.depositRequired ?? null,
+        depositPaid: 0,
         items: data.items,
         subtotal: totals.subtotal,
         discountType: totals.discount > 0 ? (data.discountType ?? "fixed") : null,
@@ -239,15 +323,28 @@ router.post("/work-orders", async (req, res): Promise<void> => {
         tax: totals.tax,
         total: totals.total,
         status: "received",
-        promisedDate: data.promisedDate ?? null,
         notes: data.notes ?? null,
+        internalNotes: data.internalNotes ?? null,
       })
       .returning();
+
+    // Seed initial status history
+    await tx.insert(workOrderStatusHistoryTable).values({
+      tenantId,
+      workOrderId: created.id,
+      fromStatus: null,
+      toStatus: "received",
+      changedByName: "System",
+      note: "Work order created",
+    });
+
     return created;
   });
+
   res.status(201).json(normalize(row));
 });
 
+// UPDATE
 router.patch("/work-orders/:id", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
@@ -265,58 +362,51 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
     .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
   if (!existing) { res.status(404).json({ error: "Work order not found" }); return; }
 
+  // Validate status transition
   if (data.status && data.status !== existing.status) {
-    // Setting convertedOrderId (checkout) may jump to collected, but only from
-    // an active working state — never resurrect cancelled/collected orders or
-    // skip intake entirely from "received".
-    const allowed = STATUS_FLOW[existing.status] ?? [];
+    const allowed = STATUS_FLOW[existing.status as WorkOrderStatus] ?? [];
     const isConversion =
       data.convertedOrderId != null &&
       data.status === "collected" &&
-      (existing.status === "ready" || existing.status === "in_progress");
+      (existing.status === "ready" || existing.status === "in_progress" || existing.status === "awaiting_parts");
     if (!allowed.includes(data.status) && !isConversion) {
       res.status(400).json({ error: `Cannot move from ${existing.status} to ${data.status}` });
       return;
     }
   }
   if (existing.status === "collected" || existing.status === "cancelled") {
-    // Terminal states: only allow note edits.
-    const touched = Object.keys(data).filter((k) => k !== "notes");
+    const touched = Object.keys(data).filter((k) => !["notes", "internalNotes"].includes(k));
     if (touched.length > 0) {
       res.status(400).json({ error: "This work order is closed" });
       return;
     }
   }
 
-  const refError = await validateRefs(
-    tenantId,
-    data.customerId ?? undefined,
-    data.assignedStaffId ?? undefined,
-  );
+  const refError = await validateRefs(tenantId, data.customerId ?? undefined, data.assignedStaffId ?? undefined);
   if (refError) { res.status(400).json({ error: refError }); return; }
 
   const updates: Partial<typeof workOrdersTable.$inferInsert> = { updatedAt: new Date() };
-  if (data.customerId !== undefined) updates.customerId = data.customerId;
-  if (data.status !== undefined) updates.status = data.status;
-  if (data.diagnosis !== undefined) updates.diagnosis = data.diagnosis;
-  if (data.assignedStaffId !== undefined) updates.assignedStaffId = data.assignedStaffId;
-  if (data.promisedDate !== undefined) updates.promisedDate = data.promisedDate;
-  if (data.notes !== undefined) updates.notes = data.notes;
-  if (data.contactName !== undefined) updates.contactName = data.contactName;
-  if (data.contactPhone !== undefined) updates.contactPhone = data.contactPhone;
-  if (data.itemDescription !== undefined) updates.itemDescription = data.itemDescription;
-  if (data.problemDescription !== undefined) updates.problemDescription = data.problemDescription;
-  if (data.convertedOrderId !== undefined) updates.convertedOrderId = data.convertedOrderId;
+  const textFields = [
+    "customerId", "status", "diagnosis", "assignedStaffId", "promisedDate", "appointmentDate",
+    "notes", "internalNotes", "contactName", "contactPhone", "contactEmail",
+    "itemDescription", "problemDescription", "convertedOrderId", "brand", "model",
+    "serialNumber", "imei", "assetTag", "colour", "conditionReceived", "accessoriesReceived",
+    "serviceType", "serviceChannel", "priority", "storageLocation",
+    "depositRequired", "depositPaid",
+  ] as const;
+  for (const f of textFields) {
+    if (data[f] !== undefined) (updates as Record<string, unknown>)[f] = data[f];
+  }
 
   if (data.items !== undefined || data.discountAmount !== undefined || data.discountType !== undefined) {
     const items = data.items ?? existing.items;
     const totals = await computeTotals(
       tenantId,
-      items,
-      data.discountAmount ?? existing.discountAmount ?? undefined,
+      items ?? [],
+      data.discountAmount ?? existing.discountAmount,
       (data.discountType ?? existing.discountType ?? undefined) as "percent" | "fixed" | undefined,
     );
-    updates.items = items;
+    updates.items = items ?? [];
     updates.subtotal = totals.subtotal;
     updates.discountType = totals.discount > 0 ? (data.discountType ?? existing.discountType ?? "fixed") : null;
     updates.discountAmount = totals.discount > 0 ? totals.discount : null;
@@ -324,26 +414,281 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
     updates.total = totals.total;
   }
 
-  const [row] = await db
-    .update(workOrdersTable)
-    .set(updates)
-    .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)))
-    .returning();
+  const staffId = getStaffId(req as never);
+
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(workOrdersTable)
+      .set(updates)
+      .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)))
+      .returning();
+
+    // Record status change in history
+    if (data.status && data.status !== existing.status) {
+      let staffName: string | null = null;
+      if (staffId) {
+        const [s] = await tx.select({ name: staffTable.name }).from(staffTable)
+          .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)));
+        staffName = s?.name ?? null;
+      }
+      await tx.insert(workOrderStatusHistoryTable).values({
+        tenantId,
+        workOrderId: id,
+        fromStatus: existing.status,
+        toStatus: data.status,
+        changedByStaffId: staffId,
+        changedByName: staffName,
+        note: data.statusNote ?? null,
+      });
+    }
+    return updated;
+  });
+
   res.json(normalize(row));
 });
 
+// DELETE
 router.delete("/work-orders/:id", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-  const [row] = await db
-    .delete(workOrdersTable)
-    .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)))
-    .returning();
-  if (!row) { res.status(404).json({ error: "Work order not found" }); return; }
+
+  const [existing] = await db.select().from(workOrdersTable)
+    .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
+  if (!existing) { res.status(404).json({ error: "Work order not found" }); return; }
+  if (existing.status !== "cancelled" && existing.status !== "received") {
+    res.status(400).json({ error: "Only received or cancelled work orders can be deleted" });
+    return;
+  }
+
+  await db.delete(workOrdersTable)
+    .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
   res.sendStatus(204);
+});
+
+/* ─── Notes ─────────────────────────────────────────────────────────────────── */
+
+router.get("/work-orders/:id/notes", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const notes = await db
+    .select()
+    .from(workOrderNotesTable)
+    .where(and(eq(workOrderNotesTable.workOrderId, id), eq(workOrderNotesTable.tenantId, tenantId)))
+    .orderBy(desc(workOrderNotesTable.createdAt));
+  res.json(notes);
+});
+
+const CreateNoteBody = z.object({
+  content: z.string().min(1).max(5000),
+  isInternal: z.boolean().optional().default(true),
+});
+
+router.post("/work-orders/:id/notes", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = CreateNoteBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  // Verify work order exists and belongs to tenant
+  const [wo] = await db.select({ id: workOrdersTable.id })
+    .from(workOrdersTable)
+    .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
+  if (!wo) { res.status(404).json({ error: "Work order not found" }); return; }
+
+  const staffId = getStaffId(req as never);
+  let staffName: string | null = null;
+  if (staffId) {
+    const [s] = await db.select({ name: staffTable.name }).from(staffTable)
+      .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)));
+    staffName = s?.name ?? null;
+  }
+
+  const [note] = await db.insert(workOrderNotesTable)
+    .values({
+      tenantId,
+      workOrderId: id,
+      authorStaffId: staffId,
+      authorName: staffName,
+      content: parsed.data.content,
+      isInternal: parsed.data.isInternal ?? true,
+    })
+    .returning();
+  res.status(201).json(note);
+});
+
+router.delete("/work-orders/:id/notes/:noteId", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const noteId = parseInt(String(req.params.noteId), 10);
+  if (!Number.isInteger(noteId)) { res.status(400).json({ error: "Invalid note id" }); return; }
+
+  const [deleted] = await db.delete(workOrderNotesTable)
+    .where(and(eq(workOrderNotesTable.id, noteId), eq(workOrderNotesTable.tenantId, tenantId)))
+    .returning();
+  if (!deleted) { res.status(404).json({ error: "Note not found" }); return; }
+  res.sendStatus(204);
+});
+
+/* ─── Status History ─────────────────────────────────────────────────────────── */
+
+router.get("/work-orders/:id/history", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const rows = await db
+    .select()
+    .from(workOrderStatusHistoryTable)
+    .where(and(eq(workOrderStatusHistoryTable.workOrderId, id), eq(workOrderStatusHistoryTable.tenantId, tenantId)))
+    .orderBy(workOrderStatusHistoryTable.createdAt);
+  res.json(rows);
+});
+
+/* ─── Appointments ───────────────────────────────────────────────────────────── */
+
+router.get("/work-orders/:id/appointments", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const rows = await db
+    .select()
+    .from(workOrderAppointmentsTable)
+    .where(and(eq(workOrderAppointmentsTable.workOrderId, id), eq(workOrderAppointmentsTable.tenantId, tenantId)))
+    .orderBy(workOrderAppointmentsTable.startTime);
+  res.json(rows);
+});
+
+const CreateAppointmentBody = z.object({
+  appointmentType: z.enum(["assessment", "repair", "installation", "site_visit", "pickup", "delivery", "follow_up"]).default("repair"),
+  staffId: z.number().int().optional(),
+  startTime: z.coerce.date(),
+  endTime: z.coerce.date().optional(),
+  notes: z.string().max(1000).optional(),
+});
+
+router.post("/work-orders/:id/appointments", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = CreateAppointmentBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const [wo] = await db.select({ id: workOrdersTable.id }).from(workOrdersTable)
+    .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
+  if (!wo) { res.status(404).json({ error: "Work order not found" }); return; }
+
+  const [appt] = await db.insert(workOrderAppointmentsTable)
+    .values({
+      tenantId,
+      workOrderId: id,
+      staffId: parsed.data.staffId ?? null,
+      appointmentType: parsed.data.appointmentType,
+      startTime: parsed.data.startTime,
+      endTime: parsed.data.endTime ?? null,
+      notes: parsed.data.notes ?? null,
+      status: "scheduled",
+    })
+    .returning();
+  res.status(201).json(appt);
+});
+
+router.patch("/work-orders/:id/appointments/:apptId", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const apptId = parseInt(String(req.params.apptId), 10);
+  if (!Number.isInteger(apptId)) { res.status(400).json({ error: "Invalid appointment id" }); return; }
+
+  const PatchAppt = z.object({
+    appointmentType: z.enum(["assessment", "repair", "installation", "site_visit", "pickup", "delivery", "follow_up"]).optional(),
+    staffId: z.number().int().nullable().optional(),
+    startTime: z.coerce.date().optional(),
+    endTime: z.coerce.date().nullable().optional(),
+    notes: z.string().max(1000).nullable().optional(),
+    status: z.enum(["scheduled", "confirmed", "in_progress", "completed", "cancelled", "no_show"]).optional(),
+  });
+  const parsed = PatchAppt.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const [existing] = await db.select().from(workOrderAppointmentsTable)
+    .where(and(eq(workOrderAppointmentsTable.id, apptId), eq(workOrderAppointmentsTable.tenantId, tenantId)));
+  if (!existing) { res.status(404).json({ error: "Appointment not found" }); return; }
+
+  const updates: Partial<typeof workOrderAppointmentsTable.$inferInsert> = { updatedAt: new Date() };
+  if (parsed.data.appointmentType !== undefined) updates.appointmentType = parsed.data.appointmentType;
+  if (parsed.data.staffId !== undefined) updates.staffId = parsed.data.staffId;
+  if (parsed.data.startTime !== undefined) updates.startTime = parsed.data.startTime;
+  if (parsed.data.endTime !== undefined) updates.endTime = parsed.data.endTime;
+  if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
+  if (parsed.data.status !== undefined) updates.status = parsed.data.status;
+
+  const [updated] = await db.update(workOrderAppointmentsTable)
+    .set(updates)
+    .where(and(eq(workOrderAppointmentsTable.id, apptId), eq(workOrderAppointmentsTable.tenantId, tenantId)))
+    .returning();
+  res.json(updated);
+});
+
+router.delete("/work-orders/:id/appointments/:apptId", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const apptId = parseInt(String(req.params.apptId), 10);
+  if (!Number.isInteger(apptId)) { res.status(400).json({ error: "Invalid appointment id" }); return; }
+
+  const [deleted] = await db.delete(workOrderAppointmentsTable)
+    .where(and(eq(workOrderAppointmentsTable.id, apptId), eq(workOrderAppointmentsTable.tenantId, tenantId)))
+    .returning();
+  if (!deleted) { res.status(404).json({ error: "Appointment not found" }); return; }
+  res.sendStatus(204);
+});
+
+/* ─── Dashboard stats ─────────────────────────────────────────────────────────── */
+
+router.get("/work-orders-stats", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const counts = await db
+    .select({ status: workOrdersTable.status, cnt: sql<number>`cast(count(*) as int)` })
+    .from(workOrdersTable)
+    .where(eq(workOrdersTable.tenantId, tenantId))
+    .groupBy(workOrdersTable.status);
+
+  const byStatus = Object.fromEntries(counts.map((r) => [r.status, r.cnt]));
+  const activeStatuses: WorkOrderStatus[] = ["received", "in_progress", "awaiting_parts", "on_hold", "ready"];
+  const activeCount = activeStatuses.reduce((s, k) => s + (byStatus[k] ?? 0), 0);
+
+  // Revenue from collected work orders this month
+  const monthStart = new Date();
+  monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const [rev] = await db
+    .select({ total: sql<number>`coalesce(sum(total), 0)` })
+    .from(workOrdersTable)
+    .where(and(
+      eq(workOrdersTable.tenantId, tenantId),
+      eq(workOrdersTable.status, "collected"),
+      gte(workOrdersTable.updatedAt, monthStart),
+    ));
+
+  res.json({ byStatus, activeCount, revenueThisMonth: Number(rev?.total ?? 0) });
 });
 
 export default router;

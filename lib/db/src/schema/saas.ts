@@ -316,6 +316,38 @@ export const subscriptionCouponRedemptionsTable = pgTable("subscription_coupon_r
 
 export type SubscriptionCouponRedemption = typeof subscriptionCouponRedemptionsTable.$inferSelect;
 
+// ─── Add-on subscriptions ─────────────────────────────────────────────────────
+// Purchasable add-ons (e.g. Work Orders at $5/mo) sold on top of a base plan.
+export const subscriptionAddonsTable = pgTable("subscription_addons", {
+  id: serial("id").primaryKey(),
+  slug: text("slug").notNull().unique(), // e.g. "work_orders"
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  priceMonthly: real("price_monthly").notNull(),
+  priceAnnual: real("price_annual").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type SubscriptionAddon = typeof subscriptionAddonsTable.$inferSelect;
+
+export const tenantAddonsTable = pgTable("tenant_addons", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id, { onDelete: "cascade" }),
+  addonSlug: text("addon_slug").notNull(),
+  billingCycle: text("billing_cycle").notNull().default("monthly"), // monthly | annual
+  status: text("status").notNull().default("active"), // active | cancelled | expired
+  currentPeriodStart: timestamp("current_period_start", { withTimezone: true }).notNull().defaultNow(),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull().defaultNow(),
+  provider: text("provider"),         // powertranz | paypal | manual
+  providerRef: text("provider_ref"),
+  amount: real("amount"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tenantSlugUniq: uniqueIndex("tenant_addons_tenant_slug_unique").on(t.tenantId, t.addonSlug),
+}));
+export type TenantAddon = typeof tenantAddonsTable.$inferSelect;
+
 export const bankTransferProofsTable = pgTable("bank_transfer_proofs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenantsTable.id),
