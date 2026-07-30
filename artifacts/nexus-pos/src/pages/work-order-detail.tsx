@@ -131,7 +131,10 @@ export default function WorkOrderDetailPage() {
 
   const handlePrintJobCard = () => {
     if (!wo) return;
-    const html = generateJobCard(wo, { businessName: profile?.businessName, currency });
+    const portalUrl = wo.portalToken
+      ? `${window.location.origin}/wo/${wo.id}/${wo.portalToken}`
+      : undefined;
+    const html = generateJobCard(wo, { businessName: profile?.businessName, currency, portalUrl });
     const win = window.open("", "_blank");
     if (win) { win.document.write(html); win.document.close(); }
     else { toast({ title: "Pop-up blocked", description: "Allow pop-ups to print the job card", variant: "destructive" }); }

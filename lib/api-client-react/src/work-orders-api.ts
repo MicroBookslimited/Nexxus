@@ -63,6 +63,7 @@ export type WorkOrder = {
   notes: string | null;
   internalNotes: string | null;
   convertedOrderId: number | null;
+  portalToken?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -108,6 +109,46 @@ export type WorkOrderStats = {
   byStatus: Record<string, number>;
   activeCount: number;
   revenueThisMonth: number;
+};
+
+export type WorkOrderCalendarEntry = {
+  id: number;
+  workOrderId: number;
+  workOrderNumber: string;
+  appointmentType: string;
+  startTime: string;
+  endTime: string | null;
+  status: string;
+  notes: string | null;
+  staffId: number | null;
+  woStatus: string;
+  itemDescription: string;
+  customerName: string | null;
+  priority: string;
+};
+
+export type WorkOrderReports = {
+  monthly: Array<{ month: string; monthSort: string; revenue: number; count: number }>;
+  byServiceType: Array<{ serviceType: string | null; count: number }>;
+  totalCompleted: number;
+  avgJobValue: number;
+  totalRevenue: number;
+};
+
+export type PublicWorkOrder = {
+  workOrderNumber: string;
+  status: string;
+  itemDescription: string;
+  brand: string | null;
+  model: string | null;
+  serialNumber: string | null;
+  problemDescription: string;
+  promisedDate: string | null;
+  total: number;
+  depositPaid: number;
+  createdAt: string;
+  updatedAt: string;
+  notes: Array<{ content: string; createdAt: string }>;
 };
 
 export type CreateWorkOrderInput = {
@@ -335,5 +376,45 @@ export function useDeleteWorkOrderAppointment() {
       }),
     onSuccess: (_, vars) =>
       qc.invalidateQueries({ queryKey: [WO_KEY, vars.workOrderId, "appointments"] }),
+  });
+}
+
+// ─── Calendar (aggregated across all work orders) ─────────────────────────────
+
+export function useWorkOrderCalendar(start: string, end: string) {
+  return useQuery<WorkOrderCalendarEntry[]>({
+    queryKey: [WO_KEY, "calendar", start, end],
+    queryFn: () =>
+      customFetch<WorkOrderCalendarEntry[]>(
+        `/api/work-order-appointments?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+      ),
+    enabled: !!start && !!end,
+  });
+}
+
+// ─── Reports ──────────────────────────────────────────────────────────────────
+
+export function useWorkOrderReports() {
+  return useQuery<WorkOrderReports>({
+    queryKey: [WO_KEY, "reports"],
+    queryFn: () => customFetch<WorkOrderReports>("/api/work-orders-reports"),
+  });
+}
+
+// ─── Public portal (no auth header) ──────────────────────────────────────────
+
+export function usePublicWorkOrder(id: number | null, token: string | null) {
+  return useQuery<PublicWorkOrder>({
+    queryKey: ["public-wo", id, token],
+    queryFn: async () => {
+      const res = await fetch(`/api/public/work-orders/${id}/${token}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Not found");
+      }
+      return res.json() as Promise<PublicWorkOrder>;
+    },
+    enabled: id != null && !!token,
+    retry: false,
   });
 }

@@ -6,9 +6,11 @@ import {
   useGetDailySales,
   useGetTopProducts,
   useGetPaymentMethodBreakdown,
+  useWorkOrderStats,
+  useGetSettings,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, ShoppingBag, Package, TrendingUp, ArrowUpRight, ShieldOff } from "lucide-react";
+import { DollarSign, ShoppingBag, Package, TrendingUp, ArrowUpRight, ShieldOff, Wrench } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
@@ -150,6 +152,9 @@ function DashboardContent() {
   const { data: dailySales, isLoading: loadingDaily } = useGetDailySales({ days: 7 });
   const { data: topProducts, isLoading: loadingTop } = useGetTopProducts({ limit: 5 });
   const { data: paymentMethods, isLoading: loadingPayments } = useGetPaymentMethodBreakdown();
+  const { data: settings } = useGetSettings();
+  const workOrdersEnabled = settings?.work_orders_enabled === "true";
+  const { data: woStats } = useWorkOrderStats();
 
   const dailyChartData = (dailySales ?? []).map((d) => ({
     date: format(parseISO(d.date), "MMM d"),
@@ -213,6 +218,11 @@ function DashboardContent() {
               loading={loadingSummary}
             />
           </div>
+
+          {/* Work Orders widget */}
+          {workOrdersEnabled && woStats && (
+            <WorkOrdersWidget woStats={woStats} />
+          )}
 
           {/* Revenue chart */}
           <Card>
@@ -485,5 +495,58 @@ function DashboardContent() {
         </div>
       )}
     </motion.div>
+  );
+}
+
+// ─── Work Orders Dashboard Widget ────────────────────────────────────────────
+function WorkOrdersWidget({ woStats }: { woStats: { byStatus: Record<string, number>; activeCount: number; revenueThisMonth: number } }) {
+  const [, setLocation] = useLocation();
+
+  const readyCount = woStats.byStatus["ready"] ?? 0;
+  const inProgressCount = (woStats.byStatus["in_progress"] ?? 0) + (woStats.byStatus["awaiting_parts"] ?? 0);
+  const onHoldCount = woStats.byStatus["on_hold"] ?? 0;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-amber-500/15 flex items-center justify-center">
+              <Wrench className="h-4 w-4 text-amber-600" />
+            </div>
+            <CardTitle className="text-base">Work Orders</CardTitle>
+          </div>
+          <Button size="sm" variant="ghost" className="text-xs" onClick={() => setLocation("/work-orders")}>
+            View all <ArrowUpRight className="ml-1 h-3 w-3" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl bg-muted/40 p-3 text-center">
+            <p className="text-2xl font-bold">{woStats.activeCount}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Active</p>
+          </div>
+          <div className="rounded-xl bg-amber-500/10 p-3 text-center">
+            <p className="text-2xl font-bold text-amber-600">{inProgressCount}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">In Progress</p>
+          </div>
+          <div className="rounded-xl bg-emerald-500/10 p-3 text-center">
+            <p className="text-2xl font-bold text-emerald-600">{readyCount}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Ready for Pickup</p>
+          </div>
+          <div className="rounded-xl bg-slate-500/10 p-3 text-center">
+            <p className="text-2xl font-bold text-slate-500">{onHoldCount}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">On Hold</p>
+          </div>
+        </div>
+        {woStats.revenueThisMonth > 0 && (
+          <p className="mt-3 text-xs text-muted-foreground text-right">
+            <span className="font-medium text-foreground">{formatCurrency(woStats.revenueThisMonth)}</span>{" "}
+            collected this month
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

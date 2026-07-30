@@ -75,7 +75,7 @@ function escHtml(s: string): string {
 
 export function generateJobCard(
   wo: JobCardWorkOrder,
-  opts: { businessName?: string | null; currency?: string },
+  opts: { businessName?: string | null; currency?: string; portalUrl?: string | null },
 ): string {
   const currency = opts.currency || "JMD";
   const clientName = wo.customerName || wo.contactName || "Walk-in";
@@ -227,6 +227,15 @@ ${wo.notes ? `<h2>Notes</h2><div style="padding:6px;border:1px solid #ddd;border
   <svg id="wo-barcode"></svg>
   <div style="font-size:10px;color:#555;margin-top:2px">${escHtml(wo.workOrderNumber)}</div>
 </div>
+
+${opts.portalUrl ? `
+<div style="margin-top:16px;border-top:1px solid #ddd;padding-top:12px;display:flex;align-items:center;gap:16px">
+  <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(opts.portalUrl)}" width="80" height="80" alt="QR code" style="border:1px solid #ddd;border-radius:4px;flex-shrink:0" />
+  <div style="font-size:10px;color:#555">
+    <div style="font-weight:700;margin-bottom:2px">Check repair status online</div>
+    <div style="word-break:break-all;color:#888">${escHtml(opts.portalUrl)}</div>
+  </div>
+</div>` : ""}
 
 <script>
   document.addEventListener("DOMContentLoaded", function() {

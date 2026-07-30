@@ -5,9 +5,11 @@ import {
   useGetSettings,
   useWorkOrderStats,
   useUpdateWorkOrder,
+  useWorkOrderCalendar,
+  useWorkOrderReports,
 } from "@workspace/api-client-react";
-import type { WorkOrder, WorkOrderStatus } from "@workspace/api-client-react";
-import { Card, CardContent } from "@/components/ui/card";
+import type { WorkOrder, WorkOrderStatus, WorkOrderCalendarEntry } from "@workspace/api-client-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Wrench, Search, Plus, Eye, ShoppingCart, LayoutGrid, List,
   Clock, CheckCircle2, Package, Pause, AlertTriangle, TrendingUp,
+  CalendarDays, BarChart2, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { CreateWorkOrderDialog } from "@/components/work-orders/CreateWorkOrderDialog";
 
@@ -96,7 +99,7 @@ export default function WorkOrdersPage() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | WorkOrderStatus>("all");
-  const [view, setView] = useState<"list" | "kanban">("list");
+  const [view, setView] = useState<"list" | "kanban" | "calendar" | "reports">("list");
   const [showCreate, setShowCreate] = useState(false);
 
   const filtered = useMemo(() => {
@@ -180,20 +183,21 @@ export default function WorkOrdersPage() {
         </div>
         <div className="flex gap-2">
           <div className="flex border rounded-md overflow-hidden">
-            <button
-              className={`px-3 py-1.5 text-xs font-medium ${view === "list" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
-              onClick={() => setView("list")}
-              title="List view"
-            >
-              <List className="h-4 w-4" />
-            </button>
-            <button
-              className={`px-3 py-1.5 text-xs font-medium ${view === "kanban" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
-              onClick={() => setView("kanban")}
-              title="Board view"
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
+            {([
+              { id: "list",     icon: List,         title: "List view" },
+              { id: "kanban",   icon: LayoutGrid,   title: "Board view" },
+              { id: "calendar", icon: CalendarDays, title: "Calendar view" },
+              { id: "reports",  icon: BarChart2,    title: "Reports" },
+            ] as const).map(({ id, icon: Icon, title }) => (
+              <button
+                key={id}
+                className={`px-3 py-1.5 text-xs font-medium ${view === id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                onClick={() => setView(id)}
+                title={title}
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            ))}
           </div>
           <Button onClick={() => setShowCreate(true)}>
             <Plus className="h-4 w-4 mr-1" /> New Work Order
@@ -270,7 +274,7 @@ export default function WorkOrdersPage() {
             </div>
           )}
         </>
-      ) : (
+      ) : view === "kanban" ? (
         /* ── Kanban Board ── */
         <KanbanBoard
           workOrders={workOrders ?? []}
@@ -282,6 +286,10 @@ export default function WorkOrdersPage() {
           search={search}
           onSearchChange={setSearch}
         />
+      ) : view === "calendar" ? (
+        <CalendarView currency={currency} onOpen={openDetail} />
+      ) : (
+        <ReportsView currency={currency} />
       )}
 
       <CreateWorkOrderDialog
@@ -292,6 +300,220 @@ export default function WorkOrdersPage() {
           setLocation(`/work-orders/${wo.id}`);
         }}
       />
+    </div>
+  );
+}
+
+/* ── Calendar View ── */
+const APPT_COLORS: Record<string, string> = {
+  assessment:   "bg-blue-500/15 text-blue-700 border-blue-500/30",
+  repair:       "bg-amber-500/15 text-amber-700 border-amber-500/30",
+  installation: "bg-emerald-500/15 text-emerald-700 border-emerald-500/30",
+  site_visit:   "bg-violet-500/15 text-violet-700 border-violet-500/30",
+  pickup:       "bg-sky-500/15 text-sky-700 border-sky-500/30",
+  delivery:     "bg-orange-500/15 text-orange-700 border-orange-500/30",
+  follow_up:    "bg-slate-500/15 text-slate-600 border-slate-500/30",
+};
+
+function CalendarView({ onOpen }: { currency: string; onOpen: (id: number) => void }) {
+  const [weekOffset, setWeekOffset] = useState(0);
+
+  const { weekStart, weekEnd, days } = useMemo(() => {
+    const now = new Date();
+    const dow = now.getDay(); // 0=Sun
+    const diffToMon = dow === 0 ? -6 : 1 - dow;
+    const start = new Date(now);
+    start.setDate(now.getDate() + diffToMon + weekOffset * 7);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 7);
+    return {
+      weekStart: start,
+      weekEnd: end,
+      days: Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        return d;
+      }),
+    };
+  }, [weekOffset]);
+
+  const { data: appointments, isLoading } = useWorkOrderCalendar(
+    weekStart.toISOString(),
+    weekEnd.toISOString(),
+  );
+
+  const byDay = useMemo(() => {
+    const map = new Map<string, WorkOrderCalendarEntry[]>();
+    for (const a of appointments ?? []) {
+      const key = new Date(a.startTime).toDateString();
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(a);
+    }
+    return map;
+  }, [appointments]);
+
+  const fmtTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+
+  const today = new Date().toDateString();
+  const weekLabel = `${days[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${days[6].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+
+  return (
+    <div className="space-y-3">
+      {/* Navigation */}
+      <div className="flex items-center gap-3">
+        <Button size="sm" variant="outline" onClick={() => setWeekOffset((w) => w - 1)}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <span className="flex-1 text-center text-sm font-medium">{weekLabel}</span>
+        {weekOffset !== 0 && (
+          <Button size="sm" variant="outline" onClick={() => setWeekOffset(0)}>Today</Button>
+        )}
+        <Button size="sm" variant="outline" onClick={() => setWeekOffset((w) => w + 1)}>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <p className="py-12 text-center text-sm text-muted-foreground">Loading appointments…</p>
+      ) : (
+        <div className="grid grid-cols-7 gap-1 min-w-[600px] overflow-x-auto">
+          {days.map((day, i) => {
+            const key = day.toDateString();
+            const dayAppts = byDay.get(key) ?? [];
+            const isToday = key === today;
+            return (
+              <div key={i} className="min-h-[140px] rounded-lg border overflow-hidden">
+                <div className={`px-2 py-1.5 text-center border-b ${isToday ? "bg-primary text-primary-foreground" : "bg-muted/40"}`}>
+                  <p className="text-xs font-semibold">
+                    {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}
+                  </p>
+                  <p className="text-base font-bold leading-tight">{day.getDate()}</p>
+                </div>
+                <div className="p-1 space-y-1">
+                  {dayAppts.length === 0 && (
+                    <p className="text-center text-xs text-muted-foreground/50 py-2">—</p>
+                  )}
+                  {dayAppts.map((a) => {
+                    const color = APPT_COLORS[a.appointmentType] ?? APPT_COLORS["follow_up"];
+                    return (
+                      <button
+                        key={a.id}
+                        onClick={() => onOpen(a.workOrderId)}
+                        className={`w-full text-left rounded px-1.5 py-1 border text-xs ${color} hover:opacity-80 transition-opacity`}
+                      >
+                        <p className="font-semibold font-mono truncate">{a.workOrderNumber}</p>
+                        <p className="truncate opacity-80">{a.itemDescription}</p>
+                        <p className="opacity-70">{fmtTime(a.startTime)}</p>
+                        <p className="capitalize opacity-60">{a.appointmentType.replace("_", " ")}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!isLoading && (appointments?.length ?? 0) === 0 && (
+        <p className="text-center text-sm text-muted-foreground pb-4">
+          No appointments scheduled this week.
+          <br />
+          <span className="text-xs">Add appointments from any work order's Appointments tab.</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ── Reports View ── */
+function ReportsView({ currency }: { currency: string }) {
+  const { data: reports, isLoading } = useWorkOrderReports();
+
+  if (isLoading) return <p className="py-12 text-center text-sm text-muted-foreground">Loading reports…</p>;
+  if (!reports) return null;
+
+  const maxRevenue = Math.max(...reports.monthly.map((m) => m.revenue), 1);
+  const totalTypes = reports.byServiceType.reduce((s, t) => s + t.count, 0) || 1;
+
+  return (
+    <div className="space-y-5">
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[
+          { label: "Jobs collected (all time)", value: reports.totalCompleted.toString() },
+          { label: "Avg job value", value: formatCurrency(reports.avgJobValue, currency) },
+          { label: "Total revenue (all time)", value: formatCurrency(reports.totalRevenue, currency) },
+        ].map(({ label, value }) => (
+          <Card key={label}>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground mb-1">{label}</p>
+              <p className="text-2xl font-bold">{value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Monthly revenue bar chart */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Monthly Revenue (Collected)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {reports.monthly.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">No collected jobs yet.</p>
+          ) : (
+            <div className="flex items-end gap-2 h-36">
+              {reports.monthly.map((m) => (
+                <div key={m.monthSort} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                  <div className="w-full relative group">
+                    <div
+                      className="w-full bg-primary/80 rounded-t-sm hover:bg-primary transition-colors"
+                      style={{ height: `${Math.max(4, (m.revenue / maxRevenue) * 120)}px` }}
+                    />
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-popover border rounded px-2 py-1 text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none shadow z-10">
+                      {formatCurrency(m.revenue, currency)} · {m.count} job{m.count !== 1 ? "s" : ""}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate w-full text-center">{m.month}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* By service type */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Jobs by Service Type</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2.5">
+          {reports.byServiceType.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No data yet.</p>
+          ) : (
+            reports.byServiceType
+              .sort((a, b) => b.count - a.count)
+              .map((t) => {
+                const label = t.serviceType ?? "Unspecified";
+                const pct = Math.round((t.count / totalTypes) * 100);
+                return (
+                  <div key={label} className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">{label}</span>
+                      <span className="font-medium">{t.count} <span className="text-muted-foreground text-xs">({pct}%)</span></span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full bg-primary/70 rounded-full" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

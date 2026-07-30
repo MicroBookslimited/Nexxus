@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, desc, sql, inArray } from "drizzle-orm";
+import { and, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
+import { createHmac } from "crypto";
 import {
   db,
   workOrdersTable,
@@ -200,6 +201,12 @@ async function validateRefs(
 
 /* ─── Work order normalise ───────────────────────────────────────────────────── */
 type WorkOrderRow = typeof workOrdersTable.$inferSelect;
+/* ─── HMAC portal token (lets customers check their own job status) ────────── */
+function makePortalToken(woId: number, tenantId: number): string {
+  const secret = process.env["SESSION_SECRET"] ?? "nexus-pos-secret";
+  return createHmac("sha256", secret).update(`wo:${woId}:${tenantId}`).digest("hex").slice(0, 16);
+}
+
 function normalize(
   w: WorkOrderRow,
   customerName?: string | null,
@@ -211,6 +218,7 @@ function normalize(
     customerName: customerName ?? undefined,
     customerPhone: customerPhone ?? undefined,
     assignedStaffName: staffName ?? undefined,
+    portalToken: makePortalToken(w.id, w.tenantId),
   };
 }
 
@@ -661,6 +669,152 @@ router.delete("/work-orders/:id/appointments/:apptId", async (req, res): Promise
 });
 
 /* ─── Dashboard stats ─────────────────────────────────────────────────────────── */
+
+/* ─── Aggregated appointments (calendar feed) ─────────────────────────────── */
+router.get("/work-order-appointments", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const now = new Date();
+  const dow = now.getDay();
+  const defaultStart = new Date(now);
+  defaultStart.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+  defaultStart.setHours(0, 0, 0, 0);
+  const defaultEnd = new Date(defaultStart);
+  defaultEnd.setDate(defaultStart.getDate() + 7);
+
+  const startRaw = req.query["start"] as string | undefined;
+  const endRaw = req.query["end"] as string | undefined;
+  const startDate = startRaw ? new Date(startRaw) : defaultStart;
+  const endDate = endRaw ? new Date(endRaw) : defaultEnd;
+
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    res.status(400).json({ error: "Invalid date range" }); return;
+  }
+
+  const rows = await db
+    .select({
+      id: workOrderAppointmentsTable.id,
+      workOrderId: workOrderAppointmentsTable.workOrderId,
+      appointmentType: workOrderAppointmentsTable.appointmentType,
+      startTime: workOrderAppointmentsTable.startTime,
+      endTime: workOrderAppointmentsTable.endTime,
+      status: workOrderAppointmentsTable.status,
+      notes: workOrderAppointmentsTable.notes,
+      staffId: workOrderAppointmentsTable.staffId,
+      workOrderNumber: workOrdersTable.workOrderNumber,
+      woStatus: workOrdersTable.status,
+      itemDescription: workOrdersTable.itemDescription,
+      customerName: workOrdersTable.contactName,
+      priority: workOrdersTable.priority,
+    })
+    .from(workOrderAppointmentsTable)
+    .innerJoin(workOrdersTable, eq(workOrderAppointmentsTable.workOrderId, workOrdersTable.id))
+    .where(and(
+      eq(workOrderAppointmentsTable.tenantId, tenantId),
+      gte(workOrderAppointmentsTable.startTime, startDate),
+      lte(workOrderAppointmentsTable.startTime, endDate),
+    ))
+    .orderBy(workOrderAppointmentsTable.startTime);
+
+  res.json(rows);
+});
+
+/* ─── Work orders reports (monthly trend + breakdown) ─────────────────────── */
+router.get("/work-orders-reports", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+  sixMonthsAgo.setDate(1); sixMonthsAgo.setHours(0, 0, 0, 0);
+
+  const monthly = await db
+    .select({
+      month: sql<string>`to_char(updated_at AT TIME ZONE 'UTC', 'Mon YY')`,
+      monthSort: sql<string>`to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM')`,
+      revenue: sql<number>`coalesce(sum(total), 0)`,
+      count: sql<number>`cast(count(*) as int)`,
+    })
+    .from(workOrdersTable)
+    .where(and(
+      eq(workOrdersTable.tenantId, tenantId),
+      eq(workOrdersTable.status, "collected"),
+      gte(workOrdersTable.updatedAt, sixMonthsAgo),
+    ))
+    .groupBy(sql`to_char(updated_at AT TIME ZONE 'UTC', 'Mon YY')`, sql`to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM')`)
+    .orderBy(sql`to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM')`);
+
+  const byServiceType = await db
+    .select({
+      serviceType: workOrdersTable.serviceType,
+      count: sql<number>`cast(count(*) as int)`,
+    })
+    .from(workOrdersTable)
+    .where(eq(workOrdersTable.tenantId, tenantId))
+    .groupBy(workOrdersTable.serviceType);
+
+  const [summary] = await db
+    .select({
+      totalCompleted: sql<number>`cast(count(*) as int)`,
+      avgJobValue: sql<number>`coalesce(avg(total), 0)`,
+      totalRevenue: sql<number>`coalesce(sum(total), 0)`,
+    })
+    .from(workOrdersTable)
+    .where(and(
+      eq(workOrdersTable.tenantId, tenantId),
+      eq(workOrdersTable.status, "collected"),
+    ));
+
+  res.json({
+    monthly,
+    byServiceType,
+    totalCompleted: summary?.totalCompleted ?? 0,
+    avgJobValue: Number(summary?.avgJobValue ?? 0),
+    totalRevenue: Number(summary?.totalRevenue ?? 0),
+  });
+});
+
+/* ─── Customer portal (public, HMAC-verified — no tenant auth required) ───── */
+router.get("/public/work-orders/:id/:token", async (req, res): Promise<void> => {
+  const id = parseInt(req.params["id"] ?? "", 10);
+  if (!id || isNaN(id)) { res.status(404).json({ error: "Not found" }); return; }
+  const token = (req.params["token"] ?? "").trim();
+
+  const wo = await db.query.workOrdersTable.findFirst({
+    where: eq(workOrdersTable.id, id),
+  });
+  if (!wo) { res.status(404).json({ error: "Not found" }); return; }
+
+  if (!token || token !== makePortalToken(id, wo.tenantId)) {
+    res.status(403).json({ error: "Invalid or expired link" }); return;
+  }
+
+  const notes = await db
+    .select()
+    .from(workOrderNotesTable)
+    .where(and(
+      eq(workOrderNotesTable.workOrderId, id),
+      eq(workOrderNotesTable.isInternal, false),
+    ))
+    .orderBy(desc(workOrderNotesTable.createdAt));
+
+  res.json({
+    workOrderNumber: wo.workOrderNumber,
+    status: wo.status,
+    itemDescription: wo.itemDescription,
+    brand: wo.brand,
+    model: wo.model,
+    serialNumber: wo.serialNumber,
+    problemDescription: wo.problemDescription,
+    promisedDate: wo.promisedDate,
+    total: wo.total,
+    depositPaid: wo.depositPaid,
+    createdAt: wo.createdAt,
+    updatedAt: wo.updatedAt,
+    notes: notes.map((n) => ({ content: n.content, createdAt: n.createdAt })),
+  });
+});
 
 router.get("/work-orders-stats", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
