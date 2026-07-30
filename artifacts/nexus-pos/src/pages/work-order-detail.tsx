@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import {
   useGetWorkOrder,
@@ -37,6 +37,10 @@ import {
 import { PENDING_WORK_ORDER_KEY, STATUS_LABEL, STATUS_STYLES } from "@/pages/work-orders";
 import { generateJobCard } from "@/lib/work-order-doc";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
+import { useStaff } from "@/contexts/StaffContext";
+import { PinPad } from "@/components/PinPad";
+import { SignatureCanvas } from "@/components/SignatureCanvas";
+import type { SignatureCanvasHandle } from "@/components/SignatureCanvas";
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 function formatCurrency(n: number, currency = "JMD") {
@@ -107,6 +111,30 @@ export default function WorkOrderDetailPage() {
   const currency = settings?.base_currency || "JMD";
   const isTerminal = wo?.status === "collected" || wo?.status === "cancelled";
 
+  // Staff PIN gate
+  const { staff: sessionStaff, setStaff } = useStaff();
+  const [locked, setLocked] = useState(() => !sessionStaff);
+
+  // Digital signature collection for "collected" transition
+  const [showSigDialog, setShowSigDialog] = useState(false);
+  const [sigStatusNote, setSigStatusNote] = useState("");
+  const [customerSigned, setCustomerSigned] = useState(false);
+  const [staffSigned, setStaffSigned] = useState(false);
+  const customerSigRef = useRef<SignatureCanvasHandle | null>(null);
+  const staffSigRef = useRef<SignatureCanvasHandle | null>(null);
+
+  useEffect(() => {
+    if (showSigDialog) {
+      setCustomerSigned(false);
+      setStaffSigned(false);
+      // Allow the dialog to mount before clearing canvases
+      setTimeout(() => {
+        customerSigRef.current?.clear();
+        staffSigRef.current?.clear();
+      }, 50);
+    }
+  }, [showSigDialog]);
+
   const patchWO = (data: Parameters<typeof updateWO.mutate>[0] extends { id: number } & infer R ? R : never, msg?: string) => {
     if (!wo) return;
     updateWO.mutate(
@@ -129,16 +157,41 @@ export default function WorkOrderDetailPage() {
     setLocation("/pos");
   };
 
-  const handlePrintJobCard = () => {
+  const [showPrintDialog, setShowPrintDialog] = useState(false);
+  const [printPrices, setPrintPrices] = useState(false);
+
+  const doPrint = (withPrices: boolean) => {
     if (!wo) return;
     const portalUrl = wo.portalToken
       ? `${window.location.origin}/wo/${wo.id}/${wo.portalToken}`
       : undefined;
-    const html = generateJobCard(wo, { businessName: profile?.businessName, currency, portalUrl });
+    const html = generateJobCard(wo, { businessName: profile?.businessName, currency, portalUrl, showPrices: withPrices });
     const win = window.open("", "_blank");
     if (win) { win.document.write(html); win.document.close(); }
     else { toast({ title: "Pop-up blocked", description: "Allow pop-ups to print the job card", variant: "destructive" }); }
   };
+
+  const handlePrintJobCard = () => setShowPrintDialog(true);
+
+  if (locked) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-6 w-full max-w-xs px-4">
+          <div className="text-center space-y-1 mb-2">
+            <h2 className="text-xl font-bold flex items-center gap-2 justify-center">
+              <Wrench className="h-5 w-5 text-amber-500" /> Work Orders
+            </h2>
+            <p className="text-sm text-muted-foreground">Enter your PIN to access this module</p>
+          </div>
+          <PinPad
+            onSuccess={(s) => { setStaff(s); setLocked(false); }}
+            title="Staff PIN Required"
+            pinLength={4}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -236,6 +289,113 @@ export default function WorkOrderDetailPage() {
       )}
 
       {/* ── Move status dialog ── */}
+      {/* ── Print options dialog ── */}
+      <Dialog open={showPrintDialog} onOpenChange={setShowPrintDialog}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Printer className="h-4 w-4" /> Print Job Card
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <label className="flex items-center gap-3 cursor-pointer rounded-md p-3 hover:bg-muted/50 border border-border">
+              <input
+                type="checkbox"
+                checked={printPrices}
+                onChange={(e) => setPrintPrices(e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              <div>
+                <p className="text-sm font-medium">Include part prices</p>
+                <p className="text-xs text-muted-foreground">Shows unit cost and line totals on the printed document</p>
+              </div>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPrintDialog(false)}>Cancel</Button>
+            <Button onClick={() => { setShowPrintDialog(false); doPrint(printPrices); }}>
+              <Printer className="h-4 w-4 mr-1.5" /> Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Digital signature collection dialog ── */}
+      <Dialog open={showSigDialog} onOpenChange={setShowSigDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Check className="h-4 w-4" /> Collect Signatures to Complete
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-1">
+            Both the customer and a staff member must sign before this work order can be marked as collected.
+          </p>
+          <div className="grid md:grid-cols-2 gap-5">
+            <div className="space-y-2">
+              <p className="text-sm font-medium flex items-center gap-2">
+                Customer Signature
+                {customerSigned && <span className="text-emerald-500 text-xs font-normal">✓ Signed</span>}
+              </p>
+              <SignatureCanvas
+                ref={customerSigRef}
+                onChange={(signed) => setCustomerSigned(signed)}
+              />
+              <button
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+                onClick={() => { customerSigRef.current?.clear(); setCustomerSigned(false); }}
+              >
+                Clear
+              </button>
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium flex items-center gap-2">
+                Staff Signature
+                {staffSigned && <span className="text-emerald-500 text-xs font-normal">✓ Signed</span>}
+              </p>
+              <SignatureCanvas
+                ref={staffSigRef}
+                onChange={(signed) => setStaffSigned(signed)}
+              />
+              <button
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+                onClick={() => { staffSigRef.current?.clear(); setStaffSigned(false); }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          {(!customerSigned || !staffSigned) && (
+            <p className="text-xs text-amber-500">
+              {!customerSigned && !staffSigned
+                ? "Both customer and staff signatures are required"
+                : !customerSigned
+                  ? "Customer signature required"
+                  : "Staff signature required"}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSigDialog(false)}>Cancel</Button>
+            <Button
+              disabled={!customerSigned || !staffSigned}
+              onClick={() => {
+                const cSig = customerSigRef.current?.getDataUrl() ?? "";
+                const sSig = staffSigRef.current?.getDataUrl() ?? "";
+                patchWO({
+                  status: "collected",
+                  customerSignature: cSig,
+                  staffSignature: sSig,
+                  ...(sigStatusNote ? { statusNote: sigStatusNote } : {}),
+                } as any, "Work order collected");
+                setShowSigDialog(false);
+              }}
+            >
+              <Check className="h-4 w-4 mr-1.5" /> Complete &amp; Collect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showMove} onOpenChange={setShowMove}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -250,9 +410,16 @@ export default function WorkOrderDetailPage() {
                   variant={next === "cancelled" ? "destructive" : "outline"}
                   className="w-full justify-start"
                   onClick={() => {
-                    patchWO({ status: next, ...(statusNote.trim() ? { statusNote: statusNote.trim() } : {}) } as any, `Moved to ${STATUS_LABEL[next]}`);
-                    setShowMove(false);
-                    setStatusNote("");
+                    if (next === "collected") {
+                      setSigStatusNote(statusNote.trim());
+                      setShowMove(false);
+                      setStatusNote("");
+                      setShowSigDialog(true);
+                    } else {
+                      patchWO({ status: next, ...(statusNote.trim() ? { statusNote: statusNote.trim() } : {}) } as any, `Moved to ${STATUS_LABEL[next]}`);
+                      setShowMove(false);
+                      setStatusNote("");
+                    }
                   }}
                 >
                   → {STATUS_LABEL[next]}
@@ -354,19 +521,43 @@ function OverviewTab({
               <Field label="Service type" value={wo.serviceType} />
               <Field label="Channel" value={wo.serviceChannel?.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} />
               <Field label="Priority" value={wo.priority?.replace(/\b\w/g, (c) => c.toUpperCase())} />
-              <div>
-                <p className="text-xs text-muted-foreground">Assigned to</p>
+              <div className="col-span-2">
+                <p className="text-xs text-muted-foreground mb-1">
+                  Assigned technician{(wo.assignedStaffIds?.length ?? 0) > 1 ? "s" : ""}
+                </p>
                 {!isTerminal ? (
-                  <select
-                    className="w-full mt-1 h-8 rounded-md border border-input bg-background px-2 text-sm"
-                    value={wo.assignedStaffId ?? ""}
-                    onChange={(e) => onPatch({ assignedStaffId: e.target.value ? Number(e.target.value) : null }, "Assignment updated")}
-                  >
-                    <option value="">Unassigned</option>
-                    {staff.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+                  <div className="border border-input rounded-md bg-background max-h-32 overflow-y-auto divide-y divide-border">
+                    {staff.length === 0 && (
+                      <p className="px-3 py-2 text-xs text-muted-foreground">No staff members.</p>
+                    )}
+                    {staff.map((s: any) => {
+                      const checked = (wo.assignedStaffIds ?? []).includes(s.id);
+                      return (
+                        <label
+                          key={s.id}
+                          className="flex items-center gap-2.5 px-3 py-1.5 cursor-pointer hover:bg-muted/50 transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            className="h-3.5 w-3.5 accent-primary shrink-0"
+                            onChange={() => {
+                              const ids = wo.assignedStaffIds ?? [];
+                              const next = checked
+                                ? ids.filter((x: number) => x !== s.id)
+                                : [...ids, s.id];
+                              onPatch({ assignedStaffIds: next }, "Assignment updated");
+                            }}
+                          />
+                          <span className="text-sm">{s.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <p className="text-sm font-medium">{wo.assignedStaffName ?? "Unassigned"}</p>
+                  <p className="text-sm font-medium">
+                    {wo.assignedStaffNames?.join(", ") || wo.assignedStaffName || "Unassigned"}
+                  </p>
                 )}
               </div>
             </div>

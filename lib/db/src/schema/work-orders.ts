@@ -40,8 +40,10 @@ export const workOrdersTable = pgTable("work_orders", {
   serviceChannel: text("service_channel").notNull().default("in_store"), // in_store | on_site | pickup | delivery | remote
   priority: text("priority").notNull().default("normal"), // low | normal | high | urgent | emergency
 
-  // Assignment & scheduling
+  // Assignment & scheduling — assignedStaffId is kept as the "primary" for backward-compat joins.
+  // assignedStaffIds is the full ordered list (used by the multi-technician UI).
   assignedStaffId: integer("assigned_staff_id").references(() => staffTable.id),
+  assignedStaffIds: jsonb("assigned_staff_ids").notNull().$type<number[]>().default([]),
   promisedDate: timestamp("promised_date", { withTimezone: true }),
   appointmentDate: timestamp("appointment_date", { withTimezone: true }),
   storageLocation: text("storage_location"),
@@ -76,6 +78,10 @@ export const workOrdersTable = pgTable("work_orders", {
 
   // Set when checked out as a POS sale
   convertedOrderId: integer("converted_order_id"),
+
+  // Digital signatures captured at collection (base64 PNG data URLs)
+  customerSignature: text("customer_signature"),
+  staffSignature: text("staff_signature"),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

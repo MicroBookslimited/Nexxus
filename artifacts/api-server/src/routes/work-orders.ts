@@ -85,6 +85,7 @@ const CreateWorkOrderBody = z.object({
   serviceChannel: z.enum(["in_store", "on_site", "pickup", "delivery", "remote"]).optional(),
   priority: z.enum(["low", "normal", "high", "urgent", "emergency"]).optional(),
   assignedStaffId: z.number().int().optional(),
+  assignedStaffIds: z.array(z.number().int()).optional(),
   promisedDate: z.coerce.date().optional(),
   appointmentDate: z.coerce.date().optional(),
   storageLocation: z.string().max(100).optional(),
@@ -117,6 +118,7 @@ const UpdateWorkOrderBody = z.object({
   serviceChannel: z.enum(["in_store", "on_site", "pickup", "delivery", "remote"]).optional(),
   priority: z.enum(["low", "normal", "high", "urgent", "emergency"]).optional(),
   assignedStaffId: z.number().int().nullable().optional(),
+  assignedStaffIds: z.array(z.number().int()).nullable().optional(),
   promisedDate: z.coerce.date().nullable().optional(),
   appointmentDate: z.coerce.date().nullable().optional(),
   storageLocation: z.string().max(100).nullable().optional(),
@@ -129,6 +131,8 @@ const UpdateWorkOrderBody = z.object({
   internalNotes: z.string().max(2000).nullable().optional(),
   convertedOrderId: z.number().int().optional(),
   statusNote: z.string().max(500).optional(), // optional note attached to status change
+  customerSignature: z.string().optional(),   // base64 PNG data URL
+  staffSignature: z.string().optional(),       // base64 PNG data URL
 });
 
 /* ─── Financial helpers ──────────────────────────────────────────────────────── */
@@ -182,6 +186,7 @@ async function validateRefs(
   tenantId: number,
   customerId?: number | null,
   assignedStaffId?: number | null,
+  assignedStaffIds?: number[] | null,
 ): Promise<string | null> {
   if (customerId != null) {
     const [c] = await db
@@ -190,14 +195,32 @@ async function validateRefs(
       .where(and(eq(customersTable.id, customerId), eq(customersTable.tenantId, tenantId)));
     if (!c) return "Customer not found";
   }
-  if (assignedStaffId != null) {
-    const [s] = await db
+  // Validate all staff IDs (assignedStaffIds takes precedence; fall back to single ID)
+  const staffIds = assignedStaffIds && assignedStaffIds.length > 0
+    ? assignedStaffIds
+    : assignedStaffId != null ? [assignedStaffId] : [];
+  if (staffIds.length > 0) {
+    const rows = await db
       .select({ id: staffTable.id })
       .from(staffTable)
-      .where(and(eq(staffTable.id, assignedStaffId), eq(staffTable.tenantId, tenantId)));
-    if (!s) return "Staff member not found";
+      .where(and(eq(staffTable.tenantId, tenantId), inArray(staffTable.id, staffIds)));
+    if (rows.length !== staffIds.length) return "One or more staff members not found";
   }
   return null;
+}
+
+/** Batch-lookup staff names for multiple work orders' assignedStaffIds arrays. */
+async function batchResolveStaffNames(
+  tenantId: number,
+  allIds: number[],
+): Promise<Map<number, string>> {
+  const unique = [...new Set(allIds)];
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .select({ id: staffTable.id, name: staffTable.name })
+    .from(staffTable)
+    .where(and(eq(staffTable.tenantId, tenantId), inArray(staffTable.id, unique)));
+  return new Map(rows.map((r) => [r.id, r.name]));
 }
 
 /* ─── Work order normalise ───────────────────────────────────────────────────── */
@@ -213,12 +236,19 @@ function normalize(
   customerName?: string | null,
   customerPhone?: string | null,
   staffName?: string | null,
+  staffNamesMap?: Map<number, string>,
 ) {
+  const ids: number[] = Array.isArray(w.assignedStaffIds) ? w.assignedStaffIds as number[] : [];
+  const assignedStaffNames = staffNamesMap && ids.length > 0
+    ? ids.map((id) => staffNamesMap.get(id) ?? "").filter(Boolean)
+    : staffName ? [staffName] : undefined;
   return {
     ...w,
+    assignedStaffIds: ids,
     customerName: customerName ?? undefined,
     customerPhone: customerPhone ?? undefined,
-    assignedStaffName: staffName ?? undefined,
+    assignedStaffName: assignedStaffNames?.[0] ?? staffName ?? undefined,
+    assignedStaffNames: assignedStaffNames,
     portalToken: makePortalToken(w.id, w.tenantId),
   };
 }
@@ -250,7 +280,12 @@ router.get("/work-orders", async (req, res): Promise<void> => {
     .orderBy(desc(workOrdersTable.createdAt))
     .limit(500);
 
-  res.json(rows.map((r) => normalize(r.workOrder, r.customerName, r.customerPhone, r.staffName)));
+  // Batch-resolve all staff names across the full result set
+  const allStaffIds = rows.flatMap((r) =>
+    Array.isArray(r.workOrder.assignedStaffIds) ? (r.workOrder.assignedStaffIds as number[]) : [],
+  );
+  const staffNamesMap = await batchResolveStaffNames(tenantId, allStaffIds);
+  res.json(rows.map((r) => normalize(r.workOrder, r.customerName, r.customerPhone, r.staffName, staffNamesMap)));
 });
 
 // GET ONE
@@ -273,7 +308,9 @@ router.get("/work-orders/:id", async (req, res): Promise<void> => {
     .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
 
   if (!row) { res.status(404).json({ error: "Work order not found" }); return; }
-  res.json(normalize(row.workOrder, row.customerName, row.customerPhone, row.staffName));
+  const woIds: number[] = Array.isArray(row.workOrder.assignedStaffIds) ? row.workOrder.assignedStaffIds as number[] : [];
+  const staffNamesMap = await batchResolveStaffNames(tenantId, woIds);
+  res.json(normalize(row.workOrder, row.customerName, row.customerPhone, row.staffName, staffNamesMap));
 });
 
 // CREATE
@@ -290,7 +327,13 @@ router.post("/work-orders", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Link a customer or provide a contact name" });
     return;
   }
-  const refError = await validateRefs(tenantId, data.customerId, data.assignedStaffId);
+  // Resolve the canonical staff ID list: assignedStaffIds overrides the legacy single ID
+  const staffIds = data.assignedStaffIds && data.assignedStaffIds.length > 0
+    ? data.assignedStaffIds
+    : data.assignedStaffId != null ? [data.assignedStaffId] : [];
+  const primaryStaffId = staffIds[0] ?? null;
+
+  const refError = await validateRefs(tenantId, data.customerId, null, staffIds.length > 0 ? staffIds : null);
   if (refError) { res.status(400).json({ error: refError }); return; }
 
   const totals = await computeTotals(tenantId, data.items, data.discountAmount, data.discountType);
@@ -319,7 +362,8 @@ router.post("/work-orders", async (req, res): Promise<void> => {
         serviceType: data.serviceType ?? null,
         serviceChannel: data.serviceChannel ?? "in_store",
         priority: data.priority ?? "normal",
-        assignedStaffId: data.assignedStaffId ?? null,
+        assignedStaffId: primaryStaffId,
+        assignedStaffIds: staffIds,
         promisedDate: data.promisedDate ?? null,
         appointmentDate: data.appointmentDate ?? null,
         storageLocation: data.storageLocation ?? null,
@@ -350,7 +394,9 @@ router.post("/work-orders", async (req, res): Promise<void> => {
     return created;
   });
 
-  res.status(201).json(normalize(row));
+  const createdIds: number[] = Array.isArray(row.assignedStaffIds) ? row.assignedStaffIds as number[] : [];
+  const createdStaffMap = await batchResolveStaffNames(tenantId, createdIds);
+  res.status(201).json(normalize(row, undefined, undefined, undefined, createdStaffMap));
 
   // Fire-and-forget — never blocks the HTTP response
   const currency = await getSetting("currency", tenantId).catch(() => "JMD");
@@ -362,6 +408,7 @@ router.post("/work-orders", async (req, res): Promise<void> => {
     contactEmail:      row.contactEmail,
     customerId:        row.customerId,
     assignedStaffId:   row.assignedStaffId,
+    assignedStaffIds:  createdIds,
     itemDescription:   row.itemDescription,
     problemDescription: row.problemDescription,
     notes:             row.notes,
@@ -406,6 +453,14 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
       return;
     }
   }
+  // Require both digital signatures when manually marking as collected (not via POS sale)
+  if (data.status === "collected" && existing.status !== "collected" && !data.convertedOrderId) {
+    if (!data.customerSignature || !data.staffSignature) {
+      res.status(400).json({ error: "Both customer and staff signatures are required to mark a work order as collected." });
+      return;
+    }
+  }
+
   if (existing.status === "collected" || existing.status === "cancelled") {
     const touched = Object.keys(data).filter((k) => !["notes", "internalNotes"].includes(k));
     if (touched.length > 0) {
@@ -414,17 +469,34 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
     }
   }
 
-  const refError = await validateRefs(tenantId, data.customerId ?? undefined, data.assignedStaffId ?? undefined);
+  // Resolve the canonical staff ID list for update
+  const updStaffIds = data.assignedStaffIds != null
+    ? data.assignedStaffIds
+    : data.assignedStaffId !== undefined
+      ? (data.assignedStaffId != null ? [data.assignedStaffId] : [])
+      : null; // null = not being changed
+
+  const updPrimaryStaffId = updStaffIds != null ? (updStaffIds[0] ?? null) : undefined;
+
+  const refError = await validateRefs(tenantId, data.customerId ?? undefined, null, updStaffIds ?? undefined);
   if (refError) { res.status(400).json({ error: refError }); return; }
 
   const updates: Partial<typeof workOrdersTable.$inferInsert> = { updatedAt: new Date() };
+
+  // Handle staff assignment update
+  if (updStaffIds !== null) {
+    updates.assignedStaffIds = updStaffIds;
+    updates.assignedStaffId = updPrimaryStaffId ?? null;
+  }
+
   const textFields = [
-    "customerId", "status", "diagnosis", "assignedStaffId", "promisedDate", "appointmentDate",
+    "customerId", "status", "diagnosis", "promisedDate", "appointmentDate",
     "notes", "internalNotes", "contactName", "contactPhone", "contactEmail",
     "itemDescription", "problemDescription", "convertedOrderId", "brand", "model",
     "serialNumber", "imei", "assetTag", "colour", "conditionReceived", "accessoriesReceived",
     "serviceType", "serviceChannel", "priority", "storageLocation",
     "depositRequired", "depositPaid",
+    "customerSignature", "staffSignature",
   ] as const;
   for (const f of textFields) {
     if (data[f] !== undefined) (updates as Record<string, unknown>)[f] = data[f];
@@ -476,7 +548,9 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
     return updated;
   });
 
-  res.json(normalize(row));
+  const updatedIds: number[] = Array.isArray(row.assignedStaffIds) ? row.assignedStaffIds as number[] : [];
+  const updStaffNamesMap = await batchResolveStaffNames(tenantId, updatedIds);
+  res.json(normalize(row, undefined, undefined, undefined, updStaffNamesMap));
 });
 
 // DELETE

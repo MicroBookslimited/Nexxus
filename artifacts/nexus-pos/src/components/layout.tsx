@@ -332,7 +332,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <ImpersonationBanner />
 
       {/* ── TOP HEADER ───────────────────────────────────────── */}
-      {!(headerHidden && location === "/pos") && (
+      {!(location.startsWith("/work-orders") || (headerHidden && location === "/pos")) && (
       <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-border px-3 sm:px-5 py-1 bg-card gap-2">
 
         {/* Logo + tenant business name */}

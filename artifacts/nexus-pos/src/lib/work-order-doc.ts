@@ -37,6 +37,7 @@ export type JobCardWorkOrder = {
   serviceType?: string | null;
   priority?: string | null;
   assignedStaffName?: string | null;
+  assignedStaffNames?: string[] | null;
   storageLocation?: string | null;
   // Financials
   items?: Array<{ type: string; description: string; price: number; quantity: number }>;
@@ -46,6 +47,8 @@ export type JobCardWorkOrder = {
   depositRequired?: number | null;
   depositPaid?: number | null;
   notes?: string | null;
+  customerSignature?: string | null;
+  staffSignature?: string | null;
 };
 
 function fmtDate(d: string | null | undefined): string {
@@ -75,26 +78,33 @@ function escHtml(s: string): string {
 
 export function generateJobCard(
   wo: JobCardWorkOrder,
-  opts: { businessName?: string | null; currency?: string; portalUrl?: string | null },
+  opts: { businessName?: string | null; currency?: string; portalUrl?: string | null; showPrices?: boolean },
 ): string {
   const currency = opts.currency || "JMD";
+  const showPrices = opts.showPrices ?? false;
   const clientName = wo.customerName || wo.contactName || "Walk-in";
   const clientPhone = wo.customerPhone || wo.contactPhone || "";
   const hasItems = (wo.items?.length ?? 0) > 0;
 
   const itemRows = hasItems
     ? (wo.items ?? [])
-        .map(
-          (it) =>
-            `<tr>
-               <td>${escHtml(it.description)}</td>
-               <td class="c">${it.quantity}</td>
-               <td class="r">${fmtCurr(it.price, currency)}</td>
-               <td class="r">${fmtCurr(it.price * it.quantity, currency)}</td>
-             </tr>`,
+        .map((it) =>
+          showPrices
+            ? `<tr>
+                 <td>${escHtml(it.description)}</td>
+                 <td class="c">${it.quantity}</td>
+                 <td class="r">${fmtCurr(it.price, currency)}</td>
+                 <td class="r">${fmtCurr(it.price * it.quantity, currency)}</td>
+               </tr>`
+            : `<tr>
+                 <td>${escHtml(it.description)}</td>
+                 <td class="c">${it.quantity}</td>
+               </tr>`,
         )
         .join("")
-    : `<tr><td colspan="4" class="c muted">No parts or labour added yet</td></tr>`;
+    : showPrices
+      ? `<tr><td colspan="4" class="c muted">No parts or labour added yet</td></tr>`
+      : `<tr><td colspan="2" class="c muted">No parts or labour added yet</td></tr>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -174,7 +184,7 @@ export function generateJobCard(
   <div>
     <h2>Assignment</h2>
     <table class="info">
-      ${row("Technician", wo.assignedStaffName || "Unassigned")}
+      ${row("Technician", (wo.assignedStaffNames && wo.assignedStaffNames.length > 0 ? wo.assignedStaffNames.join(", ") : null) || wo.assignedStaffName || "Unassigned")}
       ${row("Service Type", wo.serviceType)}
       ${row("Storage Loc.", wo.storageLocation)}
     </table>
@@ -203,23 +213,38 @@ export function generateJobCard(
 ${hasItems ? `
 <h2>Parts &amp; Labour</h2>
 <table class="lines">
-  <thead><tr><th>Description</th><th class="c">Qty</th><th class="r">Unit</th><th class="r">Amount</th></tr></thead>
+  <thead><tr>
+    <th>Description</th>
+    <th class="c">Qty</th>
+    ${showPrices ? `<th class="r">Unit</th><th class="r">Amount</th>` : ""}
+  </tr></thead>
   <tbody>${itemRows}</tbody>
 </table>
+${showPrices ? `
 <div class="totals">
   ${wo.subtotal != null ? `<span class="lbl">Subtotal</span><span></span><span>${fmtCurr(wo.subtotal, currency)}</span>` : ""}
   ${wo.tax != null ? `<span class="lbl">Tax</span><span></span><span>${fmtCurr(wo.tax, currency)}</span>` : ""}
   ${wo.total != null ? `<span class="lbl big">Total</span><span></span><span class="big">${fmtCurr(wo.total, currency)}</span>` : ""}
   ${wo.depositRequired != null ? `<span class="lbl">Deposit Required</span><span></span><span>${fmtCurr(wo.depositRequired, currency)}</span>` : ""}
   ${(wo.depositPaid ?? 0) > 0 ? `<span class="lbl">Deposit Paid</span><span></span><span>${fmtCurr(wo.depositPaid ?? 0, currency)}</span>` : ""}
-</div>
+</div>` : ""}
 ` : ""}
 
 ${wo.notes ? `<h2>Notes</h2><div style="padding:6px;border:1px solid #ddd;border-radius:3px;background:#fafafa;white-space:pre-wrap">${escHtml(wo.notes)}</div>` : ""}
 
 <div class="sig-row">
-  <div class="sig-box">Customer Signature<br><br><br>___________________________</div>
-  <div class="sig-box">Staff Signature<br><br><br>___________________________</div>
+  <div class="sig-box">
+    Customer Signature
+    ${wo.customerSignature
+      ? `<div style="margin-top:8px;display:flex;justify-content:center"><img src="${wo.customerSignature}" style="max-height:70px;max-width:180px;object-fit:contain" alt="Customer signature" /></div><div style="border-top:1px solid #aaa;margin-top:4px"></div>`
+      : `<br><br><br>___________________________`}
+  </div>
+  <div class="sig-box">
+    Staff Signature
+    ${wo.staffSignature
+      ? `<div style="margin-top:8px;display:flex;justify-content:center"><img src="${wo.staffSignature}" style="max-height:70px;max-width:180px;object-fit:contain" alt="Staff signature" /></div><div style="border-top:1px solid #aaa;margin-top:4px"></div>`
+      : `<br><br><br>___________________________`}
+  </div>
   <div class="sig-box">Date<br><br><br>___________________________</div>
 </div>
 

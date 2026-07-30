@@ -45,7 +45,7 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
   const [serviceType, setServiceType] = useState("");
   const [serviceChannel, setServiceChannel] = useState("in_store");
   const [priority, setPriority] = useState("normal");
-  const [assignedStaffId, setAssignedStaffId] = useState<number | "">("");
+  const [assignedStaffIds, setAssignedStaffIds] = useState<number[]>([]);
   const [promisedDate, setPromisedDate] = useState("");
   const [depositRequired, setDepositRequired] = useState("");
   const [notes, setNotes] = useState("");
@@ -55,7 +55,13 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
     setItemDescription(""); setBrand(""); setModel(""); setSerialNumber("");
     setColour(""); setConditionReceived(""); setProblemDescription("");
     setServiceType(""); setServiceChannel("in_store"); setPriority("normal");
-    setAssignedStaffId(""); setPromisedDate(""); setDepositRequired(""); setNotes("");
+    setAssignedStaffIds([]); setPromisedDate(""); setDepositRequired(""); setNotes("");
+  };
+
+  const toggleStaff = (id: number) => {
+    setAssignedStaffIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
   };
 
   const handleCreate = () => {
@@ -79,7 +85,7 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
         ...(serviceType ? { serviceType } : {}),
         serviceChannel: serviceChannel as "in_store" | "on_site" | "pickup" | "delivery" | "remote",
         priority: priority as "low" | "normal" | "high" | "urgent" | "emergency",
-        ...(assignedStaffId ? { assignedStaffId: Number(assignedStaffId) } : {}),
+        ...(assignedStaffIds.length > 0 ? { assignedStaffIds } : {}),
         ...(promisedDate ? { promisedDate } : {}),
         ...(depositRequired ? { depositRequired: Number(depositRequired) } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
@@ -193,7 +199,7 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
                   rows={3}
                 />
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div>
                   <Label>Service type</Label>
                   <select
@@ -238,20 +244,41 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
                     <option value="emergency">Emergency</option>
                   </select>
                 </div>
-                <div>
-                  <Label>Assigned to</Label>
-                  <select
-                    className="w-full mt-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
-                    value={assignedStaffId}
-                    onChange={(e) => setAssignedStaffId(e.target.value ? Number(e.target.value) : "")}
-                  >
-                    <option value="">Unassigned</option>
-                    {(staff ?? []).map((s: any) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
+
+              {/* Multi-technician selector */}
+              <div>
+                <Label>
+                  Assigned technician{assignedStaffIds.length > 1 ? "s" : ""}
+                  {assignedStaffIds.length > 0 && (
+                    <span className="ml-1.5 text-xs font-normal text-primary">({assignedStaffIds.length} selected)</span>
+                  )}
+                </Label>
+                {(staff ?? []).length === 0 ? (
+                  <p className="mt-1 text-xs text-muted-foreground">No staff members found.</p>
+                ) : (
+                  <div className="mt-1 border border-input rounded-md bg-background max-h-36 overflow-y-auto divide-y divide-border">
+                    {(staff ?? []).map((s: any) => {
+                      const checked = assignedStaffIds.includes(s.id);
+                      return (
+                        <label
+                          key={s.id}
+                          className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleStaff(s.id)}
+                            className="h-3.5 w-3.5 accent-primary shrink-0"
+                          />
+                          <span className="text-sm">{s.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Promised date</Label>

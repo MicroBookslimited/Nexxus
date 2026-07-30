@@ -20,6 +20,9 @@ import {
   CalendarDays, BarChart2, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { CreateWorkOrderDialog } from "@/components/work-orders/CreateWorkOrderDialog";
+import { useStaff } from "@/contexts/StaffContext";
+import { PinPad } from "@/components/PinPad";
+import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 
 /** Key used to hand a work order from this page to the POS cart loader. */
 export const PENDING_WORK_ORDER_KEY = "nexxus_pending_work_order";
@@ -102,6 +105,10 @@ export default function WorkOrdersPage() {
   const [view, setView] = useState<"list" | "kanban" | "calendar" | "reports">("list");
   const [showCreate, setShowCreate] = useState(false);
 
+  const { staff: sessionStaff, setStaff } = useStaff();
+  const { profile } = useBusinessProfile();
+  const [locked, setLocked] = useState(() => !sessionStaff);
+
   const filtered = useMemo(() => {
     const list = workOrders ?? [];
     const q = search.trim().toLowerCase();
@@ -151,6 +158,29 @@ export default function WorkOrdersPage() {
     );
     setLocation("/pos");
   };
+
+  if (locked) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-6 w-full max-w-xs px-4">
+          <div className="text-center space-y-1 mb-2">
+            <h2 className="text-xl font-bold flex items-center gap-2 justify-center">
+              <Wrench className="h-5 w-5 text-amber-500" /> Work Orders
+            </h2>
+            {profile?.businessName && (
+              <p className="text-sm font-medium text-foreground/70">{profile.businessName}</p>
+            )}
+            <p className="text-sm text-muted-foreground">Enter your PIN to access this module</p>
+          </div>
+          <PinPad
+            onSuccess={(s) => { setStaff(s); setLocked(false); }}
+            title="Staff PIN Required"
+            pinLength={4}
+          />
+        </div>
+      </div>
+    );
+  }
 
   // Route-level module gate
   if (settings && settings.work_orders_enabled !== "true") {
@@ -548,7 +578,7 @@ function WorkOrderRow({
           </div>
           <p className="text-xs text-muted-foreground truncate">
             {name}
-            {wo.assignedStaffName ? ` · ${wo.assignedStaffName}` : ""}
+            {wo.assignedStaffNames && wo.assignedStaffNames.length > 0 ? ` · ${wo.assignedStaffNames.join(", ")}` : wo.assignedStaffName ? ` · ${wo.assignedStaffName}` : ""}
             {wo.promisedDate ? ` · due ${fmtDate(wo.promisedDate)}` : ""}
           </p>
         </div>

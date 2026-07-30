@@ -19,6 +19,7 @@ export interface WorkOrderMailInput {
   contactEmail: string | null;
   customerId: number | null;
   assignedStaffId: number | null;
+  assignedStaffIds?: number[];   // full multi-technician list
   itemDescription: string;
   problemDescription: string;
   notes: string | null;
@@ -34,11 +35,26 @@ async function getBusinessDetails(tenantId: number) {
     getAllSettings(tenantId),
   ]);
 
+  const logoUrl = settings["business_logo_url"] ?? null;
+  let logoBuffer: Buffer | null = null;
+  if (logoUrl) {
+    try {
+      const resp = await fetch(logoUrl, { signal: AbortSignal.timeout(5000) });
+      if (resp.ok) {
+        const ab = await resp.arrayBuffer();
+        logoBuffer = Buffer.from(ab);
+      }
+    } catch {
+      // Logo fetch failed — PDF will render without it
+    }
+  }
+
   return {
     name: tenant?.businessName ?? "NEXXUS POS",
     address: settings["business_address"] ?? tenant?.address ?? null,
     phone: settings["business_phone"] ?? tenant?.phone ?? null,
     email: settings["from_email"] ?? PLATFORM_COPY_ADDRESS,
+    logoBuffer,
   };
 }
 
@@ -56,15 +72,23 @@ async function resolveToEmail(input: WorkOrderMailInput): Promise<string | null>
   return null;
 }
 
-async function resolveStaffName(input: WorkOrderMailInput): Promise<string> {
-  if (!input.assignedStaffId) return "";
-  const staff = await db.query.staffTable.findFirst({
-    where: and(
-      eq(staffTable.id, input.assignedStaffId),
-      eq(staffTable.tenantId, input.tenantId),
-    ),
-  });
-  return staff?.name ?? "";
+async function resolveStaffNames(input: WorkOrderMailInput): Promise<string> {
+  // Prefer the full multi-staff list; fall back to legacy single ID
+  const ids = (input.assignedStaffIds && input.assignedStaffIds.length > 0)
+    ? input.assignedStaffIds
+    : input.assignedStaffId ? [input.assignedStaffId] : [];
+
+  if (ids.length === 0) return "";
+
+  const { inArray } = await import("drizzle-orm");
+  const rows = await db
+    .select({ id: staffTable.id, name: staffTable.name })
+    .from(staffTable)
+    .where(and(eq(staffTable.tenantId, input.tenantId), inArray(staffTable.id, ids)));
+
+  // Preserve the original order from `ids`
+  const nameMap = new Map(rows.map((r) => [r.id, r.name]));
+  return ids.map((id) => nameMap.get(id) ?? "").filter(Boolean).join(", ");
 }
 
 function formatScheduledDate(iso: string | null): string | null {
@@ -173,7 +197,7 @@ export async function sendWorkOrderEmail(input: WorkOrderMailInput): Promise<voi
   try {
     const [toEmail, staffName, business, from, currency] = await Promise.all([
       resolveToEmail(input),
-      resolveStaffName(input),
+      resolveStaffNames(input),
       getBusinessDetails(input.tenantId),
       getFromDetails(input.tenantId),
       Promise.resolve(input.currency),

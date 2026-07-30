@@ -47,7 +47,9 @@ export type WorkOrder = {
   serviceChannel: string;
   priority: string;
   assignedStaffId: number | null;
+  assignedStaffIds: number[];
   assignedStaffName?: string;
+  assignedStaffNames?: string[];
   promisedDate: string | null;
   appointmentDate: string | null;
   storageLocation: string | null;
@@ -63,6 +65,8 @@ export type WorkOrder = {
   notes: string | null;
   internalNotes: string | null;
   convertedOrderId: number | null;
+  customerSignature?: string | null;
+  staffSignature?: string | null;
   portalToken?: string;
   createdAt: string;
   updatedAt: string;
@@ -170,6 +174,7 @@ export type CreateWorkOrderInput = {
   serviceChannel?: string;
   priority?: string;
   assignedStaffId?: number;
+  assignedStaffIds?: number[];
   promisedDate?: string;
   appointmentDate?: string;
   storageLocation?: string;
@@ -187,6 +192,8 @@ export type UpdateWorkOrderInput = Partial<Omit<CreateWorkOrderInput, never>> & 
   depositPaid?: number;
   convertedOrderId?: number;
   statusNote?: string;
+  customerSignature?: string;
+  staffSignature?: string;
 };
 
 // ─── Query Keys ───────────────────────────────────────────────────────────────
