@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { getSetting } from "./settings";
+import { sendWorkOrderEmail } from "../lib/work-order-mail";
 
 const router: IRouter = Router();
 
@@ -350,6 +351,29 @@ router.post("/work-orders", async (req, res): Promise<void> => {
   });
 
   res.status(201).json(normalize(row));
+
+  // Fire-and-forget — never blocks the HTTP response
+  const currency = await getSetting("currency", tenantId).catch(() => "JMD");
+  sendWorkOrderEmail({
+    tenantId,
+    workOrderId:       row.id,
+    workOrderNumber:   row.workOrderNumber,
+    contactName:       row.contactName,
+    contactEmail:      row.contactEmail,
+    customerId:        row.customerId,
+    assignedStaffId:   row.assignedStaffId,
+    itemDescription:   row.itemDescription,
+    problemDescription: row.problemDescription,
+    notes:             row.notes,
+    scheduledDate:     row.appointmentDate ? String(row.appointmentDate) : null,
+    promisedDate:      row.promisedDate ? String(row.promisedDate) : null,
+    lineItems:         (row.items ?? []).map((it) => ({
+      description: it.name,
+      quantity:    it.quantity,
+      unitPrice:   it.price,
+    })),
+    currency: currency || "JMD",
+  }).catch(() => { /* already logged inside sendWorkOrderEmail */ });
 });
 
 // UPDATE
