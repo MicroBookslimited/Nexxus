@@ -1,0 +1,1219 @@
+Replit Prompt: Build a Work Order Add-On for NEXXUS POS
+
+You are a senior full-stack SaaS engineer working inside the existing NEXXUS POS codebase.
+Build a production-ready Work Order Management add-on for NEXXUS POS.
+The module must help service-based businesses manage customer jobs from intake through assessment, quotation, approval, scheduling, technician assignment, parts usage, labour tracking, invoicing, payment, completion, and warranty follow-up.
+The module should support businesses such as:
+- POS installation and repair companies
+- Security camera installers
+- Access control technicians
+- Computer and electronics repair shops
+- Appliance repair businesses
+- Automotive workshops
+- Contractors
+- Field service companies
+- Maintenance providers
+Do not create a separate application. Build this as a native NEXXUS POS module using the existing architecture, authentication, permissions, customers, products, inventory, invoicing, payments, locations, taxes, notifications, reporting, and design system.
+--------------------------------------------------
+1. DEVELOPMENT RULES
+--------------------------------------------------
+Before coding:
+1. Inspect the existing NEXXUS POS repository.
+2. Identify the current frontend, backend, database, authentication, state management, UI component library, validation, and API conventions.
+3. Locate the existing models and services for:
+   - Businesses
+   - Locations
+   - Users
+   - Roles and permissions
+   - Customers
+   - Products
+   - Inventory
+   - Sales
+   - Estimates
+   - Invoices
+   - Payments
+   - Taxes
+   - Notifications
+   - Subscription plans
+4. Reuse existing services and components wherever possible.
+5. Do not duplicate existing functionality.
+6. Do not break any current POS feature.
+7. Preserve the existing NEXXUS visual design.
+8. Use the existing project naming conventions and folder structure.
+9. Add database migrations, validation, authorization, tests, indexes, and audit logging.
+10. All records must be isolated by business_id.
+11. Respect location-level access.
+12. Enforce permissions on the server, not only in the frontend.
+13. Do not use mock data in production workflows.
+14. Use soft deletion where appropriate.
+15. Make all screens responsive for desktop, tablet, and mobile.
+First provide a concise implementation plan, then begin implementation in phases.
+--------------------------------------------------
+2. MODULE NAME AND ACCESS
+--------------------------------------------------
+Module name:
+NEXXUS Work Orders
+Create an add-on entitlement called:
+work_orders
+The module should only be accessible when:
+- It is included in the business subscription plan
+- The business has purchased the add-on
+- A NEXXUS super administrator has enabled it
+When the module is disabled:
+- Hide the navigation item
+- Block API access
+- Preserve all existing work-order data
+- Show an upgrade message to authorized administrators
+- Never delete customer records or work-order history
+Add the following navigation:
+Work Orders
+- Dashboard
+- All Work Orders
+- New Work Order
+- Technician Board
+- Calendar
+- Estimates
+- Service Types
+- Reports
+- Settings
+--------------------------------------------------
+3. WORK ORDER STATUS WORKFLOW
+--------------------------------------------------
+Create configurable work-order statuses.
+Default statuses:
+- Draft
+- Awaiting Assessment
+- Assessed
+- Estimate Pending
+- Estimate Sent
+- Awaiting Customer Approval
+- Approved
+- Parts Required
+- Awaiting Parts
+- Scheduled
+- Assigned
+- In Progress
+- On Hold
+- Awaiting Customer
+- Ready for Collection
+- Completed
+- Invoiced
+- Partially Paid
+- Paid
+- Closed
+- Cancelled
+- Rejected
+- Unrepairable
+- Warranty Return
+Administrators must be able to:
+- Enable or disable statuses
+- Rename statuses
+- Set display colours
+- Set status order
+- Define allowed status transitions
+- Choose which statuses appear on the technician board
+- Require permissions for specific transitions
+Record every status change in the audit log and status history.
+--------------------------------------------------
+4. WORK ORDER NUMBERING
+--------------------------------------------------
+Automatically generate unique work-order numbers.
+Default format:
+WO-{YEAR}-{SEQUENCE}
+Example:
+WO-2026-000154
+Allow each business to configure:
+- Prefix
+- Starting sequence
+- Sequence length
+- Include year
+- Reset annually
+- Location-specific numbering
+The number must be unique within the business.
+--------------------------------------------------
+5. CREATE WORK ORDER SCREEN
+--------------------------------------------------
+Build a fast, mobile-friendly work-order intake form.
+Section A: Customer
+Allow users to:
+- Search existing customers
+- Create a customer without leaving the screen
+- View customer history
+- View outstanding customer balance
+Customer fields:
+- Customer name
+- Company name
+- Phone number
+- WhatsApp number
+- Email address
+- Billing address
+- Service address
+- Customer TRN or tax number
+- Customer notes
+Section B: Service Item or Asset
+Support one or multiple items on a work order.
+Fields:
+- Item or asset type
+- Brand
+- Model
+- Serial number
+- IMEI
+- Asset tag
+- Vehicle registration
+- VIN or chassis number
+- Colour
+- Quantity
+- Condition received
+- Accessories received
+- Customer-reported issue
+- Previous repair history
+- Warranty status
+- Purchase date
+- Original invoice number
+- Storage location
+- Photos
+- Documents
+Allow configuration of fields by service type so irrelevant fields can be hidden.
+Section C: Sensitive Credentials
+Optional fields:
+- Device password
+- PIN
+- Access code
+- Administrator credentials
+Requirements:
+- Encrypt credentials at rest
+- Hide them by default
+- Only authorized users may reveal them
+- Log each reveal action
+- Never include credentials in printed documents, notifications, logs, or customer-facing pages
+Section D: Service Details
+Fields:
+- Service type
+- Service category
+- Priority
+- Location
+- Department
+- Assigned technician
+- Assigned team
+- Requested completion date
+- Promised completion date
+- Appointment date
+- Service channel
+- Customer instructions
+- Internal notes
+- Tags
+- Referral source
+Service channels:
+- In-store
+- On-site
+- Pickup
+- Delivery
+- Remote support
+Priorities:
+- Low
+- Normal
+- High
+- Urgent
+- Emergency
+Section E: Initial Charges
+Fields:
+- Diagnostic fee
+- Call-out fee
+- Inspection fee
+- Estimated labour
+- Estimated parts
+- Delivery fee
+- Other charges
+- Discount
+- Tax
+- Deposit required
+- Deposit paid
+- Payment method
+- Outstanding balance
+Allow deposits to be collected using the existing NEXXUS payment system.
+--------------------------------------------------
+6. INTAKE RECEIPT AND JOB CARD
+--------------------------------------------------
+Generate an intake document containing:
+- Business details
+- Work-order number
+- Customer details
+- Date and time received
+- Item details
+- Serial number or asset number
+- Accessories received
+- Condition received
+- Reported issue
+- Deposit paid
+- Expected completion date
+- Terms and conditions
+- Barcode or QR code
+- Customer signature
+- Employee signature
+Output options:
+- 80mm receipt
+- A4 or letter-size job card
+- PDF
+- Email
+- Print
+- Secure shareable link
+Scanning the barcode or QR code should open the work order for authorized users.
+--------------------------------------------------
+7. WORK ORDER DETAIL PAGE
+--------------------------------------------------
+Create a detailed work-order page.
+Header:
+- Work-order number
+- Customer
+- Status
+- Priority
+- Technician
+- Location
+- Created date
+- Promised date
+- Estimate total
+- Amount paid
+- Outstanding balance
+Quick actions:
+- Change status
+- Assign technician
+- Schedule appointment
+- Add note
+- Add diagnosis
+- Add part
+- Add labour
+- Create estimate
+- Send estimate
+- Collect payment
+- Convert to invoice
+- Print job card
+- Print label
+- Send customer update
+- Complete work order
+- Close work order
+Tabs:
+1. Overview
+2. Items and Assets
+3. Diagnosis
+4. Estimate
+5. Parts
+6. Labour
+7. Checklists
+8. Appointments
+9. Payments
+10. Documents
+11. Messages
+12. Activity Log
+13. Profitability
+--------------------------------------------------
+8. DIAGNOSIS
+--------------------------------------------------
+Allow technicians to record:
+- Inspection findings
+- Diagnostic test results
+- Root cause
+- Recommended work
+- Required parts
+- Estimated labour time
+- Safety concerns
+- Data-loss risk
+- Repair feasibility
+- Warranty eligibility
+- Technician recommendation
+- Before photos
+- During photos
+- After photos
+Diagnosis outcomes:
+- Repair recommended
+- Replacement recommended
+- No fault found
+- Customer damage
+- Warranty claim
+- Awaiting parts
+- Further testing required
+- Unrepairable
+Allow multiple diagnosis entries with a complete history.
+--------------------------------------------------
+9. ESTIMATES AND APPROVALS
+--------------------------------------------------
+Allow users to create estimates directly from a work order.
+Estimate lines may include:
+- Inventory parts
+- Non-stock parts
+- Labour
+- Diagnostic fees
+- Call-out fees
+- Installation charges
+- Delivery
+- Other charges
+- Discounts
+- Taxes
+Estimate fields:
+- Estimate number
+- Version
+- Expiration date
+- Customer notes
+- Internal notes
+- Terms
+- Deposit required
+Estimate statuses:
+- Draft
+- Sent
+- Viewed
+- Approved
+- Partially Approved
+- Rejected
+- Expired
+- Revised
+Create a secure customer approval page where the customer can:
+- View the estimate
+- Approve the full estimate
+- Approve selected line items
+- Reject the estimate
+- Add comments
+- Accept terms
+- Sign digitally
+- Pay a required deposit
+Record:
+- Date and time sent
+- Date and time viewed
+- Approval decision
+- Approved amount
+- Signature
+- Customer comment
+- Estimate version
+- User agent
+- IP address where legally appropriate
+Once an estimate is approved, lock that version.
+Any changes after approval must create a new revision.
+--------------------------------------------------
+10. PARTS AND INVENTORY
+--------------------------------------------------
+Integrate fully with the existing NEXXUS inventory system.
+Users must be able to:
+- Search inventory products
+- Add parts to a work order
+- Reserve parts
+- Issue parts
+- Consume parts
+- Return unused parts
+- Replace defective parts
+- Add non-stock parts
+- Add special-order parts
+- Record supplier details
+- Record serial or batch number
+- Record warranty
+- Record unit cost
+- Set selling price
+- Apply markup
+Track:
+- Quantity required
+- Quantity reserved
+- Quantity issued
+- Quantity used
+- Quantity returned
+- Quantity outstanding
+Inventory rules:
+1. Reserved quantity reduces available stock but not physical quantity.
+2. Issued or consumed parts reduce physical stock.
+3. Returned unused parts restore stock.
+4. All movements must use the existing NEXXUS inventory transaction system.
+5. Respect negative-stock settings.
+6. Record the technician or employee responsible for every movement.
+7. Keep a full audit trail.
+8. Support transfers between locations.
+9. Prevent duplicate inventory deductions.
+10. Reconcile parts before completion.
+For unavailable parts, allow users to create:
+- Purchase request
+- Supplier order draft
+- Inter-location transfer request
+- Backorder note
+--------------------------------------------------
+11. LABOUR TRACKING
+--------------------------------------------------
+Support manual labour entries and live timers.
+Labour fields:
+- Technician
+- Labour type
+- Description
+- Start time
+- End time
+- Duration
+- Billable duration
+- Hourly cost
+- Hourly selling rate
+- Fixed labour charge
+- Billable or non-billable
+- Internal notes
+- Customer-visible notes
+Timer actions:
+- Start
+- Pause
+- Resume
+- Stop
+Rules:
+- Prevent duplicate active timers for the same technician unless explicitly allowed
+- Show active timers on the technician dashboard
+- Log timer edits
+- Require permission to modify completed labour entries
+Calculate:
+- Total labour hours
+- Billable hours
+- Labour cost
+- Labour revenue
+- Labour gross profit
+--------------------------------------------------
+12. TECHNICIAN BOARD
+--------------------------------------------------
+Create a Kanban-style technician board.
+Each column represents a configurable work-order status.
+Cards should show:
+- Work-order number
+- Customer
+- Item or service
+- Priority
+- Technician
+- Location
+- Promised date
+- Days open
+- Parts status
+- Balance
+- Warning indicators
+Support:
+- Drag-and-drop status changes
+- Server-side permission checks
+- Technician filters
+- Location filters
+- Service-type filters
+- Priority filters
+- Date filters
+- Search
+- Compact and expanded card views
+Record all changes in the audit log.
+--------------------------------------------------
+13. CALENDAR AND SCHEDULING
+--------------------------------------------------
+Create:
+- Day view
+- Week view
+- Month view
+- Agenda view
+- Technician view
+Appointment types:
+- Assessment
+- Repair
+- Installation
+- Site visit
+- Pickup
+- Delivery
+- Follow-up
+- Preventive maintenance
+- Remote support
+Appointment fields:
+- Work order
+- Customer
+- Service address
+- Technician
+- Start date and time
+- End date and time
+- Travel time
+- Appointment status
+- Notes
+- Reminder
+- Required equipment
+- Required parts
+Detect technician scheduling conflicts.
+Support:
+- Working hours
+- Time off
+- Travel buffers
+- Technician availability
+- Recurring appointments
+- Appointment reminders
+--------------------------------------------------
+14. CHECKLISTS
+--------------------------------------------------
+Allow administrators to create reusable checklist templates by service type.
+Checklist item types:
+- Checkbox
+- Pass or fail
+- Text
+- Number
+- Date
+- Photo
+- Signature
+Each checklist item may be:
+- Required
+- Optional
+- Assigned to a role
+- Assigned to a technician
+- Customer-visible
+- Internal only
+Display checklist completion percentage.
+Block work-order completion when required checklist items are incomplete.
+Include example templates:
+POS Installation:
+- Confirm internet access
+- Install terminal
+- Connect printer
+- Connect cash drawer
+- Configure barcode scanner
+- Configure payment methods
+- Test sale
+- Test receipt
+- Import products
+- Train customer
+- Obtain completion signature
+Security Camera Installation:
+- Confirm camera positions
+- Run cables
+- Mount cameras
+- Configure recorder
+- Configure network
+- Configure mobile application
+- Test recording
+- Test night vision
+- Train customer
+- Obtain completion signature
+Access Control Installation:
+- Inspect door and frame
+- Install lock
+- Install reader
+- Install exit button
+- Configure controller
+- Add users
+- Test entry and exit
+- Test emergency release
+- Train customer
+- Obtain completion signature
+--------------------------------------------------
+15. CUSTOMER COMMUNICATION
+--------------------------------------------------
+Create reusable message templates.
+Default templates:
+- Work order received
+- Assessment completed
+- Estimate ready
+- Estimate approved
+- Deposit required
+- Parts required
+- Parts delayed
+- Appointment scheduled
+- Technician assigned
+- Technician dispatched
+- Work in progress
+- Awaiting customer response
+- Ready for collection
+- Work completed
+- Payment due
+- Warranty follow-up
+Support available communication channels:
+- Email
+- SMS
+- WhatsApp link
+- Approved WhatsApp integration
+- Customer portal notification
+Template variables:
+{{customer_name}}
+{{work_order_number}}
+{{item_name}}
+{{service_type}}
+{{status}}
+{{technician_name}}
+{{appointment_date}}
+{{promised_date}}
+{{estimate_total}}
+{{deposit_due}}
+{{balance_due}}
+{{approval_link}}
+{{payment_link}}
+{{business_name}}
+{{location_name}}
+Log all communications against the work order.
+--------------------------------------------------
+16. CUSTOMER PORTAL
+--------------------------------------------------
+Create a secure, mobile-friendly customer page.
+Customers may:
+- View work-order status
+- View a simplified timeline
+- View item details
+- View appointments
+- View estimates
+- Approve or reject estimates
+- Upload photos and documents
+- Send messages
+- Pay deposits
+- Pay final balances
+- Download receipts
+- View completion reports
+- Sign completion confirmation
+- View warranty information
+Never expose:
+- Internal notes
+- Employee costs
+- Profitability
+- Audit logs
+- Sensitive credentials
+- Staff-only documents
+- Private technician comments
+Use signed, expiring access links.
+--------------------------------------------------
+17. PAYMENTS AND INVOICING
+--------------------------------------------------
+Integrate with existing NEXXUS payments, POS sales, estimates, and invoices.
+Allow:
+- Deposits
+- Partial payments
+- Split payments
+- Final payments
+- Refunds
+- Credits
+- Customer account payments
+- Payment links
+- Receipt printing
+Convert a work order into:
+- Estimate
+- Sales order
+- Invoice
+- POS sale
+- Credit sale
+When converting:
+- Carry over the customer
+- Carry over approved parts
+- Carry over approved labour
+- Carry over service fees
+- Carry over taxes
+- Carry over discounts
+- Apply deposits correctly
+- Prevent duplicate billing
+- Link the transaction back to the work order
+Display linked invoices, sales, payments, and balances on the work order.
+--------------------------------------------------
+18. COMPLETION AND CUSTOMER HANDOVER
+--------------------------------------------------
+Before completion, validate:
+- Required checklist items are complete
+- Mandatory photos are uploaded
+- Labour entries are complete
+- Parts are reconciled
+- Final charges are confirmed
+- Required approvals are recorded
+- Outstanding issues are resolved
+Generate a completion report containing:
+- Work performed
+- Parts used
+- Labour performed
+- Technician notes
+- Test results
+- Before and after photos
+- Warranty details
+- Recommendations
+- Customer instructions
+- Technician signature
+- Customer signature
+- Completion date and time
+Allow signatures from a tablet or mobile device.
+--------------------------------------------------
+19. READY FOR COLLECTION
+--------------------------------------------------
+When a work order reaches Ready for Collection:
+- Record storage location
+- Notify the customer
+- Start an aging counter
+- Display days awaiting collection
+- Apply optional storage fees
+- Escalate overdue items
+- Record collector’s name
+- Record identification details where required
+- Capture collector signature
+- Record release date and time
+- Record the employee who released the item
+Allow the business to configure:
+- Grace period
+- Daily or weekly storage fee
+- Maximum storage period
+- Escalation notifications
+- Disposal or abandonment terms
+--------------------------------------------------
+20. WARRANTY
+--------------------------------------------------
+Allow warranties for:
+- Labour
+- Individual parts
+- Complete repair
+- Installation
+Warranty fields:
+- Start date
+- End date
+- Duration
+- Terms
+- Exclusions
+- Supplier warranty
+- Serial number
+- Supporting document
+Allow users to create a warranty return linked to the original work order.
+Warranty assessment results:
+- Covered
+- Partially covered
+- Not covered
+- Pending assessment
+--------------------------------------------------
+21. DASHBOARD
+--------------------------------------------------
+Create a work-order dashboard.
+Filters:
+- Date range
+- Location
+- Technician
+- Service type
+- Status
+- Priority
+KPIs:
+- Open work orders
+- New today
+- Overdue
+- Awaiting assessment
+- Awaiting approval
+- Awaiting parts
+- Scheduled today
+- In progress
+- Ready for collection
+- Completed today
+- Average turnaround time
+- Estimate approval rate
+- Technician utilization
+- Labour revenue
+- Parts revenue
+- Total service revenue
+- Outstanding balances
+- Gross profit
+- Warranty return rate
+Charts:
+- Work orders by status
+- Created versus completed
+- Revenue by service type
+- Technician productivity
+- Average completion time
+- Labour versus parts revenue
+- Work orders by location
+- Work orders by priority
+- Estimate approval trends
+--------------------------------------------------
+22. REPORTS
+--------------------------------------------------
+Create the following reports:
+1. Work Order Summary
+2. Open Work Orders
+3. Overdue Work Orders
+4. Work Orders by Status
+5. Work Orders by Technician
+6. Technician Productivity
+7. Technician Labour Hours
+8. Service Revenue
+9. Parts Used
+10. Labour Profitability
+11. Parts Profitability
+12. Work Order Profitability
+13. Estimate Approval Rate
+14. Average Turnaround Time
+15. Warranty Returns
+16. Customer Outstanding Balances
+17. Deposits Collected
+18. Ready-for-Collection Aging
+19. Work Orders by Customer
+20. Work Orders by Location
+21. Work Orders by Service Type
+Filters:
+- Date range
+- Location
+- Technician
+- Customer
+- Service type
+- Status
+- Priority
+- Warranty status
+- Payment status
+Export options:
+- PDF
+- Excel
+- CSV
+- Print
+--------------------------------------------------
+23. PROFITABILITY
+--------------------------------------------------
+Calculate profitability for every work order.
+Revenue:
+- Parts
+- Labour
+- Diagnostic fees
+- Service charges
+- Call-out fees
+- Delivery
+- Other charges
+Costs:
+- Inventory cost
+- Technician labour cost
+- Contractor cost
+- Travel cost
+- Other direct costs
+Display:
+- Total revenue
+- Total cost
+- Gross profit
+- Gross-margin percentage
+Only authorized users may view profitability.
+--------------------------------------------------
+24. GLOBAL SEARCH
+--------------------------------------------------
+Extend NEXXUS global search to find work orders by:
+- Work-order number
+- Customer name
+- Phone number
+- Email
+- Serial number
+- IMEI
+- Asset tag
+- Vehicle registration
+- VIN
+- Item description
+- Technician
+- Invoice number
+- Barcode or QR code
+--------------------------------------------------
+25. PERMISSIONS
+--------------------------------------------------
+Create granular permissions:
+- work_orders.view
+- work_orders.create
+- work_orders.edit
+- work_orders.delete
+- work_orders.assign
+- work_orders.change_status
+- work_orders.view_all_locations
+- work_orders.view_internal_notes
+- work_orders.view_credentials
+- work_orders.manage_credentials
+- work_orders.create_estimate
+- work_orders.send_estimate
+- work_orders.approve_estimate
+- work_orders.add_parts
+- work_orders.reserve_parts
+- work_orders.issue_parts
+- work_orders.return_parts
+- work_orders.add_labour
+- work_orders.edit_labour
+- work_orders.manage_appointments
+- work_orders.collect_payment
+- work_orders.create_invoice
+- work_orders.apply_discount
+- work_orders.complete
+- work_orders.close
+- work_orders.reopen
+- work_orders.view_profitability
+- work_orders.manage_settings
+- work_orders.view_reports
+- work_orders.export_reports
+Suggested roles:
+- Business Owner
+- Location Manager
+- Service Manager
+- Dispatcher
+- Technician
+- Apprentice
+- Cashier
+- Customer Service Representative
+- Inventory Clerk
+- Accountant
+--------------------------------------------------
+26. AUDIT LOG
+--------------------------------------------------
+Record:
+- Work order created
+- Work order edited
+- Status changed
+- Technician assigned
+- Appointment changed
+- Estimate created
+- Estimate sent
+- Estimate viewed
+- Estimate approved or rejected
+- Part reserved
+- Part issued
+- Part returned
+- Labour started
+- Labour stopped
+- Payment received
+- Invoice created
+- Note added
+- File uploaded
+- Credential revealed
+- Work order completed
+- Signature captured
+- Work order closed
+- Work order reopened
+Store:
+- User
+- Date and time
+- Action
+- Previous value
+- New value
+- IP address where available
+- Session or device identifier
+--------------------------------------------------
+27. DATABASE STRUCTURE
+--------------------------------------------------
+Create normalized tables based on the project’s database conventions.
+Suggested tables:
+work_orders
+work_order_items
+work_order_statuses
+work_order_status_history
+work_order_assignments
+work_order_notes
+work_order_attachments
+work_order_diagnoses
+work_order_estimates
+work_order_estimate_items
+work_order_estimate_approvals
+work_order_parts
+work_order_labour
+work_order_checklists
+work_order_checklist_items
+work_order_appointments
+work_order_messages
+work_order_payments
+work_order_signatures
+work_order_warranties
+work_order_activity_logs
+service_types
+service_categories
+service_checklist_templates
+service_checklist_template_items
+technician_availability
+Each applicable table must contain:
+- id
+- business_id
+- location_id where applicable
+- created_at
+- updated_at
+- created_by
+- updated_by
+- deleted_at where soft deletion is required
+Add indexes for:
+- business_id
+- location_id
+- work_order_number
+- customer_id
+- assigned_technician_id
+- status_id
+- priority
+- promised_date
+- created_at
+- serial_number
+- IMEI
+- asset_tag
+- vehicle_registration
+- invoice_id
+Use foreign keys and prevent cross-tenant relationships.
+--------------------------------------------------
+28. SETTINGS
+--------------------------------------------------
+Allow business-level configuration of:
+- Work-order numbering
+- Default status
+- Default priority
+- Default service location
+- Default tax
+- Default diagnostic fee
+- Default call-out fee
+- Deposit requirement
+- Default deposit percentage
+- Estimate expiry period
+- Customer portal
+- Customer signatures
+- Technician signatures
+- Sensitive credentials
+- Inventory reservations
+- Storage fees
+- Storage grace period
+- Default warranty
+- Completion requirements
+- Allowed status transitions
+- Notification preferences
+- Print templates
+- Terms and conditions
+- Label format
+- Time zone
+- Date format
+- Currency
+--------------------------------------------------
+29. SUPER ADMIN CONTROLS
+--------------------------------------------------
+Allow the NEXXUS super administrator to:
+- Enable or disable the module by business
+- Include the module in selected plans
+- Configure add-on pricing
+- View module usage
+- View work-order counts
+- View active technicians
+- View storage usage
+- Set optional usage limits
+- Preserve data when access expires
+--------------------------------------------------
+30. MOBILE TECHNICIAN EXPERIENCE
+--------------------------------------------------
+Create a mobile-optimized technician interface showing:
+- My assigned work
+- Today’s appointments
+- Urgent jobs
+- Active labour timer
+- Work-order details
+- Customer contact details
+- Service address
+- Directions
+- Status update
+- Notes
+- Photo upload
+- Checklist
+- Parts used
+- Signature capture
+- Completion action
+Technicians should not need to use the full desktop interface for routine field work.
+--------------------------------------------------
+31. SECURITY
+--------------------------------------------------
+Implement:
+- Multi-tenant isolation
+- Server-side authorization
+- Role-based permissions
+- Input validation
+- Secure file uploads
+- Encrypted credentials
+- Signed customer links
+- Expiring approval links
+- Rate limiting for public pages
+- CSRF protection where applicable
+- Audit logging
+- Protection against IDOR
+- Protection against mass assignment
+- No sensitive data in client logs
+- No cross-business data access
+--------------------------------------------------
+32. PERFORMANCE
+--------------------------------------------------
+Use:
+- Server-side pagination
+- Lazy-loaded detail tabs
+- Optimized database queries
+- Appropriate indexes
+- Background jobs for emails, notifications, PDFs, and reminders
+- Safe configuration caching
+- Proper prevention of N+1 queries
+--------------------------------------------------
+33. TESTING
+--------------------------------------------------
+Add:
+- Unit tests
+- Integration tests
+- Permission tests
+- Tenant-isolation tests
+- Inventory transaction tests
+- Estimate approval tests
+- Payment tests
+- Status transition tests
+- Mobile layout tests
+- End-to-end lifecycle tests
+Required end-to-end test:
+1. Create or select customer.
+2. Create work order.
+3. Add service item.
+4. Record reported issue.
+5. Assign technician.
+6. Record diagnosis.
+7. Add parts.
+8. Add labour.
+9. Create estimate.
+10. Send estimate.
+11. Customer approves.
+12. Customer pays deposit.
+13. Reserve and issue parts.
+14. Track technician time.
+15. Complete checklist.
+16. Complete work.
+17. Capture customer signature.
+18. Convert to invoice.
+19. Collect final payment.
+20. Close work order.
+21. Confirm inventory balances.
+22. Confirm payment totals.
+23. Confirm audit-log entries.
+24. Confirm another business cannot access the record.
+--------------------------------------------------
+34. BUILD PHASES
+--------------------------------------------------
+Phase 1:
+- Database schema
+- Entitlements
+- Permissions
+- Work-order creation
+- Status workflow
+- Assignment
+- Notes
+- Attachments
+- Intake receipt
+Phase 2:
+- Diagnosis
+- Estimates
+- Customer approvals
+- Deposits
+- Customer portal
+Phase 3:
+- Parts
+- Inventory integration
+- Labour tracking
+- Technician board
+- Checklists
+Phase 4:
+- Calendar
+- Scheduling
+- Completion reports
+- Signatures
+- Invoicing
+- Final payments
+- Warranty
+Phase 5:
+- Dashboard
+- Reports
+- Profitability
+- Super admin controls
+- Performance optimization
+- Full QA
+--------------------------------------------------
+35. FINAL DELIVERABLES
+--------------------------------------------------
+Provide:
+1. Database migrations
+2. Seeded default statuses
+3. Permission definitions
+4. Entitlement logic
+5. Backend endpoints and services
+6. Frontend screens and components
+7. Mobile technician interface
+8. Customer portal
+9. Estimate approval workflow
+10. Inventory integration
+11. Payment and invoice integration
+12. PDF and print templates
+13. Dashboard and reports
+14. Automated tests
+15. Setup documentation
+16. Administrator guide
+17. End-user guide
+18. Summary of all files added or modified
+Do not mark the module complete until the full work-order lifecycle works correctly and all existing NEXXUS POS functionality continues to pass regression testing.
+
+Product positioning:
+
+NEXXUS Work Orders — Manage every service request, technician, appointment, part, payment and customer update from one connected system.
