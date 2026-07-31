@@ -412,6 +412,40 @@ router.post("/superadmin/support/tickets", async (req, res): Promise<void> => {
     return;
   }
 
+  // Email the support inbox — non-blocking, ticket is already saved.
+  void (async () => {
+    try {
+      const { fromAddress, fromName } = await getFromDetails(tenantId);
+      await sendMail({
+        platformCopy: true,
+        to: SUPPORT_INBOX,
+        cc: record.contactEmail || undefined,
+        subject: `[${priority}] ${inserted!.ticketRef} — ${businessName}: ${record.subCategory} (logged via ${reportSource})`,
+        html: buildTicketEmailHtml({
+          ticketRef: inserted!.ticketRef,
+          priority,
+          businessName,
+          contactName: record.contactName,
+          contactPhone: record.contactPhone,
+          contactEmail: record.contactEmail,
+          category: record.category,
+          subCategory: record.subCategory,
+          impact: record.impact,
+          startedWhen: record.startedWhen,
+          stepsTaken,
+          additionalNotes: record.additionalNotes,
+          createdAt: inserted!.createdAt,
+        }),
+        fromName,
+        fromAddress,
+        tenantId,
+      });
+    } catch (err) {
+      // Email failure is non-fatal — ticket is already saved
+      console.error({ err, ticketRef: inserted!.ticketRef }, "superadmin support ticket email failed");
+    }
+  })();
+
   res.status(201).json(inserted);
 });
 
