@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { lookupPackage } from "@workspace/api-client-react";
-import { isRoutingOnlyBarcode, cleanScannedTracking } from "@/lib/package-barcode";
+import { isRoutingOnlyBarcode, cleanScannedTracking, looksLikeTrackingCode } from "@/lib/package-barcode";
 import { PackageCheck, Search, Plus, Eye, Ban, Pencil } from "lucide-react";
 
 function formatCurrency(n: number, currency = "JMD") {
@@ -161,6 +161,27 @@ export default function PackagesPage() {
     return () => clearTimeout(t);
   }, [receiveOpen, form.trackingNumber]);
 
+  const anyDialogOpen = receiveOpen || !!viewing || !!cancelling;
+
+  // Scanners that don't emit a trailing Enter (or whose Enter gets swallowed by
+  // the browser) leave the tracking code stranded in the search box. When the
+  // box looks like a scanned parcel code and no dialog is open, auto-trigger
+  // the lookup/receive flow after a short pause — mirrors the POS debounce.
+  // Clears `search` before calling handleScannedCode so that the "found" branch's
+  // setSearch(pkg.trackingNumber) + setViewing(pkg) flip anyDialogOpen to true,
+  // preventing the effect from looping back on itself.
+  useEffect(() => {
+    if (anyDialogOpen) return;
+    const code = search.trim();
+    if (!looksLikeTrackingCode(code)) return;
+    const t = setTimeout(() => {
+      setSearch("");
+      void handleScannedCode(code);
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, anyDialogOpen]);
+
   // Scan flow: look the code up first. If the package exists, filter the list
   // to it and show its details; only open the Receive form when it's new.
   async function handleScannedCode(rawCode: string) {
@@ -189,7 +210,6 @@ export default function PackagesPage() {
   // with Enter. When the receive dialog is NOT open, detect such a burst
   // anywhere on the page and open the Receive form with the tracking number
   // prefilled. Human typing is too slow to trigger this (>50ms between keys).
-  const anyDialogOpen = receiveOpen || !!viewing || !!cancelling;
   const scanRef = useRef({ buffer: "", lastTs: 0 });
   useEffect(() => {
     if (anyDialogOpen) return;

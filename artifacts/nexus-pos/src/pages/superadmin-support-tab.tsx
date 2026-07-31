@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   RefreshCw, Search, X, ChevronDown, ChevronUp, Mail,
   Phone, User, Tag, AlertTriangle, Clock, CheckCircle,
@@ -384,6 +384,29 @@ function NewTicketModal({
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
+
+  // Auto-fill contact fields from the selected tenant, but only if the field
+  // hasn't been manually edited yet (i.e. it still matches the previous tenant's
+  // value or is empty). This lets staff override auto-filled values freely.
+  const prevTenantRef = useRef<TenantLite | null>(null);
+  useEffect(() => {
+    const prev = prevTenantRef.current;
+    prevTenantRef.current = tenant;
+    if (tenant) {
+      // Auto-fill email: set if blank or still equals the previously auto-filled value
+      setContactEmail(cur =>
+        cur === "" || cur === (prev?.email ?? "") ? tenant.email : cur
+      );
+      // Auto-fill phone: set if blank or still equals the previously auto-filled value
+      setContactPhone(cur =>
+        cur === "" || cur === (prev?.phone ?? "") ? (tenant.phone ?? "") : cur
+      );
+    } else {
+      // Tenant cleared — wipe fields that still match the old auto-filled values
+      setContactEmail(cur => cur === (prev?.email ?? "") ? "" : cur);
+      setContactPhone(cur => cur === (prev?.phone ?? "") ? "" : cur);
+    }
+  }, [tenant]);
   const [category, setCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
   const [priority, setPriority] = useState<"CRITICAL" | "HIGH" | "NORMAL" | "LOW">("NORMAL");

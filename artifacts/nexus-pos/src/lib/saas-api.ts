@@ -1191,7 +1191,7 @@ export interface TechnicianAssignment {
 export interface TechnicianDetail extends Technician {
   assignments: TechnicianAssignment[];
 }
-export interface TenantLite { id: number; businessName: string; email: string; status: string }
+export interface TenantLite { id: number; businessName: string; email: string; phone: string | null; status: string }
 
 export const superadminListTechnicians = (status?: string) =>
   api<TechnicianRow[]>(`/superadmin/technicians${status ? `?status=${encodeURIComponent(status)}` : ""}`, { headers: superadminAuthHeaders() });

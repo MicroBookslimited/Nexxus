@@ -1162,6 +1162,7 @@ router.get("/superadmin/tenants-lite", async (req, res): Promise<void> => {
     id: tenantsTable.id,
     businessName: tenantsTable.businessName,
     email: tenantsTable.email,
+    phone: tenantsTable.phone,
     status: tenantsTable.status,
   }).from(tenantsTable);
 
