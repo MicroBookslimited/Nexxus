@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   RefreshCw, Search, X, ChevronDown, ChevronUp, Mail,
   Phone, User, Tag, AlertTriangle, Clock, CheckCircle,
-  MessageSquare, Save, Settings2, LifeBuoy, Plus,
+  MessageSquare, Save, Settings2, LifeBuoy, Plus, Copy,
 } from "lucide-react";
 import {
   superadminGetSupportTickets,
@@ -57,10 +57,12 @@ function TicketDetail({
   ticket,
   onClose,
   onUpdated,
+  onDuplicate,
 }: {
   ticket: SupportTicketRow;
   onClose: () => void;
   onUpdated: (t: SupportTicketRow) => void;
+  onDuplicate: () => void;
 }) {
   const [status, setStatus] = useState(ticket.status);
   const [notes, setNotes] = useState(ticket.adminNotes ?? "");
@@ -118,6 +120,13 @@ function TicketDetail({
           </div>
           <div className="flex items-center gap-2">
             <PriorityBadge p={ticket.priority} />
+            <button
+              onClick={onDuplicate}
+              title="Duplicate this ticket"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[#94a3b8] hover:text-white hover:bg-[#2a3a55] transition-colors text-xs"
+            >
+              <Copy size={13} /> Duplicate
+            </button>
             <button onClick={onClose} className="p-1.5 rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors ml-1">
               <X size={16} />
             </button>
@@ -376,14 +385,22 @@ function TenantPicker({
 function NewTicketModal({
   onClose,
   onCreated,
+  prefill,
 }: {
   onClose: () => void;
   onCreated: (t: SupportTicketRow) => void;
+  prefill?: SupportTicketRow;
 }) {
-  const [tenant, setTenant] = useState<TenantLite | null>(null);
-  const [contactName, setContactName] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
+  // When duplicating, seed a synthetic TenantLite from the source ticket so
+  // TenantPicker shows the correct business pre-selected.
+  const seedTenant: TenantLite | null = prefill
+    ? { id: prefill.tenantId, businessName: prefill.businessName, email: prefill.contactEmail ?? "", phone: prefill.contactPhone ?? null, status: "active" }
+    : null;
+
+  const [tenant, setTenant] = useState<TenantLite | null>(seedTenant);
+  const [contactName, setContactName] = useState(prefill?.contactName ?? "");
+  const [contactPhone, setContactPhone] = useState(prefill?.contactPhone ?? "");
+  const [contactEmail, setContactEmail] = useState(prefill?.contactEmail ?? "");
 
   // Auto-fill contact fields from the selected tenant, but only if the field
   // hasn't been manually edited yet (i.e. it still matches the previous tenant's
@@ -407,11 +424,11 @@ function NewTicketModal({
       setContactPhone(cur => cur === (prev?.phone ?? "") ? "" : cur);
     }
   }, [tenant]);
-  const [category, setCategory] = useState("");
-  const [subCategory, setSubCategory] = useState("");
-  const [priority, setPriority] = useState<"CRITICAL" | "HIGH" | "NORMAL" | "LOW">("NORMAL");
-  const [reportSource, setReportSource] = useState("");
-  const [notes, setNotes] = useState("");
+  const [category, setCategory] = useState(prefill?.category ?? "");
+  const [subCategory, setSubCategory] = useState(prefill?.subCategory ?? "");
+  const [priority, setPriority] = useState<"CRITICAL" | "HIGH" | "NORMAL" | "LOW">((prefill?.priority as "CRITICAL" | "HIGH" | "NORMAL" | "LOW") ?? "NORMAL");
+  const [reportSource, setReportSource] = useState(prefill?.reportSource ?? "");
+  const [notes, setNotes] = useState(prefill?.additionalNotes ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -451,9 +468,12 @@ function NewTicketModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a3a55] sticky top-0 bg-[#1a2332] z-10">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-[#3b82f6]/10 rounded-lg flex items-center justify-center">
-              <Plus size={18} className="text-[#3b82f6]" />
+              {prefill ? <Copy size={18} className="text-[#3b82f6]" /> : <Plus size={18} className="text-[#3b82f6]" />}
             </div>
-            <div className="font-bold text-white">New Ticket</div>
+            <div>
+              <div className="font-bold text-white">{prefill ? "Duplicate Ticket" : "New Ticket"}</div>
+              {prefill && <div className="text-xs text-[#475569]">Based on {prefill.ticketRef}</div>}
+            </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg text-[#475569] hover:text-white hover:bg-[#2a3a55] transition-colors">
             <X size={16} />
@@ -548,6 +568,7 @@ export function SuperadminSupportTab() {
   const [inboxError, setInboxError] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [showNewTicket, setShowNewTicket] = useState(false);
+  const [duplicateFrom, setDuplicateFrom] = useState<SupportTicketRow | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -608,12 +629,14 @@ export function SuperadminSupportTab() {
           ticket={selected}
           onClose={() => setSelected(null)}
           onUpdated={handleUpdated}
+          onDuplicate={() => { setDuplicateFrom(selected); setSelected(null); }}
         />
       )}
-      {showNewTicket && (
+      {(showNewTicket || duplicateFrom) && (
         <NewTicketModal
-          onClose={() => setShowNewTicket(false)}
-          onCreated={t => setTickets(prev => [t, ...prev])}
+          prefill={duplicateFrom ?? undefined}
+          onClose={() => { setShowNewTicket(false); setDuplicateFrom(null); }}
+          onCreated={t => { setTickets(prev => [t, ...prev]); setShowNewTicket(false); setDuplicateFrom(null); }}
         />
       )}
 
@@ -747,6 +770,7 @@ export function SuperadminSupportTab() {
               key={ticket.id}
               ticket={ticket}
               onSelect={() => setSelected(ticket)}
+              onDuplicate={() => setDuplicateFrom(ticket)}
             />
           ))}
         </div>
@@ -755,7 +779,7 @@ export function SuperadminSupportTab() {
   );
 }
 
-function TicketRow({ ticket, onSelect }: { ticket: SupportTicketRow; onSelect: () => void }) {
+function TicketRow({ ticket, onSelect, onDuplicate }: { ticket: SupportTicketRow; onSelect: () => void; onDuplicate: () => void }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -780,6 +804,13 @@ function TicketRow({ ticket, onSelect }: { ticket: SupportTicketRow; onSelect: (
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={e => { e.stopPropagation(); onDuplicate(); }}
+            title="Duplicate this ticket"
+            className="p-1.5 text-[#475569] hover:text-[#94a3b8] hover:bg-[#2a3a55] rounded-lg transition-colors"
+          >
+            <Copy size={14} />
+          </button>
           <button
             onClick={e => { e.stopPropagation(); onSelect(); }}
             className="px-3 py-1.5 bg-[#3b82f6]/10 hover:bg-[#3b82f6]/20 text-[#3b82f6] rounded-lg text-xs font-medium transition-colors"
