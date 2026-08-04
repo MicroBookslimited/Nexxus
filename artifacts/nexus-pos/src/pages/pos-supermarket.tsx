@@ -1019,13 +1019,14 @@ export function PosSupermarket({
     } catch (err) {
       // Not a package. (Check .status directly: two ApiError classes exist.)
       if ((err as { status?: number } | null)?.status === 404) {
-        if (opts?.notifyNotFound) {
-          // Courier-mode auto-lookup: tell the cashier and clear the box so
-          // the next scan lands clean instead of concatenating onto this one.
+        // Show feedback when: courier mode (notifyNotFound), OR the scan was
+        // positively identified as a USPS/Amazon tracking format — so cashiers
+        // know to receive the package first rather than seeing nothing happen.
+        if (opts?.notifyNotFound || extractTracking(code)) {
           playScanErrorTone();
           toast({
             title: "No package found",
-            description: `No package in house matches “${code}”. Check the tracking number or receive it first.`,
+            description: `No package in house matches that tracking number. Receive it first on the Packages page.`,
             variant: "destructive",
           });
           setSearchTerm("");

@@ -93,7 +93,7 @@ import { SplitPaymentDialog } from "@/components/split-payment-dialog";
 import { printQuotation } from "@/lib/quotation-doc";
 import { printOrderReceipt } from "@/lib/print-receipt";
 import { fetchCustomerReceiptInfo, type CustomerReceiptInfo, getPurchaseUnits, type PurchaseUnit, getPricingTiers, previewTierPrice, type PricingTier, lookupGiftVoucher, type VoucherLookupResult, ApiError } from "@/lib/saas-api";
-import { isRoutingOnlyBarcode, cleanScannedTracking, extractTracking } from "@/lib/package-barcode";
+import { isRoutingOnlyBarcode, cleanScannedTracking, extractTracking, looksLikeTrackingCode } from "@/lib/package-barcode";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -911,17 +911,26 @@ export function PosHardware() {
 
   // Some scanners send the tracking chunk WITHOUT a trailing Enter, leaving it
   // stranded in the search box. When the module is on and the input looks like
-  // a scanned parcel tracking code (never partial product typing), auto-run the
-  // package lookup after a short pause. A 404 stays silent.
+  // a scanned parcel tracking code — a known USPS/Amazon format, or ANY longish
+  // unbroken alphanumeric code (GoFo, FedEx, UPS, SpeedX…) that doesn't match a
+  // product barcode/SKU — auto-run the package lookup after a short pause.
   useEffect(() => {
     if (!packagesEnabled) return;
-    if (!extractTracking(searchTerm)) return;
+    const code = searchTerm.trim();
+    if (!extractTracking(code)) {
+      if (!looksLikeTrackingCode(code)) return;
+      const norm = code.toLowerCase();
+      const isProductCode = productList.some(
+        (p) => (p.barcode ?? "").toLowerCase() === norm || (p.sku ?? "").toLowerCase() === norm,
+      );
+      if (isProductCode) return;
+    }
     const t = setTimeout(() => {
-      void tryAddPackagePickup(searchTerm.trim());
+      void tryAddPackagePickup(code);
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, packagesEnabled]);
+  }, [searchTerm, packagesEnabled, productList]);
 
   const tryAddPackagePickup = async (code: string): Promise<boolean> => {
     // Routing-only barcode chunk (420+ZIP, no tracking digits): swallow it so
@@ -985,7 +994,19 @@ export function PosHardware() {
     } catch (err) {
       // Not a package — stay silent and let the normal product-scan flow
       // handle the code. (Check .status directly: two ApiError classes exist.)
-      if ((err as { status?: number } | null)?.status === 404) return false;
+      if ((err as { status?: number } | null)?.status === 404) {
+        // If the scan was positively identified as a USPS/Amazon tracking number,
+        // tell the cashier it wasn't found so they know to receive it first.
+        if (extractTracking(code)) {
+          toast({
+            title: "Package not found",
+            description: "No package in house matches that tracking number. Receive it first on the Packages page.",
+            variant: "destructive",
+          });
+          setSearchTerm("");
+        }
+        return false;
+      }
       toast({
         title: "Couldn't check that barcode",
         description: "There was a problem checking for a package pickup. Please scan again.",
