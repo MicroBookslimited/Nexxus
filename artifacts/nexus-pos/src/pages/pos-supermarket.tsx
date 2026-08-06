@@ -62,6 +62,8 @@ import {
   ChevronUp,
   PauseCircle,
   PlayCircle,
+  Percent,
+  DollarSign,
   PackagePlus,
   Package as PackageIcon,
 } from "lucide-react";
@@ -735,6 +737,9 @@ export function PosSupermarket({
     setVoucherCodeInput("");
     setAppliedVoucher(null);
     setVoucherLookupBusy(false);
+    setDiscountType(null);
+    setDiscountAmount(0);
+    setDiscountAuthorizedBy(null);
   };
 
   /* ── Hold / recall bill ───────────────────────────────────────────────────
@@ -775,6 +780,10 @@ export function PosSupermarket({
             price: c.price,
             quantity: c.quantity,
           })),
+          // Persist any manager-approved discount so recalling the bill
+          // charges the same price the customer was quoted.
+          discountType: discountType ?? undefined,
+          discountAmount: discountAmount > 0 ? discountAmount : undefined,
         },
       },
       {
@@ -823,6 +832,17 @@ export function PosSupermarket({
         };
       }),
     );
+    // Restore the held bill's discount (or clear any stale one from the
+    // replaced cart — the incoming bill's terms win either way).
+    if (held.discountType === "percent" || held.discountType === "fixed") {
+      setDiscountType(held.discountType);
+      setDiscountAmount(held.discountAmount ?? 0);
+      setDiscountAuthorizedBy(null);
+    } else {
+      setDiscountType(null);
+      setDiscountAmount(0);
+      setDiscountAuthorizedBy(null);
+    }
     setSelectedKey(null);
     setHeldSheetOpen(false);
     focusScanInput();
@@ -1230,12 +1250,30 @@ export function PosSupermarket({
     );
   };
 
+  /* ── Order-level discount (manager PIN required) ───────────────────────── */
+  const [discountType, setDiscountType] = useState<"percent" | "fixed" | null>(null);
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [discountAuthorizedBy, setDiscountAuthorizedBy] = useState<string | null>(null);
+  const [discountOverrideOpen, setDiscountOverrideOpen] = useState(false);
+  const [discountEntryOpen, setDiscountEntryOpen] = useState(false);
+  const [pendingDiscountType, setPendingDiscountType] = useState<"percent" | "fixed">("percent");
+  const [pendingDiscountAmount, setPendingDiscountAmount] = useState<number>(0);
+
   /* ── Totals ────────────────────────────────────────────────────────────── */
   const subtotal = cart.reduce((s, c) => s + effectiveUnitPrice(c) * c.quantity, 0);
   const taxBase = cart.reduce((s, c) => (c.isTaxable ? s + effectiveUnitPrice(c) * c.quantity : s), 0);
+  // Order-level discount (manager-authorized). Applied before tax; the taxable
+  // bucket is reduced proportionally so tax is charged on the discounted price.
+  let rawDiscount = 0;
+  if (discountType === "percent") rawDiscount = subtotal * ((discountAmount || 0) / 100);
+  else if (discountType === "fixed") rawDiscount = discountAmount || 0;
+  const cartDiscountValue = Math.min(Math.max(0, rawDiscount), subtotal);
+  const taxBaseAfterDiscount = subtotal > 0 ? taxBase - cartDiscountValue * (taxBase / subtotal) : 0;
   const tax =
-    taxMode === "inclusive" ? (taxBase * taxRate) / (1 + taxRate) : taxBase * taxRate;
-  const total = subtotal + (taxMode === "exclusive" ? tax : 0);
+    taxMode === "inclusive"
+      ? (taxBaseAfterDiscount * taxRate) / (1 + taxRate)
+      : taxBaseAfterDiscount * taxRate;
+  const total = subtotal - cartDiscountValue + (taxMode === "exclusive" ? tax : 0);
   // Weight lines count as 1 item — summing decimal weights into the count
   // would show nonsense like "3.75 items".
   const itemCount = cart.reduce((s, c) => s + (c.weightUnit ? 1 : c.quantity), 0);
@@ -1386,6 +1424,8 @@ export function PosSupermarket({
           splitCardAmount: !voucherCoversAll && paymentMethod === "split" ? splitCard : undefined,
           splitCreditAmount: !voucherCoversAll && paymentMethod === "split" ? splitCredit : undefined,
           giftVoucherCode: appliedVoucher ? appliedVoucher.code : undefined,
+          discountType: discountType ?? undefined,
+          discountAmount: discountAmount > 0 ? discountAmount : undefined,
           notes: undefined,
           customerId: selectedCustomerId ?? undefined,
           orderType: "counter",
@@ -1644,6 +1684,25 @@ export function PosSupermarket({
               </span>
             </h2>
             <div className="flex items-center gap-2">
+              {selectedCustomer ? (
+                <button
+                  onClick={() => setCustomerOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 h-9 text-sm font-semibold text-white bg-cyan-600 hover:bg-cyan-700 transition max-w-[180px]"
+                  title={`Customer: ${selectedCustomer.name}`}
+                >
+                  <UserRound className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{selectedCustomer.name}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => setCustomerOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 h-9 text-sm font-semibold text-white bg-cyan-600 hover:bg-cyan-700 transition"
+                  title="Add a customer to this bill (optional)"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Add Customer
+                </button>
+              )}
               {cart.length > 0 && (
                 <button
                   onClick={handleHoldBill}
@@ -1824,6 +1883,15 @@ export function PosSupermarket({
               <span>Subtotal</span>
               <span className="font-mono">{formatCurrency(subtotal, baseCurrency)}</span>
             </div>
+            {cartDiscountValue > 0 && (
+              <div className="flex justify-between text-sm text-amber-600 dark:text-amber-400">
+                <span>
+                  Discount{discountType === "percent" ? ` (${discountAmount}%)` : ""}
+                  {discountAuthorizedBy ? ` · ${discountAuthorizedBy}` : ""}
+                </span>
+                <span className="font-mono">-{formatCurrency(cartDiscountValue, baseCurrency)}</span>
+              </div>
+            )}
             {taxMode === "exclusive" && (
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>Tax ({taxPct}%)</span>
@@ -1921,8 +1989,8 @@ export function PosSupermarket({
               )}
             </div>
 
-            {/* Customer */}
-            {selectedCustomer ? (
+            {/* Selected customer chip (customer is added via the header button) */}
+            {selectedCustomer && (
               <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/30 px-3 py-2.5 flex items-center gap-2">
                 <div className="h-7 w-7 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs font-bold">
                   {selectedCustomer.name.charAt(0).toUpperCase()}
@@ -1937,13 +2005,43 @@ export function PosSupermarket({
                   <X className="h-4 w-4" />
                 </button>
               </div>
+            )}
+
+            {/* Discount (manager PIN required) */}
+            {discountType && cartDiscountValue > 0 ? (
+              <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-2.5 flex items-center gap-2">
+                <div className="h-7 w-7 rounded-full bg-amber-500 text-white flex items-center justify-center">
+                  <Percent className="h-3.5 w-3.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-foreground text-sm">
+                    {discountType === "percent" ? `${discountAmount}% Discount` : `${formatCurrency(discountAmount, baseCurrency)} Discount`}
+                  </div>
+                  {discountAuthorizedBy && (
+                    <div className="text-xs text-muted-foreground truncate">Approved by {discountAuthorizedBy}</div>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setDiscountType(null); setDiscountAmount(0); setDiscountAuthorizedBy(null); }}
+                  className="text-muted-foreground hover:text-rose-500"
+                  title="Remove discount"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             ) : (
               <button
-                onClick={() => setCustomerOpen(true)}
-                className="w-full rounded-xl bg-cyan-600 hover:bg-cyan-700 px-3 py-2.5 text-sm font-semibold text-white shadow-md transition flex items-center justify-center gap-2"
+                onClick={() => {
+                  if (cart.length === 0) {
+                    toast({ title: "Cart is empty", description: "Scan items before applying a discount.", variant: "destructive" });
+                    return;
+                  }
+                  setDiscountOverrideOpen(true);
+                }}
+                className="w-full rounded-xl bg-amber-500 hover:bg-amber-600 px-3 py-2.5 text-sm font-semibold text-white shadow-md transition flex items-center justify-center gap-2"
               >
-                <UserPlus className="h-4 w-4" />
-                Add Customer (optional)
+                <Percent className="h-4 w-4" />
+                Discount
               </button>
             )}
 
@@ -2380,6 +2478,114 @@ export function PosSupermarket({
               doCreateProduct();
             }}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Discount: manager PIN required ───────────────────────────── */}
+      <Dialog open={discountOverrideOpen} onOpenChange={(o) => { if (!o) { setDiscountOverrideOpen(false); focusScanInput(); } }}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-center gap-2 text-amber-500">
+              <Percent className="h-4 w-4" />
+              Manager Override Required
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground text-center -mt-2 mb-2">
+            A manager or admin PIN is required to apply a discount.
+          </p>
+          <PinPad
+            title=""
+            requiredRoles={["manager", "admin", "supervisor"]}
+            onSuccess={(staff) => {
+              setDiscountOverrideOpen(false);
+              setDiscountAuthorizedBy(staff.name);
+              setPendingDiscountType("percent");
+              setPendingDiscountAmount(0);
+              setDiscountEntryOpen(true);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Discount entry — after override approved ─────────────────── */}
+      <Dialog open={discountEntryOpen} onOpenChange={(o) => { if (!o) { setDiscountEntryOpen(false); focusScanInput(); } }}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-500">
+              <Percent className="h-4 w-4" />
+              Apply Discount
+            </DialogTitle>
+          </DialogHeader>
+          {discountAuthorizedBy && (
+            <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2.5 py-1.5 -mt-1 mb-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">Override approved by <span className="font-semibold">{discountAuthorizedBy}</span></p>
+            </div>
+          )}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant={pendingDiscountType === "percent" ? "default" : "outline"}
+                className="h-10 text-sm"
+                onClick={() => setPendingDiscountType("percent")}
+              >
+                <Percent className="h-4 w-4 mr-1.5" />Percent
+              </Button>
+              <Button
+                variant={pendingDiscountType === "fixed" ? "default" : "outline"}
+                className="h-10 text-sm"
+                onClick={() => setPendingDiscountType("fixed")}
+              >
+                <DollarSign className="h-4 w-4 mr-1.5" />Fixed $
+              </Button>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                {pendingDiscountType === "percent" ? "Discount %" : "Discount Amount ($)"}
+              </Label>
+              <Input
+                autoFocus
+                type="number"
+                min={0}
+                max={pendingDiscountType === "percent" ? 100 : undefined}
+                step={pendingDiscountType === "percent" ? 1 : 0.01}
+                className="font-mono text-base h-10"
+                placeholder={pendingDiscountType === "percent" ? "e.g. 10" : "e.g. 5.00"}
+                value={pendingDiscountAmount || ""}
+                onChange={(e) => setPendingDiscountAmount(Number(e.target.value))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && pendingDiscountAmount > 0) {
+                    setDiscountType(pendingDiscountType);
+                    setDiscountAmount(pendingDiscountAmount);
+                    setDiscountEntryOpen(false);
+                    focusScanInput();
+                  }
+                }}
+              />
+              {pendingDiscountType === "percent" && pendingDiscountAmount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  = {formatCurrency(subtotal * pendingDiscountAmount / 100, baseCurrency)} off {formatCurrency(subtotal, baseCurrency)}
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" className="flex-1" onClick={() => { setDiscountEntryOpen(false); setDiscountAuthorizedBy(null); focusScanInput(); }}>
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              disabled={pendingDiscountAmount <= 0}
+              onClick={() => {
+                setDiscountType(pendingDiscountType);
+                setDiscountAmount(pendingDiscountAmount);
+                setDiscountEntryOpen(false);
+                focusScanInput();
+              }}
+            >
+              Apply Discount
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
