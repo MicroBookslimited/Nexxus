@@ -52,6 +52,10 @@ app.use("/api/marketing/webhook", express.raw({ type: "application/json" }), (re
   next();
 });
 
+// Backup restore uploads carry a whole (gzip+base64) tenant dataset — allow a
+// larger body on that route only.
+app.use("/api/backup/restore", express.json({ limit: "200mb" }));
+
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 

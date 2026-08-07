@@ -40,6 +40,7 @@ import { Ingredients } from "@/pages/ingredients";
 import { Recipes } from "@/pages/recipes";
 import { Production } from "@/pages/production";
 import { MyHardware } from "@/pages/my-hardware";
+import BackupPage from "@/pages/backup";
 import StorePage from "@/pages/store";
 import { Register } from "@/pages/register";
 import { TopUp } from "@/pages/topup";
@@ -206,6 +207,7 @@ function POSRouter() {
       <Route path="/recipes"><ProtectedRoute component={Recipes} permission="inventory.manage" /></Route>
       <Route path="/production"><ProtectedRoute component={Production} permission="inventory.manage" /></Route>
       <Route path="/hardware"><ProtectedRoute component={MyHardware} permission="settings.view" /></Route>
+      <Route path="/backup"><ProtectedRoute component={BackupPage} permission="settings.manage" /></Route>
       <Route path="/audit"><ProtectedRoute component={AuditTrail} permission="reports.view" /></Route>
       <Route path="/support"><ProtectedRoute component={Support} /></Route>
       <Route path="/cash"><ProtectedRoute component={CashManagement} permission="cash.open_session" /></Route>
