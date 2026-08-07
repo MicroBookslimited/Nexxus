@@ -64,10 +64,12 @@ function normCol(col: unknown) {
 function codeMatches(col: unknown, q: string) {
   const conds = [sql`${normCol(col)} = ${q}`];
   if (q.length >= 10) {
-    // scanned code carries a routing prefix (e.g. 420+ZIP) before the stored number
-    conds.push(sql`length(${normCol(col)}) >= 10 AND ${q} LIKE '%' || ${normCol(col)}`);
-    // stored value carries the prefix and the bare number was scanned
-    conds.push(sql`${normCol(col)} LIKE '%' || ${q}`);
+    // Containment in either direction (min 10 chars to avoid false hits):
+    //  - scanned code carries a routing prefix (420+ZIP) around the stored number
+    //  - stored value carries the prefix / extra IMpb digits and a shorter form
+    //    was scanned (or an older client truncated a long IMpb scan)
+    conds.push(sql`length(${normCol(col)}) >= 10 AND ${q} LIKE '%' || ${normCol(col)} || '%'`);
+    conds.push(sql`${normCol(col)} LIKE '%' || ${q} || '%'`);
   }
   return or(...conds)!;
 }

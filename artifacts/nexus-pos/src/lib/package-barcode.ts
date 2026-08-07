@@ -26,12 +26,17 @@ export function cleanScannedTracking(raw: string): string {
  * chunk, ZIP+4 fragment, then the tracking digits in groups), sometimes with
  * spaces and no Enter. The buffer can end up like "31069400108106244289839561"
  * or "9400 1081 0624 4289 8395 61". Rather than demanding an exact format,
- * find a USPS (9 + 21-25 digits) or Amazon (TBA…) tracking number anywhere in
- * the whitespace-stripped text. Returns null when none is present.
+ * find a USPS (9 + 21 or more digits) or Amazon (TBA…) tracking number anywhere
+ * in the whitespace-stripped text. Returns null when none is present.
+ *
+ * NO upper bound on the USPS digit run: IMpb barcodes can encode 30+ digit
+ * numbers (eVS/full IMpb). A cap here truncated long scans to a PREFIX of the
+ * stored number, which the server's suffix-tolerant lookup could not match —
+ * packages registered fine but never came up at checkout.
  */
 export function extractTracking(raw: string): string | null {
   const code = cleanScannedTracking(raw.replace(/\s+/g, ""));
-  const m = code.match(/9\d{21,25}|TBA\w{10,}/i);
+  const m = code.match(/9\d{21,}|TBA\w{10,}/i);
   return m ? m[0]! : null;
 }
 
