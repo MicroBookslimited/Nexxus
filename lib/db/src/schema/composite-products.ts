@@ -1,5 +1,6 @@
 import { pgTable, serial, integer, real, timestamp, unique, index } from "drizzle-orm/pg-core";
 import { productsTable } from "./products";
+import { variantOptionsTable } from "./variants";
 
 /**
  * Composite (bundle) product components.
@@ -27,11 +28,22 @@ export const compositeProductComponentsTable = pgTable(
     // unit so the editor can re-display "qty per Case" instead of "qty in
     // each"); the actual stock math always uses base units.
     unitId: integer("unit_id"),
+    // Optional link to a variant option of the PARENT product. NULL means the
+    // component is always deducted; when set, the component is only deducted
+    // when the sale's variant choices include that option (e.g. colour "Red"
+    // pulls the red sub-part from stock). Cascade: deleting the option removes
+    // the option-scoped component rows.
+    variantOptionId: integer("variant_option_id")
+      .references(() => variantOptionsTable.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    unique("uq_composite_parent_child").on(t.parentProductId, t.childProductId),
+    // NULLS NOT DISTINCT so the same child can't be listed twice as "always",
+    // while still allowing the same child under two different options.
+    unique("uq_composite_parent_child_option")
+      .on(t.parentProductId, t.childProductId, t.variantOptionId)
+      .nullsNotDistinct(),
     index("idx_composite_parent_product").on(t.parentProductId),
   ],
 );

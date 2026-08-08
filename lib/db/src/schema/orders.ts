@@ -123,6 +123,16 @@ export const orderItemsTable = pgTable("order_items", {
   }>>(),
   lineTotal: real("line_total").notNull(),
   notes: text("notes"),
+  // Immutable snapshot of the composite components deducted for THIS line at
+  // sale time (per one unit sold). Refund/void restore reads this instead of
+  // the current recipe, so editing a bundle (or deleting a variant option,
+  // which cascades its scoped component rows) after a sale can't corrupt
+  // stock restoration. Null for non-composite lines and legacy rows.
+  componentSnapshot: jsonb("component_snapshot").$type<Array<{
+    childProductId: number;
+    quantityRequired: number;
+    variantOptionId: number | null;
+  }>>(),
 });
 
 export const heldOrdersTable = pgTable("held_orders", {

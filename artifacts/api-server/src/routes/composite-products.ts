@@ -6,6 +6,8 @@ import {
   productsTable,
   compositeProductComponentsTable,
   locationInventoryTable,
+  variantOptionsTable,
+  variantGroupsTable,
 } from "@workspace/db";
 import { verifyTenantToken } from "./saas-auth";
 import { logAudit } from "./audit";
@@ -68,8 +70,85 @@ const ComponentInput = z.object({
   childProductId: z.number().int().positive(),
   quantityRequired: z.number().positive(),
   unitId: z.number().int().nullable().optional(),
+  // Optional link to one of the PARENT product's variant options. NULL/omitted
+  // means the component is deducted on every sale of the bundle; set means it
+  // is deducted only when that option is chosen (e.g. Colour: Red).
+  variantOptionId: z.number().int().positive().nullable().optional(),
 });
 const SaveBody = z.object({ components: z.array(ComponentInput) });
+
+/** Shared select fragment: component rows joined with child product info and
+ *  the linked variant option / group names (for display). */
+async function selectComponents(tenantId: number, productId: number) {
+  return db
+    .select({
+      id: compositeProductComponentsTable.id,
+      parentProductId: compositeProductComponentsTable.parentProductId,
+      childProductId: compositeProductComponentsTable.childProductId,
+      quantityRequired: compositeProductComponentsTable.quantityRequired,
+      unitId: compositeProductComponentsTable.unitId,
+      variantOptionId: compositeProductComponentsTable.variantOptionId,
+      variantOptionName: variantOptionsTable.name,
+      variantGroupId: variantGroupsTable.id,
+      variantGroupName: variantGroupsTable.name,
+      childName: productsTable.name,
+      childSku: productsTable.barcode,
+      childCostPrice: productsTable.costPrice,
+    })
+    .from(compositeProductComponentsTable)
+    .leftJoin(productsTable, eq(productsTable.id, compositeProductComponentsTable.childProductId))
+    .leftJoin(variantOptionsTable, eq(variantOptionsTable.id, compositeProductComponentsTable.variantOptionId))
+    .leftJoin(variantGroupsTable, eq(variantGroupsTable.id, variantOptionsTable.groupId))
+    .where(and(
+      eq(compositeProductComponentsTable.tenantId, tenantId),
+      eq(compositeProductComponentsTable.parentProductId, productId),
+    ));
+}
+
+type ComponentRow = Awaited<ReturnType<typeof selectComponents>>[number];
+
+function toComponentJson(r: ComponentRow) {
+  return {
+    id: r.id,
+    parentProductId: r.parentProductId,
+    childProductId: r.childProductId,
+    childName: r.childName ?? "(deleted product)",
+    childSku: r.childSku ?? null,
+    childCostPrice: r.childCostPrice,
+    quantityRequired: r.quantityRequired,
+    unitId: r.unitId,
+    variantOptionId: r.variantOptionId ?? null,
+    variantOptionName: r.variantOptionId != null ? (r.variantOptionName ?? "(deleted option)") : null,
+    variantGroupName: r.variantOptionId != null ? (r.variantGroupName ?? null) : null,
+    lineCost: (r.childCostPrice ?? 0) * r.quantityRequired,
+  };
+}
+
+/**
+ * Derived cost of a composite whose components may be variant-scoped: always
+ * count the unscoped rows, and for each variant group count the most expensive
+ * option's subtotal (a sale picks exactly one option per group, so this is the
+ * conservative "worst case" cost).
+ */
+function deriveCost(rows: ComponentRow[]): number {
+  const base = rows
+    .filter((r) => r.variantOptionId == null)
+    .reduce((s, r) => s + (r.childCostPrice ?? 0) * r.quantityRequired, 0);
+  const byOption = new Map<number, { groupKey: number | string; subtotal: number }>();
+  for (const r of rows) {
+    if (r.variantOptionId == null) continue;
+    const e = byOption.get(r.variantOptionId) ?? { groupKey: r.variantGroupId ?? `o${r.variantOptionId}`, subtotal: 0 };
+    e.subtotal += (r.childCostPrice ?? 0) * r.quantityRequired;
+    byOption.set(r.variantOptionId, e);
+  }
+  const maxByGroup = new Map<number | string, number>();
+  for (const { groupKey, subtotal } of byOption.values()) {
+    maxByGroup.set(groupKey, Math.max(maxByGroup.get(groupKey) ?? 0, subtotal));
+  }
+  let cost = base;
+  for (const v of maxByGroup.values()) cost += v;
+  return cost;
+}
 
 /* ────────────────────────────────────────────────────────────────────
  * GET /products/:id/composite-components
@@ -87,37 +166,8 @@ router.get("/products/:id/composite-components", async (req, res): Promise<void>
   const parent = await ensureProduct(tenantId, productId);
   if (!parent) { res.status(404).json({ error: "Product not found" }); return; }
 
-  const rows = await db
-    .select({
-      id: compositeProductComponentsTable.id,
-      parentProductId: compositeProductComponentsTable.parentProductId,
-      childProductId: compositeProductComponentsTable.childProductId,
-      quantityRequired: compositeProductComponentsTable.quantityRequired,
-      unitId: compositeProductComponentsTable.unitId,
-      childName: productsTable.name,
-      childSku: productsTable.barcode,
-      childCostPrice: productsTable.costPrice,
-    })
-    .from(compositeProductComponentsTable)
-    .leftJoin(productsTable, eq(productsTable.id, compositeProductComponentsTable.childProductId))
-    .where(and(
-      eq(compositeProductComponentsTable.tenantId, tenantId),
-      eq(compositeProductComponentsTable.parentProductId, productId),
-    ));
-
-  const enriched = rows.map((r) => ({
-    id: r.id,
-    parentProductId: r.parentProductId,
-    childProductId: r.childProductId,
-    childName: r.childName ?? "(deleted product)",
-    childSku: r.childSku ?? null,
-    childCostPrice: r.childCostPrice,
-    quantityRequired: r.quantityRequired,
-    unitId: r.unitId,
-    lineCost: (r.childCostPrice ?? 0) * r.quantityRequired,
-  }));
-
-  res.json(enriched);
+  const rows = await selectComponents(tenantId, productId);
+  res.json(rows.map(toComponentJson));
 });
 
 /* ────────────────────────────────────────────────────────────────────
@@ -157,8 +207,10 @@ router.put("/products/:id/composite-components", async (req, res): Promise<void>
     return;
   }
 
-  // Detect duplicate children inside the submitted payload up front.
-  const seen = new Set<number>();
+  // Detect duplicate children inside the submitted payload up front. The same
+  // child may appear once per variant option (and once unscoped), but never
+  // twice under the same scope.
+  const seen = new Set<string>();
   for (const c of parsed.data.components) {
     if (c.childProductId === productId) {
       res.status(400).json({
@@ -167,14 +219,43 @@ router.put("/products/:id/composite-components", async (req, res): Promise<void>
       });
       return;
     }
-    if (seen.has(c.childProductId)) {
+    const key = `${c.childProductId}:${c.variantOptionId ?? "always"}`;
+    if (seen.has(key)) {
       res.status(400).json({
         error: "COMPOSITE_DUPLICATE_CHILD",
-        message: `Child product ${c.childProductId} is listed more than once`,
+        message: `Child product ${c.childProductId} is listed more than once for the same variant scope`,
       });
       return;
     }
-    seen.add(c.childProductId);
+    seen.add(key);
+  }
+
+  // Every referenced variant option must belong to a variant group of THIS
+  // parent product — never another product's options.
+  const optionIds = Array.from(new Set(
+    parsed.data.components
+      .map((c) => c.variantOptionId)
+      .filter((id): id is number => typeof id === "number"),
+  ));
+  if (optionIds.length > 0) {
+    const validOptions = await db
+      .select({ id: variantOptionsTable.id })
+      .from(variantOptionsTable)
+      .innerJoin(variantGroupsTable, eq(variantGroupsTable.id, variantOptionsTable.groupId))
+      .where(and(
+        inArray(variantOptionsTable.id, optionIds),
+        eq(variantGroupsTable.productId, productId),
+      ));
+    const validSet = new Set(validOptions.map((o) => o.id));
+    for (const id of optionIds) {
+      if (!validSet.has(id)) {
+        res.status(400).json({
+          error: "COMPOSITE_INVALID_VARIANT_OPTION",
+          message: `Variant option ${id} does not belong to this product`,
+        });
+        return;
+      }
+    }
   }
 
   // Validate every child product exists in this tenant.
@@ -232,6 +313,7 @@ router.put("/products/:id/composite-components", async (req, res): Promise<void>
         childProductId: c.childProductId,
         quantityRequired: c.quantityRequired,
         unitId: c.unitId ?? null,
+        variantOptionId: c.variantOptionId ?? null,
       })),
     );
 
@@ -254,45 +336,20 @@ router.put("/products/:id/composite-components", async (req, res): Promise<void>
       components: parsed.data.components.map(c => ({
         childProductId: c.childProductId,
         quantityRequired: c.quantityRequired,
+        variantOptionId: c.variantOptionId ?? null,
       })),
     },
   });
 
   // Re-read with joins so the response shape exactly matches GET.
-  const rows = await db
-    .select({
-      id: compositeProductComponentsTable.id,
-      parentProductId: compositeProductComponentsTable.parentProductId,
-      childProductId: compositeProductComponentsTable.childProductId,
-      quantityRequired: compositeProductComponentsTable.quantityRequired,
-      unitId: compositeProductComponentsTable.unitId,
-      childName: productsTable.name,
-      childSku: productsTable.barcode,
-      childCostPrice: productsTable.costPrice,
-    })
-    .from(compositeProductComponentsTable)
-    .leftJoin(productsTable, eq(productsTable.id, compositeProductComponentsTable.childProductId))
-    .where(and(
-      eq(compositeProductComponentsTable.tenantId, tenantId),
-      eq(compositeProductComponentsTable.parentProductId, productId),
-    ));
+  const rows = await selectComponents(tenantId, productId);
 
   logger.info(
     { tenantId, productId, count: rows.length },
     "[composite] components saved",
   );
 
-  res.json(rows.map((r) => ({
-    id: r.id,
-    parentProductId: r.parentProductId,
-    childProductId: r.childProductId,
-    childName: r.childName ?? "(deleted product)",
-    childSku: r.childSku ?? null,
-    childCostPrice: r.childCostPrice,
-    quantityRequired: r.quantityRequired,
-    unitId: r.unitId,
-    lineCost: (r.childCostPrice ?? 0) * r.quantityRequired,
-  })));
+  res.json(rows.map(toComponentJson));
 });
 
 /* ────────────────────────────────────────────────────────────────────
@@ -310,37 +367,12 @@ router.get("/products/:id/composite-cost", async (req, res): Promise<void> => {
   const parent = await ensureProduct(tenantId, productId);
   if (!parent) { res.status(404).json({ error: "Product not found" }); return; }
 
-  const rows = await db
-    .select({
-      id: compositeProductComponentsTable.id,
-      parentProductId: compositeProductComponentsTable.parentProductId,
-      childProductId: compositeProductComponentsTable.childProductId,
-      quantityRequired: compositeProductComponentsTable.quantityRequired,
-      unitId: compositeProductComponentsTable.unitId,
-      childName: productsTable.name,
-      childSku: productsTable.barcode,
-      childCostPrice: productsTable.costPrice,
-    })
-    .from(compositeProductComponentsTable)
-    .leftJoin(productsTable, eq(productsTable.id, compositeProductComponentsTable.childProductId))
-    .where(and(
-      eq(compositeProductComponentsTable.tenantId, tenantId),
-      eq(compositeProductComponentsTable.parentProductId, productId),
-    ));
+  const rows = await selectComponents(tenantId, productId);
+  const components = rows.map(toComponentJson);
 
-  const components = rows.map((r) => ({
-    id: r.id,
-    parentProductId: r.parentProductId,
-    childProductId: r.childProductId,
-    childName: r.childName ?? "(deleted product)",
-    childSku: r.childSku ?? null,
-    childCostPrice: r.childCostPrice,
-    quantityRequired: r.quantityRequired,
-    unitId: r.unitId,
-    lineCost: (r.childCostPrice ?? 0) * r.quantityRequired,
-  }));
-
-  const derivedCost = Math.round(components.reduce((s, c) => s + c.lineCost, 0) * 100) / 100;
+  // Variant-scoped rows are alternatives (one option per group is sold), so
+  // cost counts unscoped rows plus the most expensive option per group.
+  const derivedCost = Math.round(deriveCost(rows) * 100) / 100;
   const sellingPrice = parent.price;
   const grossProfit = Math.round((sellingPrice - derivedCost) * 100) / 100;
   const grossMarginPct = sellingPrice > 0
@@ -385,11 +417,16 @@ router.get("/products/:id/available-composite-quantity", async (req, res): Promi
     .select({
       childProductId: compositeProductComponentsTable.childProductId,
       quantityRequired: compositeProductComponentsTable.quantityRequired,
+      variantOptionId: compositeProductComponentsTable.variantOptionId,
+      variantOptionName: variantOptionsTable.name,
+      variantGroupId: variantGroupsTable.id,
       childName: productsTable.name,
       globalStock: productsTable.stockCount,
     })
     .from(compositeProductComponentsTable)
     .leftJoin(productsTable, eq(productsTable.id, compositeProductComponentsTable.childProductId))
+    .leftJoin(variantOptionsTable, eq(variantOptionsTable.id, compositeProductComponentsTable.variantOptionId))
+    .leftJoin(variantGroupsTable, eq(variantGroupsTable.id, variantOptionsTable.groupId))
     .where(and(
       eq(compositeProductComponentsTable.tenantId, tenantId),
       eq(compositeProductComponentsTable.parentProductId, productId),
@@ -433,18 +470,39 @@ router.get("/products/:id/available-composite-quantity", async (req, res): Promi
       stock,
       quantityRequired: c.quantityRequired,
       possibleBundles: possible,
+      variantOptionId: c.variantOptionId ?? null,
+      variantOptionName: c.variantOptionId != null ? (c.variantOptionName ?? "(deleted option)") : null,
+      _groupKey: c.variantOptionId != null ? (c.variantGroupId ?? `o${c.variantOptionId}`) : null,
     };
   });
 
-  const available = breakdown.reduce(
-    (m, b) => Math.min(m, b.possibleBundles),
-    Number.POSITIVE_INFINITY,
-  );
+  // Base availability comes from the always-included components. Variant-
+  // scoped components are alternatives: within each variant group the BEST
+  // option still caps the bundle count (best-case availability — the shopper
+  // can always pick the option that's in stock).
+  const baseAvail = breakdown
+    .filter((b) => b.variantOptionId == null)
+    .reduce((m, b) => Math.min(m, b.possibleBundles), Number.POSITIVE_INFINITY);
+
+  // option → min across that option's rows, then group → max across options.
+  const perOption = new Map<number, { groupKey: number | string; min: number }>();
+  for (const b of breakdown) {
+    if (b.variantOptionId == null) continue;
+    const e = perOption.get(b.variantOptionId) ?? { groupKey: b._groupKey!, min: Number.POSITIVE_INFINITY };
+    e.min = Math.min(e.min, b.possibleBundles);
+    perOption.set(b.variantOptionId, e);
+  }
+  const bestPerGroup = new Map<number | string, number>();
+  for (const { groupKey, min } of perOption.values()) {
+    bestPerGroup.set(groupKey, Math.max(bestPerGroup.get(groupKey) ?? 0, min));
+  }
+  let available = baseAvail;
+  for (const best of bestPerGroup.values()) available = Math.min(available, best);
 
   res.json({
     productId,
     available: Number.isFinite(available) ? available : 0,
-    components: breakdown,
+    components: breakdown.map(({ _groupKey, ...rest }) => rest),
   });
 });
 

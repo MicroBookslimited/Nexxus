@@ -704,6 +704,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         childProductId: number;
         quantityRequired: number;
         childName: string;
+        variantOptionId: number | null;
       }>>();
       if (compositeParentIds.length > 0) {
         const compRows = await tx
@@ -711,6 +712,7 @@ router.post("/orders", async (req, res): Promise<void> => {
             parentId: compositeProductComponentsTable.parentProductId,
             childId: compositeProductComponentsTable.childProductId,
             qty: compositeProductComponentsTable.quantityRequired,
+            variantOptionId: compositeProductComponentsTable.variantOptionId,
             childName: productsTable.name,
           })
           .from(compositeProductComponentsTable)
@@ -725,10 +727,27 @@ router.post("/orders", async (req, res): Promise<void> => {
             childProductId: r.childId,
             quantityRequired: r.qty,
             childName: r.childName ?? "(deleted product)",
+            variantOptionId: r.variantOptionId ?? null,
           });
           componentsByParent.set(r.parentId, arr);
         }
       }
+
+      // Variant-scoped composite components apply only when the sale's chosen
+      // variant options include the component's linked option. NULL-scoped
+      // ("always") components apply to every sale of the bundle.
+      const applicableComponents = (
+        parentId: number,
+        item: { variantChoices?: Array<{ optionId?: number | null }> | null },
+      ) => {
+        const all = componentsByParent.get(parentId) ?? [];
+        const chosen = new Set(
+          (item.variantChoices ?? [])
+            .map((c) => c.optionId)
+            .filter((id): id is number => typeof id === "number" && id > 0),
+        );
+        return all.filter((c) => c.variantOptionId == null || chosen.has(c.variantOptionId));
+      };
 
       // Pre-fetch variant option stock for items that carry variant choices.
       // When any chosen option has a non-null stockCount the product uses
@@ -803,19 +822,21 @@ router.post("/orders", async (req, res): Promise<void> => {
         const isComposite = metaMap.get(item.productId)?.structureType === "composite";
 
         if (isComposite) {
-          const components = componentsByParent.get(item.productId) ?? [];
+          const components = applicableComponents(item.productId, item);
           if (components.length === 0) {
-            // Selling a "composite" with no components configured would
-            // silently bypass all stock guards. Fail loud instead.
+            // Selling a "composite" with no components configured (or none
+            // matching the chosen variant options) would silently bypass all
+            // stock guards. Fail loud instead.
+            const hasAny = (componentsByParent.get(item.productId) ?? []).length > 0;
             logger.warn(
-              { tenantId, productId: item.productId },
-              "[composite] sale rejected — no components configured",
+              { tenantId, productId: item.productId, hasAny },
+              "[composite] sale rejected — no applicable components",
             );
             throw new InsufficientComponentStockError(
               item.productId,
               item.productName,
               null,
-              "(no components configured)",
+              hasAny ? "(no components configured for the selected variant)" : "(no components configured)",
               0,
               1,
             );
@@ -1241,6 +1262,17 @@ router.post("/orders", async (req, res): Promise<void> => {
           modifierChoices: item.modifierChoices ?? null,
           lineTotal: item.lineTotal,
           notes: item.notes ?? null,
+          // Immutable per-unit recipe snapshot so later refunds/voids restore
+          // exactly what was deducted, even if the bundle is edited (or a
+          // variant option deleted) between sale and refund.
+          componentSnapshot:
+            !item.isCustom && metaMap.get(item.productId)?.structureType === "composite"
+              ? applicableComponents(item.productId, item).map((c) => ({
+                  childProductId: c.childProductId,
+                  quantityRequired: c.quantityRequired,
+                  variantOptionId: c.variantOptionId,
+                }))
+              : null,
         })),
       );
 
@@ -1255,7 +1287,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           // has no stock and is not tracked in stock_movements. Each
           // child gets its own composite_sale row so reports can
           // attribute the deduction back to the parent SKU.
-          const components = componentsByParent.get(item.productId) ?? [];
+          const components = applicableComponents(item.productId, item);
           for (const comp of components) {
             const used = comp.quantityRequired * item.quantity;
             const [afterSale] = await tx
@@ -1565,7 +1597,7 @@ async function restoreLineStock(
     orderId: number;
     locationId: number | null;
     meta?: { structureType: string | null; trackBatches: boolean | null };
-    components: Array<{ childProductId: number; quantityRequired: number }>;
+    components: Array<{ childProductId: number; quantityRequired: number; variantOptionId?: number | null }>;
     movementType: string;
     compositeMovementType: string;
     noteVerb: string;
@@ -1580,7 +1612,29 @@ async function restoreLineStock(
 
   const isComposite = meta?.structureType === "composite";
   if (isComposite) {
-    for (const comp of components) {
+    // Restore exactly what was deducted at sale time. Prefer the immutable
+    // per-line snapshot written at checkout — the live recipe may have been
+    // edited (or a scoped variant option deleted, cascading its rows) since
+    // the sale. Legacy rows without a snapshot fall back to the current
+    // recipe filtered by the line's stored variant choices (mirrors the
+    // checkout deduction logic).
+    const snapshot = item.componentSnapshot as Array<{
+      childProductId: number; quantityRequired: number; variantOptionId: number | null;
+    }> | null;
+    let applicable: Array<{ childProductId: number; quantityRequired: number }>;
+    if (Array.isArray(snapshot) && snapshot.length > 0) {
+      applicable = snapshot;
+    } else {
+      const chosenOptionIds = new Set(
+        ((item.variantChoices as Array<{ optionId?: number | null }> | null) ?? [])
+          .map((c) => c.optionId)
+          .filter((id): id is number => typeof id === "number" && id > 0),
+      );
+      applicable = components.filter(
+        (c) => c.variantOptionId == null || chosenOptionIds.has(c.variantOptionId),
+      );
+    }
+    for (const comp of applicable) {
       const restored = comp.quantityRequired * restoreQty;
       await tx
         .update(productsTable)
@@ -1813,6 +1867,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     const componentsByParent = new Map<number, Array<{
       childProductId: number;
       quantityRequired: number;
+      variantOptionId: number | null;
     }>>();
     if (compositeIds.length > 0) {
       const compRows = await db
@@ -1820,6 +1875,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           parentId: compositeProductComponentsTable.parentProductId,
           childId: compositeProductComponentsTable.childProductId,
           qty: compositeProductComponentsTable.quantityRequired,
+          variantOptionId: compositeProductComponentsTable.variantOptionId,
         })
         .from(compositeProductComponentsTable)
         .where(and(
@@ -1828,7 +1884,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
         ));
       for (const r of compRows) {
         const arr = componentsByParent.get(r.parentId) ?? [];
-        arr.push({ childProductId: r.childId, quantityRequired: r.qty });
+        arr.push({ childProductId: r.childId, quantityRequired: r.qty, variantOptionId: r.variantOptionId ?? null });
         componentsByParent.set(r.parentId, arr);
       }
     }
@@ -2116,15 +2172,15 @@ router.post("/orders/:id/refund-items", async (req, res): Promise<void> => {
         .where(and(inArray(productsTable.id, itemProductIds), eq(productsTable.tenantId, tenantId)));
       const metaMap = new Map(productMeta.map(p => [p.id, p]));
       const compositeIds = productMeta.filter(p => p.structureType === "composite").map(p => p.id);
-      const componentsByParent = new Map<number, Array<{ childProductId: number; quantityRequired: number }>>();
+      const componentsByParent = new Map<number, Array<{ childProductId: number; quantityRequired: number; variantOptionId: number | null }>>();
       if (compositeIds.length > 0) {
         const compRows = await tx
-          .select({ parentId: compositeProductComponentsTable.parentProductId, childId: compositeProductComponentsTable.childProductId, qty: compositeProductComponentsTable.quantityRequired })
+          .select({ parentId: compositeProductComponentsTable.parentProductId, childId: compositeProductComponentsTable.childProductId, qty: compositeProductComponentsTable.quantityRequired, variantOptionId: compositeProductComponentsTable.variantOptionId })
           .from(compositeProductComponentsTable)
           .where(and(eq(compositeProductComponentsTable.tenantId, tenantId), inArray(compositeProductComponentsTable.parentProductId, compositeIds)));
         for (const r of compRows) {
           const arr = componentsByParent.get(r.parentId) ?? [];
-          arr.push({ childProductId: r.childId, quantityRequired: r.qty });
+          arr.push({ childProductId: r.childId, quantityRequired: r.qty, variantOptionId: r.variantOptionId ?? null });
           componentsByParent.set(r.parentId, arr);
         }
       }
@@ -2354,15 +2410,15 @@ router.post("/orders/:id/void-items", async (req, res): Promise<void> => {
       const metaMap = new Map(productMeta.map(p => [p.id, p]));
 
       const compositeIds = productMeta.filter(p => p.structureType === "composite").map(p => p.id);
-      const componentsByParent = new Map<number, Array<{ childProductId: number; quantityRequired: number }>>();
+      const componentsByParent = new Map<number, Array<{ childProductId: number; quantityRequired: number; variantOptionId: number | null }>>();
       if (compositeIds.length > 0) {
         const compRows = await tx
-          .select({ parentId: compositeProductComponentsTable.parentProductId, childId: compositeProductComponentsTable.childProductId, qty: compositeProductComponentsTable.quantityRequired })
+          .select({ parentId: compositeProductComponentsTable.parentProductId, childId: compositeProductComponentsTable.childProductId, qty: compositeProductComponentsTable.quantityRequired, variantOptionId: compositeProductComponentsTable.variantOptionId })
           .from(compositeProductComponentsTable)
           .where(and(eq(compositeProductComponentsTable.tenantId, tenantId), inArray(compositeProductComponentsTable.parentProductId, compositeIds)));
         for (const r of compRows) {
           const arr = componentsByParent.get(r.parentId) ?? [];
-          arr.push({ childProductId: r.childId, quantityRequired: r.qty });
+          arr.push({ childProductId: r.childId, quantityRequired: r.qty, variantOptionId: r.variantOptionId ?? null });
           componentsByParent.set(r.parentId, arr);
         }
       }

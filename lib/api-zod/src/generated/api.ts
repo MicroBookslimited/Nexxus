@@ -808,6 +808,9 @@ export const GetCompositeComponentsResponseItem = zod
     childCostPrice: zod.number().nullish(),
     quantityRequired: zod.number(),
     unitId: zod.number().nullish(),
+    variantOptionId: zod.number().nullish(),
+    variantOptionName: zod.string().nullish(),
+    variantGroupName: zod.string().nullish(),
     lineCost: zod
       .number()
       .describe(
@@ -832,6 +835,7 @@ export const SaveCompositeComponentsBody = zod.object({
       childProductId: zod.number(),
       quantityRequired: zod.number(),
       unitId: zod.number().nullish(),
+      variantOptionId: zod.number().nullish(),
     }),
   ),
 });
@@ -846,6 +850,9 @@ export const SaveCompositeComponentsResponseItem = zod
     childCostPrice: zod.number().nullish(),
     quantityRequired: zod.number(),
     unitId: zod.number().nullish(),
+    variantOptionId: zod.number().nullish(),
+    variantOptionName: zod.string().nullish(),
+    variantGroupName: zod.string().nullish(),
     lineCost: zod
       .number()
       .describe(
@@ -882,6 +889,9 @@ export const GetCompositeCostResponse = zod
           childCostPrice: zod.number().nullish(),
           quantityRequired: zod.number(),
           unitId: zod.number().nullish(),
+          variantOptionId: zod.number().nullish(),
+          variantOptionName: zod.string().nullish(),
+          variantGroupName: zod.string().nullish(),
           lineCost: zod
             .number()
             .describe(
@@ -924,6 +934,8 @@ export const GetAvailableCompositeResponse = zod
         stock: zod.number(),
         quantityRequired: zod.number(),
         possibleBundles: zod.number(),
+        variantOptionId: zod.number().nullish(),
+        variantOptionName: zod.string().nullish(),
       }),
     ),
   })

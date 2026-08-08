@@ -10,4 +10,6 @@ export interface CompositeComponentInput {
   childProductId: number;
   quantityRequired: number;
   unitId?: number | null;
+  /** Link to a variant option of the parent product; null/omitted = component applies to every sale. */
+  variantOptionId?: number | null;
 }

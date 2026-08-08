@@ -2174,6 +2174,8 @@ type DraftComponent = {
   childName: string;
   childCostPrice: number | null;
   quantityRequired: string;
+  /** null = component applies to every sale; otherwise a variant option id of the parent. */
+  variantOptionId: number | null;
 };
 
 function CompositeEditor({
@@ -2190,6 +2192,7 @@ function CompositeEditor({
   const { data: serverComponents, queryKey: componentsQueryKey } = useGetCompositeComponents(productId);
   const { data: cost } = useGetCompositeCost(productId);
   const { data: available } = useGetAvailableComposite(productId);
+  const { data: variantData } = useGetProductVariants(productId);
   const saveComponents = useSaveCompositeComponents();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -2209,14 +2212,28 @@ function CompositeEditor({
       childName: c.childName,
       childCostPrice: c.childCostPrice ?? null,
       quantityRequired: String(c.quantityRequired),
+      variantOptionId: c.variantOptionId ?? null,
     })));
     setDirty(false);
   }, [serverComponents]);
 
-  const addedIds = new Set(draft.map(d => d.childProductId));
+  // Variant options of THIS product — a component can be scoped to one so it
+  // is only pulled from stock when that option (e.g. Colour: Red) is sold.
+  const variantGroups = ((variantData as unknown as {
+    groups?: Array<{ id: number; name: string; options: Array<{ id: number; name: string }> }>;
+  } | undefined)?.groups ?? []).filter((g) => g.name.trim() && g.options.length > 0);
+  const variantOptions = variantGroups.flatMap((g) =>
+    g.options.map((o) => ({ id: o.id, groupId: g.id, label: `${g.name}: ${o.name}` })),
+  );
+  const optionById = new Map(variantOptions.map((o) => [o.id, o]));
+  const hasVariants = variantOptions.length > 0;
+
   // Candidate children: any *other* product the user can pick. We hide
   // composites here too — nesting bundles is allowed by the schema but
   // the UI keeps it flat to prevent accidental loops in the common case.
+  // The same child may be added again under a different variant scope, so
+  // already-added products stay pickable when the parent has variants.
+  const addedIds = new Set(hasVariants ? [] : draft.map(d => d.childProductId));
   const candidates = allProducts.filter((p) => {
     if (p.id === productId) return false;
     if (addedIds.has(p.id)) return false;
@@ -2235,6 +2252,7 @@ function CompositeEditor({
       childName: p.name,
       childCostPrice: pp.costPrice ?? null,
       quantityRequired: "1",
+      variantOptionId: null,
     }]);
     setDirty(true);
     setPickerQuery("");
@@ -2246,6 +2264,11 @@ function CompositeEditor({
     setDirty(true);
   };
 
+  const updateScope = (tempId: string, variantOptionId: number | null) => {
+    setDraft((d) => d.map((x) => x.tempId === tempId ? { ...x, variantOptionId } : x));
+    setDirty(true);
+  };
+
   const removeComponent = (tempId: string) => {
     setDraft((d) => d.filter((x) => x.tempId !== tempId));
     setDirty(true);
@@ -2253,11 +2276,26 @@ function CompositeEditor({
 
   // Live derived cost from the unsaved draft so the user sees the
   // impact of their edits immediately (server-side cost only updates
-  // after a save succeeds).
-  const draftDerivedCost = draft.reduce((s, c) => {
-    const qty = parseFloat(c.quantityRequired) || 0;
-    return s + ((c.childCostPrice ?? 0) * qty);
-  }, 0);
+  // after a save succeeds). Mirrors the server: unscoped rows always count;
+  // variant-scoped rows are alternatives, so count the most expensive
+  // option's subtotal per variant group (worst-case cost).
+  const draftDerivedCost = (() => {
+    let base = 0;
+    const byOption = new Map<number, number>();
+    for (const c of draft) {
+      const line = (c.childCostPrice ?? 0) * (parseFloat(c.quantityRequired) || 0);
+      if (c.variantOptionId == null) base += line;
+      else byOption.set(c.variantOptionId, (byOption.get(c.variantOptionId) ?? 0) + line);
+    }
+    const maxByGroup = new Map<number, number>();
+    for (const [optId, subtotal] of byOption) {
+      const groupId = optionById.get(optId)?.groupId ?? -optId;
+      maxByGroup.set(groupId, Math.max(maxByGroup.get(groupId) ?? 0, subtotal));
+    }
+    let total = base;
+    for (const v of maxByGroup.values()) total += v;
+    return total;
+  })();
   const draftGrossProfit = sellingPrice - draftDerivedCost;
   const draftMarginPct = sellingPrice > 0 ? (draftGrossProfit / sellingPrice) * 100 : 0;
 
@@ -2267,10 +2305,23 @@ function CompositeEditor({
     const cleaned = draft.map(c => ({
       childProductId: c.childProductId,
       quantityRequired: parseFloat(c.quantityRequired) || 0,
+      variantOptionId: c.variantOptionId,
     }));
     if (cleaned.some(c => c.quantityRequired <= 0)) {
       toast({ title: "All component quantities must be greater than 0", variant: "destructive" });
       return;
+    }
+    // Same child twice under the same scope would be rejected server-side —
+    // catch it here for immediate feedback.
+    const seen = new Set<string>();
+    for (const c of cleaned) {
+      const key = `${c.childProductId}:${c.variantOptionId ?? "always"}`;
+      if (seen.has(key)) {
+        const name = draft.find(d => d.childProductId === c.childProductId)?.childName ?? "A component";
+        toast({ title: `${name} is listed twice with the same "Applies to" setting`, variant: "destructive" });
+        return;
+      }
+      seen.add(key);
     }
     saveComponents.mutate(
       { id: productId, data: { components: cleaned } },
@@ -2338,6 +2389,7 @@ function CompositeEditor({
           <thead className="bg-muted/40">
             <tr>
               <th className="text-left px-2 py-1.5">Component</th>
+              {hasVariants && <th className="text-left px-2 py-1.5 w-36">Applies to</th>}
               <th className="text-right px-2 py-1.5 w-20">Qty</th>
               <th className="text-right px-2 py-1.5 w-24">Unit cost</th>
               <th className="text-right px-2 py-1.5 w-24">Line cost</th>
@@ -2347,7 +2399,7 @@ function CompositeEditor({
           <tbody>
             {draft.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-center text-muted-foreground py-4">
+                <td colSpan={hasVariants ? 6 : 5} className="text-center text-muted-foreground py-4">
                   No components yet. Add at least one component below.
                 </td>
               </tr>
@@ -2357,6 +2409,22 @@ function CompositeEditor({
               return (
                 <tr key={c.tempId} className="border-t border-border/40">
                   <td className="px-2 py-1.5">{c.childName}</td>
+                  {hasVariants && (
+                    <td className="px-2 py-1.5">
+                      <Select
+                        value={c.variantOptionId != null ? String(c.variantOptionId) : "always"}
+                        onValueChange={(v) => updateScope(c.tempId, v === "always" ? null : Number(v))}
+                      >
+                        <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="always">Every sale</SelectItem>
+                          {variantOptions.map((o) => (
+                            <SelectItem key={o.id} value={String(o.id)}>{o.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                  )}
                   <td className="px-2 py-1.5 text-right">
                     <Input
                       type="number"
@@ -2435,9 +2503,12 @@ function CompositeEditor({
             Available to assemble: <span className={available.available > 0 ? "text-green-400" : "text-red-400"}>{available.available}</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px] text-muted-foreground">
-            {available.components.map((b) => (
-              <div key={b.childProductId} className="flex items-center justify-between">
-                <span className="truncate">{b.childName}</span>
+            {available.components.map((b, i) => (
+              <div key={`${b.childProductId}-${b.variantOptionId ?? "a"}-${i}`} className="flex items-center justify-between">
+                <span className="truncate">
+                  {b.childName}
+                  {b.variantOptionName ? <span className="text-muted-foreground/70"> ({b.variantOptionName})</span> : null}
+                </span>
                 <span className="tabular-nums shrink-0">
                   {b.stock} in stock / {b.quantityRequired} per bundle = {b.possibleBundles}
                 </span>

@@ -18,6 +18,10 @@ export interface CompositeComponent {
   childCostPrice?: number | null;
   quantityRequired: number;
   unitId?: number | null;
+  /** When set, this component is only deducted when the sale's variant choices include this option of the parent product; null = always deducted. */
+  variantOptionId?: number | null;
+  variantOptionName?: string | null;
+  variantGroupName?: string | null;
   /** childCostPrice * quantityRequired (0 when childCostPrice is null) */
   lineCost: number;
 }

@@ -2801,6 +2801,16 @@ components:
         unitId:
           type: integer
           nullable: true
+        variantOptionId:
+          type: integer
+          nullable: true
+          description: When set, this component is only deducted when the sale's variant choices include this option of the parent product; null = always deducted.
+        variantOptionName:
+          type: string
+          nullable: true
+        variantGroupName:
+          type: string
+          nullable: true
         lineCost:
           type: number
           format: float
@@ -2824,6 +2834,10 @@ components:
         unitId:
           type: integer
           nullable: true
+        variantOptionId:
+          type: integer
+          nullable: true
+          description: Link to a variant option of the parent product; null/omitted = component applies to every sale.
       required:
         - childProductId
         - quantityRequired
@@ -2883,6 +2897,12 @@ components:
           format: float
         possibleBundles:
           type: integer
+        variantOptionId:
+          type: integer
+          nullable: true
+        variantOptionName:
+          type: string
+          nullable: true
       required:
         - childProductId
         - childName

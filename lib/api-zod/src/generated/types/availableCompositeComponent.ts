@@ -12,4 +12,6 @@ export interface AvailableCompositeComponent {
   stock: number;
   quantityRequired: number;
   possibleBundles: number;
+  variantOptionId?: number | null;
+  variantOptionName?: string | null;
 }
