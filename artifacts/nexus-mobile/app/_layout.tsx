@@ -112,6 +112,7 @@ function RootLayoutNav() {
       <Stack.Screen name="signup" />
       <Stack.Screen name="stock-count/[id]" />
       <Stack.Screen name="printer-settings" />
+      <Stack.Screen name="eod-report" />
       <Stack.Screen name="product/[id]" />
       <Stack.Screen name="product/new" />
       <Stack.Screen name="product/edit/[id]" />

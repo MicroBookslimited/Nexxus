@@ -4,6 +4,7 @@ import {
   useGetReportSummary,
   useGetTopProducts,
 } from "@workspace/api-client-react";
+import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 
@@ -85,6 +86,7 @@ function canViewReports(role: string | undefined): boolean {
 
 export default function ReportsScreen() {
   const c = useColors();
+  const router = useRouter();
   const pad = useScreenPadding();
   const lay = useResponsive();
   const { staff, setStaff } = useStaff();
@@ -251,6 +253,31 @@ export default function ReportsScreen() {
           <Metric icon="calendar" label="This week" value={formatMoney(d?.weekSales)} sub={`${d?.weekOrders ?? 0} orders`} />
           <Metric icon="box" label="Products" value={formatNumber(d?.totalProducts)} sub="active" />
         </View>
+
+        {/* End of Day report — print / email a shift report like the web app */}
+        <Card onPress={() => router.push("/eod-report")} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              backgroundColor: c.secondary,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Feather name="printer" size={20} color={c.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: c.foreground, fontSize: 15, fontFamily: fontFamily("semibold") }}>
+              End of Day Report
+            </Text>
+            <Text style={{ color: c.mutedForeground, fontSize: 12 }}>
+              Print or email a shift report
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={c.mutedForeground} />
+        </Card>
 
         {/* Date filter */}
         <Text style={{ color: c.foreground, fontSize: 17, fontFamily: fontFamily("semibold") }}>Sales report</Text>

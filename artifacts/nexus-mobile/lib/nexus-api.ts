@@ -415,6 +415,74 @@ export function deletePurchaseBill(id: number): Promise<void> {
   return request(`/api/purchase-bills/${id}`, { method: "DELETE" });
 }
 
+/* ───────────── End-of-day (cash shift) reports ───────────── */
+
+export interface CashSession {
+  id: number;
+  staffId?: number | null;
+  staffName?: string | null;
+  status: string;
+  openingCash: number;
+  actualCash?: number | null;
+  actualCard?: number | null;
+  closingNotes?: string | null;
+  openedAt: string;
+  closedAt?: string | null;
+}
+
+export interface CashSessionDetail {
+  session: CashSession;
+  payouts: Array<{ id: number; amount: number; reason?: string | null; createdAt: string }>;
+  orders: Array<{ id: number; orderNumber: string; total: number; paymentMethod: string | null; status: string; createdAt: string }>;
+  salesSummary: {
+    totalSales: number; cashSales: number; cardSales: number; splitSales: number; creditSales: number;
+    refundedCash: number; refundedCard: number; refundedOther: number; totalRefunds: number;
+    voidedCount: number; voidedTotal: number;
+  };
+  expectedCash: number;
+  totalPayouts: number;
+  splitCashSales: number;
+  voucherCashIn: number;
+  layawayCashIn: number;
+  itemSummary?: Array<{ productName: string; sku?: string | null; totalQty: number; totalRevenue: number; totalTax?: number | null }>;
+  creditOrders?: Array<{ orderNumber: string; customerName?: string | null; total: number }>;
+}
+
+export function listCashSessions(): Promise<CashSession[]> {
+  return request<CashSession[]>("/api/cash/sessions");
+}
+
+export function getCashSessionDetail(id: number): Promise<CashSessionDetail> {
+  return request<CashSessionDetail>(`/api/cash/sessions/${id}`);
+}
+
+export interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  isPrimary: boolean;
+  status: string;
+}
+
+export function listAdminUsers(): Promise<AdminUser[]> {
+  return request<AdminUser[]>("/api/admin-users");
+}
+
+/** Server renders and sends the end-of-day email (same endpoint the web app uses). */
+export function emailEodReport(body: {
+  sessionId: number;
+  to: string;
+  reportType: "summary" | "detailed";
+  includeProducts: boolean;
+  includeBrands: boolean;
+  includeCategories: boolean;
+}): Promise<{ success?: boolean }> {
+  return request(`/api/email/eod-report`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 /* ───────────── Product locations ───────────── */
 
 export interface ProductLocationRow {

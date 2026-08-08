@@ -33,6 +33,21 @@ async function dispatch(config: PrinterConfig, text: string): Promise<void> {
   }
 }
 
+/** Print a pre-formatted plain-text document (e.g. an end-of-day report).
+ *  Never kicks the cash drawer. */
+export async function printRawText(config: PrinterConfig, text: string): Promise<void> {
+  if (config.transport === "usb") {
+    await printUsb(text, { openDrawer: false });
+    return;
+  }
+  const bytes = buildReceiptBytes(text, { openDrawer: false });
+  if (config.transport === "network") {
+    await printNetwork(bytes, { host: config.host, port: config.port });
+  } else {
+    await printBluetooth(bytes, { deviceId: config.deviceId });
+  }
+}
+
 export async function printReceipt(
   config: PrinterConfig,
   order: ReceiptOrder,
