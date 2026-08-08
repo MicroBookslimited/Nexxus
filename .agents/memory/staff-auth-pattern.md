@@ -25,3 +25,5 @@ endpoint). Truly fixing the spoofing risk requires putting staff identity into a
 signed session/token and ignoring client-supplied staffId — an app-wide auth-model
 change affecting every staff-gated endpoint. Treat that as its own dedicated task,
 not a drive-by change.
+
+**Shift-financials gate (EOD reports):** `allowShiftFinancials` (cash.ts, reused by email.ts) blocks technician-restricted tokens and, when an `x-staff-id` header IS present, requires it to map to a manager-role staff row in the tenant (absent header = dashboard token, allowed). `/email/eod-report` additionally allowlists recipients to tenant admin-user emails + tenant email. Web sends no staff header on these reads (unchanged); mobile EOD screen sends its staff id. Full fix (server-verified staff identity in the token) is still the app-wide open item.

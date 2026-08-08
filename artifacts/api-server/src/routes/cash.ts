@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, gte, lte, isNotNull, isNull, or, sql, desc } from "drizzle-orm";
-import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable, giftVouchersTable, layawayPaymentsTable } from "@workspace/db";
+import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable, giftVouchersTable, layawayPaymentsTable, staffTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { logAudit } from "./audit";
@@ -13,6 +13,33 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
   if (!auth?.startsWith("Bearer ")) return null;
   const p = verifyTenantToken(auth.slice(7));
   return p ? p.tenantId : null;
+}
+
+/* ─── Manager gate for shift-financial reads ───
+ * Tenant tokens carry no staff identity, so POS clients identify their staff
+ * member via the x-staff-id header. For endpoints that expose shift financials
+ * (session history / detail), a request that identifies a staff member must
+ * identify a MANAGERIAL one; requests without the header come from the tenant
+ * dashboard (owner/admin login) and pass. Technician-restricted tokens are
+ * always blocked. Returns true when the request may proceed. */
+const MANAGER_ROLES = new Set(["admin", "manager", "supervisor", "owner"]);
+export async function allowShiftFinancials(
+  req: { headers: Record<string, string | undefined> },
+  res: { status: (n: number) => { json: (b: object) => void } },
+  tenantId: number,
+): Promise<boolean> {
+  if (!requireFullTenant(req as never, res)) return false;
+  const raw = req.headers["x-staff-id"];
+  if (raw == null || raw === "") return true;
+  const staffId = parseInt(String(raw), 10);
+  const [s] = Number.isFinite(staffId)
+    ? await db.select().from(staffTable).where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId))).limit(1)
+    : [];
+  if (!s || !MANAGER_ROLES.has((s.role ?? "").toLowerCase())) {
+    res.status(403).json({ error: "Manager or admin role required for shift reports" });
+    return false;
+  }
+  return true;
 }
 
 const OpenSessionBody = z.object({
@@ -153,6 +180,7 @@ async function computeLayawayCashIn(
 router.get("/cash/sessions", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!(await allowShiftFinancials(req as never, res, tenantId))) return;
 
   const sessions = await db
     .select()
@@ -410,6 +438,7 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
 router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!(await allowShiftFinancials(req as never, res, tenantId))) return;
 
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid session id" }); return; }

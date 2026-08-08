@@ -62,7 +62,11 @@ export default function EodReportScreen() {
   const settingsQ = useGetSettings();
   const businessName = (settingsQ.data as Record<string, string> | undefined)?.business_name;
 
-  const sessionsQ = useQuery({ queryKey: ["cash", "sessions"], queryFn: listCashSessions });
+  const sessionsQ = useQuery({
+    queryKey: ["cash", "sessions", staff?.id ?? null],
+    queryFn: () => listCashSessions(staff?.id),
+    enabled: allowed,
+  });
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -72,9 +76,9 @@ export default function EodReportScreen() {
   const activeSession = sessions.find((s) => s.id === activeId) ?? null;
 
   const detailQ = useQuery({
-    queryKey: ["cash", "session", activeId],
-    queryFn: () => getCashSessionDetail(activeId!),
-    enabled: activeId != null,
+    queryKey: ["cash", "session", activeId, staff?.id ?? null],
+    queryFn: () => getCashSessionDetail(activeId!, staff?.id),
+    enabled: allowed && activeId != null,
   });
 
   // ── Print ────────────────────────────────────────────────────────────────
@@ -122,7 +126,7 @@ export default function EodReportScreen() {
           includeProducts,
           includeBrands: false,
           includeCategories: false,
-        });
+        }, staff?.id);
         sent++;
       } catch {
         failed.push(to);

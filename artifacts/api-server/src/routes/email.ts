@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
 import { SendMailClient } from "zeptomail";
 import nodemailer from "nodemailer";
-import { db, ordersTable, orderItemsTable, cashSessionsTable, cashPayoutsTable, productsTable, customersTable, accountsReceivableTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, cashSessionsTable, cashPayoutsTable, productsTable, customersTable, accountsReceivableTable, tenantsTable, tenantAdminUsersTable } from "@workspace/db";
 import { eq, and, gte, lte, isNotNull, desc, sql, asc } from "drizzle-orm";
 import { z } from "zod";
 import { getSetting, getAllSettings } from "./settings";
 import { verifyTenantToken } from "./saas-auth";
+import { allowShiftFinancials } from "./cash";
 
 const router: IRouter = Router();
 
@@ -710,10 +711,32 @@ router.post("/email/daily-digest", async (req, res): Promise<void> => {
 router.post("/email/eod-report", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  // Shift financials: block technician tokens and non-manager staff identities.
+  if (!(await allowShiftFinancials(req as never, res, tenantId))) return;
 
   const parsed = SendEodReportBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request body", details: parsed.error.issues });
+    return;
+  }
+
+  // Recipient allowlist: shift financials may only go to this tenant's admin
+  // users (or the tenant's own account email) — never an arbitrary address.
+  const [tenantRow] = await db
+    .select({ email: tenantsTable.email })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, tenantId));
+  const adminRows = await db
+    .select({ email: tenantAdminUsersTable.email })
+    .from(tenantAdminUsersTable)
+    .where(eq(tenantAdminUsersTable.tenantId, tenantId));
+  const allowedEmails = new Set(
+    [tenantRow?.email, ...adminRows.map((r) => r.email)]
+      .filter((e): e is string => !!e)
+      .map((e) => e.toLowerCase()),
+  );
+  if (!allowedEmails.has(parsed.data.to.toLowerCase())) {
+    res.status(403).json({ error: "End-of-day reports can only be sent to this business's admin users" });
     return;
   }
 

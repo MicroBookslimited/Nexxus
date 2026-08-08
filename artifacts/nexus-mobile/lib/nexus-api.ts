@@ -448,12 +448,17 @@ export interface CashSessionDetail {
   creditOrders?: Array<{ orderNumber: string; customerName?: string | null; total: number }>;
 }
 
-export function listCashSessions(): Promise<CashSession[]> {
-  return request<CashSession[]>("/api/cash/sessions");
+/** staffId identifies the requesting staff member; the server requires a
+ *  managerial role when one is supplied (shift financials). */
+const staffHeaders = (staffId?: number): Record<string, string> =>
+  staffId != null ? { "x-staff-id": String(staffId) } : {};
+
+export function listCashSessions(staffId?: number): Promise<CashSession[]> {
+  return request<CashSession[]>("/api/cash/sessions", { headers: staffHeaders(staffId) });
 }
 
-export function getCashSessionDetail(id: number): Promise<CashSessionDetail> {
-  return request<CashSessionDetail>(`/api/cash/sessions/${id}`);
+export function getCashSessionDetail(id: number, staffId?: number): Promise<CashSessionDetail> {
+  return request<CashSessionDetail>(`/api/cash/sessions/${id}`, { headers: staffHeaders(staffId) });
 }
 
 export interface AdminUser {
@@ -476,10 +481,11 @@ export function emailEodReport(body: {
   includeProducts: boolean;
   includeBrands: boolean;
   includeCategories: boolean;
-}): Promise<{ success?: boolean }> {
+}, staffId?: number): Promise<{ success?: boolean }> {
   return request(`/api/email/eod-report`, {
     method: "POST",
     body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
   });
 }
 
