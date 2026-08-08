@@ -6257,26 +6257,26 @@ export function Products() {
                     <button
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, structureType: "simple" }))}
-                      className={`rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                      className={`rounded-md border-2 px-3 py-2 text-left text-xs transition-all ${
                         form.structureType === "simple"
-                          ? "border-primary bg-primary/10"
-                          : "border-border bg-background hover:bg-muted/40"
+                          ? "border-primary bg-primary text-primary-foreground shadow-md scale-[1.02]"
+                          : "border-border bg-background text-foreground hover:bg-muted/40"
                       }`}
                     >
-                      <div className="font-medium">Simple</div>
-                      <div className="text-muted-foreground">Standard SKU. Tracks its own stock.</div>
+                      <div className="font-semibold">Simple</div>
+                      <div className={form.structureType === "simple" ? "text-primary-foreground/80" : "text-muted-foreground"}>Standard SKU. Tracks its own stock.</div>
                     </button>
                     <button
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, structureType: "composite" }))}
-                      className={`rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                      className={`rounded-md border-2 px-3 py-2 text-left text-xs transition-all ${
                         form.structureType === "composite"
-                          ? "border-primary bg-primary/10"
-                          : "border-border bg-background hover:bg-muted/40"
+                          ? "border-primary bg-primary text-primary-foreground shadow-md scale-[1.02]"
+                          : "border-border bg-background text-foreground hover:bg-muted/40"
                       }`}
                     >
-                      <div className="font-medium">Composite (bundle)</div>
-                      <div className="text-muted-foreground">Made of other products. Stock derived.</div>
+                      <div className="font-semibold">Composite (bundle)</div>
+                      <div className={form.structureType === "composite" ? "text-primary-foreground/80" : "text-muted-foreground"}>Made of other products. Stock derived.</div>
                     </button>
                   </div>
                   {form.structureType === "composite" && !editingProduct && (
