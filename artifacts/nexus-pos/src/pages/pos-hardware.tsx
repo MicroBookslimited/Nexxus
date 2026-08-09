@@ -230,6 +230,11 @@ export function PosHardware() {
   const { data: customers } = useListCustomers();
   const { data: heldOrders } = useListHeldOrders();
   const createOrder = useCreateOrder();
+  // Synchronous re-entry guard: the Pay button only disables after React
+  // re-renders with isPending, so a rapid multi-tap burst can invoke
+  // handleCheckout 2-3 times first — each minting a fresh clientRequestId and
+  // therefore a duplicate sale. This ref blocks re-entry immediately.
+  const chargeInFlightRef = useRef(false);
   const createCustomer = useCreateCustomer();
   const createHeldOrder = useCreateHeldOrder();
   const deleteHeldOrder = useDeleteHeldOrder();
@@ -1223,6 +1228,13 @@ export function PosHardware() {
         ? parseFloat(cashTenderedInput)
         : undefined;
 
+    // Block multi-tap re-entry before any order is created (see ref above).
+    if (chargeInFlightRef.current) return;
+    chargeInFlightRef.current = true;
+    // A synchronous throw before the mutation is accepted would leave the
+    // guard stuck true (onSettled never fires) — release it and rethrow.
+    try {
+
     createOrder.mutate(
       {
         // `cashTendered` / split amounts are accepted by the API but missing
@@ -1274,6 +1286,9 @@ export function PosHardware() {
         } as any,
       },
       {
+        onSettled: () => {
+          chargeInFlightRef.current = false;
+        },
         onSuccess: (data) => {
           // Mark any package-pickup lines as collected (scan-out once).
           for (const pkgId of cart.filter((c) => c.packagePickupId).map((c) => c.packagePickupId!)) {
@@ -1341,6 +1356,11 @@ export function PosHardware() {
         },
       },
     );
+
+    } catch (err) {
+      chargeInFlightRef.current = false;
+      throw err;
+    }
   };
 
   const printReceipt = () => {

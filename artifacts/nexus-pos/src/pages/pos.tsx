@@ -478,6 +478,11 @@ export function POS() {
     { query: { refetchInterval: 60_000, refetchOnWindowFocus: true } },
   );
   const createOrder = useCreateOrder();
+  // Synchronous re-entry guard: the Charge button only disables after React
+  // re-renders with isPending, so a rapid multi-tap/click burst can invoke
+  // handleCharge 2-3 times first — each minting a fresh clientRequestId and
+  // therefore a duplicate sale. This ref blocks re-entry immediately.
+  const chargeInFlightRef = useRef(false);
   const updateWorkOrder = useUpdateWorkOrder();
   const { data: settings } = useGetSettings();
   const baseCurrency = settings?.base_currency || "JMD";
@@ -2121,6 +2126,14 @@ export function POS() {
       return;
     }
 
+    // Block multi-tap re-entry before any order is created (see ref above).
+    if (chargeInFlightRef.current) return;
+    chargeInFlightRef.current = true;
+    // Everything from here to the mutate call runs synchronously; a throw
+    // (e.g. localStorage quota in the offline enqueue) would otherwise leave
+    // the guard stuck true and dead-lock checkout until a page reload.
+    try {
+
     // One idempotency key per checkout attempt: if this exact request is
     // replayed (lost response, offline-queue re-sync), the server returns the
     // already-created order instead of duplicating the sale.
@@ -2270,6 +2283,7 @@ export function POS() {
         title: "Sale Recorded Offline",
         description: "Transaction saved locally. It will sync to the server when your connection returns.",
       });
+      chargeInFlightRef.current = false;
       return;
     }
 
@@ -2315,6 +2329,9 @@ export function POS() {
         },
       },
       {
+        onSettled: () => {
+          chargeInFlightRef.current = false;
+        },
         onSuccess: (data) => {
           // Mark any scanned weight labels as sold so they leave the active
           // list. If this fails, surface a warning so a manager can reconcile.
@@ -2469,6 +2486,13 @@ export function POS() {
         },
       },
     );
+
+    } catch (err) {
+      // Synchronous failure before the mutation was accepted — release the
+      // guard so the cashier can retry (onSettled will never fire here).
+      chargeInFlightRef.current = false;
+      throw err;
+    }
   };
 
   const handleSendToKitchen = () => {

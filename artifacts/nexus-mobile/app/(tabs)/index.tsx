@@ -649,6 +649,8 @@ function CheckoutContent({
   const cart = useCart();
   const { staff } = useStaff();
   const createOrder = useCreateOrder();
+  // Blocks duplicate order creation from multi-tap bursts (see charge()).
+  const chargeInFlightRef = useRef(false);
   const { data: customers } = useListCustomers();
   const { data: settingsData } = useGetSettings();
   const { config: printerConfig, kitchen: kitchenConfig, ready: printerReady } = usePrinter();
@@ -914,6 +916,12 @@ function CheckoutContent({
       }
     }
     const effectivePaymentMethod = voucherCoversAll ? "gift_voucher" : paymentMethod;
+    // Synchronous re-entry guard: the Pay button only disables after React
+    // re-renders with isPending, so a rapid multi-tap burst can invoke charge()
+    // 2-3 times first — each generating a fresh clientRequestId and therefore a
+    // duplicate sale. The ref blocks re-entry within the same render frame.
+    if (chargeInFlightRef.current) return;
+    chargeInFlightRef.current = true;
     try {
       const lineSnapshot = cart.lines;
       const order = await createOrder.mutateAsync({
@@ -1007,6 +1015,8 @@ function CheckoutContent({
     } catch (e) {
       const { title, message } = friendlyCheckoutError(e);
       Alert.alert(title, message);
+    } finally {
+      chargeInFlightRef.current = false;
     }
   };
 

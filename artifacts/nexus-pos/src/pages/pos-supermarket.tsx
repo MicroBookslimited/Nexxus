@@ -223,6 +223,11 @@ export function PosSupermarket({
   );
   const { data: customers } = useListCustomers();
   const createOrder = useCreateOrder();
+  // Synchronous re-entry guard: the Pay button only disables after React
+  // re-renders with isPending, so a rapid multi-tap burst can invoke
+  // handleCheckout 2-3 times first — each minting a fresh clientRequestId and
+  // therefore a duplicate sale. This ref blocks re-entry immediately.
+  const chargeInFlightRef = useRef(false);
   const createCustomer = useCreateCustomer();
   const { data: heldOrders } = useListHeldOrders();
   const createHeldOrder = useCreateHeldOrder();
@@ -1402,6 +1407,12 @@ export function PosSupermarket({
       toast({ title: "Card type required", description: "Choose Debit or Credit to continue.", variant: "destructive" });
       return;
     }
+    // Block multi-tap re-entry before any order is created (see ref above).
+    if (chargeInFlightRef.current) return;
+    chargeInFlightRef.current = true;
+    // A synchronous throw before the mutation is accepted would leave the
+    // guard stuck true (onSettled never fires) — release it and rethrow.
+    try {
     createOrder.mutate(
       {
         // `cashTendered` / split amounts are accepted by the API but missing from
@@ -1438,6 +1449,9 @@ export function PosSupermarket({
         } as any,
       },
       {
+        onSettled: () => {
+          chargeInFlightRef.current = false;
+        },
         onSuccess: (data) => {
           // Scale labels in this sale are now sold — clear the map before
           // resetCart so they aren't released back to 'available'.
@@ -1516,6 +1530,11 @@ export function PosSupermarket({
         },
       },
     );
+
+    } catch (err) {
+      chargeInFlightRef.current = false;
+      throw err;
+    }
   };
 
   const printReceipt = () => {
