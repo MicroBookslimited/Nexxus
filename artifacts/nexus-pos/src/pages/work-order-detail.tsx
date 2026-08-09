@@ -33,8 +33,9 @@ import {
   ArrowLeft, ShoppingCart, Printer, Wrench, ChevronDown,
   Plus, Trash2, Search, Clock, MessageSquare, Calendar,
   FileText, Activity, Lock, Pencil, Check, X,
-  ChevronRight, Save,
+  ChevronRight, Save, ClipboardList,
 } from "lucide-react";
+import { WorkOrderInstallForm } from "@/components/WorkOrderInstallForm";
 import { PENDING_WORK_ORDER_KEY, STATUS_LABEL, STATUS_STYLES, woStatusLabel } from "@/pages/work-orders";
 import { generateJobCard } from "@/lib/work-order-doc";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
@@ -87,7 +88,7 @@ const APPT_STATUS_STYLE: Record<string, string> = {
   no_show: "bg-slate-500/15 text-slate-500 border-slate-500/30",
 };
 
-type Tab = "overview" | "items" | "notes" | "appointments" | "history" | "jobcard";
+type Tab = "overview" | "items" | "install" | "notes" | "appointments" | "history" | "jobcard";
 
 /* ─── Main component ─────────────────────────────────────────────────────── */
 export default function WorkOrderDetailPage() {
@@ -217,6 +218,7 @@ export default function WorkOrderDetailPage() {
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
     { key: "overview", label: "Overview", icon: FileText },
     { key: "items", label: "Parts & Labour", icon: Wrench },
+    { key: "install", label: "Installation", icon: ClipboardList },
     { key: "notes", label: "Notes", icon: MessageSquare },
     { key: "appointments", label: "Appointments", icon: Calendar },
     { key: "history", label: "History", icon: Activity },
@@ -281,6 +283,9 @@ export default function WorkOrderDetailPage() {
       )}
       {tab === "items" && (
         <ItemsTab wo={wo} products={products ?? []} currency={currency} onPatch={patchWO} />
+      )}
+      {tab === "install" && (
+        <WorkOrderInstallForm wo={wo} readOnly={isTerminal} onPatch={(updates) => patchWO(updates as never)} />
       )}
       {tab === "notes" && <NotesTab workOrderId={wo.id} />}
       {tab === "appointments" && <AppointmentsTab workOrderId={wo.id} staff={staff ?? []} />}

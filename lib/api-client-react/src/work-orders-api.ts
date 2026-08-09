@@ -65,6 +65,8 @@ export type WorkOrder = {
   tax: number;
   total: number;
   status: WorkOrderStatus;
+  serviceAreas: string[];
+  installDetails: Record<string, Record<string, unknown>>;
   notes: string | null;
   internalNotes: string | null;
   convertedOrderId: number | null;

@@ -1,0 +1,410 @@
+Yes. For NEXXUS Work Orders, I would make this a Universal IT & Low-Voltage Installation Work Order rather than separate templates for every type of job. The technician selects the applicable service areas—Networking, POS, Access Control, PC/IT, CCTV, etc.—and the form dynamically exposes the relevant sections.
+
+The objective is that this one template can handle everything from installing one PC to a 20-station POS deployment with networking, access control and security infrastructure.
+
+NEXXUS Universal Technology Installation Work Order
+
+1. Work Order Information
+
+Field	Requirement
+Work Order #	Auto-generated
+Date Created	Automatic
+Scheduled Date	Date/time
+Priority	Low / Normal / High / Urgent / Emergency
+Status	Assigned / En Route / Arrived / In Progress / Awaiting Parts / On Hold / Completed
+Service Location	Customer site
+Assigned Technician(s)	Multiple technicians supported
+Project Manager / Supervisor	Optional
+Expected Duration	Hours/days
+Customer PO / Reference #	Optional
+
+2. Customer & Site Information
+
+Capture customer/business name, primary contact, telephone, WhatsApp, email, billing address, service address, GPS/location, site contact, site contact telephone, branch/location name, opening hours, access instructions, parking information and any special site restrictions.
+
+Include quick actions for Call, WhatsApp, Email and Directions in NEXXUS FSM.
+
+⸻
+
+3. Service Scope
+
+Allow one or multiple service types on the same work order.
+
+* POS Installation: POS terminal, touchscreen, customer display, receipt printer, cash drawer, barcode scanner, scale, kitchen printer, label printer, payment terminal, software installation, NEXXUS configuration, database/product setup, receipt configuration and user training.
+* Networking: Router, firewall, switch, PoE switch, access point, structured cabling, patch panel, rack, network outlet, cable termination, VLAN, DHCP, static IP, Wi-Fi, internet testing, network printer and network documentation.
+* PC & IT: Desktop, laptop, workstation, monitor, printer, UPS, Windows installation, drivers, updates, antivirus, Microsoft Office, user accounts, domain/workgroup, shared folders, backup, email, software installation and data migration.
+* Access Control: Door controller, biometric reader, card reader, facial recognition terminal, magnetic lock, electric strike, exit button, emergency break glass, power supply, door contact, access cards, users, schedules, permissions and mobile/web configuration.
+* CCTV / Security: IP/analog camera, NVR/DVR, hard drive, PoE, cabling, camera positioning, recording configuration, remote viewing and testing.
+* Other: Custom installation, repair, maintenance, site survey or technical service.
+
+⸻
+
+4. Pre-Installation Site Assessment
+
+The technician should complete this before work starts.
+
+Site readiness: power available, adequate electrical outlets, UPS/surge protection, internet active, router accessible, network cabinet accessible, required passwords available, equipment delivered, installation areas accessible, customer representative present and physical installation surfaces suitable.
+
+Record:
+
+Internet Provider: __________
+Internet Speed: Download _____ / Upload _____
+Public/Static IP: __________
+Router Make/Model: __________
+Existing Network: Yes / No
+Existing Rack: Yes / No
+Existing Cabling: Yes / No
+Electrical Issues: __________
+Site Issues Identified: __________
+
+Require Before Photos before installation begins.
+
+⸻
+
+5. Equipment Issued / Installed
+
+Use a repeatable equipment table.
+
+Qty	Equipment	Brand	Model	Serial #	MAC Address	Asset Tag	Location Installed
+							
+
+Each item should support barcode/QR scanning from NEXXUS FSM.
+
+Also record whether equipment is:
+
+New / Existing / Customer Supplied / MicroBooks Supplied / Replacement / Loaner
+
+⸻
+
+6. Networking Installation
+
+Internet & Gateway
+
+Record ISP, modem/ONT, router/firewall, WAN IP, LAN gateway, subnet, DNS configuration and DHCP range.
+
+Switches
+
+Device	Model	Management IP	Ports	PoE	Location
+					
+
+Wireless
+
+Record SSID, access point name, location, management IP, frequency/band, guest network configuration, signal test and coverage results.
+
+Never print Wi-Fi passwords or administrator credentials on customer-facing copies unless explicitly required.
+
+Cabling
+
+Track cable runs individually:
+
+Cable #	From	To	Type	Length	Port	Tested
+			CAT6/CAT6A/Fibre			
+
+Support cable labels such as:
+
+NET-001
+POS-01
+CAM-04
+AP-02
+
+Network Testing
+
+Record whether the technician confirmed internet connectivity, gateway access, DNS resolution, DHCP assignment, static IP devices, switch connectivity, Wi-Fi coverage, printer communication, POS communication and cable continuity.
+
+Include optional Ping Test, Speed Test and Cable Tester Result.
+
+⸻
+
+7. POS Installation
+
+For each station:
+
+Station	Terminal	IP Address	Printer	Drawer	Scanner	Customer Display	Tested
+POS 1							
+POS 2							
+
+POS Hardware Checklist
+
+Terminal mounted securely, touchscreen tested, printer connected, paper installed, cash drawer connected, barcode scanner configured, customer display tested, scale configured where applicable, payment terminal connected and cable management completed.
+
+NEXXUS Software Configuration
+
+Record:
+
+Business: __________
+Location: __________
+NEXXUS Mode: Retail / Restaurant / Hardware / Supermarket / Courier / Other
+Users Created: _____
+Registers Configured: _____
+
+Confirm business settings, taxes/GCT, payment methods, receipt template, categories, products, inventory, units of measure, volume pricing, sell-by-weight, employee permissions, manager PIN controls and other applicable modules.
+
+POS Testing
+
+Technician must perform a complete test transaction covering product search, barcode scan, quantity change, discount if applicable, payment, receipt printing, cash drawer opening, customer display and transaction reporting.
+
+Record:
+
+Test Sale # __________
+
+Test transaction should subsequently be voided or clearly identified as a system test.
+
+⸻
+
+8. PC / Workstation Installation
+
+For every computer:
+
+PC #	Brand/Model	Serial #	Windows Version	Computer Name	User	IP
+						
+
+Confirm operating system activation, Windows updates, drivers, antivirus/security, browsers, printer, network connection, user account, date/time, power settings, Office/productivity software, customer applications, remote-support agent where authorized and backup configuration.
+
+Data Migration
+
+Record:
+
+Old PC: __________
+New PC: __________
+Data Migrated: __________
+Email Migrated: Yes / No
+Browser Data: Yes / No
+Application Data: Yes / No
+Backup Completed Before Migration: Yes / No
+
+Require customer confirmation before old equipment is formatted or retired.
+
+⸻
+
+9. Access Control Installation
+
+Door Information
+
+Door	Location	Reader	Lock	Exit Device	Door Contact	Controller
+						
+
+Record lock type, reader type, controller, power supply, backup battery, break-glass unit, exit button, door contact and network configuration.
+
+Access Control Configuration
+
+Record management IP, controller ID, door name, time zone, access schedules, administrators created, users enrolled, cards enrolled, fingerprints enrolled and facial profiles enrolled.
+
+Sensitive administrator credentials must be stored encrypted in NEXXUS and excluded from printed work orders.
+
+Testing
+
+Verify entry authentication, lock release, exit button, emergency release, door contact, denied-access behavior, schedules, power failure response, backup battery and software/mobile access.
+
+⸻
+
+10. CCTV Section
+
+This is worth including in the universal template even when the current job does not require it.
+
+Record NVR/DVR model, serial number, IP, hard drives, recording duration expectation and remote-viewing configuration.
+
+For cameras:
+
+Camera #	Location	Type	Model	IP	NVR Channel	Tested
+						
+
+Verify daytime image, night vision, recording, playback, motion events, network connectivity and remote viewing.
+
+⸻
+
+11. Parts & Materials Used
+
+This should connect directly to NEXXUS inventory.
+
+Qty	SKU	Item	Serial/Batch	Used	Returned
+					
+
+Include cables, connectors, RJ45 plugs, trunking, screws, anchors, patch cords, adapters, power supplies, switches, readers and miscellaneous installation materials.
+
+Inventory should be deducted when the technician confirms Used.
+
+⸻
+
+12. Additional Parts Required
+
+Allow the field technician to submit a parts request directly from the work order.
+
+Capture item, quantity, urgency, reason and notes.
+
+Status should flow:
+
+Requested → Approved → Preparing → Ready → Issued → Received
+
+⸻
+
+13. Issues / Exceptions
+
+This section is critical.
+
+Record anything preventing completion:
+
+Customer Not Ready
+Internet Unavailable
+Power Issue
+Construction Required
+Additional Cabling Required
+Equipment Missing
+Equipment Defective
+Customer Change Request
+Third-Party Dependency
+Additional Parts Required
+Return Visit Required
+
+Include:
+
+Issue Description: __________
+
+Recommended Action: __________
+
+Responsible Party: Customer / MicroBooks / ISP / Contractor / Other
+
+Follow-Up Date: __________
+
+Require photos where relevant.
+
+⸻
+
+14. Change Requests / Additional Work
+
+Field projects nearly always grow legs once the technician reaches the site, so this needs its own section.
+
+Capture:
+
+Original Scope: __________
+
+Additional Work Requested: __________
+
+Requested By: __________
+
+Estimated Additional Cost: __________
+
+Approved By Customer: Yes / No
+
+Customer Signature: __________
+
+No chargeable work outside the approved scope should proceed without authorization where required.
+
+⸻
+
+15. Technician Labour
+
+Technician	Start	End	Break	Travel	Billable Hours
+					
+
+FSM should support Start Travel → Arrived → Start Work → Pause → Resume → Complete.
+
+⸻
+
+16. Installation Photos
+
+Require categories:
+
+Before Installation
+During Installation
+Completed Installation
+Equipment Serial Numbers
+Network Cabinet / Rack
+POS Stations
+Access Control Doors
+PC Workstations
+Cable Management
+Customer Sign-Off
+
+For larger installations, require at least one completed photo per station/device/door.
+
+⸻
+
+17. Final Quality Assurance
+
+Before allowing the technician to mark the job complete, NEXXUS FSM should confirm:
+
+Networking: internet, LAN, Wi-Fi and network equipment tested.
+
+POS: all terminals, printers, drawers, scanners and customer displays tested.
+
+PCs: systems boot, network, printers and required applications tested.
+
+Access Control: all doors, locks, readers and emergency release devices tested.
+
+CCTV: all applicable cameras and recording tested.
+
+Physical Installation: equipment secure, cables labeled, trunking/cable management complete and work area clean.
+
+⸻
+
+18. Customer Training
+
+Record exactly what was demonstrated:
+
+POS login/logout, sales, returns/voids, product search, barcode scanning, cash drawer, reports, inventory, customer management, manager functions, PC operation, network basics, CCTV viewing, access control user enrollment, troubleshooting and support procedure.
+
+Capture:
+
+Persons Trained: __________
+
+Training Duration: __________
+
+Training Completed: Yes / No
+
+Additional Training Required: Yes / No
+
+⸻
+
+19. Customer Handover
+
+Record equipment handed over, keys handed over, access cards handed over, documentation provided, passwords/credentials securely transferred, warranty information provided, customer informed of support procedures and customer advised of any outstanding work.
+
+⸻
+
+20. Completion Status
+
+Use:
+
+Completed Successfully
+Completed With Outstanding Items
+Partially Completed
+Awaiting Parts
+Awaiting Customer
+Return Visit Required
+Unable to Complete
+
+Then require:
+
+Technician Completion Notes: __________
+
+Outstanding Items: __________
+
+Recommended Follow-Up: __________
+
+Follow-Up Date: __________
+
+⸻
+
+21. Customer Acceptance
+
+Present this directly on the NEXXUS FSM device:
+
+I acknowledge that the services and installation described in this work order have been performed to the extent indicated above. I have been given the opportunity to inspect and test the completed work, and any outstanding items or concerns have been documented on this work order.
+
+Capture customer name, position, signature, date/time and optional rating.
+
+Then capture the Technician Signature separately.
+
+⸻
+
+22. Automatic Completion Report
+
+Once signed, NEXXUS should generate a professional PDF containing the work-order number, customer/site details, scope of work, equipment installed, serial numbers, network summary, POS stations, PCs, access-control doors, parts used, labour, before/after photos, outstanding issues, technician notes, training completed and both signatures.
+
+The completed report should automatically attach to the NEXXUS Web work order and be available from NEXXUS FSM.
+
+One important addition
+
+I would make this template conditional rather than showing everything to every technician. At the beginning of the work order, the dispatcher checks POS + Networking + Access Control, for example, and FSM automatically builds the technician’s checklist from those sections. That gives you one extremely comprehensive master template without forcing a technician doing a simple PC installation to scroll through 100 irrelevant CCTV and access-control questions.
+
+This could effectively become the default NEXXUS “Technology Installation & Commissioning” template and cover the majority of MicroBooks field projects.

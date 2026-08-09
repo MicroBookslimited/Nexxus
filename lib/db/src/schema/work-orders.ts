@@ -45,6 +45,12 @@ export const workOrdersTable = pgTable("work_orders", {
   // assignedStaffIds is the full ordered list (used by the multi-technician UI).
   assignedStaffId: integer("assigned_staff_id").references(() => staffTable.id),
   assignedStaffIds: jsonb("assigned_staff_ids").notNull().$type<number[]>().default([]),
+
+  // Universal installation form: dispatcher-selected service areas gate which
+  // dynamic sections the technician sees; answers live in install_details JSONB
+  // keyed by sectionId → fieldId (tables are arrays of row objects).
+  serviceAreas: jsonb("service_areas").notNull().$type<string[]>().default([]),
+  installDetails: jsonb("install_details").notNull().$type<Record<string, Record<string, unknown>>>().default({}),
   // FSM technician acceptance flow: pending → accepted | declined.
   // Reset to 'pending' whenever the assigned staff changes.
   assignmentStatus: text("assignment_status").notNull().default("pending"), // pending | accepted | declined

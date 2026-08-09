@@ -382,6 +382,25 @@ export default function JobDetailScreen() {
               ) : null}
             </View>
 
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>INSTALLATION FORM</Text>
+            <Pressable
+              onPress={() => router.push(`/install/${job.id}`)}
+              style={[styles.card, styles.installLink, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Feather name="clipboard" size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.body, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
+                  Universal installation work order
+                </Text>
+                <Text style={[styles.installLinkSub, { color: colors.mutedForeground }]}>
+                  {(job.serviceAreas?.length ?? 0) > 0
+                    ? `${job.serviceAreas.length} service area${job.serviceAreas.length === 1 ? '' : 's'} selected`
+                    : 'Select service areas & capture site details'}
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            </Pressable>
+
             {job.declineReason && job.assignmentStatus === 'declined' ? (
               <>
                 <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>DECLINE REASON</Text>
@@ -985,6 +1004,16 @@ const styles = StyleSheet.create({
   signItemPrice: {
     fontSize: 13,
     fontFamily: 'Inter_500Medium',
+  },
+  installLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  installLinkSub: {
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 2,
   },
   signAttestation: {
     fontSize: 12,

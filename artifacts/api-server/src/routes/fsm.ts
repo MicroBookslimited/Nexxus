@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
+import { ServiceAreasSchema, InstallDetailsSchema } from "./work-orders";
 import { sendWorkOrderStatusEmail, sendWorkOrderSignedEmail } from "../lib/work-order-mail";
 import { getSetting } from "./settings";
 
@@ -185,6 +186,44 @@ router.get("/fsm/jobs/:id", async (req, res): Promise<void> => {
     subtotal: row.workOrder.subtotal,
     discountAmount: row.workOrder.discountAmount,
     tax: row.workOrder.tax,
+    // Universal installation form
+    serviceAreas: row.workOrder.serviceAreas ?? [],
+    installDetails: row.workOrder.installDetails ?? {},
+  });
+});
+
+const InstallDetailsBody = z.object({
+  serviceAreas: ServiceAreasSchema.optional(),
+  installDetails: InstallDetailsSchema.optional(),
+});
+
+/**
+ * PATCH install-form answers from the technician. Merges section-by-section so
+ * saving one section never wipes another (or answers entered in the web POS).
+ */
+router.patch("/fsm/jobs/:id/install-details", async (req, res): Promise<void> => {
+  const ctx = await loadAssignedJob(req as never, res as never);
+  if (!ctx) return;
+  const parsed = InstallDetailsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid body" }); return; }
+  if (ctx.job.status === "collected" || ctx.job.status === "cancelled") {
+    res.status(400).json({ error: "This job is closed" }); return;
+  }
+
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (parsed.data.serviceAreas !== undefined) updates.serviceAreas = parsed.data.serviceAreas;
+  if (parsed.data.installDetails !== undefined) {
+    // Atomic section-level merge in SQL so concurrent saves (POS + technician
+    // app, or two technicians) can't overwrite each other's sections.
+    updates.installDetails = sql`coalesce(${workOrdersTable.installDetails}, '{}'::jsonb) || ${JSON.stringify(parsed.data.installDetails)}::jsonb`;
+  }
+  const [row] = await db.update(workOrdersTable)
+    .set(updates)
+    .where(and(eq(workOrdersTable.id, ctx.job.id), eq(workOrdersTable.tenantId, ctx.tenantId)))
+    .returning();
+  res.json({
+    serviceAreas: row?.serviceAreas ?? [],
+    installDetails: row?.installDetails ?? {},
   });
 });
 

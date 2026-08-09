@@ -57,6 +57,13 @@ const STATUS_FLOW: Record<WorkOrderStatus, WorkOrderStatus[]> = {
 };
 
 /* ─── Validation schemas ─────────────────────────────────────────────────────── */
+/* Universal installation form — service areas + JSONB details */
+export const SERVICE_AREA_IDS = ["pos", "networking", "pc", "access_control", "cctv", "other"] as const;
+export const ServiceAreasSchema = z.array(z.enum(SERVICE_AREA_IDS)).max(SERVICE_AREA_IDS.length);
+export const InstallDetailsSchema = z
+  .record(z.string().max(60), z.record(z.string().max(60), z.unknown()))
+  .refine((v) => JSON.stringify(v).length <= 100_000, { message: "Installation details too large" });
+
 const WorkOrderItemSchema = z.object({
   type: z.enum(["part", "labor", "fee"]),
   productId: z.number().int().positive().optional(),
@@ -94,6 +101,8 @@ const CreateWorkOrderBody = z.object({
   items: z.array(WorkOrderItemSchema).default([]),
   discountType: z.enum(["percent", "fixed"]).optional(),
   discountAmount: z.number().nonnegative().optional(),
+  serviceAreas: ServiceAreasSchema.optional(),
+  installDetails: InstallDetailsSchema.optional(),
   notes: z.string().max(2000).optional(),
   internalNotes: z.string().max(2000).optional(),
 });
@@ -131,6 +140,8 @@ const UpdateWorkOrderBody = z.object({
   notes: z.string().max(2000).nullable().optional(),
   internalNotes: z.string().max(2000).nullable().optional(),
   convertedOrderId: z.number().int().optional(),
+  serviceAreas: ServiceAreasSchema.optional(),
+  installDetails: InstallDetailsSchema.optional(),
   statusNote: z.string().max(500).optional(), // optional note attached to status change
   customerSignature: z.string().optional(),   // base64 PNG data URL
   staffSignature: z.string().optional(),       // base64 PNG data URL
@@ -368,6 +379,8 @@ router.post("/work-orders", async (req, res): Promise<void> => {
         promisedDate: data.promisedDate ?? null,
         appointmentDate: data.appointmentDate ?? null,
         storageLocation: data.storageLocation ?? null,
+        serviceAreas: data.serviceAreas ?? [],
+        installDetails: (data.installDetails ?? {}) as Record<string, Record<string, unknown>>,
         depositRequired: data.depositRequired ?? null,
         depositPaid: 0,
         items: data.items,
@@ -509,6 +522,12 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
   ] as const;
   for (const f of textFields) {
     if (data[f] !== undefined) (updates as Record<string, unknown>)[f] = data[f];
+  }
+  if (data.serviceAreas !== undefined) updates.serviceAreas = data.serviceAreas;
+  if (data.installDetails !== undefined) {
+    // Atomic section-level merge in SQL so concurrent saves (POS + technician
+    // app) can't overwrite each other's sections.
+    updates.installDetails = sql`coalesce(${workOrdersTable.installDetails}, '{}'::jsonb) || ${JSON.stringify(data.installDetails)}::jsonb` as unknown as Record<string, Record<string, unknown>>;
   }
 
   if (data.items !== undefined || data.discountAmount !== undefined || data.discountType !== undefined) {

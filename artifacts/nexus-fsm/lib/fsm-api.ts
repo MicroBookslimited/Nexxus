@@ -164,6 +164,8 @@ export interface FsmJobHistory {
   createdAt: string;
 }
 
+export type InstallDetailsMap = Record<string, Record<string, unknown>>;
+
 export interface FsmJobDetail extends FsmJob {
   notes2?: never;
   notes_list?: never;
@@ -196,8 +198,22 @@ export function getJob(
   subtotal: number | null;
   discountAmount: number | null;
   tax: number | null;
+  serviceAreas: string[];
+  installDetails: InstallDetailsMap;
 }> {
   return request(`/api/fsm/jobs/${id}`, { headers: staffHeaders(staffId) });
+}
+
+export function patchInstallDetails(
+  staffId: number,
+  id: number,
+  body: { serviceAreas?: string[]; installDetails?: InstallDetailsMap },
+): Promise<{ serviceAreas: string[]; installDetails: InstallDetailsMap }> {
+  return request(`/api/fsm/jobs/${id}/install-details`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
 }
 
 export function startTravel(staffId: number, id: number): Promise<FsmJob> {
