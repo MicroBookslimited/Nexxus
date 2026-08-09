@@ -12,6 +12,8 @@ import {
 } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
+import { sendWorkOrderStatusEmail, sendWorkOrderSignedEmail } from "../lib/work-order-mail";
+import { getSetting } from "./settings";
 
 /**
  * NEXXUS FSM (Field Service Management) — technician-facing endpoints.
@@ -178,6 +180,11 @@ router.get("/fsm/jobs/:id", async (req, res): Promise<void> => {
     notes, history, timeEntries, billableMinutes, pausedMinutes, activeEntry,
     photos,
     completionSignature: row.workOrder.completionSignature,
+    // Line items shown to the customer in the pre-signature preview
+    items: row.workOrder.items ?? [],
+    subtotal: row.workOrder.subtotal,
+    discountAmount: row.workOrder.discountAmount,
+    tax: row.workOrder.tax,
   });
 });
 
@@ -429,7 +436,7 @@ async function execTransition(
       note: historyNote,
     });
 
-    return { row };
+    return { row, fromStatus: job.status };
   });
 
   if ("error" in result) {
@@ -438,6 +445,27 @@ async function execTransition(
     return;
   }
   res.json(toJob(result.row));
+
+  // Fire-and-forget: notify the customer (copied to accounts@) on any status change.
+  if ("fromStatus" in result && result.row.status !== result.fromStatus) {
+    sendWorkOrderStatusEmail({
+      tenantId,
+      workOrderNumber: result.row.workOrderNumber,
+      contactName:     result.row.contactName,
+      contactEmail:    result.row.contactEmail,
+      customerId:      result.row.customerId,
+      itemDescription: result.row.itemDescription,
+      fromStatus:      result.fromStatus ?? null,
+      toStatus:        result.row.status,
+      changedByName:   staff.name,
+    }).catch(() => { /* logged inside */ });
+  }
+
+  // Completion just became durable: if a signature was captured beforehand
+  // (normal mobile flow signs first), email the signed copy now.
+  if (action === "complete" && "fromStatus" in result && result.row.workCompletedAt && result.row.completionSignature) {
+    emailSignedCopy(tenantId, result.row).catch(() => { /* logged inside */ });
+  }
 }
 
 router.post("/fsm/jobs/:id/start-travel", (req, res) => execTransition(req as never, res as never, "start-travel"));
@@ -597,7 +625,56 @@ router.post("/fsm/jobs/:id/signature", async (req, res): Promise<void> => {
     return;
   }
   res.json({ ok: true, completionSignedBy: parsed.data.signedBy, completionSignedAt: now });
+
+  // The signed copy is only emailed once work is durably completed. In the
+  // normal mobile flow (sign → complete) the complete transition sends it;
+  // this covers signing AFTER completion.
+  if (ctx.job.workCompletedAt) {
+    emailSignedCopy(ctx.tenantId, {
+      ...ctx.job,
+      completionSignature: parsed.data.image,
+      completionSignedBy: parsed.data.signedBy,
+      completionSignedAt: now,
+    }).catch(() => { /* logged inside */ });
+  }
 });
+
+/**
+ * Fire-and-forget: emails the signed completion copy (PDF with the drawn
+ * signature) to the customer, copied to accounts@. Callers ensure the job is
+ * completed AND signed before invoking.
+ */
+async function emailSignedCopy(tenantId: number, job: typeof workOrdersTable.$inferSelect): Promise<void> {
+  if (!job.completionSignature || !job.completionSignedBy) return;
+  const currency = await getSetting("currency", tenantId).catch(() => "JMD");
+  const staffIds: number[] = Array.isArray(job.assignedStaffIds) ? job.assignedStaffIds as number[] : [];
+  await sendWorkOrderSignedEmail({
+    tenantId,
+    workOrderId:       job.id,
+    workOrderNumber:   job.workOrderNumber,
+    contactName:       job.contactName,
+    contactEmail:      job.contactEmail,
+    customerId:        job.customerId,
+    assignedStaffId:   job.assignedStaffId,
+    assignedStaffIds:  staffIds,
+    itemDescription:   job.itemDescription,
+    problemDescription: job.problemDescription,
+    notes:             job.notes,
+    scheduledDate:     job.appointmentDate ? String(job.appointmentDate) : null,
+    promisedDate:      job.promisedDate ? String(job.promisedDate) : null,
+    lineItems:         (job.items ?? []).map((it) => ({
+      description: it.description,
+      quantity:    it.quantity,
+      unitPrice:   it.price,
+    })),
+    currency:          currency || "JMD",
+    signature: {
+      svgDataUrl: job.completionSignature,
+      signedBy:   job.completionSignedBy,
+      signedAt:   job.completionSignedAt ?? new Date(),
+    },
+  });
+}
 
 // ─── Notes ────────────────────────────────────────────────────────────────────
 

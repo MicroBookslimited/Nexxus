@@ -120,6 +120,13 @@ export interface FsmJob {
   updatedAt: string;
 }
 
+export interface FsmWorkItem {
+  description: string;
+  quantity: number;
+  price: number;
+  type?: string;
+}
+
 export interface FsmPhoto {
   id: number;
   staffId: number | null;
@@ -185,6 +192,10 @@ export function getJob(
   activeEntry: FsmTimeEntry | null;
   photos: FsmPhoto[];
   completionSignature: string | null;
+  items: FsmWorkItem[];
+  subtotal: number | null;
+  discountAmount: number | null;
+  tax: number | null;
 }> {
   return request(`/api/fsm/jobs/${id}`, { headers: staffHeaders(staffId) });
 }

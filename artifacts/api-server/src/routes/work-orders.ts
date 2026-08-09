@@ -14,7 +14,7 @@ import {
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { getSetting } from "./settings";
-import { sendWorkOrderEmail } from "../lib/work-order-mail";
+import { sendWorkOrderEmail, sendWorkOrderStatusEmail } from "../lib/work-order-mail";
 
 const router: IRouter = Router();
 
@@ -416,7 +416,7 @@ router.post("/work-orders", async (req, res): Promise<void> => {
     scheduledDate:     row.appointmentDate ? String(row.appointmentDate) : null,
     promisedDate:      row.promisedDate ? String(row.promisedDate) : null,
     lineItems:         (row.items ?? []).map((it) => ({
-      description: it.name,
+      description: it.description,
       quantity:    it.quantity,
       unitPrice:   it.price,
     })),
@@ -560,6 +560,20 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
   const updatedIds: number[] = Array.isArray(row.assignedStaffIds) ? row.assignedStaffIds as number[] : [];
   const updStaffNamesMap = await batchResolveStaffNames(tenantId, updatedIds);
   res.json(normalize(row, undefined, undefined, undefined, updStaffNamesMap));
+
+  // Fire-and-forget: notify the customer (copied to accounts@) on any status change.
+  if (data.status && data.status !== existing.status) {
+    sendWorkOrderStatusEmail({
+      tenantId,
+      workOrderNumber: row.workOrderNumber,
+      contactName:     row.contactName,
+      contactEmail:    row.contactEmail,
+      customerId:      row.customerId,
+      itemDescription: row.itemDescription,
+      fromStatus:      existing.status,
+      toStatus:        row.status,
+    }).catch(() => { /* logged inside */ });
+  }
 });
 
 // DELETE

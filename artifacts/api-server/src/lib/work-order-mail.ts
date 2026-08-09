@@ -189,6 +189,236 @@ function buildEmailHtml(opts: {
 </html>`.trim();
 }
 
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+export const WORK_ORDER_STATUS_LABELS: Record<string, string> = {
+  received:       "Received",
+  in_progress:    "In Progress",
+  awaiting_parts: "Awaiting Parts",
+  on_hold:        "On Hold",
+  ready:          "Ready for Pickup / Completed",
+  collected:      "Collected / Closed",
+  cancelled:      "Cancelled",
+};
+
+const STATUS_MESSAGES: Record<string, string> = {
+  received:       "Your work order has been received and is in our queue.",
+  in_progress:    "Our technician has started working on your job.",
+  awaiting_parts: "Work is temporarily paused while we source the parts needed for your job.",
+  on_hold:        "Your work order has been placed on hold. We will contact you with details.",
+  ready:          "Great news — the work on your order has been completed.",
+  collected:      "Your work order has been closed. Thank you for your business!",
+  cancelled:      "Your work order has been cancelled. If this is unexpected, please contact us.",
+};
+
+/** Shared shell for the smaller status/sign-off notification emails. */
+function buildNotificationHtml(opts: {
+  businessName: string;
+  businessPhone: string | null;
+  businessEmail: string | null;
+  headerSub: string;
+  clientName: string;
+  bodyHtml: string;
+}): string {
+  return /* html */ `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1a1a1a; background: #ffffff; margin: 0; padding: 0; }
+  .wrapper { max-width: 600px; margin: 0 auto; }
+  .header  { background: #f8f9fa; border-bottom: 3px solid #00AEEF; padding: 20px 32px; }
+  .header h1 { margin: 0; font-size: 22px; }
+  .header .sub { font-size: 12px; color: #6b7280; margin-top: 4px; }
+  .body    { padding: 28px 32px; }
+  .body p  { margin: 0 0 14px; line-height: 1.6; }
+  .details { background: #f8f9fa; border-radius: 8px; padding: 16px 20px; margin: 20px 0; }
+  .details table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .details td { padding: 5px 6px; vertical-align: top; }
+  .details td:first-child { font-weight: bold; color: #374151; width: 40%; }
+  .footer  { background: #f8f9fa; border-top: 1px solid #e5e7eb; padding: 18px 32px; font-size: 12px; color: #6b7280; line-height: 1.6; }
+  .footer .sig { font-weight: bold; color: #1a1a1a; margin-bottom: 2px; }
+</style></head>
+<body>
+<div class="wrapper">
+  <div class="header">
+    <h1>${escHtml(opts.businessName)}</h1>
+    <div class="sub">${escHtml(opts.headerSub)}</div>
+  </div>
+  <div class="body">
+    <p>Good day${opts.clientName ? ` ${escHtml(opts.clientName)}` : ""},</p>
+    ${opts.bodyHtml}
+    <p>Kind regards,</p>
+  </div>
+  <div class="footer">
+    <div class="sig">${escHtml(opts.businessName)}</div>
+    ${opts.businessPhone ? `<div>${escHtml(opts.businessPhone)}${opts.businessEmail ? ` &nbsp;|&nbsp; ${escHtml(opts.businessEmail)}` : ""}</div>` : ""}
+  </div>
+</div>
+</body>
+</html>`.trim();
+}
+
+export interface WorkOrderStatusMailInput {
+  tenantId: number;
+  workOrderNumber: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  customerId: number | null;
+  itemDescription: string;
+  fromStatus: string | null;
+  toStatus: string;
+  changedByName?: string | null;
+}
+
+/**
+ * Sends a status-change notification to the customer, copied to accounts@.
+ * Safe to call fire-and-forget — errors are caught and logged only.
+ */
+export async function sendWorkOrderStatusEmail(input: WorkOrderStatusMailInput): Promise<void> {
+  try {
+    const toEmail = await resolveToEmail({
+      contactEmail: input.contactEmail,
+      customerId: input.customerId,
+      tenantId: input.tenantId,
+    } as WorkOrderMailInput);
+    if (!toEmail) {
+      console.info(`[work-order-mail] No recipient for status email WO ${input.workOrderNumber} — skipping`);
+      return;
+    }
+    const [business, from] = await Promise.all([
+      getBusinessDetails(input.tenantId),
+      getFromDetails(input.tenantId),
+    ]);
+
+    const toLabel = WORK_ORDER_STATUS_LABELS[input.toStatus] ?? input.toStatus;
+    const fromLabel = input.fromStatus ? (WORK_ORDER_STATUS_LABELS[input.fromStatus] ?? input.fromStatus) : null;
+    const message = STATUS_MESSAGES[input.toStatus] ?? "The status of your work order has been updated.";
+
+    const bodyHtml = `
+    <p>${escHtml(message)}</p>
+    <div class="details"><table>
+      <tr><td>Work Order #:</td><td><b>${escHtml(input.workOrderNumber)}</b></td></tr>
+      <tr><td>Item:</td><td>${escHtml(input.itemDescription)}</td></tr>
+      ${fromLabel ? `<tr><td>Previous Status:</td><td>${escHtml(fromLabel)}</td></tr>` : ""}
+      <tr><td>New Status:</td><td><b>${escHtml(toLabel)}</b></td></tr>
+    </table></div>
+    <p>If you have any questions, simply reply to this email or give us a call.</p>`;
+
+    await sendMail({
+      to: toEmail,
+      subject: `Work Order ${input.workOrderNumber} – Status Update: ${toLabel}`,
+      html: buildNotificationHtml({
+        businessName: business.name,
+        businessPhone: business.phone,
+        businessEmail: business.email,
+        headerSub: "Work Order Status Update",
+        clientName: input.contactName ?? "",
+        bodyHtml,
+      }),
+      fromName: from.fromName,
+      fromAddress: from.fromAddress,
+      tenantId: input.tenantId,
+      platformCopy: true, // per business policy: all work-order status emails are copied to accounts@
+    });
+    console.info(`[work-order-mail] Sent status email (${input.fromStatus} → ${input.toStatus}) to ${toEmail} (${input.workOrderNumber})`);
+  } catch (err) {
+    console.error("[work-order-mail] Failed to send status email", {
+      wo: input.workOrderNumber,
+      tenantId: input.tenantId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+export interface WorkOrderSignedMailInput extends WorkOrderMailInput {
+  signature: {
+    svgDataUrl: string;
+    signedBy: string;
+    signedAt: Date;
+  };
+}
+
+/**
+ * Sends the signed completion copy to the customer (PDF with the drawn
+ * signature attached), copied to accounts@. Fire-and-forget safe.
+ */
+export async function sendWorkOrderSignedEmail(input: WorkOrderSignedMailInput): Promise<void> {
+  try {
+    const [toEmail, staffName, business, from] = await Promise.all([
+      resolveToEmail(input),
+      resolveStaffNames(input),
+      getBusinessDetails(input.tenantId),
+      getFromDetails(input.tenantId),
+    ]);
+    if (!toEmail) {
+      console.info(`[work-order-mail] No recipient for signed copy WO ${input.workOrderNumber} — skipping`);
+      return;
+    }
+
+    const pdfBuffer = await renderWorkOrderPdf({
+      workOrderNumber:     input.workOrderNumber,
+      dateIssued:          new Date(),
+      clientName:          input.contactName ?? "Customer",
+      techniciansAssigned: staffName,
+      scheduledVisit:      formatScheduledDate(input.scheduledDate),
+      itemDescription:     input.itemDescription,
+      scopeOfWork:         input.problemDescription,
+      lineItems:           input.lineItems,
+      notes:               input.notes,
+      currency:            input.currency,
+      business,
+      signature:           input.signature,
+    });
+
+    const signedOn = input.signature.signedAt.toLocaleString("en-US", {
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+      hour: "numeric", minute: "2-digit",
+    });
+
+    const bodyHtml = `
+    <p>Thank you for confirming the completed work on your work order. A signed copy of the completion document is attached to this email for your records.</p>
+    <div class="details"><table>
+      <tr><td>Work Order #:</td><td><b>${escHtml(input.workOrderNumber)}</b></td></tr>
+      <tr><td>Item:</td><td>${escHtml(input.itemDescription)}</td></tr>
+      <tr><td>Signed By:</td><td>${escHtml(input.signature.signedBy)}</td></tr>
+      <tr><td>Signed On:</td><td>${escHtml(signedOn)}</td></tr>
+    </table></div>
+    <p>If anything about the completed work is not to your satisfaction, please reply to this email or contact us right away.</p>`;
+
+    await sendMail({
+      to: toEmail,
+      subject: `Work Order ${input.workOrderNumber} – Signed Completion Confirmation`,
+      html: buildNotificationHtml({
+        businessName: business.name,
+        businessPhone: business.phone,
+        businessEmail: business.email,
+        headerSub: "Signed Completion Confirmation",
+        clientName: input.contactName ?? "",
+        bodyHtml,
+      }),
+      fromName: from.fromName,
+      fromAddress: from.fromAddress,
+      tenantId: input.tenantId,
+      platformCopy: true, // signed copies are always copied to accounts@
+      attachments: [{
+        filename: `Work-Order-${input.workOrderNumber}-Signed.pdf`,
+        content:  pdfBuffer,
+        mimeType: "application/pdf",
+      }],
+    });
+    console.info(`[work-order-mail] Sent signed copy to ${toEmail} (${input.workOrderNumber})`);
+  } catch (err) {
+    console.error("[work-order-mail] Failed to send signed copy email", {
+      wo: input.workOrderNumber,
+      tenantId: input.tenantId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /**
  * Generates and sends the work order confirmation email.
  * Safe to call fire-and-forget — errors are caught and logged only.

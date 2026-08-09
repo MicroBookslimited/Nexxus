@@ -22,6 +22,13 @@ export interface WorkOrderDocData {
   lineItems: WorkOrderDocItem[];  // parts & labour rows
   notes?: string | null;
   currency: string;
+  /** Captured completion signature — when present the sign-off section renders the drawn signature instead of blank lines. */
+  signature?: {
+    /** SVG data URL produced by the FSM signature pad (plain <polyline> strokes). */
+    svgDataUrl: string;
+    signedBy: string;
+    signedAt: Date;
+  } | null;
   business: {
     name: string;
     address?: string | null;
@@ -207,6 +214,62 @@ function drawLineItems(doc: PDFKit.PDFDocument, items: WorkOrderDocItem[], curre
   return y + 20;
 }
 
+/**
+ * Parses the signature-pad SVG data URL (plain <polyline points="x,y …"> strokes)
+ * and returns the strokes plus the source canvas size. Returns null when the
+ * payload isn't the expected simple SVG (e.g. a raster signature).
+ */
+function parseSignatureSvg(dataUrl: string): { strokes: Array<Array<{ x: number; y: number }>>; width: number; height: number } | null {
+  if (!dataUrl.startsWith("data:image/svg+xml;base64,")) return null;
+  let svg: string;
+  try {
+    svg = Buffer.from(dataUrl.split(",")[1] ?? "", "base64").toString("utf8");
+  } catch {
+    return null;
+  }
+  // Tolerant viewBox parse (decimals, negative origin, comma/space separators),
+  // falling back to width/height attributes.
+  const vb = svg.match(/viewBox\s*=\s*"\s*(-?[\d.]+)[\s,]+(-?[\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*"/i);
+  let width = vb ? parseFloat(vb[3]) : NaN;
+  let height = vb ? parseFloat(vb[4]) : NaN;
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    const w = svg.match(/<svg[^>]*\swidth\s*=\s*"([\d.]+)"/i);
+    const h = svg.match(/<svg[^>]*\sheight\s*=\s*"([\d.]+)"/i);
+    width = w ? parseFloat(w[1]) : NaN;
+    height = h ? parseFloat(h[1]) : NaN;
+  }
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+
+  const strokes: Array<Array<{ x: number; y: number }>> = [];
+  const re = /points="([^"]+)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(svg)) !== null) {
+    const pts = m[1].trim().split(/\s+/).map((pair) => {
+      const [x, y] = pair.split(",").map(Number);
+      return { x, y };
+    }).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+    if (pts.length > 1) strokes.push(pts);
+  }
+  return strokes.length > 0 ? { strokes, width, height } : null;
+}
+
+/** Draws the captured signature strokes into a box at (x, y). Returns the box height, or 0 when unparsable. */
+function drawSignatureStrokes(doc: PDFKit.PDFDocument, dataUrl: string, x: number, y: number, boxW: number, boxH: number): number {
+  const parsed = parseSignatureSvg(dataUrl);
+  if (!parsed) return 0;
+  const scale = Math.min(boxW / parsed.width, boxH / parsed.height);
+  doc.save();
+  for (const stroke of parsed.strokes) {
+    doc.moveTo(x + stroke[0].x * scale, y + stroke[0].y * scale);
+    for (let i = 1; i < stroke.length; i++) {
+      doc.lineTo(x + stroke[i].x * scale, y + stroke[i].y * scale);
+    }
+    doc.lineWidth(1.2).strokeColor(C.ink).stroke();
+  }
+  doc.restore();
+  return parsed.height * scale;
+}
+
 /** Draws the COMPLETION SIGN-OFF section. */
 function drawSignOff(doc: PDFKit.PDFDocument, data: WorkOrderDocData, y: number): void {
   if (y > 650) doc.addPage();
@@ -237,10 +300,22 @@ function drawSignOff(doc: PDFKit.PDFDocument, data: WorkOrderDocData, y: number)
   y += 4;
   doc.font("Helvetica-Bold").fontSize(9.5).fillColor(C.ink).text("Client Representative:", M, y);
   y += 14;
-  doc.font("Helvetica").fontSize(9).fillColor(C.ink).text(`Name & Signature — ${data.clientName}`, M + 12, y);
-  y += 13;
-  doc.moveTo(M + 12, y + 4).lineTo(M + 280, y + 4).strokeColor(C.muted).lineWidth(0.5).stroke();
-  doc.font("Helvetica").fontSize(8).fillColor(C.muted).text("Date: ___________________", M + 12, y + 8);
+
+  if (data.signature) {
+    // Captured digital signature
+    doc.font("Helvetica").fontSize(9).fillColor(C.ink).text(data.signature.signedBy, M + 12, y);
+    y += 13;
+    const sigH = drawSignatureStrokes(doc, data.signature.svgDataUrl, M + 12, y, 260, 80);
+    y += (sigH > 0 ? sigH : 0) + 4;
+    doc.moveTo(M + 12, y).lineTo(M + 280, y).strokeColor(C.muted).lineWidth(0.5).stroke();
+    doc.font("Helvetica").fontSize(8).fillColor(C.muted)
+      .text(`Digitally signed on ${fmtDate(data.signature.signedAt)}`, M + 12, y + 4);
+  } else {
+    doc.font("Helvetica").fontSize(9).fillColor(C.ink).text(`Name & Signature — ${data.clientName}`, M + 12, y);
+    y += 13;
+    doc.moveTo(M + 12, y + 4).lineTo(M + 280, y + 4).strokeColor(C.muted).lineWidth(0.5).stroke();
+    doc.font("Helvetica").fontSize(8).fillColor(C.muted).text("Date: ___________________", M + 12, y + 8);
+  }
 }
 
 export async function renderWorkOrderPdf(data: WorkOrderDocData): Promise<Buffer> {

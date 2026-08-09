@@ -27,3 +27,9 @@ Work orders carry ONE work-order-wide assignment response (`assignment_status` p
 - Signature is one-shot via conditional UPDATE ... WHERE completion_signature IS NULL (history row only when the update applied) — a plain read-then-write raced. Separate columns from the collection-time customerSignature/staffSignature.
 - Mobile "sign & complete" must be TWO mutations: save signature, then complete — coupling them makes a completion failure unrecoverable ("already captured" on retry).
 - Web POS never wraps uploaded data: URLs in <a href> (navigation to data: is the XSS vector; <img src> is inert).
+
+## Work-order customer emails (signed copy + status changes)
+- USER OVERRIDE of the platform-BCC rule: ALL work-order status-change emails and the signed completion copy are sent to the customer with platformCopy:true (BCC accounts@). The original create-confirmation email stays uncopied.
+- The signed-copy PDF email must only be sent AFTER completion is durable: complete transition sends it when a signature already exists; the signature endpoint sends it only when workCompletedAt is already set (covers both orders of the sign/complete race — normal mobile flow signs first).
+- The pad's SVG polylines are re-drawn into the PDFKit sign-off section server-side (parse viewBox tolerantly — decimals/comma separators); data-URL images can't be used because email clients strip data: URIs.
+- Status emails fire from BOTH the POS PATCH route and the FSM transition helper — any new path that mutates work_orders.status must add the same fire-and-forget hook after res.json.

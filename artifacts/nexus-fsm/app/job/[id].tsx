@@ -693,10 +693,71 @@ export default function JobDetailScreen() {
       <Modal visible={signOpen} transparent animationType="fade" onRequestClose={() => setSignOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setSignOpen(false)}>
           <Pressable
-            style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: '88%' }]}
             onPress={() => undefined}
           >
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>Customer sign-off</Text>
+            <Text style={[styles.rowLabel, { color: colors.mutedForeground, marginBottom: 10 }]}>
+              Please review the work summary below before signing.
+            </Text>
+
+            {/* What the customer is signing */}
+            <View style={[styles.signSummary, { backgroundColor: colors.background, borderColor: colors.border }]}>
+              <Text style={[styles.signSummaryLabel, { color: colors.mutedForeground }]}>WORK ORDER</Text>
+              <Text style={[styles.signSummaryValue, { color: colors.foreground }]}>{job?.workOrderNumber ?? ''}</Text>
+
+              <Text style={[styles.signSummaryLabel, { color: colors.mutedForeground }]}>ITEM</Text>
+              <Text style={[styles.signSummaryValue, { color: colors.foreground }]}>{job?.itemDescription ?? ''}</Text>
+
+              <Text style={[styles.signSummaryLabel, { color: colors.mutedForeground }]}>WORK REQUESTED</Text>
+              <Text style={[styles.signSummaryValue, { color: colors.foreground }]}>{job?.problemDescription ?? ''}</Text>
+
+              {job?.diagnosis ? (
+                <>
+                  <Text style={[styles.signSummaryLabel, { color: colors.mutedForeground }]}>DIAGNOSIS / WORK DONE</Text>
+                  <Text style={[styles.signSummaryValue, { color: colors.foreground }]}>{job.diagnosis}</Text>
+                </>
+              ) : null}
+
+              {Array.isArray(job?.items) && job.items.length > 0 ? (
+                <>
+                  <Text style={[styles.signSummaryLabel, { color: colors.mutedForeground }]}>PARTS & LABOUR</Text>
+                  {job.items.map((it, i) => (
+                    <View key={i} style={styles.signItemRow}>
+                      <Text style={[styles.signItemName, { color: colors.foreground }]} numberOfLines={2}>
+                        {it.quantity > 1 ? `${it.quantity} × ` : ''}{it.description}
+                      </Text>
+                      <Text style={[styles.signItemPrice, { color: colors.foreground }]}>
+                        ${(it.price * it.quantity).toFixed(2)}
+                      </Text>
+                    </View>
+                  ))}
+                </>
+              ) : null}
+
+              {job && job.total > 0 ? (
+                <View style={[styles.signItemRow, { marginTop: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 6 }]}>
+                  <Text style={[styles.signItemName, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>Total</Text>
+                  <Text style={[styles.signItemPrice, { color: colors.foreground, fontFamily: 'Inter_700Bold' }]}>
+                    ${job.total.toFixed(2)}
+                  </Text>
+                </View>
+              ) : null}
+
+              {liveMinutes > 0 ? (
+                <>
+                  <Text style={[styles.signSummaryLabel, { color: colors.mutedForeground }]}>TIME ON SITE</Text>
+                  <Text style={[styles.signSummaryValue, { color: colors.foreground }]}>{fmtDuration(liveMinutes)}</Text>
+                </>
+              ) : null}
+            </View>
+
+            <Text style={[styles.signAttestation, { color: colors.mutedForeground }]}>
+              By signing below, I confirm that the work described above has been completed to my
+              satisfaction. A copy of the signed work order will be emailed to me.
+            </Text>
+
             <TextInput
               testID="signer-name-input"
               style={[styles.noteInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, minHeight: 44 }]}
@@ -735,6 +796,7 @@ export default function JobDetailScreen() {
                 </>
               )}
             </Pressable>
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -887,6 +949,45 @@ const styles = StyleSheet.create({
   },
   modalCard: { borderRadius: 16, borderWidth: 1, padding: 18 },
   modalTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold', marginBottom: 12 },
+  signSummary: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  signSummaryLabel: {
+    fontSize: 10,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.8,
+    marginTop: 10,
+  },
+  signSummaryValue: {
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 20,
+    marginTop: 2,
+  },
+  signItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 4,
+  },
+  signItemName: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  signItemPrice: {
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+  },
+  signAttestation: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 17,
+    marginBottom: 12,
+  },
   noteInput: {
     borderWidth: 1,
     borderRadius: 10,
