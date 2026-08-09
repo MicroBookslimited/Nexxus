@@ -175,22 +175,37 @@ async function computeTotals(
   return { subtotal: r2(subtotal), discount: r2(discount), tax: r2(tax), total: r2(total) };
 }
 
-/* ─── Numbering: WO-YY-NNNN ─────────────────────────────────────────────────── */
+/* ─── Numbering: WO-YYMMDD-CLI-10001 ─────────────────────────────────────────
+ * Date is Jamaica local (UTC-5); CLI = first 3 letters of the client name
+ * (customer or contact), uppercased; sequence is tenant-wide and starts at
+ * 10001, continuing from the highest already issued. */
+function clientCode(name: string | null | undefined): string {
+  const letters = (name ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return (letters.slice(0, 3) || "CLT").padEnd(3, "X");
+}
+
 async function nextWorkOrderNumber(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   tenantId: number,
+  clientName: string | null | undefined,
 ): Promise<string> {
   const nowJa = new Date(Date.now() - 5 * 60 * 60 * 1000);
-  const year = nowJa.getUTCFullYear();
-  const yy = String(year).slice(-2);
-  const yearStart = new Date(`${year}-01-01T05:00:00.000Z`);
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(${tenantId}, ${year + 200000})`);
-  const [{ cnt }] = await tx
-    .select({ cnt: sql<number>`cast(count(*) as int)` })
+  const yymmdd = [
+    String(nowJa.getUTCFullYear()).slice(-2),
+    String(nowJa.getUTCMonth() + 1).padStart(2, "0"),
+    String(nowJa.getUTCDate()).padStart(2, "0"),
+  ].join("");
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${tenantId}, 200001)`);
+  // Continue from the highest sequence already issued (works for both the
+  // old WO-YY-NNNN format and the new trailing 5-digit sequence).
+  const [{ maxSeq }] = await tx
+    .select({
+      maxSeq: sql<number | null>`max(cast(substring(${workOrdersTable.workOrderNumber} from '([0-9]+)$') as int))`,
+    })
     .from(workOrdersTable)
-    .where(and(eq(workOrdersTable.tenantId, tenantId), gte(workOrdersTable.createdAt, yearStart)));
-  const seq = String((cnt ?? 0) + 1).padStart(4, "0");
-  return `WO-${yy}-${seq}`;
+    .where(eq(workOrdersTable.tenantId, tenantId));
+  const seq = Math.max(maxSeq ?? 0, 10000) + 1;
+  return `WO-${yymmdd}-${clientCode(clientName)}-${seq}`;
 }
 
 /* ─── Validation helpers ─────────────────────────────────────────────────────── */
@@ -350,8 +365,18 @@ router.post("/work-orders", async (req, res): Promise<void> => {
 
   const totals = await computeTotals(tenantId, data.items, data.discountAmount, data.discountType);
 
+  // Resolve the client name for the WO number's 3-letter code
+  let clientName: string | null | undefined = data.contactName;
+  if (data.customerId != null) {
+    const [cust] = await db
+      .select({ name: customersTable.name })
+      .from(customersTable)
+      .where(and(eq(customersTable.id, data.customerId), eq(customersTable.tenantId, tenantId)));
+    if (cust?.name) clientName = cust.name;
+  }
+
   const row = await db.transaction(async (tx) => {
-    const workOrderNumber = await nextWorkOrderNumber(tx, tenantId);
+    const workOrderNumber = await nextWorkOrderNumber(tx, tenantId, clientName);
     const [created] = await tx
       .insert(workOrdersTable)
       .values({
