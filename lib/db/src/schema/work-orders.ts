@@ -93,6 +93,12 @@ export const workOrdersTable = pgTable("work_orders", {
   customerSignature: text("customer_signature"),
   staffSignature: text("staff_signature"),
 
+  // Customer sign-off captured by the FSM technician at work completion
+  // (SVG/PNG data URL; separate from the collection signatures above)
+  completionSignature: text("completion_signature"),
+  completionSignedBy: text("completion_signed_by"),
+  completionSignedAt: timestamp("completion_signed_at", { withTimezone: true }),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
@@ -166,6 +172,25 @@ export const workOrderTimeEntriesTable = pgTable("work_order_time_entries", {
 }));
 
 export type WorkOrderTimeEntry = typeof workOrderTimeEntriesTable.$inferSelect;
+
+// ─── Work Order Photos ────────────────────────────────────────────────────────
+// Proof-of-work photos captured by FSM technicians in the field.
+// `data` is a compressed JPEG data URL (base64) — same inline pattern used for
+// signatures and subscription proofs elsewhere in the app.
+export const workOrderPhotosTable = pgTable("work_order_photos", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  workOrderId: integer("work_order_id").notNull().references(() => workOrdersTable.id, { onDelete: "cascade" }),
+  staffId: integer("staff_id").references(() => staffTable.id),
+  staffName: text("staff_name"),
+  data: text("data").notNull(),
+  caption: text("caption"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  woIdx: index("work_order_photos_wo_idx").on(t.tenantId, t.workOrderId),
+}));
+
+export type WorkOrderPhoto = typeof workOrderPhotosTable.$inferSelect;
 
 // ─── Work Order Appointments ──────────────────────────────────────────────────
 export const workOrderAppointmentsTable = pgTable("work_order_appointments", {

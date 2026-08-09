@@ -113,9 +113,20 @@ export interface FsmJob {
   travelStartedAt: string | null;
   arrivedAt: string | null;
   workCompletedAt: string | null;
+  completionSignedBy: string | null;
+  completionSignedAt: string | null;
   fieldPhase: FieldPhase;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface FsmPhoto {
+  id: number;
+  staffId: number | null;
+  staffName: string | null;
+  data: string; // image data URL
+  caption: string | null;
+  createdAt: string;
 }
 
 export interface FsmTimeEntry {
@@ -172,6 +183,8 @@ export function getJob(
   billableMinutes: number;
   pausedMinutes: number;
   activeEntry: FsmTimeEntry | null;
+  photos: FsmPhoto[];
+  completionSignature: string | null;
 }> {
   return request(`/api/fsm/jobs/${id}`, { headers: staffHeaders(staffId) });
 }
@@ -198,6 +211,29 @@ export function resumeJob(staffId: number, id: number): Promise<FsmJob> {
 
 export function completeJob(staffId: number, id: number): Promise<FsmJob> {
   return request<FsmJob>(`/api/fsm/jobs/${id}/complete`, { method: 'POST', headers: staffHeaders(staffId) });
+}
+
+export function addJobPhoto(staffId: number, id: number, image: string, caption?: string): Promise<FsmPhoto> {
+  return request<FsmPhoto>(`/api/fsm/jobs/${id}/photos`, {
+    method: 'POST',
+    body: JSON.stringify({ image, caption }),
+    headers: staffHeaders(staffId),
+  });
+}
+
+export function deleteJobPhoto(staffId: number, id: number, photoId: number): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/api/fsm/jobs/${id}/photos/${photoId}`, {
+    method: 'DELETE',
+    headers: staffHeaders(staffId),
+  });
+}
+
+export function submitSignature(staffId: number, id: number, image: string, signedBy: string): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/api/fsm/jobs/${id}/signature`, {
+    method: 'POST',
+    body: JSON.stringify({ image, signedBy }),
+    headers: staffHeaders(staffId),
+  });
 }
 
 export function addJobNote(staffId: number, id: number, content: string): Promise<FsmJobNote> {

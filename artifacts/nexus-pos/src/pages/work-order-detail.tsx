@@ -9,6 +9,7 @@ import {
   useListStaff,
   useGetSettings,
   useWorkOrderNotes,
+  useWorkOrderPhotos,
   useAddWorkOrderNote,
   useDeleteWorkOrderNote,
   useWorkOrderHistory,
@@ -669,8 +670,55 @@ function OverviewTab({
             </CardContent>
           </Card>
         )}
+
+        <ProofOfWorkCard wo={wo} />
       </div>
     </div>
+  );
+}
+
+/* ── Proof of Work (FSM technician photos + customer sign-off) ────────────── */
+function ProofOfWorkCard({ wo }: { wo: WorkOrder }) {
+  const { data: photos } = useWorkOrderPhotos(wo.id);
+  const hasPhotos = (photos?.length ?? 0) > 0;
+  const hasSignature = !!wo.completionSignature;
+  if (!hasPhotos && !hasSignature) return null;
+  return (
+    <Card data-testid="proof-of-work-card">
+      <CardContent className="p-4 space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Proof of Work (from technician)
+        </p>
+        {hasPhotos && (
+          <div className="flex flex-wrap gap-2">
+            {photos!.map((p) => (
+              <img
+                key={p.id}
+                src={p.data}
+                alt={p.caption ?? `Job photo by ${p.staffName ?? "technician"}`}
+                title={p.caption ?? p.staffName ?? undefined}
+                className="h-24 w-24 rounded-md object-cover border"
+                data-testid={`job-photo-${p.id}`}
+              />
+            ))}
+          </div>
+        )}
+        {hasSignature && (
+          <div className="space-y-1">
+            <img
+              src={wo.completionSignature!}
+              alt="Customer sign-off signature"
+              className="h-24 rounded-md border bg-white"
+              data-testid="completion-signature"
+            />
+            <p className="text-xs text-muted-foreground">
+              Signed by {wo.completionSignedBy ?? "customer"}
+              {wo.completionSignedAt ? ` · ${new Date(wo.completionSignedAt).toLocaleString()}` : ""}
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

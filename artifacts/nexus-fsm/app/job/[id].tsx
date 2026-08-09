@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -12,6 +12,8 @@ import {
   View,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,16 +21,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PriorityChip, StatusChip, formatDate } from '@/components/JobBits';
 import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
+import SignaturePad, { strokesToSvgDataUrl } from '@/components/SignaturePad';
 import {
   acceptJob,
   addJobNote,
+  addJobPhoto,
   arriveOnSite,
   completeJob,
   declineJob,
+  deleteJobPhoto,
   getJob,
   pauseJob,
   resumeJob,
   startTravel,
+  submitSignature,
   type FsmJobHistory,
   type FsmJobNote,
 } from '@/lib/fsm-api';
@@ -104,6 +110,13 @@ export default function JobDetailScreen() {
   const [pauseOpen, setPauseOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
+  const [completeSheetOpen, setCompleteSheetOpen] = useState(false);
+  const [signOpen, setSignOpen] = useState(false);
+  const [signName, setSignName] = useState('');
+  const signRef = useRef<{ strokes: { x: number; y: number }[][]; size: { width: number; height: number } }>({
+    strokes: [],
+    size: { width: 0, height: 0 },
+  });
 
   const webTop = Platform.OS === 'web' ? 67 : 0;
   const webBottom = Platform.OS === 'web' ? 34 : 0;
@@ -144,6 +157,43 @@ export default function JobDetailScreen() {
     onSuccess: () => { setNoteOpen(false); setNoteText(''); notify('success'); invalidate(); },
     onError: () => notify('error'),
   });
+  const photoMutation = useMutation({
+    mutationFn: (image: string) => addJobPhoto(staff!.id, jobId, image),
+    ...mutationOpts,
+  });
+  const photoDeleteMutation = useMutation({
+    mutationFn: (photoId: number) => deleteJobPhoto(staff!.id, jobId, photoId),
+    ...mutationOpts,
+  });
+  const signatureMutation = useMutation({
+    mutationFn: ({ image, signedBy }: { image: string; signedBy: string }) =>
+      submitSignature(staff!.id, jobId, image, signedBy),
+    // Signature saved — close the modal and complete as a separate step so a
+    // completion failure is recoverable (the Complete button retries directly).
+    onSuccess: () => {
+      setSignOpen(false);
+      setSignName('');
+      notify('success');
+      invalidate();
+      completeMutation.mutate();
+    },
+    onError: () => { notify('error'); invalidate(); },
+  });
+
+  const pickPhoto = async (fromCamera: boolean) => {
+    const options: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ['images'],
+      quality: 0.35,
+      base64: true,
+      allowsMultipleSelection: false,
+    };
+    const result = fromCamera
+      ? await ImagePicker.launchCameraAsync(options)
+      : await ImagePicker.launchImageLibraryAsync(options);
+    const asset = result.assets?.[0];
+    if (result.canceled || !asset?.base64) return;
+    photoMutation.mutate(`data:image/jpeg;base64,${asset.base64}`);
+  };
 
   const job = jobQuery.data;
   const liveMinutes = useLiveMinutes(job?.billableMinutes, job?.activeEntry);
@@ -151,7 +201,7 @@ export default function JobDetailScreen() {
     acceptMutation.isPending || declineMutation.isPending || travelMutation.isPending ||
     arriveMutation.isPending || pauseMutation.isPending || resumeMutation.isPending ||
     completeMutation.isPending;
-  const mutationError = [acceptMutation, declineMutation, travelMutation, arriveMutation, pauseMutation, resumeMutation, completeMutation, noteMutation]
+  const mutationError = [acceptMutation, declineMutation, travelMutation, arriveMutation, pauseMutation, resumeMutation, completeMutation, noteMutation, photoMutation, photoDeleteMutation, signatureMutation]
     .map((m) => (m.error instanceof Error ? m.error.message : null))
     .find(Boolean) ?? null;
 
@@ -341,6 +391,81 @@ export default function JobDetailScreen() {
               </>
             ) : null}
 
+            {(showExec || (job.photos?.length ?? 0) > 0) ? (
+              <>
+                <View style={styles.notesHeader}>
+                  <Text style={[styles.sectionTitle, { color: colors.mutedForeground, marginTop: 0, marginBottom: 0 }]}>PHOTOS</Text>
+                  {showExec && !job.workCompletedAt ? (
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable
+                        testID="take-photo-button"
+                        onPress={() => void pickPhoto(true)}
+                        disabled={photoMutation.isPending}
+                        style={({ pressed }) => [styles.addNoteBtn, { borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}
+                      >
+                        <Feather name="camera" size={13} color={colors.primary} />
+                        <Text style={[styles.addNoteText, { color: colors.primary }]}>Camera</Text>
+                      </Pressable>
+                      <Pressable
+                        testID="pick-photo-button"
+                        onPress={() => void pickPhoto(false)}
+                        disabled={photoMutation.isPending}
+                        style={({ pressed }) => [styles.addNoteBtn, { borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}
+                      >
+                        <Feather name="image" size={13} color={colors.primary} />
+                        <Text style={[styles.addNoteText, { color: colors.primary }]}>Library</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </View>
+                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  {photoMutation.isPending ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : null}
+                  {(job.photos?.length ?? 0) === 0 && !photoMutation.isPending ? (
+                    <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                      No photos yet — capture before/after shots as proof of work
+                    </Text>
+                  ) : (
+                    <View style={styles.photoGrid}>
+                      {job.photos?.map((p) => (
+                        <View key={p.id} style={styles.photoWrap}>
+                          <Image source={{ uri: p.data }} style={styles.photo} contentFit="cover" />
+                          {!job.workCompletedAt && p.staffId === staff?.id ? (
+                            <Pressable
+                              testID={`delete-photo-${p.id}`}
+                              onPress={() => photoDeleteMutation.mutate(p.id)}
+                              style={[styles.photoDelete, { backgroundColor: colors.destructive }]}
+                            >
+                              <Feather name="x" size={12} color="#FFFFFF" />
+                            </Pressable>
+                          ) : null}
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </>
+            ) : null}
+
+            {job.completionSignedAt ? (
+              <>
+                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CUSTOMER SIGN-OFF</Text>
+                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  {job.completionSignature ? (
+                    <Image
+                      source={{ uri: job.completionSignature }}
+                      style={styles.signatureImage}
+                      contentFit="contain"
+                    />
+                  ) : null}
+                  <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                    Signed by {job.completionSignedBy ?? 'customer'} · {formatDate(job.completionSignedAt)}
+                  </Text>
+                </View>
+              </>
+            ) : null}
+
             <View style={styles.notesHeader}>
               <Text style={[styles.sectionTitle, { color: colors.mutedForeground, marginTop: 0, marginBottom: 0 }]}>NOTES</Text>
               {showExec ? (
@@ -449,7 +574,13 @@ export default function JobDetailScreen() {
                         <Text style={[styles.actionText, { color: colors.foreground }]}>Pause</Text>
                       </Pressable>
                     )}
-                  {primaryBtn('Complete Work', 'check-circle', () => completeMutation.mutate(), completeMutation.isPending, 'complete-button')}
+                  {primaryBtn(
+                    'Complete Work',
+                    'check-circle',
+                    () => (job.completionSignedAt ? completeMutation.mutate() : setCompleteSheetOpen(true)),
+                    completeMutation.isPending,
+                    'complete-button',
+                  )}
                 </>
               ) : (
                 <View style={[styles.doneBanner, { backgroundColor: '#22C55E18', borderColor: '#22C55E55' }]}>
@@ -521,6 +652,89 @@ export default function JobDetailScreen() {
             {pauseMutation.isPending ? (
               <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
             ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Complete: signature prompt sheet */}
+      <Modal visible={completeSheetOpen} transparent animationType="fade" onRequestClose={() => setCompleteSheetOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setCompleteSheetOpen(false)}>
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => undefined}
+          >
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Get a customer sign-off?</Text>
+            <Text style={[styles.rowLabel, { color: colors.mutedForeground, marginBottom: 12 }]}>
+              A signature confirms the customer approved the completed work.
+            </Text>
+            <Pressable
+              testID="capture-signoff-button"
+              onPress={() => { setCompleteSheetOpen(false); setSignOpen(true); }}
+              style={({ pressed }) => [styles.actionButton, { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Feather name="edit-3" size={18} color={colors.primaryForeground} />
+              <Text style={[styles.actionText, { color: colors.primaryForeground }]}>Capture Sign-off</Text>
+            </Pressable>
+            <Pressable
+              testID="complete-without-signature-button"
+              onPress={() => { setCompleteSheetOpen(false); completeMutation.mutate(); }}
+              style={({ pressed }) => [
+                styles.actionButton,
+                { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1, marginTop: 10, opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text style={[styles.actionText, { color: colors.mutedForeground }]}>Complete Without Signature</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Signature capture */}
+      <Modal visible={signOpen} transparent animationType="fade" onRequestClose={() => setSignOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setSignOpen(false)}>
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => undefined}
+          >
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Customer sign-off</Text>
+            <TextInput
+              testID="signer-name-input"
+              style={[styles.noteInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, minHeight: 44 }]}
+              placeholder="Customer name"
+              placeholderTextColor={colors.mutedForeground}
+              value={signName}
+              onChangeText={setSignName}
+            />
+            <View style={{ height: 12 }} />
+            <SignaturePad
+              height={180}
+              onStrokesChange={(strokes, size) => { signRef.current = { strokes, size }; }}
+            />
+            <Pressable
+              testID="save-signature-button"
+              disabled={signatureMutation.isPending}
+              onPress={() => {
+                const { strokes, size } = signRef.current;
+                if (!signName.trim() || strokes.length === 0 || size.width === 0) return;
+                signatureMutation.mutate({
+                  image: strokesToSvgDataUrl(strokes, Math.round(size.width), Math.round(size.height)),
+                  signedBy: signName.trim(),
+                });
+              }}
+              style={({ pressed }) => [
+                styles.actionButton,
+                { backgroundColor: colors.primary, opacity: pressed || signatureMutation.isPending ? 0.6 : 1, marginTop: 14 },
+              ]}
+            >
+              {signatureMutation.isPending ? (
+                <ActivityIndicator color={colors.primaryForeground} />
+              ) : (
+                <>
+                  <Feather name="check-circle" size={18} color={colors.primaryForeground} />
+                  <Text style={[styles.actionText, { color: colors.primaryForeground }]}>Save & Complete Work</Text>
+                </>
+              )}
+            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -692,4 +906,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   reasonText: { fontSize: 14, fontFamily: 'Inter_400Regular' },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  photoWrap: { width: 92, height: 92 },
+  photo: { width: 92, height: 92, borderRadius: 10 },
+  photoDelete: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signatureImage: { width: '100%', height: 120, borderRadius: 10, backgroundColor: '#FFFFFF' },
 });

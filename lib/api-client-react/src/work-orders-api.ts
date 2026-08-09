@@ -70,6 +70,9 @@ export type WorkOrder = {
   convertedOrderId: number | null;
   customerSignature?: string | null;
   staffSignature?: string | null;
+  completionSignature?: string | null;
+  completionSignedBy?: string | null;
+  completionSignedAt?: string | null;
   portalToken?: string;
   createdAt: string;
   updatedAt: string;
@@ -257,6 +260,26 @@ export function useDeleteWorkOrder() {
     mutationFn: (id: number) =>
       customFetch<void>(`/api/work-orders/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: [WO_KEY] }),
+  });
+}
+
+// ─── Photos (FSM proof-of-work) ──────────────────────────────────────────────
+
+export interface WorkOrderPhoto {
+  id: number;
+  workOrderId: number;
+  staffId: number | null;
+  staffName: string | null;
+  data: string; // image data URL
+  caption: string | null;
+  createdAt: string;
+}
+
+export function useWorkOrderPhotos(workOrderId: number | null) {
+  return useQuery<WorkOrderPhoto[]>({
+    queryKey: [WO_KEY, workOrderId, "photos"],
+    queryFn: () => customFetch<WorkOrderPhoto[]>(`/api/work-orders/${workOrderId}/photos`),
+    enabled: workOrderId != null,
   });
 }
 

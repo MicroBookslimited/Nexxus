@@ -5,6 +5,7 @@ import {
   db,
   workOrdersTable,
   workOrderNotesTable,
+  workOrderPhotosTable,
   workOrderStatusHistoryTable,
   workOrderAppointmentsTable,
   customersTable,
@@ -580,6 +581,22 @@ router.delete("/work-orders/:id", async (req, res): Promise<void> => {
   await db.delete(workOrdersTable)
     .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
   res.sendStatus(204);
+});
+
+/* ─── Photos (FSM proof-of-work, read-only for the office) ──────────────────── */
+
+router.get("/work-orders/:id/photos", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const photos = await db
+    .select()
+    .from(workOrderPhotosTable)
+    .where(and(eq(workOrderPhotosTable.workOrderId, id), eq(workOrderPhotosTable.tenantId, tenantId)))
+    .orderBy(desc(workOrderPhotosTable.createdAt));
+  res.json(photos);
 });
 
 /* ─── Notes ─────────────────────────────────────────────────────────────────── */
