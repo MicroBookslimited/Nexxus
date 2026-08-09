@@ -594,6 +594,21 @@ function WorkOrderRow({
         <Badge variant="outline" className={`${STATUS_STYLES[wo.status as WorkOrderStatus]} text-xs shrink-0`}>
           {STATUS_LABEL[wo.status as WorkOrderStatus] ?? wo.status}
         </Badge>
+        {!isTerminal && (wo.assignedStaffIds?.length > 0 || wo.assignedStaffId != null) && wo.assignmentStatus && (
+          <Badge
+            variant="outline"
+            className={`text-xs shrink-0 ${
+              wo.assignmentStatus === "accepted"
+                ? "border-green-500/50 text-green-600"
+                : wo.assignmentStatus === "declined"
+                  ? "border-red-500/50 text-red-600"
+                  : "border-amber-500/50 text-amber-600"
+            }`}
+            title={wo.assignmentStatus === "declined" && wo.declineReason ? wo.declineReason : undefined}
+          >
+            {wo.assignmentStatus === "accepted" ? "Tech accepted" : wo.assignmentStatus === "declined" ? "Tech declined" : "Awaiting tech"}
+          </Badge>
+        )}
         <div className="flex gap-1.5">
           <Button size="sm" variant="outline" onClick={() => onOpen(wo.id)}>
             <Eye className="h-3.5 w-3.5" />

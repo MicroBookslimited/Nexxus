@@ -64,4 +64,5 @@
 - [Cash shift staff scoping](cash-shift-staff-scoping.md) — shift-gated UIs must send x-staff-id and key queries by staff id; gate + open-shift screens must share the same scope or cashiers dead-end.
 - [Tenant offline backup & restore](tenant-backup-restore.md) — runtime table discovery + denylist; new control-plane/secret tables MUST be added to EXCLUDED_TABLES; restore is same-tenant-only wipe-and-replace.
 - [Composite×variant scoping](composite-variant-scoping.md) — bundle components can be scoped to a parent variant option; refund/void must restore from the order-line component_snapshot, never the live recipe.
+- [FSM assignment response model](fsm-assignment-response.md) — ONE work-order-wide accept/decline (pending-only transition, 409 otherwise); reassignment resets to pending; columns added via manual Supabase DDL.
 - [Work Orders Phase 1 architecture](work-orders-phase1.md) — full module built; new tables, 7-status flow, notes/appointments/history API, list+kanban UI, job card HTML with CDN JsBarcode; add-on billing tables in place but self-serve purchase route not wired.

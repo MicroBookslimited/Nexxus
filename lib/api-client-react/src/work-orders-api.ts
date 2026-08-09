@@ -50,6 +50,9 @@ export type WorkOrder = {
   assignedStaffIds: number[];
   assignedStaffName?: string;
   assignedStaffNames?: string[];
+  assignmentStatus?: "pending" | "accepted" | "declined";
+  assignmentRespondedAt?: string | null;
+  declineReason?: string | null;
   promisedDate: string | null;
   appointmentDate: string | null;
   storageLocation: string | null;

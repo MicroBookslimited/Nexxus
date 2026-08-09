@@ -487,6 +487,14 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
   if (updStaffIds !== null) {
     updates.assignedStaffIds = updStaffIds;
     updates.assignedStaffId = updPrimaryStaffId ?? null;
+    // FSM: a change in who is assigned resets the technician acceptance flow.
+    const prevIds: number[] = Array.isArray(existing.assignedStaffIds) ? existing.assignedStaffIds as number[] : [];
+    const changed = prevIds.length !== updStaffIds.length || prevIds.some((v, i) => v !== updStaffIds[i]);
+    if (changed) {
+      updates.assignmentStatus = "pending";
+      updates.assignmentRespondedAt = null;
+      updates.declineReason = null;
+    }
   }
 
   const textFields = [

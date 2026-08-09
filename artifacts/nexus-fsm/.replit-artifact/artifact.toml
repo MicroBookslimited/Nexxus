@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/nexus-fsm/"
+title = "NEXXUS FSM"
+description = "Field service management mobile app for technicians"
+version = "1.0.0"
+id = "artifacts/nexus-fsm"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/nexus-fsm/" ]
+localPort = 26267
+
+[services.development]
+run = "pnpm --filter @workspace/nexus-fsm run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/nexus-fsm", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/nexus-fsm", "run", "serve" ]
+
+[services.env]
+PORT = "26267"
+BASE_PATH = "/nexus-fsm/"

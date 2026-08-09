@@ -44,6 +44,11 @@ export const workOrdersTable = pgTable("work_orders", {
   // assignedStaffIds is the full ordered list (used by the multi-technician UI).
   assignedStaffId: integer("assigned_staff_id").references(() => staffTable.id),
   assignedStaffIds: jsonb("assigned_staff_ids").notNull().$type<number[]>().default([]),
+  // FSM technician acceptance flow: pending → accepted | declined.
+  // Reset to 'pending' whenever the assigned staff changes.
+  assignmentStatus: text("assignment_status").notNull().default("pending"), // pending | accepted | declined
+  assignmentRespondedAt: timestamp("assignment_responded_at", { withTimezone: true }),
+  declineReason: text("decline_reason"),
   promisedDate: timestamp("promised_date", { withTimezone: true }),
   appointmentDate: timestamp("appointment_date", { withTimezone: true }),
   storageLocation: text("storage_location"),

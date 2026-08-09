@@ -559,6 +559,23 @@ function OverviewTab({
                     {wo.assignedStaffNames?.join(", ") || wo.assignedStaffName || "Unassigned"}
                   </p>
                 )}
+                {(wo.assignedStaffIds?.length > 0 || wo.assignedStaffId != null) && wo.assignmentStatus && (
+                  <p
+                    className={`text-xs mt-1 font-medium ${
+                      wo.assignmentStatus === "accepted"
+                        ? "text-green-600"
+                        : wo.assignmentStatus === "declined"
+                          ? "text-red-600"
+                          : "text-amber-600"
+                    }`}
+                  >
+                    {wo.assignmentStatus === "accepted"
+                      ? "Accepted by technician"
+                      : wo.assignmentStatus === "declined"
+                        ? `Declined by technician${wo.declineReason ? ` — ${wo.declineReason}` : ""}`
+                        : "Awaiting technician response"}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>

@@ -61,6 +61,7 @@ import superadminAnalyticsRouter from "./superadmin-analytics";
 import supportTicketsRouter from "./support-tickets";
 import layawaysRouter from "./layaways";
 import workOrdersRouter from "./work-orders";
+import fsmRouter from "./fsm";
 import packagesRouter from "./packages";
 
 const router: IRouter = Router();
@@ -74,6 +75,7 @@ router.use(heldOrdersRouter);
 router.use(quotationsRouter);
 router.use(layawaysRouter);
 router.use(workOrdersRouter);
+router.use(fsmRouter);
 router.use(packagesRouter);
 router.use(giftVouchersRouter);
 router.use(dashboardRouter);
