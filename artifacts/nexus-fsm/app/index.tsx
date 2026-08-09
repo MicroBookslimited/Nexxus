@@ -13,7 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PriorityChip, StatusChip, formatDate, isToday } from '@/components/JobBits';
+import { Chip, PriorityChip, StatusChip, formatDate, isToday } from '@/components/JobBits';
 import { useAuth } from '@/context/AuthContext';
 import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
@@ -85,6 +85,12 @@ export default function JobQueueScreen() {
       </Text>
       <View style={styles.cardBottom}>
         <StatusChip status={item.status} />
+        {item.assignmentStatus === 'accepted' && item.fieldPhase !== 'idle' ? (
+          <Chip
+            label={item.fieldPhase === 'en_route' ? 'EN ROUTE' : item.fieldPhase === 'on_site' ? 'ON SITE' : 'WORK DONE'}
+            color={item.fieldPhase === 'done' ? '#22C55E' : colors.accent}
+          />
+        ) : null}
         <View style={styles.cardMeta}>
           <Feather name="user" size={12} color={colors.mutedForeground} />
           <Text style={[styles.metaText, { color: colors.mutedForeground }]} numberOfLines={1}>

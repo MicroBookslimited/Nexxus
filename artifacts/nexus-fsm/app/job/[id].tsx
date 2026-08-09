@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -18,7 +19,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PriorityChip, StatusChip, formatDate } from '@/components/JobBits';
 import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
-import { acceptJob, declineJob, getJob, type FsmJobHistory, type FsmJobNote } from '@/lib/fsm-api';
+import {
+  acceptJob,
+  addJobNote,
+  arriveOnSite,
+  completeJob,
+  declineJob,
+  getJob,
+  pauseJob,
+  resumeJob,
+  startTravel,
+  type FsmJobHistory,
+  type FsmJobNote,
+} from '@/lib/fsm-api';
 
 const DECLINE_REASONS = [
   'Not available at that time',
@@ -27,6 +40,22 @@ const DECLINE_REASONS = [
   'Outside my skill set',
   'Other',
 ];
+
+const PAUSE_REASONS = ['Break', 'Waiting for parts', 'Waiting for customer', 'Other job interruption'];
+
+function notify(kind: 'success' | 'error') {
+  if (Platform.OS !== 'web') {
+    void Haptics.notificationAsync(
+      kind === 'success' ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error,
+    );
+  }
+}
+
+function fmtDuration(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = Math.floor(totalMinutes % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
 function Row({ icon, label, value, onPress }: {
   icon: keyof typeof Feather.glyphMap;
@@ -48,6 +77,20 @@ function Row({ icon, label, value, onPress }: {
   );
 }
 
+/** Live billable timer: closed work minutes + elapsed time of the open work entry. */
+function useLiveMinutes(billableMinutes: number | undefined, activeEntry: { entryType: string; startedAt: string } | null | undefined) {
+  const [, setTick] = useState(0);
+  const running = activeEntry?.entryType === 'work';
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, [running]);
+  const base = billableMinutes ?? 0;
+  if (!running || !activeEntry) return base;
+  return base + Math.max(0, (Date.now() - new Date(activeEntry.startedAt).getTime()) / 60000);
+}
+
 export default function JobDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -58,6 +101,9 @@ export default function JobDetailScreen() {
   const jobId = parseInt(String(params.id), 10);
 
   const [declineOpen, setDeclineOpen] = useState(false);
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState('');
 
   const webTop = Platform.OS === 'web' ? 67 : 0;
   const webBottom = Platform.OS === 'web' ? 34 : 0;
@@ -73,32 +119,69 @@ export default function JobDetailScreen() {
     void queryClient.invalidateQueries({ queryKey: ['fsm-job', staff?.id, jobId] });
   };
 
-  const acceptMutation = useMutation({
-    mutationFn: () => acceptJob(staff!.id, jobId),
-    onSuccess: () => {
-      if (Platform.OS !== 'web') {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-      invalidate();
-    },
-  });
+  const mutationOpts = {
+    onSuccess: () => { notify('success'); invalidate(); },
+    onError: () => notify('error'),
+  };
 
+  const acceptMutation = useMutation({ mutationFn: () => acceptJob(staff!.id, jobId), ...mutationOpts });
   const declineMutation = useMutation({
     mutationFn: (reason: string) => declineJob(staff!.id, jobId, reason),
-    onSuccess: () => {
-      setDeclineOpen(false);
-      invalidate();
-    },
+    onSuccess: () => { setDeclineOpen(false); invalidate(); },
+    onError: () => notify('error'),
+  });
+  const travelMutation = useMutation({ mutationFn: () => startTravel(staff!.id, jobId), ...mutationOpts });
+  const arriveMutation = useMutation({ mutationFn: () => arriveOnSite(staff!.id, jobId), ...mutationOpts });
+  const pauseMutation = useMutation({
+    mutationFn: (reason: string) => pauseJob(staff!.id, jobId, reason),
+    onSuccess: () => { setPauseOpen(false); notify('success'); invalidate(); },
+    onError: () => notify('error'),
+  });
+  const resumeMutation = useMutation({ mutationFn: () => resumeJob(staff!.id, jobId), ...mutationOpts });
+  const completeMutation = useMutation({ mutationFn: () => completeJob(staff!.id, jobId), ...mutationOpts });
+  const noteMutation = useMutation({
+    mutationFn: (content: string) => addJobNote(staff!.id, jobId, content),
+    onSuccess: () => { setNoteOpen(false); setNoteText(''); notify('success'); invalidate(); },
+    onError: () => notify('error'),
   });
 
   const job = jobQuery.data;
-  const busy = acceptMutation.isPending || declineMutation.isPending;
-  const mutationError =
-    (acceptMutation.error instanceof Error ? acceptMutation.error.message : null) ??
-    (declineMutation.error instanceof Error ? declineMutation.error.message : null);
+  const liveMinutes = useLiveMinutes(job?.billableMinutes, job?.activeEntry);
+  const busy =
+    acceptMutation.isPending || declineMutation.isPending || travelMutation.isPending ||
+    arriveMutation.isPending || pauseMutation.isPending || resumeMutation.isPending ||
+    completeMutation.isPending;
+  const mutationError = [acceptMutation, declineMutation, travelMutation, arriveMutation, pauseMutation, resumeMutation, completeMutation, noteMutation]
+    .map((m) => (m.error instanceof Error ? m.error.message : null))
+    .find(Boolean) ?? null;
 
   const notes: FsmJobNote[] = Array.isArray(job?.notes) ? (job.notes as FsmJobNote[]) : [];
   const history: FsmJobHistory[] = Array.isArray(job?.history) ? job.history : [];
+  const isClosed = job ? job.status === 'collected' || job.status === 'cancelled' : false;
+  const isPaused = job?.activeEntry != null && job.activeEntry.entryType !== 'work';
+  const phase = job?.fieldPhase ?? 'idle';
+  const showExec = job && job.assignmentStatus === 'accepted' && !isClosed;
+
+  const primaryBtn = (label: string, icon: keyof typeof Feather.glyphMap, onPress: () => void, pending: boolean, testID: string, color?: string) => (
+    <Pressable
+      testID={testID}
+      onPress={onPress}
+      disabled={busy}
+      style={({ pressed }) => [
+        styles.actionButton,
+        { backgroundColor: color ?? colors.primary, opacity: pressed || busy ? 0.7 : 1 },
+      ]}
+    >
+      {pending ? (
+        <ActivityIndicator color={colors.primaryForeground} />
+      ) : (
+        <>
+          <Feather name={icon} size={18} color={color ? '#FFFFFF' : colors.primaryForeground} />
+          <Text style={[styles.actionText, { color: color ? '#FFFFFF' : colors.primaryForeground }]}>{label}</Text>
+        </>
+      )}
+    </Pressable>
+  );
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -132,7 +215,7 @@ export default function JobDetailScreen() {
       ) : (
         <>
           <ScrollView
-            contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + webBottom + 120 }}
+            contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + webBottom + 140 }}
           >
             <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.chipsRow}>
@@ -158,6 +241,54 @@ export default function JobDetailScreen() {
                 </Text>
               ) : null}
             </View>
+
+            {showExec && phase !== 'idle' ? (
+              <>
+                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>JOB TIME</Text>
+                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={styles.timerRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.timerValue, { color: phase === 'done' ? colors.foreground : isPaused ? colors.warning : colors.primary }]}>
+                        {fmtDuration(liveMinutes)}
+                      </Text>
+                      <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                        {phase === 'done'
+                          ? 'Billable time (completed)'
+                          : isPaused
+                            ? `Paused — ${job.activeEntry?.pauseReason ?? ''}`
+                            : phase === 'on_site'
+                              ? 'Billable time — clock running'
+                              : 'En route'}
+                      </Text>
+                    </View>
+                    {phase === 'on_site' ? (
+                      <Feather
+                        name={isPaused ? 'pause-circle' : 'clock'}
+                        size={28}
+                        color={isPaused ? colors.warning : colors.primary}
+                      />
+                    ) : null}
+                  </View>
+                  {(job.pausedMinutes ?? 0) > 0 ? (
+                    <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                      Paused total: {fmtDuration(job.pausedMinutes)} (not billed)
+                    </Text>
+                  ) : null}
+                  {job.travelStartedAt ? (
+                    <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                      Travel started {formatDate(job.travelStartedAt)}
+                      {job.arrivedAt ? ` · Arrived ${formatDate(job.arrivedAt)}` : ''}
+                      {job.workCompletedAt ? ` · Completed ${formatDate(job.workCompletedAt)}` : ''}
+                    </Text>
+                  ) : job.arrivedAt ? (
+                    <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                      Arrived {formatDate(job.arrivedAt)}
+                      {job.workCompletedAt ? ` · Completed ${formatDate(job.workCompletedAt)}` : ''}
+                    </Text>
+                  ) : null}
+                </View>
+              </>
+            ) : null}
 
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>PROBLEM</Text>
             <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -210,21 +341,33 @@ export default function JobDetailScreen() {
               </>
             ) : null}
 
-            {notes.length > 0 ? (
-              <>
-                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>NOTES</Text>
-                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  {notes.map((n) => (
-                    <View key={n.id} style={styles.noteRow}>
-                      <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
-                        {n.authorName ?? 'Staff'} · {formatDate(n.createdAt)}
-                      </Text>
-                      <Text style={[styles.body, { color: colors.foreground }]}>{n.content}</Text>
-                    </View>
-                  ))}
-                </View>
-              </>
-            ) : null}
+            <View style={styles.notesHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.mutedForeground, marginTop: 0, marginBottom: 0 }]}>NOTES</Text>
+              {showExec ? (
+                <Pressable
+                  testID="add-note-button"
+                  onPress={() => setNoteOpen(true)}
+                  style={({ pressed }) => [styles.addNoteBtn, { borderColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}
+                >
+                  <Feather name="plus" size={13} color={colors.primary} />
+                  <Text style={[styles.addNoteText, { color: colors.primary }]}>Add note</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {notes.length === 0 ? (
+                <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>No notes yet</Text>
+              ) : (
+                notes.map((n) => (
+                  <View key={n.id} style={styles.noteRow}>
+                    <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                      {n.authorName ?? 'Staff'} · {formatDate(n.createdAt)}
+                    </Text>
+                    <Text style={[styles.body, { color: colors.foreground }]}>{n.content}</Text>
+                  </View>
+                ))
+              )}
+            </View>
 
             {history.length > 0 ? (
               <>
@@ -249,7 +392,7 @@ export default function JobDetailScreen() {
             ) : null}
           </ScrollView>
 
-          {job.assignmentStatus !== 'accepted' ? (
+          {!isClosed ? (
             <View
               style={[
                 styles.actionBar,
@@ -260,48 +403,66 @@ export default function JobDetailScreen() {
                 },
               ]}
             >
-              <Pressable
-                testID="decline-button"
-                onPress={() => setDeclineOpen(true)}
-                disabled={busy}
-                style={({ pressed }) => [
-                  styles.actionButton,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.destructive,
-                    borderWidth: 1,
-                    opacity: pressed || busy ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Feather name="x" size={18} color={colors.destructive} />
-                <Text style={[styles.actionText, { color: colors.destructive }]}>Decline</Text>
-              </Pressable>
-              <Pressable
-                testID="accept-button"
-                onPress={() => acceptMutation.mutate()}
-                disabled={busy}
-                style={({ pressed }) => [
-                  styles.actionButton,
-                  { backgroundColor: colors.primary, opacity: pressed || busy ? 0.7 : 1 },
-                ]}
-              >
-                {acceptMutation.isPending ? (
-                  <ActivityIndicator color={colors.primaryForeground} />
-                ) : (
-                  <>
-                    <Feather name="check" size={18} color={colors.primaryForeground} />
-                    <Text style={[styles.actionText, { color: colors.primaryForeground }]}>
-                      Accept Job
-                    </Text>
-                  </>
-                )}
-              </Pressable>
+              {job.assignmentStatus !== 'accepted' ? (
+                <>
+                  <Pressable
+                    testID="decline-button"
+                    onPress={() => setDeclineOpen(true)}
+                    disabled={busy}
+                    style={({ pressed }) => [
+                      styles.actionButton,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: colors.destructive,
+                        borderWidth: 1,
+                        opacity: pressed || busy ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Feather name="x" size={18} color={colors.destructive} />
+                    <Text style={[styles.actionText, { color: colors.destructive }]}>Decline</Text>
+                  </Pressable>
+                  {primaryBtn('Accept Job', 'check', () => acceptMutation.mutate(), acceptMutation.isPending, 'accept-button')}
+                </>
+              ) : phase === 'idle' ? (
+                <>
+                  {primaryBtn('Start Travel', 'navigation', () => travelMutation.mutate(), travelMutation.isPending, 'start-travel-button', colors.accent)}
+                  {primaryBtn('Arrive on Site', 'map-pin', () => arriveMutation.mutate(), arriveMutation.isPending, 'arrive-button')}
+                </>
+              ) : phase === 'en_route' ? (
+                primaryBtn('Arrive on Site', 'map-pin', () => arriveMutation.mutate(), arriveMutation.isPending, 'arrive-button')
+              ) : phase === 'on_site' ? (
+                <>
+                  {isPaused
+                    ? primaryBtn('Resume', 'play', () => resumeMutation.mutate(), resumeMutation.isPending, 'resume-button', '#F59E0B')
+                    : (
+                      <Pressable
+                        testID="pause-button"
+                        onPress={() => setPauseOpen(true)}
+                        disabled={busy}
+                        style={({ pressed }) => [
+                          styles.actionButton,
+                          { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, opacity: pressed || busy ? 0.7 : 1 },
+                        ]}
+                      >
+                        <Feather name="pause" size={18} color={colors.foreground} />
+                        <Text style={[styles.actionText, { color: colors.foreground }]}>Pause</Text>
+                      </Pressable>
+                    )}
+                  {primaryBtn('Complete Work', 'check-circle', () => completeMutation.mutate(), completeMutation.isPending, 'complete-button')}
+                </>
+              ) : (
+                <View style={[styles.doneBanner, { backgroundColor: '#22C55E18', borderColor: '#22C55E55' }]}>
+                  <Feather name="check-circle" size={18} color="#22C55E" />
+                  <Text style={[styles.actionText, { color: '#22C55E' }]}>Work completed — ready for pickup</Text>
+                </View>
+              )}
             </View>
           ) : null}
         </>
       )}
 
+      {/* Decline reasons */}
       <Modal visible={declineOpen} transparent animationType="fade" onRequestClose={() => setDeclineOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setDeclineOpen(false)}>
           <Pressable
@@ -327,6 +488,80 @@ export default function JobDetailScreen() {
             {declineMutation.isPending ? (
               <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
             ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Pause reasons */}
+      <Modal visible={pauseOpen} transparent animationType="fade" onRequestClose={() => setPauseOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setPauseOpen(false)}>
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => undefined}
+          >
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Why are you pausing?</Text>
+            <Text style={[styles.rowLabel, { color: colors.mutedForeground, marginBottom: 10 }]}>
+              Paused time is not billed to the customer
+            </Text>
+            {PAUSE_REASONS.map((reason) => (
+              <Pressable
+                key={reason}
+                testID={`pause-reason-${reason}`}
+                disabled={pauseMutation.isPending}
+                onPress={() => pauseMutation.mutate(reason)}
+                style={({ pressed }) => [
+                  styles.reasonRow,
+                  { backgroundColor: pressed ? colors.secondary : 'transparent', borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.reasonText, { color: colors.foreground }]}>{reason}</Text>
+                <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+              </Pressable>
+            ))}
+            {pauseMutation.isPending ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Note composer */}
+      <Modal visible={noteOpen} transparent animationType="fade" onRequestClose={() => setNoteOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setNoteOpen(false)}>
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => undefined}
+          >
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Add a job note</Text>
+            <TextInput
+              testID="note-input"
+              style={[styles.noteInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
+              placeholder="What happened on the job?"
+              placeholderTextColor={colors.mutedForeground}
+              multiline
+              value={noteText}
+              onChangeText={setNoteText}
+              autoFocus
+            />
+            <Pressable
+              testID="save-note-button"
+              disabled={noteMutation.isPending || !noteText.trim()}
+              onPress={() => noteMutation.mutate(noteText.trim())}
+              style={({ pressed }) => [
+                styles.actionButton,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: pressed || noteMutation.isPending || !noteText.trim() ? 0.6 : 1,
+                  marginTop: 12,
+                },
+              ]}
+            >
+              {noteMutation.isPending ? (
+                <ActivityIndicator color={colors.primaryForeground} />
+              ) : (
+                <Text style={[styles.actionText, { color: colors.primaryForeground }]}>Save Note</Text>
+              )}
+            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -375,6 +610,25 @@ const styles = StyleSheet.create({
     marginTop: 18,
     marginBottom: 8,
   },
+  notesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 18,
+    marginBottom: 8,
+  },
+  addNoteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  addNoteText: { fontSize: 12, fontFamily: 'Inter_600SemiBold' },
+  timerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  timerValue: { fontSize: 30, fontFamily: 'Inter_700Bold', fontVariant: ['tabular-nums'] },
   body: { fontSize: 14, fontFamily: 'Inter_400Regular', lineHeight: 20 },
   row: { flexDirection: 'row', gap: 10, paddingVertical: 4 },
   rowLabel: { fontSize: 12, fontFamily: 'Inter_500Medium' },
@@ -401,6 +655,16 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   actionText: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
+  doneBanner: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 14,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -409,6 +673,15 @@ const styles = StyleSheet.create({
   },
   modalCard: { borderRadius: 16, borderWidth: 1, padding: 18 },
   modalTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold', marginBottom: 12 },
+  noteInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    minHeight: 90,
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    textAlignVertical: 'top',
+  },
   reasonRow: {
     flexDirection: 'row',
     alignItems: 'center',

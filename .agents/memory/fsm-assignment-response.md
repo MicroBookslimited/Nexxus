@@ -13,3 +13,10 @@ Work orders carry ONE work-order-wide assignment response (`assignment_status` p
 - FSM job visibility = staff is primary `assigned_staff_id` OR contained in `assigned_staff_ids` JSONB (`@>`).
 - The three columns were added via manual DDL on the Supabase DB (shared by dev+prod), matching Drizzle schema; no separate migration file exists.
 - If per-technician responses are ever needed, replace the columns with a per-assignment table and update the POS badges + FSM queue grouping together.
+
+## Phase 2: field execution & time tracking
+- Execution timeline lives in three work_orders timestamps (travel_started_at, arrived_at, work_completed_at); `fieldPhase` (idle/en_route/on_site/done) is DERIVED server-side, never stored.
+- Status mapping onto the existing POS enum: arrive moves received→in_progress; complete moves →ready. Complete is REJECTED while status is awaiting_parts/on_hold (office must clear it) so field actions can't erase POS operational state.
+- Time tracking = work_order_time_entries (work|break|waiting); paused time non-billable. DB partial unique index enforces at most ONE open (ended_at IS NULL) entry per work order — the pause/resume state machine depends on it; close-open-entries updates ALL open rows defensively.
+- Pause/resume require arrivedAt; all transitions row-lock the job + open entry and write a status-history row for the web POS timeline.
+- Billable timer display: server returns closed-entry minutes; the mobile client adds live elapsed time of the open work entry.

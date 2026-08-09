@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable, text, serial, timestamp, real, integer, boolean,
   jsonb, uniqueIndex, index,
@@ -49,6 +50,10 @@ export const workOrdersTable = pgTable("work_orders", {
   assignmentStatus: text("assignment_status").notNull().default("pending"), // pending | accepted | declined
   assignmentRespondedAt: timestamp("assignment_responded_at", { withTimezone: true }),
   declineReason: text("decline_reason"),
+  // FSM field execution timeline: Start Travel → Arrive (work clock starts) → Complete Work.
+  travelStartedAt: timestamp("travel_started_at", { withTimezone: true }),
+  arrivedAt: timestamp("arrived_at", { withTimezone: true }),
+  workCompletedAt: timestamp("work_completed_at", { withTimezone: true }),
   promisedDate: timestamp("promised_date", { withTimezone: true }),
   appointmentDate: timestamp("appointment_date", { withTimezone: true }),
   storageLocation: text("storage_location"),
@@ -133,6 +138,34 @@ export const workOrderStatusHistoryTable = pgTable("work_order_status_history", 
 }));
 
 export type WorkOrderStatusHistory = typeof workOrderStatusHistoryTable.$inferSelect;
+
+// ─── Work Order Time Entries ──────────────────────────────────────────────────
+// FSM field time tracking. A 'work' entry is opened when the technician arrives
+// on site and closed on pause/complete; 'break'/'waiting' entries record paused
+// time (non-billable). `minutes` is finalised when the entry is closed.
+export const workOrderTimeEntriesTable = pgTable("work_order_time_entries", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  workOrderId: integer("work_order_id").notNull().references(() => workOrdersTable.id, { onDelete: "cascade" }),
+  staffId: integer("staff_id").references(() => staffTable.id),
+  staffName: text("staff_name"), // denormalised for deleted staff
+  entryType: text("entry_type").notNull().default("work"), // work | break | waiting
+  pauseReason: text("pause_reason"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  minutes: integer("minutes"),
+  isBillable: boolean("is_billable").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  woIdx: index("work_order_time_entries_wo_idx").on(t.tenantId, t.workOrderId),
+  // At most ONE open (ended_at IS NULL) entry per work order — the FSM
+  // pause/resume/complete state machine depends on this invariant.
+  oneOpenUniq: uniqueIndex("work_order_time_entries_one_open_uniq")
+    .on(t.tenantId, t.workOrderId)
+    .where(sql`${t.endedAt} IS NULL`),
+}));
+
+export type WorkOrderTimeEntry = typeof workOrderTimeEntriesTable.$inferSelect;
 
 // ─── Work Order Appointments ──────────────────────────────────────────────────
 export const workOrderAppointmentsTable = pgTable("work_order_appointments", {

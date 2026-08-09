@@ -82,6 +82,7 @@ export function authenticateStaff(pin: string): Promise<StaffMember> {
 /* ───────────── Jobs ───────────── */
 
 export type AssignmentStatus = 'pending' | 'accepted' | 'declined';
+export type FieldPhase = 'idle' | 'en_route' | 'on_site' | 'done';
 
 export interface FsmJob {
   id: number;
@@ -109,8 +110,23 @@ export interface FsmJob {
   notes: string | null;
   total: number;
   depositPaid: number;
+  travelStartedAt: string | null;
+  arrivedAt: string | null;
+  workCompletedAt: string | null;
+  fieldPhase: FieldPhase;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface FsmTimeEntry {
+  id: number;
+  staffName: string | null;
+  entryType: 'work' | 'break' | 'waiting';
+  pauseReason: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  minutes: number | null;
+  isBillable: boolean;
 }
 
 export interface FsmJobNote {
@@ -149,8 +165,47 @@ export function listJobs(staffId: number): Promise<FsmJob[]> {
 export function getJob(
   staffId: number,
   id: number,
-): Promise<FsmJob & { notes: FsmJobNote[] | string | null; history: FsmJobHistory[] }> {
+): Promise<FsmJob & {
+  notes: FsmJobNote[] | string | null;
+  history: FsmJobHistory[];
+  timeEntries: FsmTimeEntry[];
+  billableMinutes: number;
+  pausedMinutes: number;
+  activeEntry: FsmTimeEntry | null;
+}> {
   return request(`/api/fsm/jobs/${id}`, { headers: staffHeaders(staffId) });
+}
+
+export function startTravel(staffId: number, id: number): Promise<FsmJob> {
+  return request<FsmJob>(`/api/fsm/jobs/${id}/start-travel`, { method: 'POST', headers: staffHeaders(staffId) });
+}
+
+export function arriveOnSite(staffId: number, id: number): Promise<FsmJob> {
+  return request<FsmJob>(`/api/fsm/jobs/${id}/arrive`, { method: 'POST', headers: staffHeaders(staffId) });
+}
+
+export function pauseJob(staffId: number, id: number, reason: string): Promise<FsmJob> {
+  return request<FsmJob>(`/api/fsm/jobs/${id}/pause`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+    headers: staffHeaders(staffId),
+  });
+}
+
+export function resumeJob(staffId: number, id: number): Promise<FsmJob> {
+  return request<FsmJob>(`/api/fsm/jobs/${id}/resume`, { method: 'POST', headers: staffHeaders(staffId) });
+}
+
+export function completeJob(staffId: number, id: number): Promise<FsmJob> {
+  return request<FsmJob>(`/api/fsm/jobs/${id}/complete`, { method: 'POST', headers: staffHeaders(staffId) });
+}
+
+export function addJobNote(staffId: number, id: number, content: string): Promise<FsmJobNote> {
+  return request<FsmJobNote>(`/api/fsm/jobs/${id}/notes`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+    headers: staffHeaders(staffId),
+  });
 }
 
 export function acceptJob(staffId: number, id: number): Promise<FsmJob> {
