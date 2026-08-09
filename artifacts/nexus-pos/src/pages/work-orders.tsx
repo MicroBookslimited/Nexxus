@@ -56,6 +56,17 @@ export const STATUS_LABEL: Record<WorkOrderStatus, string> = {
   cancelled: "Cancelled",
 };
 
+/** Field-service channels: the technician visits the client, so nothing is picked up. */
+const FIELD_CHANNELS = new Set(["on_site", "remote"]);
+
+/** Channel-aware status label — "ready" reads "Job Complete" for field visits, "Ready for Pickup" for drop-offs. */
+export function woStatusLabel(status: string, serviceChannel?: string | null): string {
+  if (status === "ready") {
+    return FIELD_CHANNELS.has(serviceChannel ?? "") ? "Job Complete" : "Ready for Pickup";
+  }
+  return STATUS_LABEL[status as WorkOrderStatus] ?? status;
+}
+
 export const STATUS_STYLES: Record<WorkOrderStatus, string> = {
   received: "bg-sky-500/15 text-sky-600 border-sky-500/30",
   in_progress: "bg-amber-500/15 text-amber-600 border-amber-500/30",
@@ -133,7 +144,7 @@ export default function WorkOrdersPage() {
     updateWO.mutate(
       { id: wo.id, status },
       {
-        onSuccess: () => toast({ title: `Moved to ${STATUS_LABEL[status]}` }),
+        onSuccess: () => toast({ title: `Moved to ${woStatusLabel(status, wo.serviceChannel)}` }),
         onError: (e: any) =>
           toast({ title: "Could not update status", description: e?.message, variant: "destructive" }),
       },
@@ -592,7 +603,7 @@ function WorkOrderRow({
           </span>
         )}
         <Badge variant="outline" className={`${STATUS_STYLES[wo.status as WorkOrderStatus]} text-xs shrink-0`}>
-          {STATUS_LABEL[wo.status as WorkOrderStatus] ?? wo.status}
+          {woStatusLabel(wo.status, wo.serviceChannel)}
         </Badge>
         {!isTerminal && (wo.assignedStaffIds?.length > 0 || wo.assignedStaffId != null) && wo.assignmentStatus && (
           <Badge
@@ -776,7 +787,7 @@ function KanbanCard({
                   : "text-muted-foreground border-border hover:bg-muted"
               }`}
             >
-              → {STATUS_LABEL[next]}
+              → {woStatusLabel(next, wo.serviceChannel)}
             </button>
           ))}
         </div>

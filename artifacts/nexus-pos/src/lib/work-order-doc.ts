@@ -12,9 +12,20 @@
  *   win?.print();
  */
 
+/** Field-service channels: technician visits the client, so "ready" means the job is complete. */
+const FIELD_CHANNELS = new Set(["on_site", "remote"]);
+
+function jobCardStatusLabel(wo: JobCardWorkOrder): string {
+  if (wo.status === "ready") {
+    return FIELD_CHANNELS.has(wo.serviceChannel ?? "") ? "Job Complete" : "Ready For Pickup";
+  }
+  return wo.status.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export type JobCardWorkOrder = {
   workOrderNumber: string;
   status: string;
+  serviceChannel?: string | null;
   createdAt: string | null;
   promisedDate?: string | null;
   // Customer
@@ -164,7 +175,7 @@ export function generateJobCard(
   <div class="wo-info">
     <div class="wo-num">${escHtml(wo.workOrderNumber)}</div>
     <div style="margin-top:4px">
-      <span class="badge ${wo.status}">${wo.status.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}</span>
+      <span class="badge ${wo.status}">${jobCardStatusLabel(wo)}</span>
     </div>
     ${wo.priority && wo.priority !== "normal" ? `<div style="margin-top:4px;color:#b45309;font-weight:700;font-size:10px;text-transform:uppercase">${escHtml(wo.priority)} Priority</div>` : ""}
     <div style="margin-top:4px;color:#555;font-size:10px">Created: ${fmtDate(wo.createdAt)}</div>

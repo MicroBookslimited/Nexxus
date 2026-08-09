@@ -38,9 +38,19 @@ export function PriorityChip({ priority }: { priority: string }) {
   return <Chip label={priority.toUpperCase()} color={color} />;
 }
 
-export function StatusChip({ status }: { status: string }) {
+/** Field-service channels: technician visits the client, so "ready" means the job is complete. */
+const FIELD_CHANNELS = new Set(['on_site', 'remote']);
+
+export function statusLabel(status: string, serviceChannel?: string | null): string {
+  if (status === 'ready') {
+    return FIELD_CHANNELS.has(serviceChannel ?? '') ? 'Job Complete' : 'Ready for Pickup';
+  }
+  return STATUS_LABELS[status] ?? status;
+}
+
+export function StatusChip({ status, serviceChannel }: { status: string; serviceChannel?: string | null }) {
   const colors = useColors();
-  return <Chip label={STATUS_LABELS[status] ?? status} color={colors.primary} />;
+  return <Chip label={statusLabel(status, serviceChannel)} color={colors.primary} />;
 }
 
 export function formatDate(value: string | null | undefined): string {

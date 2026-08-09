@@ -455,6 +455,7 @@ async function execTransition(
       contactEmail:    result.row.contactEmail,
       customerId:      result.row.customerId,
       itemDescription: result.row.itemDescription,
+      serviceChannel:  result.row.serviceChannel,
       fromStatus:      result.fromStatus ?? null,
       toStatus:        result.row.status,
       changedByName:   staff.name,

@@ -570,6 +570,7 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
       contactEmail:    row.contactEmail,
       customerId:      row.customerId,
       itemDescription: row.itemDescription,
+      serviceChannel:  row.serviceChannel,
       fromStatus:      existing.status,
       toStatus:        row.status,
     }).catch(() => { /* logged inside */ });
@@ -939,6 +940,7 @@ router.get("/public/work-orders/:id/:token", async (req, res): Promise<void> => 
   res.json({
     workOrderNumber: wo.workOrderNumber,
     status: wo.status,
+    serviceChannel: wo.serviceChannel,
     itemDescription: wo.itemDescription,
     brand: wo.brand,
     model: wo.model,

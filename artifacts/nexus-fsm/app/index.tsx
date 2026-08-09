@@ -84,7 +84,7 @@ export default function JobQueueScreen() {
         {item.problemDescription}
       </Text>
       <View style={styles.cardBottom}>
-        <StatusChip status={item.status} />
+        <StatusChip status={item.status} serviceChannel={item.serviceChannel} />
         {item.assignmentStatus === 'accepted' && item.fieldPhase !== 'idle' ? (
           <Chip
             label={item.fieldPhase === 'en_route' ? 'EN ROUTE' : item.fieldPhase === 'on_site' ? 'ON SITE' : 'WORK DONE'}

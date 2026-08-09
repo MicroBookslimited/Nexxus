@@ -35,7 +35,7 @@ import {
   FileText, Activity, Lock, Pencil, Check, X,
   ChevronRight, Save,
 } from "lucide-react";
-import { PENDING_WORK_ORDER_KEY, STATUS_LABEL, STATUS_STYLES } from "@/pages/work-orders";
+import { PENDING_WORK_ORDER_KEY, STATUS_LABEL, STATUS_STYLES, woStatusLabel } from "@/pages/work-orders";
 import { generateJobCard } from "@/lib/work-order-doc";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { useStaff } from "@/contexts/StaffContext";
@@ -234,7 +234,7 @@ export default function WorkOrderDetailPage() {
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
           <span className="font-mono font-semibold text-sm">{wo.workOrderNumber}</span>
           <Badge variant="outline" className={`${STATUS_STYLES[wo.status as WorkOrderStatus]} text-xs`}>
-            {STATUS_LABEL[wo.status as WorkOrderStatus] ?? wo.status}
+            {woStatusLabel(wo.status, wo.serviceChannel)}
           </Badge>
           {wo.priority && wo.priority !== "normal" && (
             <span className={`text-xs font-semibold ${PRIORITY_COLOR[wo.priority]}`}>
@@ -284,7 +284,7 @@ export default function WorkOrderDetailPage() {
       )}
       {tab === "notes" && <NotesTab workOrderId={wo.id} />}
       {tab === "appointments" && <AppointmentsTab workOrderId={wo.id} staff={staff ?? []} />}
-      {tab === "history" && <HistoryTab workOrderId={wo.id} />}
+      {tab === "history" && <HistoryTab workOrderId={wo.id} serviceChannel={wo.serviceChannel} />}
       {tab === "jobcard" && (
         <JobCardTab wo={wo} currency={currency} onPrint={handlePrintJobCard} />
       )}
@@ -403,7 +403,7 @@ export default function WorkOrderDetailPage() {
             <DialogTitle>Move Status</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Current: <strong>{STATUS_LABEL[wo.status as WorkOrderStatus] ?? wo.status}</strong></p>
+            <p className="text-sm text-muted-foreground">Current: <strong>{woStatusLabel(wo.status, wo.serviceChannel)}</strong></p>
             <div className="space-y-2">
               {(NEXT_STATUS[wo.status as WorkOrderStatus] ?? []).map((next) => (
                 <Button
@@ -417,13 +417,13 @@ export default function WorkOrderDetailPage() {
                       setStatusNote("");
                       setShowSigDialog(true);
                     } else {
-                      patchWO({ status: next, ...(statusNote.trim() ? { statusNote: statusNote.trim() } : {}) } as any, `Moved to ${STATUS_LABEL[next]}`);
+                      patchWO({ status: next, ...(statusNote.trim() ? { statusNote: statusNote.trim() } : {}) } as any, `Moved to ${woStatusLabel(next, wo.serviceChannel)}`);
                       setShowMove(false);
                       setStatusNote("");
                     }
                   }}
                 >
-                  → {STATUS_LABEL[next]}
+                  → {woStatusLabel(next, wo.serviceChannel)}
                 </Button>
               ))}
             </div>
@@ -1048,7 +1048,7 @@ function AppointmentsTab({ workOrderId, staff }: { workOrderId: number; staff: a
 }
 
 /* ── History Tab ─────────────────────────────────────────────────────────── */
-function HistoryTab({ workOrderId }: { workOrderId: number }) {
+function HistoryTab({ workOrderId, serviceChannel }: { workOrderId: number; serviceChannel?: string | null }) {
   const { data: history, isLoading } = useWorkOrderHistory(workOrderId);
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading history…</p>;
@@ -1062,9 +1062,9 @@ function HistoryTab({ workOrderId }: { workOrderId: number }) {
             <div className="absolute -left-[17px] top-0.5 h-3 w-3 rounded-full bg-primary border-2 border-background" />
             <div className="text-sm">
               <div className="flex items-center gap-2 flex-wrap">
-                {h.fromStatus && <span className="text-muted-foreground">{STATUS_LABEL[h.fromStatus as WorkOrderStatus] ?? h.fromStatus}</span>}
+                {h.fromStatus && <span className="text-muted-foreground">{woStatusLabel(h.fromStatus, serviceChannel)}</span>}
                 {h.fromStatus && <span className="text-muted-foreground">→</span>}
-                <span className="font-semibold">{STATUS_LABEL[h.toStatus as WorkOrderStatus] ?? h.toStatus}</span>
+                <span className="font-semibold">{woStatusLabel(h.toStatus, serviceChannel)}</span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {h.changedByName ?? "System"} · {fmtDateTime(h.createdAt)}
@@ -1088,7 +1088,7 @@ function JobCardTab({ wo, currency, onPrint }: { wo: WorkOrder; currency: string
       <div className="rounded-lg border p-4 space-y-3">
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div><p className="text-xs text-muted-foreground">Work Order #</p><p className="font-semibold font-mono">{wo.workOrderNumber}</p></div>
-          <div><p className="text-xs text-muted-foreground">Status</p><Badge variant="outline" className={`text-xs ${STATUS_STYLES[wo.status as WorkOrderStatus]}`}>{STATUS_LABEL[wo.status as WorkOrderStatus] ?? wo.status}</Badge></div>
+          <div><p className="text-xs text-muted-foreground">Status</p><Badge variant="outline" className={`text-xs ${STATUS_STYLES[wo.status as WorkOrderStatus]}`}>{woStatusLabel(wo.status, wo.serviceChannel)}</Badge></div>
           <div><p className="text-xs text-muted-foreground">Asset</p><p>{wo.itemDescription}</p></div>
           <div><p className="text-xs text-muted-foreground">Customer</p><p>{wo.customerName || wo.contactName || "Walk-in"}</p></div>
           {wo.brand && <div><p className="text-xs text-muted-foreground">Brand / Model</p><p>{wo.brand}{wo.model ? ` ${wo.model}` : ""}</p></div>}

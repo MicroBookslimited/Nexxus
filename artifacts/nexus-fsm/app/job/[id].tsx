@@ -269,7 +269,7 @@ export default function JobDetailScreen() {
           >
             <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.chipsRow}>
-                <StatusChip status={job.status} />
+                <StatusChip status={job.status} serviceChannel={job.serviceChannel} />
                 <PriorityChip priority={job.priority} />
                 {job.assignmentStatus === 'accepted' ? (
                   <View style={[styles.acceptedBadge, { backgroundColor: '#22C55E22' }]}>
@@ -585,7 +585,11 @@ export default function JobDetailScreen() {
               ) : (
                 <View style={[styles.doneBanner, { backgroundColor: '#22C55E18', borderColor: '#22C55E55' }]}>
                   <Feather name="check-circle" size={18} color="#22C55E" />
-                  <Text style={[styles.actionText, { color: '#22C55E' }]}>Work completed — ready for pickup</Text>
+                  <Text style={[styles.actionText, { color: '#22C55E' }]}>
+                    {job.serviceChannel === 'on_site' || job.serviceChannel === 'remote'
+                      ? 'Work completed — job complete'
+                      : 'Work completed — ready for pickup'}
+                  </Text>
                 </View>
               )}
             </View>

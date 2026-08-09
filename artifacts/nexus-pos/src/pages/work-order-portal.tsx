@@ -17,6 +17,13 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
+/** Field-service channels: technician visits the client, so "ready" means the job is complete. */
+const FIELD_CHANNELS = new Set(["on_site", "remote"]);
+function statusLabel(status: string, serviceChannel?: string | null): string {
+  if (status === "ready" && FIELD_CHANNELS.has(serviceChannel ?? "")) return "Job Complete";
+  return STATUS_LABEL[status] ?? status;
+}
+
 const STATUS_STYLES: Record<string, { bg: string; text: string; icon: React.ElementType }> = {
   received:       { bg: "bg-sky-500/15",     text: "text-sky-600",     icon: Clock },
   in_progress:    { bg: "bg-amber-500/15",   text: "text-amber-600",   icon: Wrench },
@@ -105,12 +112,14 @@ export default function WorkOrderPortalPage() {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Current Status</p>
-              <p className={`text-xl font-bold ${style.text}`}>{STATUS_LABEL[wo.status] ?? wo.status}</p>
+              <p className={`text-xl font-bold ${style.text}`}>{statusLabel(wo.status, wo.serviceChannel)}</p>
             </div>
           </div>
           {wo.status === "ready" && (
             <div className="mt-3 rounded-xl bg-white/60 px-4 py-2.5 text-sm text-emerald-700 font-medium">
-              🎉 Your item is ready for pickup. Please bring this confirmation.
+              {FIELD_CHANNELS.has(wo.serviceChannel ?? "")
+                ? "🎉 The work on your job has been completed."
+                : "🎉 Your item is ready for pickup. Please bring this confirmation."}
             </div>
           )}
           {wo.promisedDate && wo.status !== "collected" && wo.status !== "cancelled" && (

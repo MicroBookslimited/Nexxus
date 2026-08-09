@@ -148,6 +148,7 @@ export type WorkOrderReports = {
 export type PublicWorkOrder = {
   workOrderNumber: string;
   status: string;
+  serviceChannel?: string | null;
   itemDescription: string;
   brand: string | null;
   model: string | null;

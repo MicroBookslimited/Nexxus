@@ -203,15 +203,34 @@ export const WORK_ORDER_STATUS_LABELS: Record<string, string> = {
   cancelled:      "Cancelled",
 };
 
+/** Field-service channels: the technician goes to the client, so nothing is "picked up". */
+const FIELD_CHANNELS = new Set(["on_site", "remote"]);
+
+/** Channel-aware status label — "ready" reads "Job Complete" for field visits, "Ready for Pickup" for drop-offs. */
+export function workOrderStatusLabel(status: string, serviceChannel?: string | null): string {
+  if (status === "ready") {
+    return FIELD_CHANNELS.has(serviceChannel ?? "") ? "Job Complete" : "Ready for Pickup";
+  }
+  return WORK_ORDER_STATUS_LABELS[status] ?? status;
+}
+
 const STATUS_MESSAGES: Record<string, string> = {
   received:       "Your work order has been received and is in our queue.",
   in_progress:    "Our technician has started working on your job.",
   awaiting_parts: "Work is temporarily paused while we source the parts needed for your job.",
   on_hold:        "Your work order has been placed on hold. We will contact you with details.",
-  ready:          "Great news — the work on your order has been completed.",
   collected:      "Your work order has been closed. Thank you for your business!",
   cancelled:      "Your work order has been cancelled. If this is unexpected, please contact us.",
 };
+
+function statusMessage(toStatus: string, serviceChannel?: string | null): string {
+  if (toStatus === "ready") {
+    return FIELD_CHANNELS.has(serviceChannel ?? "")
+      ? "Great news — the work on your job has been completed."
+      : "Great news — the work on your order has been completed and your item is ready for pickup.";
+  }
+  return STATUS_MESSAGES[toStatus] ?? "The status of your work order has been updated.";
+}
 
 /** Shared shell for the smaller status/sign-off notification emails. */
 function buildNotificationHtml(opts: {
@@ -270,6 +289,7 @@ export interface WorkOrderStatusMailInput {
   itemDescription: string;
   fromStatus: string | null;
   toStatus: string;
+  serviceChannel?: string | null;
   changedByName?: string | null;
 }
 
@@ -293,9 +313,9 @@ export async function sendWorkOrderStatusEmail(input: WorkOrderStatusMailInput):
       getFromDetails(input.tenantId),
     ]);
 
-    const toLabel = WORK_ORDER_STATUS_LABELS[input.toStatus] ?? input.toStatus;
-    const fromLabel = input.fromStatus ? (WORK_ORDER_STATUS_LABELS[input.fromStatus] ?? input.fromStatus) : null;
-    const message = STATUS_MESSAGES[input.toStatus] ?? "The status of your work order has been updated.";
+    const toLabel = workOrderStatusLabel(input.toStatus, input.serviceChannel);
+    const fromLabel = input.fromStatus ? workOrderStatusLabel(input.fromStatus, input.serviceChannel) : null;
+    const message = statusMessage(input.toStatus, input.serviceChannel);
 
     const bodyHtml = `
     <p>${escHtml(message)}</p>
