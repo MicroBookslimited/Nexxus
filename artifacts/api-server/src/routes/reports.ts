@@ -913,7 +913,7 @@ router.get("/reports/export", async (req, res): Promise<void> => {
   ).join("\n");
 
   res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", `attachment; filename="nexus-orders-${from.toISOString().split("T")[0]}-to-${to.toISOString().split("T")[0]}.csv"`);
+  res.setHeader("Content-Disposition", `attachment; filename="nexxus-orders-${from.toISOString().split("T")[0]}-to-${to.toISOString().split("T")[0]}.csv"`);
   res.send(header + rows);
 });
 

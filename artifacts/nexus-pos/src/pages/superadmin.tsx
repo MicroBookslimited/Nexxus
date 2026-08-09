@@ -75,7 +75,7 @@ function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
               <label className="block text-sm text-[#94a3b8] mb-1">Email</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                 className="w-full bg-[#0f1729] border border-[#2a3a55] rounded-lg px-4 py-2.5 text-white focus:border-[#3b82f6] outline-none"
-                placeholder="admin@nexuspos.com" />
+                placeholder="admin@nexxuspos.com" />
             </div>
             <div>
               <label className="block text-sm text-[#94a3b8] mb-1">Password</label>

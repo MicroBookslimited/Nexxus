@@ -168,8 +168,8 @@ function parseImportedBalance(raw: string | undefined): number | undefined {
   return negative ? -n : n;
 }
 
-function downloadCustomerTemplate()           { csvDownload(CUSTOMER_TEMPLATE_ROWS,            "NEXUS_Customer_Import_Template.csv"); }
-function downloadQuickbooksCustomerTemplate() { csvDownload(QUICKBOOKS_CUSTOMER_TEMPLATE_ROWS, "NEXUS_QuickBooks_POS_Customer_Template.csv"); }
+function downloadCustomerTemplate()           { csvDownload(CUSTOMER_TEMPLATE_ROWS,            "NEXXUS_Customer_Import_Template.csv"); }
+function downloadQuickbooksCustomerTemplate() { csvDownload(QUICKBOOKS_CUSTOMER_TEMPLATE_ROWS, "NEXXUS_QuickBooks_POS_Customer_Template.csv"); }
 
 function ImportCustomersDialog({ open, onClose, onImported }: {
   open: boolean;

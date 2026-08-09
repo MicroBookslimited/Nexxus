@@ -1276,9 +1276,9 @@ const QUICKBOOKS_TEMPLATE_ROWS = [
   ["Rum Cake Slice", "Bakery",    "RC001", "1234567890125", "350.00", "180.00", "30",  "", ""],
 ];
 
-function downloadTemplate()           { csvDownload(TEMPLATE_ROWS,            "NEXUS_Product_Import_Template.csv"); }
-function downloadLoyverseTemplate()   { csvDownload(LOYVERSE_TEMPLATE_ROWS,   "NEXUS_Loyverse_Import_Template.csv"); }
-function downloadQuickbooksTemplate() { csvDownload(QUICKBOOKS_TEMPLATE_ROWS, "NEXUS_QuickBooks_POS_Import_Template.csv"); }
+function downloadTemplate()           { csvDownload(TEMPLATE_ROWS,            "NEXXUS_Product_Import_Template.csv"); }
+function downloadLoyverseTemplate()   { csvDownload(LOYVERSE_TEMPLATE_ROWS,   "NEXXUS_Loyverse_Import_Template.csv"); }
+function downloadQuickbooksTemplate() { csvDownload(QUICKBOOKS_TEMPLATE_ROWS, "NEXXUS_QuickBooks_POS_Import_Template.csv"); }
 
 function ImportProductsDialog({ open, onClose, onImported }: {
   open: boolean;
@@ -1317,13 +1317,13 @@ function ImportProductsDialog({ open, onClose, onImported }: {
       // "Price [Store Name]", "In stock [Store Name]", "Available for sale
       // [Store Name]". Strip the bracketed suffix before matching so any
       // store name works without user edits. Single-store Loyverse exports
-      // ("Default price", "In stock", "Track stock") and the simple NEXUS
+      // ("Default price", "In stock", "Track stock") and the simple NEXXUS
       // template are both handled by the same rules.
       const auto: Record<string, string> = {};
       clean.forEach(h => {
         // Lowercase + strip "[…]" suffix (e.g. "Price [Miss Peart's Kitchen]")
         const l = h.toLowerCase().replace(/\s*\[[^\]]*\]\s*$/, "").trim();
-        // ── Loyverse / NEXUS exact-header matches ──
+        // ── Loyverse / NEXXUS exact-header matches ──
         if      (l === "name")                                          auto[h] = "name";
         else if (l === "default price" || l === "price" || l === "selling price" || l === "sale price") auto[h] = "price";
         else if (l === "cost" || l === "cost price" || l === "cost / purchase price" || l === "purchase price" || l === "purchase cost" || l === "buying price" || l === "buy price") auto[h] = "costPrice";
