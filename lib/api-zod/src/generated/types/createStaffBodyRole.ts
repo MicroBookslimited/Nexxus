@@ -6,8 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CreateStaffBodyRole =
-  (typeof CreateStaffBodyRole)[keyof typeof CreateStaffBodyRole];
+/** Tenant-defined role name (custom roles allowed; not a closed enum). */
+export type CreateStaffBodyRole = string;
 
 export const CreateStaffBodyRole = {
   admin: "admin",

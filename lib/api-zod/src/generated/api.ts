@@ -3434,8 +3434,10 @@ export const DeleteKdsScreenParams = zod.object({
 export const ListStaffResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
-  role: zod.enum(["admin", "manager", "cashier", "kitchen"]),
+  role: zod.string(),
   isActive: zod.boolean(),
+  isTechnician: zod.boolean().optional(),
+  email: zod.string().nullish(),
   createdAt: zod.coerce.date(),
 });
 export const ListStaffResponse = zod.array(ListStaffResponseItem);
@@ -3446,7 +3448,9 @@ export const ListStaffResponse = zod.array(ListStaffResponseItem);
 export const CreateStaffBody = zod.object({
   name: zod.string(),
   pin: zod.string(),
-  role: zod.enum(["admin", "manager", "cashier", "kitchen"]).optional(),
+  role: zod.string().optional(),
+  isTechnician: zod.boolean().optional(),
+  email: zod.string().optional(),
 });
 
 /**
@@ -3460,7 +3464,7 @@ export const VerifyStaffPinBody = zod.object({
 export const VerifyStaffPinResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
-  role: zod.enum(["admin", "manager", "cashier", "kitchen"]),
+  role: zod.string(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
@@ -3476,7 +3480,7 @@ export const AuthenticateStaffBody = zod.object({
 export const AuthenticateStaffResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
-  role: zod.enum(["admin", "manager", "cashier", "kitchen"]),
+  role: zod.string(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
@@ -3491,15 +3495,19 @@ export const UpdateStaffParams = zod.object({
 export const UpdateStaffBody = zod.object({
   name: zod.string().optional(),
   pin: zod.string().optional(),
-  role: zod.enum(["admin", "manager", "cashier", "kitchen"]).optional(),
+  role: zod.string().optional(),
   isActive: zod.boolean().optional(),
+  isTechnician: zod.boolean().optional(),
+  email: zod.string().optional(),
 });
 
 export const UpdateStaffResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
-  role: zod.enum(["admin", "manager", "cashier", "kitchen"]),
+  role: zod.string(),
   isActive: zod.boolean(),
+  isTechnician: zod.boolean().optional(),
+  email: zod.string().nullish(),
   createdAt: zod.coerce.date(),
 });
 

@@ -11,4 +11,6 @@ export interface CreateStaffBody {
   name: string;
   pin: string;
   role?: CreateStaffBodyRole;
+  isTechnician?: boolean;
+  email?: string;
 }

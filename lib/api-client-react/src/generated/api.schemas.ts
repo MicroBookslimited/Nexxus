@@ -1163,8 +1163,8 @@ export interface KitchenOrder {
   items: KitchenOrderItemsItem[];
 }
 
-export type StaffMemberRole =
-  (typeof StaffMemberRole)[keyof typeof StaffMemberRole];
+/** Tenant-defined role name (custom roles allowed; not a closed enum). */
+export type StaffMemberRole = string;
 
 export const StaffMemberRole = {
   admin: "admin",
@@ -1178,11 +1178,13 @@ export interface StaffMember {
   name: string;
   role: StaffMemberRole;
   isActive: boolean;
+  isTechnician?: boolean;
+  email?: string | null;
   createdAt: string;
 }
 
-export type CreateStaffBodyRole =
-  (typeof CreateStaffBodyRole)[keyof typeof CreateStaffBodyRole];
+/** Tenant-defined role name (custom roles allowed; not a closed enum). */
+export type CreateStaffBodyRole = string;
 
 export const CreateStaffBodyRole = {
   admin: "admin",
@@ -1195,10 +1197,12 @@ export interface CreateStaffBody {
   name: string;
   pin: string;
   role?: CreateStaffBodyRole;
+  isTechnician?: boolean;
+  email?: string;
 }
 
-export type UpdateStaffBodyRole =
-  (typeof UpdateStaffBodyRole)[keyof typeof UpdateStaffBodyRole];
+/** Tenant-defined role name (custom roles allowed; not a closed enum). */
+export type UpdateStaffBodyRole = string;
 
 export const UpdateStaffBodyRole = {
   admin: "admin",
@@ -1212,6 +1216,8 @@ export interface UpdateStaffBody {
   pin?: string;
   role?: UpdateStaffBodyRole;
   isActive?: boolean;
+  isTechnician?: boolean;
+  email?: string;
 }
 
 export interface VerifyStaffPinBody {

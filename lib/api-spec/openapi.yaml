@@ -4461,9 +4461,13 @@ components:
           type: string
         role:
           type: string
-          enum: [admin, manager, cashier, kitchen]
         isActive:
           type: boolean
+        isTechnician:
+          type: boolean
+        email:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -4483,7 +4487,10 @@ components:
           type: string
         role:
           type: string
-          enum: [admin, manager, cashier, kitchen]
+        isTechnician:
+          type: boolean
+        email:
+          type: string
       required:
         - name
         - pin
@@ -4497,9 +4504,12 @@ components:
           type: string
         role:
           type: string
-          enum: [admin, manager, cashier, kitchen]
         isActive:
           type: boolean
+        isTechnician:
+          type: boolean
+        email:
+          type: string
 
     VerifyStaffPinBody:
       type: object

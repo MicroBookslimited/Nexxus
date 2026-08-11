@@ -6,8 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type StaffMemberRole =
-  (typeof StaffMemberRole)[keyof typeof StaffMemberRole];
+/** Tenant-defined role name (custom roles allowed; not a closed enum). */
+export type StaffMemberRole = string;
 
 export const StaffMemberRole = {
   admin: "admin",

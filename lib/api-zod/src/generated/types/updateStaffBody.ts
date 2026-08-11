@@ -12,4 +12,6 @@ export interface UpdateStaffBody {
   pin?: string;
   role?: UpdateStaffBodyRole;
   isActive?: boolean;
+  isTechnician?: boolean;
+  email?: string;
 }

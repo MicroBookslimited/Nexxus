@@ -12,5 +12,7 @@ export interface StaffMember {
   name: string;
   role: StaffMemberRole;
   isActive: boolean;
+  isTechnician?: boolean;
+  email?: string | null;
   createdAt: Date;
 }

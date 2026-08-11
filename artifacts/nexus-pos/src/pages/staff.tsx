@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useListStaff, useCreateStaff, useUpdateStaff, useDeleteStaff } from "@workspace/api-client-react";
+import { useListStaff, useCreateStaff, useUpdateStaff, useDeleteStaff, useGetSettings } from "@workspace/api-client-react";
 import type { StaffMember } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -341,6 +341,9 @@ function StaffCard({
           {roleLabel}
         </Badge>
       </div>
+      {member.isTechnician && (
+        <Badge variant="outline" className="text-xs w-fit border-blue-500/40 bg-blue-500/10 text-blue-500">Technician</Badge>
+      )}
       {!member.isActive && (
         <Badge variant="outline" className="text-xs w-fit bg-secondary/50 text-muted-foreground">Inactive</Badge>
       )}
@@ -366,18 +369,22 @@ interface StaffForm {
   pin: string;
   role: string;
   isActive?: boolean;
+  isTechnician: boolean;
+  email: string;
 }
 
 function StaffDialog({
   open,
   member,
   roles,
+  workOrdersEnabled,
   onClose,
   onSave,
 }: {
   open: boolean;
   member: StaffMember | null;
   roles: RoleRow[];
+  workOrdersEnabled: boolean;
   onClose: () => void;
   onSave: (data: StaffForm) => void;
 }) {
@@ -387,6 +394,8 @@ function StaffDialog({
     pin: "",
     role: member?.role ?? defaultRole,
     isActive: member?.isActive ?? true,
+    isTechnician: member?.isTechnician ?? false,
+    email: member?.email ?? "",
   }));
 
   useEffect(() => {
@@ -395,10 +404,16 @@ function StaffDialog({
       pin: "",
       role: member?.role ?? (roles[0]?.name ?? "Cashier"),
       isActive: member?.isActive ?? true,
+      isTechnician: member?.isTechnician ?? false,
+      email: member?.email ?? "",
     });
   }, [member, roles]);
 
   const isEditing = !!member;
+  // Show the technician option when Work Orders is on, or when editing someone
+  // already flagged (so it can be turned off even after the module is disabled).
+  const showTechnician = workOrdersEnabled || form.isTechnician;
+  const emailMissing = form.isTechnician && !/^\S+@\S+\.\S+$/.test(form.email.trim());
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -457,6 +472,36 @@ function StaffDialog({
               />
             )}
           </div>
+          {showTechnician && (
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Field Technician</Label>
+                  <p className="text-xs text-muted-foreground">Can be assigned to work orders and uses the field app</p>
+                </div>
+                <Switch
+                  checked={form.isTechnician}
+                  onCheckedChange={(checked) => setForm((f) => ({ ...f, isTechnician: checked }))}
+                />
+              </div>
+              {form.isTechnician && (
+                <div className="space-y-1">
+                  <Label>
+                    Email <span className="text-xs text-muted-foreground font-normal">· required for technicians</span>
+                  </Label>
+                  <Input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                    placeholder="tech@example.com"
+                  />
+                  {emailMissing && form.email.trim() !== "" && (
+                    <p className="text-xs text-destructive">Enter a valid email address</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {isEditing && (
             <div className="flex items-center justify-between">
               <Label>Active</Label>
@@ -474,7 +519,7 @@ function StaffDialog({
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => onSave(form)}
-            disabled={!form.name.trim() || (!isEditing && form.pin.length < 4)}
+            disabled={!form.name.trim() || (!isEditing && form.pin.length < 4) || emailMissing}
           >
             Save
           </Button>
@@ -486,6 +531,8 @@ function StaffDialog({
 
 export function Staff() {
   const { data: staff, isLoading } = useListStaff();
+  const { data: settings } = useGetSettings();
+  const workOrdersEnabled = settings?.work_orders_enabled === "true";
   const createStaff = useCreateStaff();
   const updateStaff = useUpdateStaff();
   const deleteStaff = useDeleteStaff();
@@ -505,10 +552,12 @@ export function Staff() {
 
   const handleSave = (data: StaffForm) => {
     if (editingMember) {
-      const payload: { name?: string; pin?: string; role?: string; isActive?: boolean } = {
+      const payload: { name?: string; pin?: string; role?: string; isActive?: boolean; isTechnician?: boolean; email?: string } = {
         name: data.name,
         role: data.role,
         isActive: data.isActive,
+        isTechnician: data.isTechnician,
+        email: data.email.trim(),
       };
       if (data.pin) payload.pin = data.pin;
       updateStaff.mutate(
@@ -523,7 +572,7 @@ export function Staff() {
       );
     } else {
       createStaff.mutate(
-        { data: { name: data.name, pin: data.pin, role: data.role } },
+        { data: { name: data.name, pin: data.pin, role: data.role, isTechnician: data.isTechnician, ...(data.email.trim() ? { email: data.email.trim() } : {}) } },
         {
           onSuccess: () => { toast({ title: "Staff member created" }); invalidate(); setDialogOpen(false); },
           onError: (err: any) => {
@@ -630,6 +679,7 @@ export function Staff() {
         open={dialogOpen}
         member={editingMember}
         roles={roles}
+        workOrdersEnabled={workOrdersEnabled}
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
       />

@@ -25,6 +25,8 @@ const CreateStaffBody = z.object({
   name: z.string().min(1),
   pin: z.string().min(4).max(8),
   role: z.string().min(1).default("cashier"),
+  isTechnician: z.boolean().optional().default(false),
+  email: z.union([z.string().trim().email().max(255), z.literal("")]).optional(),
 });
 
 const UpdateStaffBody = z.object({
@@ -32,6 +34,8 @@ const UpdateStaffBody = z.object({
   pin: z.string().min(4).max(8).optional(),
   role: z.string().min(1).optional(),
   isActive: z.boolean().optional(),
+  isTechnician: z.boolean().optional(),
+  email: z.union([z.string().trim().email().max(255), z.literal("")]).optional(),
 });
 
 function sanitizeStaff(s: typeof staffTable.$inferSelect) {
@@ -40,6 +44,8 @@ function sanitizeStaff(s: typeof staffTable.$inferSelect) {
     name: s.name,
     role: s.role,
     isActive: s.isActive,
+    isTechnician: s.isTechnician,
+    email: s.email,
     createdAt: s.createdAt,
   };
 }
@@ -64,6 +70,14 @@ router.post("/staff", async (req, res): Promise<void> => {
     return;
   }
 
+  // Technicians must have an email on file (they receive job notifications
+  // and sign into the field app).
+  const email = parsed.data.email?.trim() || null;
+  if (parsed.data.isTechnician && !email) {
+    res.status(400).json({ error: "An email address is required for technicians" });
+    return;
+  }
+
   // Seed default roles on first staff creation (new tenant won't have roles yet)
   await seedDefaultRoles(tenantId);
 
@@ -81,6 +95,8 @@ router.post("/staff", async (req, res): Promise<void> => {
     name: parsed.data.name,
     pin: parsed.data.pin,
     role: parsed.data.role,
+    isTechnician: parsed.data.isTechnician,
+    email,
     isActive: true,
   }).returning();
 
@@ -132,11 +148,30 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
     }
   }
 
+  // Technician email requirement: compute the resulting state of the row and
+  // reject if it would be a technician without an email.
+  if (parsed.data.isTechnician !== undefined || parsed.data.email !== undefined) {
+    const [current] = await db.select({ isTechnician: staffTable.isTechnician, email: staffTable.email })
+      .from(staffTable)
+      .where(and(eq(staffTable.id, id), eq(staffTable.tenantId, tenantId)));
+    if (!current) { res.status(404).json({ error: "Staff member not found" }); return; }
+    const resultingTech = parsed.data.isTechnician ?? current.isTechnician;
+    const resultingEmail = parsed.data.email !== undefined
+      ? (parsed.data.email.trim() || null)
+      : current.email;
+    if (resultingTech && !resultingEmail) {
+      res.status(400).json({ error: "An email address is required for technicians" });
+      return;
+    }
+  }
+
   const updates: Partial<typeof staffTable.$inferInsert> = {};
   if (parsed.data.name !== undefined) updates.name = parsed.data.name;
   if (parsed.data.pin !== undefined) updates.pin = parsed.data.pin;
   if (parsed.data.role !== undefined) updates.role = parsed.data.role;
   if (parsed.data.isActive !== undefined) updates.isActive = parsed.data.isActive;
+  if (parsed.data.isTechnician !== undefined) updates.isTechnician = parsed.data.isTechnician;
+  if (parsed.data.email !== undefined) updates.email = parsed.data.email.trim() || null;
 
   // Atomic re-check inside the UPDATE itself so two concurrent requests can't
   // both slip past the pre-check and remove every admin: when this update
