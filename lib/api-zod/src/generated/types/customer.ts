@@ -11,12 +11,14 @@ export interface Customer {
   name: string;
   email?: string | null;
   phone?: string | null;
+  phone2?: string | null;
   company?: string | null;
   address?: string | null;
   city?: string | null;
   state?: string | null;
   postalCode?: string | null;
   notes?: string | null;
+  directions?: string | null;
   cardNumber?: string | null;
   openingBalance: number;
   loyaltyPoints: number;

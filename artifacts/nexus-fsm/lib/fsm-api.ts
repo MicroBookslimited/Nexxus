@@ -288,11 +288,43 @@ export async function searchProducts(query: string): Promise<ProductLite[]> {
   return all.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 25);
 }
 
+export interface CustomerLite {
+  id: number;
+  name: string;
+  phone?: string | null;
+  phone2?: string | null;
+  email?: string | null;
+  company?: string | null;
+  address?: string | null;
+  city?: string | null;
+  directions?: string | null;
+}
+
+/** Search saved customers by name (server-side LIKE search). */
+export function searchCustomers(query: string): Promise<CustomerLite[]> {
+  const q = query.trim();
+  return request<CustomerLite[]>(`/api/customers${q ? `?search=${encodeURIComponent(q)}` : ''}`);
+}
+
+/** Create a customer from the phone (so a new work order can be linked). */
+export function createCustomer(body: {
+  name: string;
+  phone?: string;
+  phone2?: string;
+  email?: string;
+  address?: string;
+  directions?: string;
+}): Promise<CustomerLite> {
+  return request(`/api/customers`, { method: 'POST', body: JSON.stringify(body) });
+}
+
 /** Admin: create a work order (same endpoint the office uses; the x-staff-id
  * header is verified server-side to hold an admin/manager role). */
 export function createWorkOrder(staffId: number, body: {
+  customerId?: number;
   contactName?: string;
   contactPhone?: string;
+  contactEmail?: string;
   itemDescription: string;
   problemDescription: string;
   serviceType?: string;

@@ -512,6 +512,20 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
     }
   }
 
+  // Once the customer has signed off, the content of the work order is frozen.
+  // Only the pickup/close workflow may proceed: status transitions, the
+  // collection signatures, invoice conversion, and internal notes.
+  if (existing.completionSignature || existing.customerSignature) {
+    const allowedAfterSignoff = ["status", "customerSignature", "staffSignature", "convertedOrderId", "notes", "internalNotes"];
+    const touched = Object.keys(data).filter(
+      (k) => (data as Record<string, unknown>)[k] !== undefined && !allowedAfterSignoff.includes(k),
+    );
+    if (touched.length > 0) {
+      res.status(400).json({ error: "The customer has signed off on this work order — it can no longer be changed" });
+      return;
+    }
+  }
+
   // Resolve the canonical staff ID list for update
   const updStaffIds = data.assignedStaffIds != null
     ? data.assignedStaffIds
@@ -1110,8 +1124,13 @@ async function lockOpenWorkOrder(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   tenantId: number,
   workOrderId: number,
-): Promise<{ error?: string; status?: number }> {
-  const [wo] = await tx.select({ id: workOrdersTable.id, status: workOrdersTable.status })
+): Promise<{ error?: string; status?: number; signedOff?: boolean }> {
+  const [wo] = await tx.select({
+    id: workOrdersTable.id,
+    status: workOrdersTable.status,
+    completionSignature: workOrdersTable.completionSignature,
+    customerSignature: workOrdersTable.customerSignature,
+  })
     .from(workOrdersTable)
     .where(and(eq(workOrdersTable.id, workOrderId), eq(workOrdersTable.tenantId, tenantId)))
     .for("update");
@@ -1119,8 +1138,10 @@ async function lockOpenWorkOrder(
   if (wo.status === "collected" || wo.status === "cancelled") {
     return { error: "This work order is closed", status: 400 };
   }
-  return {};
+  return { signedOff: Boolean(wo.completionSignature || wo.customerSignature) };
 }
+
+const SIGNED_OFF_ERROR = "The customer has signed off on this work order — it can no longer be changed";
 
 export async function createAllocation(
   tenantId: number,
@@ -1130,6 +1151,7 @@ export async function createAllocation(
   return db.transaction(async (tx) => {
     const woGuard = await lockOpenWorkOrder(tx, tenantId, workOrderId);
     if (woGuard.error) return woGuard;
+    if (woGuard.signedOff) return { error: SIGNED_OFF_ERROR, status: 400 };
 
     let description = data.description?.trim() || "";
     if (data.productId != null) {
@@ -1187,6 +1209,11 @@ export async function updateAllocation(
   return db.transaction(async (tx) => {
     const woGuard = await lockOpenWorkOrder(tx, tenantId, workOrderId);
     if (woGuard.error) return woGuard;
+    // After customer sign-off the work content is frozen, but returning
+    // dispatched tools/materials to stock is still a legitimate operation.
+    if (woGuard.signedOff && (data.runs !== undefined || data.remarks !== undefined)) {
+      return { error: SIGNED_OFF_ERROR, status: 400 };
+    }
     const [existing] = await tx.select().from(workOrderAllocationsTable)
       .where(and(
         eq(workOrderAllocationsTable.id, allocationId),
@@ -1238,6 +1265,7 @@ export async function deleteAllocation(
   return db.transaction(async (tx) => {
     const woGuard = await lockOpenWorkOrder(tx, tenantId, workOrderId);
     if (woGuard.error) return woGuard;
+    if (woGuard.signedOff) return { error: SIGNED_OFF_ERROR, status: 400 };
     const [existing] = await tx.select().from(workOrderAllocationsTable)
       .where(and(
         eq(workOrderAllocationsTable.id, allocationId),

@@ -31,6 +31,7 @@ import {
   type InstallSection,
   type InstallTableColumn,
 } from '@workspace/api-client-react';
+import { ScannerModal, isScannableField } from '@/components/ScannerModal';
 import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
 import { getJob, patchInstallDetails, type InstallDetailsMap } from '@/lib/fsm-api';
@@ -105,7 +106,10 @@ export default function InstallFormScreen() {
     );
   };
 
-  const readOnly = job ? job.status === 'collected' || job.status === 'cancelled' : false;
+  // Locked once the job is closed OR the customer has signed off on the work.
+  const readOnly = job
+    ? job.status === 'collected' || job.status === 'cancelled' || !!job.completionSignature
+    : false;
   const sections = visibleInstallSections(areas);
 
   if (isLoading || !job) {
@@ -254,7 +258,9 @@ function FieldInput({ field, value, onChange, readOnly }: {
       return (
         <View style={styles.fieldWrap}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{field.label}</Text>
-          <TextInput
+          <ScannableTextInput
+            scannable={field.type === 'text' && !readOnly && isScannableField(field.id, field.label)}
+            onScanned={(code) => onChange(code)}
             editable={!readOnly}
             value={value == null ? '' : String(value)}
             onChangeText={(t) => onChange(field.type === 'number' ? (t === '' ? null : Number(t.replace(/[^0-9.]/g, '')) || 0) : t)}
@@ -441,7 +447,9 @@ function TableCell({ col, value, onChange, readOnly }: {
   return (
     <View style={styles.cellWrap}>
       <Text style={[styles.cellLabel, { color: colors.mutedForeground }]}>{col.label}</Text>
-      <TextInput
+      <ScannableTextInput
+        scannable={col.type !== 'number' && !readOnly && isScannableField(col.id, col.label)}
+        onScanned={(code) => onChange(code)}
         editable={!readOnly}
         value={value == null ? '' : String(value)}
         onChangeText={(t) => onChange(col.type === 'number' ? (t === '' ? null : Number(t.replace(/[^0-9.]/g, '')) || 0) : t)}
@@ -449,6 +457,47 @@ function TableCell({ col, value, onChange, readOnly }: {
         placeholderTextColor={colors.mutedForeground}
         style={[styles.input, styles.cellInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
       />
+    </View>
+  );
+}
+
+/**
+ * TextInput that grows a camera button when the field looks like a
+ * serial / IMEI / barcode / asset-tag / MAC field. Scanning fills the field.
+ */
+function ScannableTextInput({
+  scannable,
+  onScanned,
+  style,
+  ...inputProps
+}: React.ComponentProps<typeof TextInput> & {
+  scannable: boolean;
+  onScanned: (code: string) => void;
+}) {
+  const colors = useColors();
+  const [scanOpen, setScanOpen] = useState(false);
+
+  if (!scannable) return <TextInput style={style} {...inputProps} />;
+
+  return (
+    <View style={styles.scanRow}>
+      <TextInput style={[style, { flex: 1 }]} {...inputProps} />
+      <Pressable
+        onPress={() => setScanOpen(true)}
+        hitSlop={8}
+        style={[styles.scanBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+      >
+        <Feather name="camera" size={18} color={colors.primary} />
+      </Pressable>
+      {/* Mount lazily so a table with many rows never holds idle camera instances. */}
+      {scanOpen && (
+        <ScannerModal
+          visible
+          onClose={() => setScanOpen(false)}
+          onScan={onScanned}
+          hint="Point at the serial / barcode label"
+        />
+      )}
     </View>
   );
 }
@@ -495,6 +544,8 @@ const styles = StyleSheet.create({
   cellWrap: { marginBottom: 8 },
   cellLabel: { fontSize: 10, fontFamily: 'Inter_600SemiBold', marginBottom: 4 },
   cellInput: { paddingVertical: 7, fontSize: 13 },
+  scanRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  scanBtn: { borderWidth: 1, borderRadius: 10, padding: 10, alignItems: 'center', justifyContent: 'center' },
   saveBtn: { alignItems: 'center', justifyContent: 'center', borderRadius: 10, paddingVertical: 11, marginTop: 4 },
   saveBtnText: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
 });

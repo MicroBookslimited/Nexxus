@@ -17,7 +17,8 @@
       "supportsTablet": false
     },
     "android": {
-      "package": "com.nexxuspos.fsm"
+      "package": "com.nexxuspos.fsm",
+      "permissions": ["android.permission.CAMERA"]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -30,7 +31,13 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow NEXXUS FSM to use the camera to scan serial numbers and barcodes."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

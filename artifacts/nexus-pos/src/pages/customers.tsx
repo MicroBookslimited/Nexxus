@@ -56,24 +56,28 @@ type CustomerForm = {
   name: string;
   email: string;
   phone: string;
+  phone2: string;
   company: string;
   address: string;
   city: string;
   state: string;
   postalCode: string;
   notes: string;
+  directions: string;
   openingBalance: string;
 };
 const emptyForm = (): CustomerForm => ({
   name: "",
   email: "",
   phone: "",
+  phone2: "",
   company: "",
   address: "",
   city: "",
   state: "",
   postalCode: "",
   notes: "",
+  directions: "",
   openingBalance: "",
 });
 
@@ -116,18 +120,20 @@ const CUSTOMER_IMPORT_FIELDS = [
   { key: "company",    label: "Company" },
   { key: "email",      label: "Email" },
   { key: "phone",      label: "Phone" },
+  { key: "phone2",     label: "Alternate Phone" },
   { key: "address",    label: "Address" },
   { key: "city",       label: "City" },
   { key: "state",      label: "State / Province" },
   { key: "postalCode",     label: "Postal Code" },
   { key: "notes",          label: "Notes" },
+  { key: "directions",     label: "Directions / Landmark" },
   { key: "openingBalance", label: "Opening Balance" },
 ];
 
 const CUSTOMER_TEMPLATE_ROWS = [
-  ["Name", "Company", "Email", "Phone", "Address", "City", "State", "Postal Code", "Notes", "Opening Balance"],
-  ["Jane Smith", "Acme Inc.", "jane@example.com", "+1 555 000 0001", "123 Main St", "Nassau", "NP", "00000", "VIP customer", "0.00"],
-  ["John Brown", "", "john@example.com", "+1 555 000 0002", "456 Bay St", "Freeport", "GB", "00000", "", "1500.00"],
+  ["Name", "Company", "Email", "Phone", "Alternate Phone", "Address", "City", "State", "Postal Code", "Directions / Landmark", "Notes", "Opening Balance"],
+  ["Jane Smith", "Acme Inc.", "jane@example.com", "+1 555 000 0001", "+1 555 000 0011", "123 Main St", "Nassau", "NP", "00000", "Blue gate opposite gas station", "VIP customer", "0.00"],
+  ["John Brown", "", "john@example.com", "+1 555 000 0002", "", "456 Bay St", "Freeport", "GB", "00000", "", "", "1500.00"],
 ];
 
 /**
@@ -296,12 +302,14 @@ function ImportCustomersDialog({ open, onClose, onImported }: {
         name: d.name.trim(),
         email: d.email?.trim() || undefined,
         phone: d.phone?.trim() || undefined,
+        phone2: d.phone2?.trim() || undefined,
         company: d.company?.trim() || undefined,
         address: d.address?.trim() || undefined,
         city: d.city?.trim() || undefined,
         state: d.state?.trim() || undefined,
         postalCode: d.postalCode?.trim() || undefined,
         notes: d.notes?.trim() || undefined,
+        directions: d.directions?.trim() || undefined,
         openingBalance: parseImportedBalance(d.openingBalance),
       };
       try {
@@ -566,12 +574,14 @@ export function Customers() {
       name: c.name,
       email: c.email ?? "",
       phone: c.phone ?? "",
+      phone2: (c as { phone2?: string | null }).phone2 ?? "",
       company: c.company ?? "",
       address: c.address ?? "",
       city: c.city ?? "",
       state: c.state ?? "",
       postalCode: c.postalCode ?? "",
       notes: c.notes ?? "",
+      directions: (c as { directions?: string | null }).directions ?? "",
       openingBalance: c.openingBalance ? String(c.openingBalance) : "",
     });
     setDialogOpen(true);
@@ -587,12 +597,14 @@ export function Customers() {
       name: form.name.trim(),
       email: form.email.trim() || undefined,
       phone: form.phone.trim() || undefined,
+      phone2: form.phone2.trim() || undefined,
       company: form.company.trim() || undefined,
       address: form.address.trim() || undefined,
       city: form.city.trim() || undefined,
       state: form.state.trim() || undefined,
       postalCode: form.postalCode.trim() || undefined,
       notes: form.notes.trim() || undefined,
+      directions: form.directions.trim() || undefined,
       openingBalance: form.openingBalance.trim() !== "" && Number.isFinite(Number(form.openingBalance)) ? Number(form.openingBalance) : undefined,
     };
 
@@ -765,6 +777,10 @@ export function Customers() {
               </div>
             </div>
             <div className="grid gap-1.5">
+              <Label>Alternate Phone</Label>
+              <Input value={form.phone2} onChange={(e) => setForm((f) => ({ ...f, phone2: e.target.value }))} placeholder="Second contact number (optional)" />
+            </div>
+            <div className="grid gap-1.5">
               <Label>Address</Label>
               <Input value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} placeholder="123 Main St" />
             </div>
@@ -781,6 +797,11 @@ export function Customers() {
                 <Label>Postal Code</Label>
                 <Input value={form.postalCode} onChange={(e) => setForm((f) => ({ ...f, postalCode: e.target.value }))} placeholder="00000" />
               </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Directions / Landmark</Label>
+              <Input value={form.directions} onChange={(e) => setForm((f) => ({ ...f, directions: e.target.value }))} placeholder="e.g. Blue gate opposite the gas station" />
+              <p className="text-xs text-muted-foreground">Helps technicians find the location on site visits.</p>
             </div>
             <div className="grid gap-1.5">
               <Label>Notes</Label>

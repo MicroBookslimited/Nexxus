@@ -10,12 +10,16 @@ export const customersTable = pgTable(
     name: text("name").notNull(),
     email: text("email"),
     phone: text("phone"),
+    // Alternate/secondary phone (work orders: reach someone on site).
+    phone2: text("phone2"),
     company: text("company"),
     address: text("address"),
     city: text("city"),
     state: text("state"),
     postalCode: text("postal_code"),
     notes: text("notes"),
+    // Directions / landmark for field visits (on-site work orders).
+    directions: text("directions"),
     // Loyalty card number (e.g. "LM##########"). Nullable for legacy rows;
     // auto-assigned on create and backfilled for existing customers. Unique
     // per tenant (NULLs are distinct in Postgres, so unassigned rows coexist).

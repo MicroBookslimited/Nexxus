@@ -261,6 +261,10 @@ router.patch("/fsm/jobs/:id/install-details", async (req, res): Promise<void> =>
   if (ctx.job.status === "collected" || ctx.job.status === "cancelled") {
     res.status(400).json({ error: "This job is closed" }); return;
   }
+  if (ctx.job.completionSignature || ctx.job.customerSignature) {
+    res.status(400).json({ error: "The customer has signed off on this job — the form can no longer be changed" });
+    return;
+  }
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.serviceAreas !== undefined) updates.serviceAreas = parsed.data.serviceAreas;

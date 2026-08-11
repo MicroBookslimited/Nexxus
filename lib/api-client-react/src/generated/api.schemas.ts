@@ -883,12 +883,14 @@ export interface Customer {
   name: string;
   email?: string | null;
   phone?: string | null;
+  phone2?: string | null;
   company?: string | null;
   address?: string | null;
   city?: string | null;
   state?: string | null;
   postalCode?: string | null;
   notes?: string | null;
+  directions?: string | null;
   cardNumber?: string | null;
   openingBalance: number;
   loyaltyPoints: number;
@@ -901,12 +903,14 @@ export interface CreateCustomerBody {
   name: string;
   email?: string;
   phone?: string;
+  phone2?: string;
   company?: string;
   address?: string;
   city?: string;
   state?: string;
   postalCode?: string;
   notes?: string;
+  directions?: string;
   openingBalance?: number;
 }
 
