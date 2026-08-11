@@ -35,9 +35,20 @@ import {
   resumeJob,
   startTravel,
   submitSignature,
+  isAdminRole,
+  updateWorkOrderStatus,
   type FsmJobHistory,
   type FsmJobNote,
 } from '@/lib/fsm-api';
+
+const ADMIN_STATUSES = [
+  { id: 'received', label: 'Received' },
+  { id: 'in_progress', label: 'In progress' },
+  { id: 'awaiting_parts', label: 'Awaiting parts' },
+  { id: 'on_hold', label: 'On hold' },
+  { id: 'ready', label: 'Ready' },
+  { id: 'cancelled', label: 'Cancelled' },
+] as const;
 
 const DECLINE_REASONS = [
   'Not available at that time',
@@ -142,6 +153,10 @@ export default function JobDetailScreen() {
     mutationFn: (reason: string) => declineJob(staff!.id, jobId, reason),
     onSuccess: () => { setDeclineOpen(false); invalidate(); },
     onError: () => notify('error'),
+  });
+  const adminStatusMutation = useMutation({
+    mutationFn: (status: string) => updateWorkOrderStatus(staff!.id, jobId, status),
+    ...mutationOpts,
   });
   const travelMutation = useMutation({ mutationFn: () => startTravel(staff!.id, jobId), ...mutationOpts });
   const arriveMutation = useMutation({ mutationFn: () => arriveOnSite(staff!.id, jobId), ...mutationOpts });
@@ -400,6 +415,52 @@ export default function JobDetailScreen() {
               </View>
               <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
             </Pressable>
+
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>MATERIALS & CABLE</Text>
+            <Pressable
+              onPress={() => router.push(`/materials/${job.id}`)}
+              style={[styles.card, styles.installLink, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Feather name="package" size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.body, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
+                  Dispatched materials & cable log
+                </Text>
+                <Text style={[styles.installLinkSub, { color: colors.mutedForeground }]}>
+                  {(job.allocations?.length ?? 0) > 0
+                    ? `${job.allocations.length} item${job.allocations.length === 1 ? '' : 's'} dispatched`
+                    : 'View dispatch slip & log cable runs'}
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            </Pressable>
+
+            {isAdminRole(staff?.role) ? (
+              <>
+                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ADMIN · MOVE STATUS</Text>
+                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }]}>
+                  {ADMIN_STATUSES.map((s) => (
+                    <Pressable
+                      key={s.id}
+                      disabled={adminStatusMutation.isPending || job.status === s.id}
+                      onPress={() => adminStatusMutation.mutate(s.id)}
+                      style={{
+                        borderWidth: 1,
+                        borderRadius: 16,
+                        paddingHorizontal: 12,
+                        paddingVertical: 7,
+                        borderColor: job.status === s.id ? colors.primary : colors.border,
+                        backgroundColor: job.status === s.id ? colors.primary : 'transparent',
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: job.status === s.id ? '#fff' : colors.foreground }}>
+                        {s.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            ) : null}
 
             {job.declineReason && job.assignmentStatus === 'declined' ? (
               <>

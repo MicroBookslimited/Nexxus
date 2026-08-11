@@ -198,6 +198,49 @@ export const workOrderPhotosTable = pgTable("work_order_photos", {
 
 export type WorkOrderPhoto = typeof workOrderPhotosTable.$inferSelect;
 
+// ─── Work Order Material / Cable Allocations ─────────────────────────────────
+// Dispatch-slip model: office allocates materials (optionally linked to an
+// inventory product — allocation deducts stock, returns restore it) to a work
+// order; technicians log usage in the field. Cable allocations additionally
+// carry a per-run log (camera/label, port, start/end footage) in `runs` JSONB.
+export const workOrderAllocationsTable = pgTable("work_order_allocations", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  workOrderId: integer("work_order_id").notNull().references(() => workOrdersTable.id, { onDelete: "cascade" }),
+  productId: integer("product_id"), // nullable: free-text / purchased-on-site items
+  description: text("description").notNull(),
+  category: text("category"), // e.g. PVC, TRK, ADH, TOOL, CABLE
+  unit: text("unit").notNull().default("pcs"), // pcs | length | ft | box | tin | pc …
+  qtyAllocated: real("qty_allocated").notNull(),
+  qtyReturned: real("qty_returned").notNull().default(0),
+  // tool | consumable: tools are expected back; consumables are used up
+  isReturnable: boolean("is_returnable").notNull().default(false),
+  // Cable-specific: box size in feet + per-run usage log
+  isCable: boolean("is_cable").notNull().default(false),
+  boxSizeFt: real("box_size_ft"),
+  runs: jsonb("runs").notNull().$type<Array<{
+    label: string;        // camera ID / run label e.g. CAM-01
+    location?: string;    // location / label
+    port?: string;        // NVR / switch port
+    startFt?: number | null;
+    endFt?: number | null;
+    lengthFt?: number | null; // derived: endFt - startFt (stored for reporting)
+    tested?: boolean | null;
+    remarks?: string;
+  }>>().default([]),
+  status: text("status").notNull().default("dispatched"), // dispatched | returned
+  dispatchedByStaffId: integer("dispatched_by_staff_id").references(() => staffTable.id),
+  dispatchedByName: text("dispatched_by_name"),
+  remarks: text("remarks"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  woIdx: index("work_order_allocations_wo_idx").on(t.tenantId, t.workOrderId),
+}));
+
+export type WorkOrderAllocation = typeof workOrderAllocationsTable.$inferSelect;
+export type CableRun = NonNullable<WorkOrderAllocation["runs"]>[number];
+
 // ─── Work Order Appointments ──────────────────────────────────────────────────
 export const workOrderAppointmentsTable = pgTable("work_order_appointments", {
   id: serial("id").primaryKey(),

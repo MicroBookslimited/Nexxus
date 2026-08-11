@@ -33,9 +33,10 @@ import {
   ArrowLeft, ShoppingCart, Printer, Wrench, ChevronDown,
   Plus, Trash2, Search, Clock, MessageSquare, Calendar,
   FileText, Activity, Lock, Pencil, Check, X,
-  ChevronRight, Save, ClipboardList,
+  ChevronRight, Save, ClipboardList, Boxes,
 } from "lucide-react";
 import { WorkOrderInstallForm } from "@/components/WorkOrderInstallForm";
+import { WorkOrderMaterials } from "@/components/WorkOrderMaterials";
 import { PENDING_WORK_ORDER_KEY, STATUS_LABEL, STATUS_STYLES, woStatusLabel } from "@/pages/work-orders";
 import { generateJobCard } from "@/lib/work-order-doc";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
@@ -88,7 +89,7 @@ const APPT_STATUS_STYLE: Record<string, string> = {
   no_show: "bg-slate-500/15 text-slate-500 border-slate-500/30",
 };
 
-type Tab = "overview" | "items" | "install" | "notes" | "appointments" | "history" | "jobcard";
+type Tab = "overview" | "items" | "install" | "materials" | "notes" | "appointments" | "history" | "jobcard";
 
 /* ─── Main component ─────────────────────────────────────────────────────── */
 export default function WorkOrderDetailPage() {
@@ -219,6 +220,7 @@ export default function WorkOrderDetailPage() {
     { key: "overview", label: "Overview", icon: FileText },
     { key: "items", label: "Parts & Labour", icon: Wrench },
     { key: "install", label: "Installation", icon: ClipboardList },
+    { key: "materials", label: "Materials", icon: Boxes },
     { key: "notes", label: "Notes", icon: MessageSquare },
     { key: "appointments", label: "Appointments", icon: Calendar },
     { key: "history", label: "History", icon: Activity },
@@ -287,6 +289,7 @@ export default function WorkOrderDetailPage() {
       {tab === "install" && (
         <WorkOrderInstallForm wo={wo} readOnly={isTerminal} onPatch={(updates) => patchWO(updates as never)} />
       )}
+      {tab === "materials" && <WorkOrderMaterials workOrderId={wo.id} readOnly={isTerminal} />}
       {tab === "notes" && <NotesTab workOrderId={wo.id} />}
       {tab === "appointments" && <AppointmentsTab workOrderId={wo.id} staff={staff ?? []} />}
       {tab === "history" && <HistoryTab workOrderId={wo.id} serviceChannel={wo.serviceChannel} />}

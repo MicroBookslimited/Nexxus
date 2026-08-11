@@ -166,6 +166,39 @@ export interface FsmJobHistory {
 
 export type InstallDetailsMap = Record<string, Record<string, unknown>>;
 
+/* ───────────── Material / cable allocations ───────────── */
+
+export interface CableRun {
+  label: string;
+  location?: string;
+  port?: string;
+  startFt?: number | null;
+  endFt?: number | null;
+  lengthFt?: number | null;
+  tested?: boolean | null;
+  remarks?: string;
+}
+
+export interface Allocation {
+  id: number;
+  workOrderId: number;
+  productId: number | null;
+  description: string;
+  category: string | null;
+  unit: string;
+  qtyAllocated: number;
+  qtyReturned: number;
+  isReturnable: boolean;
+  isCable: boolean;
+  boxSizeFt: number | null;
+  runs: CableRun[];
+  status: 'dispatched' | 'returned';
+  dispatchedByName: string | null;
+  remarks: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface FsmJobDetail extends FsmJob {
   notes2?: never;
   notes_list?: never;
@@ -200,8 +233,94 @@ export function getJob(
   tax: number | null;
   serviceAreas: string[];
   installDetails: InstallDetailsMap;
+  allocations: Allocation[];
 }> {
   return request(`/api/fsm/jobs/${id}`, { headers: staffHeaders(staffId) });
+}
+
+export function updateAllocation(
+  staffId: number,
+  jobId: number,
+  allocationId: number,
+  body: { qtyReturned?: number; runs?: CableRun[]; status?: 'dispatched' | 'returned'; remarks?: string | null },
+): Promise<Allocation> {
+  return request(`/api/fsm/jobs/${jobId}/allocations/${allocationId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/** Admin-only: dispatch a new material/cable allocation from the phone. */
+export function createAllocation(
+  staffId: number,
+  jobId: number,
+  body: {
+    productId?: number; description?: string; category?: string; unit?: string;
+    qtyAllocated: number; isReturnable?: boolean; isCable?: boolean; boxSizeFt?: number; remarks?: string;
+  },
+): Promise<Allocation> {
+  return request(`/api/fsm/jobs/${jobId}/allocations`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/* ───────────── Admin (tenant-token) endpoints ───────────── */
+
+export function isAdminRole(role: string | undefined | null): boolean {
+  return /^(admin|manager|owner)$/i.test((role ?? '').trim());
+}
+
+export interface ProductLite {
+  id: number;
+  name: string;
+  stockCount: number | null;
+  category?: string | null;
+}
+
+/** Admin: product search for allocations (uses the general tenant API). */
+export async function searchProducts(query: string): Promise<ProductLite[]> {
+  const all = await request<ProductLite[]>(`/api/products`);
+  const q = query.trim().toLowerCase();
+  if (!q) return all.slice(0, 25);
+  return all.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 25);
+}
+
+/** Admin: create a work order (same endpoint the office uses; the x-staff-id
+ * header is verified server-side to hold an admin/manager role). */
+export function createWorkOrder(staffId: number, body: {
+  contactName?: string;
+  contactPhone?: string;
+  itemDescription: string;
+  problemDescription: string;
+  serviceType?: string;
+  serviceChannel?: string;
+  priority?: string;
+  assignedStaffIds?: number[];
+  appointmentDate?: string;
+  notes?: string;
+}): Promise<{ id: number; workOrderNumber: string }> {
+  return request(`/api/work-orders`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/** Admin: move a job's status (server verifies the staff role). */
+export function updateWorkOrderStatus(staffId: number, id: number, status: string, statusNote?: string): Promise<unknown> {
+  return request(`/api/work-orders/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, ...(statusNote ? { statusNote } : {}) }),
+    headers: staffHeaders(staffId),
+  });
+}
+
+export interface StaffLite { id: number; name: string; role: string }
+export function listStaff(): Promise<StaffLite[]> {
+  return request(`/api/staff`);
 }
 
 export function patchInstallDetails(

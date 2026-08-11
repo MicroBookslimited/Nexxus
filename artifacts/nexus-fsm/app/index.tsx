@@ -17,7 +17,7 @@ import { Chip, PriorityChip, StatusChip, formatDate, isToday } from '@/component
 import { useAuth } from '@/context/AuthContext';
 import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
-import { listJobs, type FsmJob } from '@/lib/fsm-api';
+import { isAdminRole, listJobs, type FsmJob } from '@/lib/fsm-api';
 
 export default function JobQueueScreen() {
   const colors = useColors();
@@ -113,9 +113,25 @@ export default function JobQueueScreen() {
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + webTop + 12, borderBottomColor: colors.border }]}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>My Jobs</Text>
-          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>{staff?.name}</Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+            {isAdminRole(staff?.role) ? 'All Jobs' : 'My Jobs'}
+          </Text>
+          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+            {staff?.name}{isAdminRole(staff?.role) ? ' · Admin' : ''}
+          </Text>
         </View>
+        {isAdminRole(staff?.role) ? (
+          <Pressable
+            testID="create-job-button"
+            onPress={() => router.push('/create-job')}
+            style={({ pressed }) => [
+              styles.iconButton,
+              { backgroundColor: colors.primary, borderColor: colors.primary, opacity: pressed ? 0.7 : 1, marginRight: 8 },
+            ]}
+          >
+            <Feather name="plus" size={18} color="#fff" />
+          </Pressable>
+        ) : null}
         <Pressable
           testID="switch-staff-button"
           onPress={clearStaff}

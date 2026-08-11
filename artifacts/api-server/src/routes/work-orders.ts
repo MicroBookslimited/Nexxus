@@ -10,6 +10,8 @@ import {
   workOrderAppointmentsTable,
   customersTable,
   staffTable,
+  productsTable,
+  workOrderAllocationsTable,
 } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
@@ -345,6 +347,7 @@ router.post("/work-orders", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!(await rejectNonAdminStaffHeader(req as never, res as never, tenantId))) return;
 
   const parsed = CreateWorkOrderBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -467,6 +470,7 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!(await rejectNonAdminStaffHeader(req as never, res as never, tenantId))) return;
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -1026,6 +1030,300 @@ router.get("/work-orders-stats", async (req, res): Promise<void> => {
     ));
 
   res.json({ byStatus, activeCount, revenueThisMonth: Number(rev?.total ?? 0) });
+});
+
+/* ─── Material / Cable Allocations ────────────────────────────────────────────
+ * Dispatch-slip model. Allocating a product-linked item deducts stock inside
+ * the same transaction (row-locked); increasing qtyReturned restores it.
+ * Cable allocations carry a per-run usage log (start/end footage per camera).
+ * The helpers are exported so the FSM routes share identical stock semantics. */
+
+export const CableRunSchema = z.object({
+  label: z.string().max(60),
+  location: z.string().max(120).optional(),
+  port: z.string().max(60).optional(),
+  startFt: z.number().finite().nonnegative().nullable().optional(),
+  endFt: z.number().finite().nonnegative().nullable().optional(),
+  // Accepted for client convenience but ALWAYS recomputed server-side.
+  lengthFt: z.number().finite().nullable().optional(),
+  tested: z.boolean().nullable().optional(),
+  remarks: z.string().max(200).optional(),
+});
+
+export const AllocationCreateSchema = z.object({
+  productId: z.number().int().optional(),
+  description: z.string().max(300).optional(),
+  category: z.string().max(30).optional(),
+  unit: z.string().max(20).optional(),
+  qtyAllocated: z.number().finite().positive(),
+  isReturnable: z.boolean().optional(),
+  isCable: z.boolean().optional(),
+  boxSizeFt: z.number().finite().positive().optional(),
+  remarks: z.string().max(500).optional(),
+  staffId: z.number().int().optional(), // dispatcher, for the slip
+});
+
+export const AllocationUpdateSchema = z.object({
+  qtyReturned: z.number().finite().nonnegative().optional(),
+  runs: z.array(CableRunSchema).max(500).optional(),
+  status: z.enum(["dispatched", "returned"]).optional(),
+  remarks: z.string().max(500).nullable().optional(),
+});
+
+/** Normalise runs: lengthFt is SERVER-derived from start/end footage only —
+ * client-supplied values are discarded (prevents arbitrary/negative lengths). */
+function normaliseRuns(runs: z.infer<typeof CableRunSchema>[]) {
+  return runs.map((r) => ({
+    ...r,
+    lengthFt:
+      r.startFt != null && r.endFt != null && r.endFt >= r.startFt
+        ? Math.round((r.endFt - r.startFt) * 100) / 100
+        : null,
+  }));
+}
+
+/** When a request carries an x-staff-id header (the FSM app always sends it),
+ * verify that staff member belongs to the tenant AND holds an admin/manager
+ * role before allowing office-level mutations. Requests without the header
+ * (web POS office sessions) are unaffected. */
+async function rejectNonAdminStaffHeader(
+  req: { headers: Record<string, string | undefined> },
+  res: { status: (n: number) => { json: (b: unknown) => void } },
+  tenantId: number,
+): Promise<boolean> {
+  const raw = req.headers["x-staff-id"];
+  if (!raw) return true;
+  const staffId = parseInt(String(raw), 10);
+  const [s] = Number.isFinite(staffId)
+    ? await db.select({ role: staffTable.role }).from(staffTable)
+        .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)))
+    : [];
+  if (!s || !/^(admin|manager|owner)$/i.test(s.role.trim())) {
+    res.status(403).json({ error: "Admin access required" });
+    return false;
+  }
+  return true;
+}
+
+/** Lock a work order row inside `tx` and confirm it is still open. */
+async function lockOpenWorkOrder(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tenantId: number,
+  workOrderId: number,
+): Promise<{ error?: string; status?: number }> {
+  const [wo] = await tx.select({ id: workOrdersTable.id, status: workOrdersTable.status })
+    .from(workOrdersTable)
+    .where(and(eq(workOrdersTable.id, workOrderId), eq(workOrdersTable.tenantId, tenantId)))
+    .for("update");
+  if (!wo) return { error: "Work order not found", status: 404 };
+  if (wo.status === "collected" || wo.status === "cancelled") {
+    return { error: "This work order is closed", status: 400 };
+  }
+  return {};
+}
+
+export async function createAllocation(
+  tenantId: number,
+  workOrderId: number,
+  data: z.infer<typeof AllocationCreateSchema>,
+): Promise<{ error?: string; status?: number; allocation?: typeof workOrderAllocationsTable.$inferSelect }> {
+  return db.transaction(async (tx) => {
+    const woGuard = await lockOpenWorkOrder(tx, tenantId, workOrderId);
+    if (woGuard.error) return woGuard;
+
+    let description = data.description?.trim() || "";
+    if (data.productId != null) {
+      // Lock the product row, verify availability, and deduct stock atomically.
+      const [product] = await tx.select()
+        .from(productsTable)
+        .where(and(eq(productsTable.id, data.productId), eq(productsTable.tenantId, tenantId)))
+        .for("update");
+      if (!product) return { error: "Product not found", status: 400 };
+      if ((product.stockCount ?? 0) < data.qtyAllocated) {
+        return { error: `Insufficient stock: only ${product.stockCount ?? 0} available`, status: 400 };
+      }
+      if (!description) description = product.name;
+      await tx.update(productsTable)
+        .set({
+          stockCount: sql`${productsTable.stockCount} - ${data.qtyAllocated}`,
+          inStock: sql`CASE WHEN ${productsTable.stockCount} - ${data.qtyAllocated} <= 0 THEN false ELSE ${productsTable.inStock} END`,
+        })
+        .where(and(eq(productsTable.id, data.productId), eq(productsTable.tenantId, tenantId)));
+    }
+    if (!description) return { error: "Description or product required", status: 400 };
+
+    let dispatchedByName: string | null = null;
+    if (data.staffId != null) {
+      const [s] = await tx.select({ name: staffTable.name }).from(staffTable)
+        .where(and(eq(staffTable.id, data.staffId), eq(staffTable.tenantId, tenantId)));
+      dispatchedByName = s?.name ?? null;
+    }
+
+    const [allocation] = await tx.insert(workOrderAllocationsTable).values({
+      tenantId,
+      workOrderId,
+      productId: data.productId ?? null,
+      description,
+      category: data.category ?? null,
+      unit: data.unit ?? "pcs",
+      qtyAllocated: data.qtyAllocated,
+      isReturnable: data.isReturnable ?? false,
+      isCable: data.isCable ?? false,
+      boxSizeFt: data.boxSizeFt ?? null,
+      dispatchedByStaffId: data.staffId ?? null,
+      dispatchedByName,
+      remarks: data.remarks ?? null,
+    }).returning();
+    return { allocation };
+  });
+}
+
+export async function updateAllocation(
+  tenantId: number,
+  workOrderId: number,
+  allocationId: number,
+  data: z.infer<typeof AllocationUpdateSchema>,
+): Promise<{ error?: string; status?: number; allocation?: typeof workOrderAllocationsTable.$inferSelect }> {
+  return db.transaction(async (tx) => {
+    const woGuard = await lockOpenWorkOrder(tx, tenantId, workOrderId);
+    if (woGuard.error) return woGuard;
+    const [existing] = await tx.select().from(workOrderAllocationsTable)
+      .where(and(
+        eq(workOrderAllocationsTable.id, allocationId),
+        eq(workOrderAllocationsTable.tenantId, tenantId),
+        eq(workOrderAllocationsTable.workOrderId, workOrderId),
+      ))
+      .for("update");
+    if (!existing) return { error: "Allocation not found", status: 404 };
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (data.runs !== undefined) updates.runs = normaliseRuns(data.runs);
+    if (data.remarks !== undefined) updates.remarks = data.remarks;
+    if (data.status !== undefined) updates.status = data.status;
+
+    if (data.qtyReturned !== undefined) {
+      const newReturned = Math.min(data.qtyReturned, existing.qtyAllocated);
+      const delta = newReturned - existing.qtyReturned;
+      if (delta !== 0 && existing.productId != null) {
+        // Lock the product row before adjusting stock.
+        await tx.select({ id: productsTable.id }).from(productsTable)
+          .where(and(eq(productsTable.id, existing.productId), eq(productsTable.tenantId, tenantId)))
+          .for("update");
+        await tx.update(productsTable)
+          .set({
+            stockCount: sql`${productsTable.stockCount} + ${delta}`,
+            inStock: sql`CASE WHEN ${productsTable.stockCount} + ${delta} > 0 THEN true ELSE ${productsTable.inStock} END`,
+          })
+          .where(and(eq(productsTable.id, existing.productId), eq(productsTable.tenantId, tenantId)));
+      }
+      updates.qtyReturned = newReturned;
+      if (data.status === undefined) {
+        updates.status = newReturned >= existing.qtyAllocated ? "returned" : "dispatched";
+      }
+    }
+
+    const [allocation] = await tx.update(workOrderAllocationsTable)
+      .set(updates)
+      .where(eq(workOrderAllocationsTable.id, allocationId))
+      .returning();
+    return { allocation };
+  });
+}
+
+export async function deleteAllocation(
+  tenantId: number,
+  workOrderId: number,
+  allocationId: number,
+): Promise<{ error?: string; status?: number }> {
+  return db.transaction(async (tx) => {
+    const woGuard = await lockOpenWorkOrder(tx, tenantId, workOrderId);
+    if (woGuard.error) return woGuard;
+    const [existing] = await tx.select().from(workOrderAllocationsTable)
+      .where(and(
+        eq(workOrderAllocationsTable.id, allocationId),
+        eq(workOrderAllocationsTable.tenantId, tenantId),
+        eq(workOrderAllocationsTable.workOrderId, workOrderId),
+      ))
+      .for("update");
+    if (!existing) return { error: "Allocation not found", status: 404 };
+
+    // Restore the un-returned balance to stock before deleting.
+    const restore = existing.qtyAllocated - existing.qtyReturned;
+    if (restore > 0 && existing.productId != null) {
+      // Lock the product row before adjusting stock.
+      await tx.select({ id: productsTable.id }).from(productsTable)
+        .where(and(eq(productsTable.id, existing.productId), eq(productsTable.tenantId, tenantId)))
+        .for("update");
+      await tx.update(productsTable)
+        .set({
+          stockCount: sql`${productsTable.stockCount} + ${restore}`,
+          inStock: sql`CASE WHEN ${productsTable.stockCount} + ${restore} > 0 THEN true ELSE ${productsTable.inStock} END`,
+        })
+        .where(and(eq(productsTable.id, existing.productId), eq(productsTable.tenantId, tenantId)));
+    }
+    await tx.delete(workOrderAllocationsTable).where(eq(workOrderAllocationsTable.id, allocationId));
+    return {};
+  });
+}
+
+export function listAllocations(tenantId: number, workOrderId: number) {
+  return db.select().from(workOrderAllocationsTable)
+    .where(and(
+      eq(workOrderAllocationsTable.tenantId, tenantId),
+      eq(workOrderAllocationsTable.workOrderId, workOrderId),
+    ))
+    .orderBy(workOrderAllocationsTable.id);
+}
+
+// LIST allocations
+router.get("/work-orders/:id/allocations", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  res.json(await listAllocations(tenantId, id));
+});
+
+// CREATE allocation (dispatch)
+router.post("/work-orders/:id/allocations", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const parsed = AllocationCreateSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const result = await createAllocation(tenantId, id, parsed.data);
+  if (result.error) { res.status(result.status ?? 400).json({ error: result.error }); return; }
+  res.status(201).json(result.allocation);
+});
+
+// UPDATE allocation (returns, cable runs, remarks)
+router.patch("/work-orders/:id/allocations/:allocId", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(req.params.id, 10);
+  const allocId = parseInt(req.params.allocId, 10);
+  if (!Number.isInteger(id) || !Number.isInteger(allocId)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const parsed = AllocationUpdateSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const result = await updateAllocation(tenantId, id, allocId, parsed.data);
+  if (result.error) { res.status(result.status ?? 400).json({ error: result.error }); return; }
+  res.json(result.allocation);
+});
+
+// DELETE allocation (restores un-returned stock)
+router.delete("/work-orders/:id/allocations/:allocId", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(req.params.id, 10);
+  const allocId = parseInt(req.params.allocId, 10);
+  if (!Number.isInteger(id) || !Number.isInteger(allocId)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const result = await deleteAllocation(tenantId, id, allocId);
+  if (result.error) { res.status(result.status ?? 400).json({ error: result.error }); return; }
+  res.status(204).end();
 });
 
 export default router;

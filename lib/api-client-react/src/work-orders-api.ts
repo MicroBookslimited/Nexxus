@@ -205,6 +205,61 @@ export type UpdateWorkOrderInput = Partial<Omit<CreateWorkOrderInput, never>> & 
   staffSignature?: string;
 };
 
+// ─── Material / Cable Allocations ─────────────────────────────────────────────
+
+export type CableRun = {
+  label: string;
+  location?: string;
+  port?: string;
+  startFt?: number | null;
+  endFt?: number | null;
+  lengthFt?: number | null;
+  tested?: boolean | null;
+  remarks?: string;
+};
+
+export type WorkOrderAllocation = {
+  id: number;
+  tenantId: number;
+  workOrderId: number;
+  productId: number | null;
+  description: string;
+  category: string | null;
+  unit: string;
+  qtyAllocated: number;
+  qtyReturned: number;
+  isReturnable: boolean;
+  isCable: boolean;
+  boxSizeFt: number | null;
+  runs: CableRun[];
+  status: "dispatched" | "returned";
+  dispatchedByStaffId: number | null;
+  dispatchedByName: string | null;
+  remarks: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateAllocationInput = {
+  productId?: number;
+  description?: string;
+  category?: string;
+  unit?: string;
+  qtyAllocated: number;
+  isReturnable?: boolean;
+  isCable?: boolean;
+  boxSizeFt?: number;
+  remarks?: string;
+  staffId?: number;
+};
+
+export type UpdateAllocationInput = {
+  qtyReturned?: number;
+  runs?: CableRun[];
+  status?: "dispatched" | "returned";
+  remarks?: string | null;
+};
+
 // ─── Query Keys ───────────────────────────────────────────────────────────────
 
 const WO_KEY = "work-orders";
@@ -283,6 +338,58 @@ export function useWorkOrderPhotos(workOrderId: number | null) {
     queryKey: [WO_KEY, workOrderId, "photos"],
     queryFn: () => customFetch<WorkOrderPhoto[]>(`/api/work-orders/${workOrderId}/photos`),
     enabled: workOrderId != null,
+  });
+}
+
+// ─── Allocation hooks ─────────────────────────────────────────────────────────
+
+export function useWorkOrderAllocations(workOrderId: number | null) {
+  return useQuery<WorkOrderAllocation[]>({
+    queryKey: [WO_KEY, workOrderId, "allocations"],
+    queryFn: () => customFetch<WorkOrderAllocation[]>(`/api/work-orders/${workOrderId}/allocations`),
+    enabled: workOrderId != null,
+  });
+}
+
+export function useCreateWorkOrderAllocation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workOrderId, ...data }: CreateAllocationInput & { workOrderId: number }) =>
+      customFetch<WorkOrderAllocation>(`/api/work-orders/${workOrderId}/allocations`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (_d, v) => {
+      void qc.invalidateQueries({ queryKey: [WO_KEY, v.workOrderId, "allocations"] });
+      void qc.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
+}
+
+export function useUpdateWorkOrderAllocation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workOrderId, allocationId, ...data }: UpdateAllocationInput & { workOrderId: number; allocationId: number }) =>
+      customFetch<WorkOrderAllocation>(`/api/work-orders/${workOrderId}/allocations/${allocationId}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (_d, v) => {
+      void qc.invalidateQueries({ queryKey: [WO_KEY, v.workOrderId, "allocations"] });
+      void qc.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
+}
+
+export function useDeleteWorkOrderAllocation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workOrderId, allocationId }: { workOrderId: number; allocationId: number }) =>
+      customFetch<void>(`/api/work-orders/${workOrderId}/allocations/${allocationId}`, { method: "DELETE" }),
+    onSuccess: (_d, v) => {
+      void qc.invalidateQueries({ queryKey: [WO_KEY, v.workOrderId, "allocations"] });
+      void qc.invalidateQueries({ queryKey: ["products"] });
+    },
   });
 }
 

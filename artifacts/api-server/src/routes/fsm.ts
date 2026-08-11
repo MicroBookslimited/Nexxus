@@ -12,7 +12,11 @@ import {
 } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
-import { ServiceAreasSchema, InstallDetailsSchema } from "./work-orders";
+import {
+  ServiceAreasSchema, InstallDetailsSchema,
+  AllocationCreateSchema, AllocationUpdateSchema,
+  createAllocation, updateAllocation, listAllocations,
+} from "./work-orders";
 import { sendWorkOrderStatusEmail, sendWorkOrderSignedEmail } from "../lib/work-order-mail";
 import { getSetting } from "./settings";
 
@@ -35,23 +39,37 @@ function getTenantId(req: { headers: Record<string, string | undefined> }): numb
   return p ? p.tenantId : null;
 }
 
+type FsmStaff = { id: number; name: string; role: string };
+
 async function getVerifiedStaff(
   req: { headers: Record<string, string | undefined> },
   tenantId: number,
-): Promise<{ id: number; name: string } | null> {
+): Promise<FsmStaff | null> {
   const raw = req.headers["x-staff-id"];
   const staffId = raw ? parseInt(String(raw), 10) : NaN;
   if (!Number.isFinite(staffId)) return null;
   const [s] = await db
-    .select({ id: staffTable.id, name: staffTable.name })
+    .select({ id: staffTable.id, name: staffTable.name, role: staffTable.role })
     .from(staffTable)
     .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)));
   return s ?? null;
 }
 
+/** Admins/managers get full access to all jobs from the mobile app.
+ * Role values in the data are inconsistent ("Admin", "admin", "Manager"),
+ * so match case-insensitively. */
+export function isFsmAdmin(staff: FsmStaff): boolean {
+  return /^(admin|manager|owner)$/i.test(staff.role.trim());
+}
+
 /** SQL condition: staff is the primary assignee OR appears in the JSONB id list. */
 function assignedToStaff(staffId: number) {
   return sql`(${workOrdersTable.assignedStaffId} = ${staffId} OR ${workOrdersTable.assignedStaffIds} @> ${JSON.stringify([staffId])}::jsonb)`;
+}
+
+/** Job visibility scope: admins see every job in the tenant; technicians only theirs. */
+function jobScope(staff: FsmStaff) {
+  return isFsmAdmin(staff) ? sql`TRUE` : assignedToStaff(staff.id);
 }
 
 const ACTIVE_STATUSES = ["received", "in_progress", "awaiting_parts", "on_hold", "ready"] as const;
@@ -121,7 +139,7 @@ router.get("/fsm/jobs", async (req, res): Promise<void> => {
     .where(and(
       eq(workOrdersTable.tenantId, tenantId),
       inArray(workOrdersTable.status, [...ACTIVE_STATUSES]),
-      assignedToStaff(staff.id),
+      jobScope(staff),
     ))
     .orderBy(desc(workOrdersTable.createdAt))
     .limit(200);
@@ -149,7 +167,7 @@ router.get("/fsm/jobs/:id", async (req, res): Promise<void> => {
     .where(and(
       eq(workOrdersTable.id, id),
       eq(workOrdersTable.tenantId, tenantId),
-      assignedToStaff(staff.id),
+      jobScope(staff),
     ));
   if (!row) { res.status(404).json({ error: "Job not found" }); return; }
 
@@ -189,7 +207,41 @@ router.get("/fsm/jobs/:id", async (req, res): Promise<void> => {
     // Universal installation form
     serviceAreas: row.workOrder.serviceAreas ?? [],
     installDetails: row.workOrder.installDetails ?? {},
+    // Materials & cable dispatched to this job
+    allocations: await listAllocations(tenantId, id),
   });
+});
+
+/* ─── Material / cable allocations (field) ────────────────────────────────────
+ * Technicians log cable runs and returns on jobs assigned to them; admins can
+ * additionally dispatch new allocations from the phone (jobScope covers both). */
+router.get("/fsm/jobs/:id/allocations", async (req, res): Promise<void> => {
+  const ctx = await loadAssignedJob(req as never, res as never, { requireOpen: false });
+  if (!ctx) return;
+  res.json(await listAllocations(ctx.tenantId, ctx.job.id));
+});
+
+router.post("/fsm/jobs/:id/allocations", async (req, res): Promise<void> => {
+  const ctx = await loadAssignedJob(req as never, res as never);
+  if (!ctx) return;
+  if (!isFsmAdmin(ctx.staff)) { res.status(403).json({ error: "Admin access required to dispatch materials" }); return; }
+  const parsed = AllocationCreateSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const result = await createAllocation(ctx.tenantId, ctx.job.id, { ...parsed.data, staffId: ctx.staff.id });
+  if (result.error) { res.status(result.status ?? 400).json({ error: result.error }); return; }
+  res.status(201).json(result.allocation);
+});
+
+router.patch("/fsm/jobs/:id/allocations/:allocId", async (req, res): Promise<void> => {
+  const ctx = await loadAssignedJob(req as never, res as never);
+  if (!ctx) return;
+  const allocId = parseInt(String((req.params as Record<string, string>).allocId), 10);
+  if (!Number.isInteger(allocId)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const parsed = AllocationUpdateSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const result = await updateAllocation(ctx.tenantId, ctx.job.id, allocId, parsed.data);
+  if (result.error) { res.status(result.status ?? 400).json({ error: result.error }); return; }
+  res.json(result.allocation);
 });
 
 const InstallDetailsBody = z.object({
@@ -356,7 +408,7 @@ async function execTransition(
       .where(and(
         eq(workOrdersTable.id, id),
         eq(workOrdersTable.tenantId, tenantId),
-        assignedToStaff(staff.id),
+        jobScope(staff),
       ))
       .for("update");
     if (!job) return { error: 404 as const };
@@ -561,7 +613,7 @@ async function loadAssignedJob(req: never, res: never, opts?: { requireOpen?: bo
     .where(and(
       eq(workOrdersTable.id, id),
       eq(workOrdersTable.tenantId, tenantId),
-      assignedToStaff(staff.id),
+      jobScope(staff),
     ));
   if (!job) { rs.status(404).json({ error: "Job not found" }); return null; }
   if (opts?.requireOpen !== false && (job.status === "collected" || job.status === "cancelled")) {
@@ -734,7 +786,7 @@ router.post("/fsm/jobs/:id/notes", async (req, res): Promise<void> => {
     .where(and(
       eq(workOrdersTable.id, id),
       eq(workOrdersTable.tenantId, tenantId),
-      assignedToStaff(staff.id),
+      jobScope(staff),
     ));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
 
