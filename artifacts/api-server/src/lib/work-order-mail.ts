@@ -740,3 +740,140 @@ export async function sendWorkOrderReviewEmail(input: {
     console.error("[work-order-mail] Failed to send review email", { wo: input.workOrderNumber, err: err instanceof Error ? err.message : err });
   }
 }
+
+/* ─── Follow-up visit notifications ─────────────────────────────────────────── */
+
+/** Formats an appointment start time (date + time) in the tenant's timezone. */
+async function formatVisitDateTime(tenantId: number, when: Date): Promise<string> {
+  let tz = "America/Jamaica";
+  try {
+    const set = await getSetting("timezone", tenantId);
+    if (set?.trim()) tz = set.trim();
+  } catch { /* fall back to default */ }
+  try {
+    return when.toLocaleString("en-US", {
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+      hour: "numeric", minute: "2-digit", timeZone: tz,
+    });
+  } catch {
+    return when.toISOString();
+  }
+}
+
+/**
+ * Emails the assigned technician(s) and the customer about a scheduled
+ * follow-up visit on a work order. Fire-and-forget — errors are logged only.
+ */
+export async function sendFollowUpVisitEmails(input: {
+  tenantId: number;
+  workOrderNumber: string;
+  staffIds: number[];
+  itemDescription: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  customerId: number | null;
+  startTime: Date;
+  notes: string | null;
+}): Promise<void> {
+  try {
+    const { inArray } = await import("drizzle-orm");
+    const [staffRows, from, tenant, business, whenLabel] = await Promise.all([
+      input.staffIds.length
+        ? db.select({ id: staffTable.id, name: staffTable.name, email: staffTable.email })
+            .from(staffTable)
+            .where(and(eq(staffTable.tenantId, input.tenantId), inArray(staffTable.id, input.staffIds)))
+        : Promise.resolve([] as Array<{ id: number; name: string; email: string | null }>),
+      getFromDetails(input.tenantId),
+      db.query.tenantsTable.findFirst({ where: eq(tenantsTable.id, input.tenantId) }),
+      getBusinessDetails(input.tenantId),
+      formatVisitDateTime(input.tenantId, input.startTime),
+    ]);
+
+    // Resolve the customer's display name / email from the linked record when
+    // the work order itself doesn't carry a contact email.
+    let custName = input.contactName;
+    let custEmail = input.contactEmail?.trim() || null;
+    let custPhone = input.contactPhone;
+    if (input.customerId) {
+      const customer = await db.query.customersTable.findFirst({
+        where: and(eq(customersTable.id, input.customerId), eq(customersTable.tenantId, input.tenantId)),
+      });
+      if (customer) {
+        custName = custName || customer.name;
+        custEmail = custEmail || (customer.email?.trim() || null);
+        custPhone = custPhone || customer.phone || null;
+      }
+    }
+
+    const businessName = tenant?.businessName ?? "NEXXUS POS";
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    // ── Technician emails ──
+    const techRecipients = staffRows.filter((s) => s.email?.trim());
+    const techSends = techRecipients.map((s) => {
+      const html = /* html */ `
+<!DOCTYPE html>
+<html lang="en"><body style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.5;">
+  <p>Hi ${esc(s.name)},</p>
+  <p>A <b>follow-up visit</b> has been scheduled on work order <b>${esc(input.workOrderNumber)}</b>.</p>
+  <table cellpadding="0" cellspacing="0" style="font-size:14px;">
+    <tr><td style="padding:2px 12px 2px 0;color:#666;">When</td><td><b>${esc(whenLabel)}</b></td></tr>
+    <tr><td style="padding:2px 12px 2px 0;color:#666;">Job</td><td>${esc(input.itemDescription)}</td></tr>
+    ${custName ? `<tr><td style="padding:2px 12px 2px 0;color:#666;">Customer</td><td>${esc(custName)}</td></tr>` : ""}
+    ${custPhone ? `<tr><td style="padding:2px 12px 2px 0;color:#666;">Phone</td><td>${esc(custPhone)}</td></tr>` : ""}
+    ${input.notes ? `<tr><td style="padding:2px 12px 2px 0;color:#666;">Notes</td><td>${esc(input.notes)}</td></tr>` : ""}
+  </table>
+  <p>Open the NEXXUS FSM app for full job details.</p>
+  <p style="color:#666;font-size:13px;">— ${esc(businessName)}</p>
+</body></html>`;
+      return sendMail({
+        to: s.email!.trim(),
+        subject: `Follow-up visit scheduled: ${input.workOrderNumber} – ${input.itemDescription}`,
+        html,
+        fromName: from.fromName,
+        fromAddress: from.fromAddress,
+        tenantId: input.tenantId,
+        platformCopy: false, // internal tenant→staff email
+      });
+    });
+
+    // ── Customer email ──
+    const customerSend = custEmail
+      ? sendMail({
+          to: custEmail,
+          subject: `Follow-up visit scheduled — Work Order ${input.workOrderNumber}`,
+          html: buildNotificationHtml({
+            businessName: business.name,
+            businessPhone: business.phone,
+            businessEmail: business.email,
+            headerSub: "Follow-Up Visit Scheduled",
+            clientName: custName ?? "",
+            bodyHtml: /* html */ `
+    <p>We have scheduled a follow-up visit to complete the outstanding work on your work order.</p>
+    <div class="details"><table>
+      <tr><td>Work Order</td><td>${escHtml(input.workOrderNumber)}</td></tr>
+      <tr><td>Job</td><td>${escHtml(input.itemDescription)}</td></tr>
+      <tr><td>Scheduled for</td><td><b>${escHtml(whenLabel)}</b></td></tr>
+      ${input.notes ? `<tr><td>Notes</td><td>${escHtml(input.notes)}</td></tr>` : ""}
+    </table></div>
+    <p>If this time doesn't work for you, please contact us and we'll be happy to reschedule.</p>`,
+          }),
+          fromName: from.fromName,
+          fromAddress: from.fromAddress,
+          tenantId: input.tenantId,
+          platformCopy: false,
+        })
+      : Promise.resolve();
+
+    await Promise.all([...techSends, customerSend]);
+    console.info(
+      `[work-order-mail] Follow-up visit notices for WO ${input.workOrderNumber}: ${techRecipients.length} technician(s), customer ${custEmail ? "emailed" : "no email on file"}`,
+    );
+  } catch (err) {
+    console.error("[work-order-mail] Failed to send follow-up visit emails", {
+      wo: input.workOrderNumber,
+      err: err instanceof Error ? err.message : err,
+    });
+  }
+}

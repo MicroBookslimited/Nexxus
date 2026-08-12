@@ -489,3 +489,46 @@ export function declineJob(staffId: number, id: number, reason: string): Promise
     headers: staffHeaders(staffId),
   });
 }
+
+/* ── Follow-up visits & calendar ────────────────────────────────────────────── */
+
+export interface CalendarAppointment {
+  id: number;
+  workOrderId: number;
+  appointmentType: string;
+  startTime: string;
+  endTime: string | null;
+  status: string;
+  notes: string | null;
+  staffId: number | null;
+  staffIds: number[] | null;
+  workOrderNumber: string;
+  woStatus: string;
+  itemDescription: string;
+  customerName: string | null;
+  priority: string | null;
+  assignedStaffIds: number[] | null;
+}
+
+/** Calendar feed: appointments (incl. legacy single dates) in a range.
+ * Office roles see all; technicians only get their own visits (enforced
+ * server-side via the x-staff-id header). */
+export function getCalendarAppointments(staffId: number, startIso: string, endIso: string): Promise<CalendarAppointment[]> {
+  return request(`/api/work-order-appointments?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`, {
+    headers: staffHeaders(staffId),
+  });
+}
+
+/** Admin/manager/supervisor: schedule a follow-up visit on an open work
+ * order. The server emails the technician(s) and the customer. */
+export function createFollowUpVisit(
+  staffId: number,
+  workOrderId: number,
+  body: { startTime: string; endTime?: string; notes?: string; staffIds?: number[] },
+): Promise<{ id: number }> {
+  return request(`/api/work-orders/${workOrderId}/follow-up`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}

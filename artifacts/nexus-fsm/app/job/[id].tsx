@@ -498,6 +498,24 @@ export default function JobDetailScreen() {
               </Pressable>
             ) : null}
 
+            {canEditWorkOrders(staff?.role) && job.status !== 'collected' && job.status !== 'cancelled' ? (
+              <Pressable
+                onPress={() => router.push(`/follow-up/${job.id}`)}
+                style={[styles.card, styles.installLink, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 8 }]}
+              >
+                <Feather name="calendar" size={18} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.body, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
+                    Schedule follow-up visit
+                  </Text>
+                  <Text style={[styles.installLinkSub, { color: colors.mutedForeground }]}>
+                    Emails the technicians & customer right away
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+              </Pressable>
+            ) : null}
+
             {isAdminRole(staff?.role) ? (
               <>
                 <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ADMIN · MOVE STATUS</Text>

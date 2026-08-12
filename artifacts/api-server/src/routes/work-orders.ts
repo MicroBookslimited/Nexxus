@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, lte, desc, sql, inArray, isNull } from "drizzle-orm";
+import { and, eq, gte, lte, lt, desc, sql, inArray, isNull } from "drizzle-orm";
 import { createHmac } from "crypto";
 import {
   db,
@@ -17,7 +17,7 @@ import {
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { getSetting } from "./settings";
-import { sendWorkOrderEmail, sendWorkOrderStatusEmail, sendTechnicianAssignmentEmail } from "../lib/work-order-mail";
+import { sendWorkOrderEmail, sendWorkOrderStatusEmail, sendTechnicianAssignmentEmail, sendFollowUpVisitEmails } from "../lib/work-order-mail";
 
 const router: IRouter = Router();
 
@@ -1001,12 +1001,106 @@ router.delete("/work-orders/:id/appointments/:apptId", async (req, res): Promise
   res.sendStatus(204);
 });
 
+/* ─── Follow-up visit (appointment + notifications) ─────────────────────────── */
+
+const FollowUpBody = z.object({
+  startTime: z.coerce.date(),
+  endTime: z.coerce.date().optional(),
+  notes: z.string().max(1000).optional(),
+  // Defaults to the work order's assigned technicians when omitted.
+  staffIds: z.array(z.number().int()).max(20).optional(),
+});
+
+/**
+ * Schedules a follow-up visit on an incomplete work order: creates a
+ * `follow_up` appointment, bumps the work order's next-appointment date, and
+ * emails the technician(s) and the customer.
+ * Office action — requires an admin/manager/owner/supervisor x-staff-id.
+ */
+router.post("/work-orders/:id/follow-up", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!(await rejectNonAdminStaffHeader(req as never, res as never, tenantId, { allowSupervisor: true }))) return;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = FollowUpBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if (parsed.data.endTime && parsed.data.endTime < parsed.data.startTime) {
+    res.status(400).json({ error: "End time must be after the start time" }); return;
+  }
+
+  const [wo] = await db.select().from(workOrdersTable)
+    .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
+  if (!wo) { res.status(404).json({ error: "Work order not found" }); return; }
+  if (wo.status === "collected" || wo.status === "cancelled") {
+    res.status(400).json({ error: "This work order is closed — follow-up visits can only be scheduled on open work orders" });
+    return;
+  }
+
+  const staffIds = parsed.data.staffIds && parsed.data.staffIds.length
+    ? parsed.data.staffIds
+    : (Array.isArray(wo.assignedStaffIds) ? (wo.assignedStaffIds as number[]) : []);
+  const refError = await validateRefs(tenantId, undefined, null, staffIds.length ? staffIds : undefined);
+  if (refError) { res.status(400).json({ error: refError }); return; }
+
+  const appt = await db.transaction(async (tx) => {
+    const [row] = await tx.insert(workOrderAppointmentsTable)
+      .values({
+        tenantId,
+        workOrderId: id,
+        staffId: staffIds[0] ?? null,
+        staffIds: staffIds.length ? staffIds : null,
+        appointmentType: "follow_up",
+        startTime: parsed.data.startTime,
+        endTime: parsed.data.endTime ?? null,
+        notes: parsed.data.notes ?? null,
+        status: "scheduled",
+      })
+      .returning();
+
+    // Keep the work order's single "next appointment" date in sync so the
+    // technician app's Today/Upcoming grouping reflects the follow-up.
+    await tx.update(workOrdersTable)
+      .set({ appointmentDate: parsed.data.startTime, updatedAt: new Date() })
+      .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
+
+    return row;
+  });
+
+  // Fire-and-forget notifications to technician(s) + customer.
+  void sendFollowUpVisitEmails({
+    tenantId,
+    workOrderNumber: wo.workOrderNumber,
+    staffIds,
+    itemDescription: wo.itemDescription,
+    contactName: wo.contactName,
+    contactEmail: wo.contactEmail,
+    contactPhone: wo.contactPhone,
+    customerId: wo.customerId,
+    startTime: parsed.data.startTime,
+    notes: parsed.data.notes ?? null,
+  });
+
+  res.status(201).json(appt);
+});
+
 /* ─── Dashboard stats ─────────────────────────────────────────────────────────── */
 
 /* ─── Aggregated appointments (calendar feed) ─────────────────────────────── */
 router.get("/work-order-appointments", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  // Visibility: office roles (admin/manager/owner/supervisor) see the whole
+  // calendar; any other staff only sees visits assigned to them. A valid
+  // x-staff-id is required so the restriction is enforced server-side.
+  const callerStaffId = getStaffId(req as never);
+  if (callerStaffId == null) { res.status(403).json({ error: "x-staff-id header required" }); return; }
+  const [callerStaff] = await db.select({ id: staffTable.id, role: staffTable.role }).from(staffTable)
+    .where(and(eq(staffTable.id, callerStaffId), eq(staffTable.tenantId, tenantId)));
+  if (!callerStaff) { res.status(403).json({ error: "Unknown staff member" }); return; }
+  const officeRole = /^(admin|manager|owner|supervisor)$/i.test(callerStaff.role.trim());
 
   const now = new Date();
   const dow = now.getDay();
@@ -1035,22 +1129,83 @@ router.get("/work-order-appointments", async (req, res): Promise<void> => {
       status: workOrderAppointmentsTable.status,
       notes: workOrderAppointmentsTable.notes,
       staffId: workOrderAppointmentsTable.staffId,
+      staffIds: workOrderAppointmentsTable.staffIds,
       workOrderNumber: workOrdersTable.workOrderNumber,
       woStatus: workOrdersTable.status,
       itemDescription: workOrdersTable.itemDescription,
       customerName: workOrdersTable.contactName,
       priority: workOrdersTable.priority,
+      assignedStaffIds: workOrdersTable.assignedStaffIds,
     })
     .from(workOrderAppointmentsTable)
     .innerJoin(workOrdersTable, eq(workOrderAppointmentsTable.workOrderId, workOrdersTable.id))
     .where(and(
       eq(workOrderAppointmentsTable.tenantId, tenantId),
       gte(workOrderAppointmentsTable.startTime, startDate),
-      lte(workOrderAppointmentsTable.startTime, endDate),
+      lt(workOrderAppointmentsTable.startTime, endDate),
     ))
     .orderBy(workOrderAppointmentsTable.startTime);
 
-  res.json(rows);
+  // Also surface work orders that only carry the legacy single appointment
+  // date (no rows in the appointments table) so the calendar shows them too.
+  const legacy = await db
+    .select({
+      workOrderId: workOrdersTable.id,
+      appointmentDate: workOrdersTable.appointmentDate,
+      workOrderNumber: workOrdersTable.workOrderNumber,
+      woStatus: workOrdersTable.status,
+      itemDescription: workOrdersTable.itemDescription,
+      customerName: workOrdersTable.contactName,
+      priority: workOrdersTable.priority,
+      serviceType: workOrdersTable.serviceType,
+      assignedStaffIds: workOrdersTable.assignedStaffIds,
+    })
+    .from(workOrdersTable)
+    .where(and(
+      eq(workOrdersTable.tenantId, tenantId),
+      gte(workOrdersTable.appointmentDate, startDate),
+      lt(workOrdersTable.appointmentDate, endDate),
+      sql`not exists (select 1 from ${workOrderAppointmentsTable}
+            where ${workOrderAppointmentsTable.workOrderId} = ${workOrdersTable.id}
+              and ${workOrderAppointmentsTable.tenantId} = ${tenantId})`,
+    ));
+
+  const combined = [
+    ...rows,
+    ...legacy.map((wo) => ({
+      // Negative synthetic id so it can't collide with real appointment ids.
+      id: -wo.workOrderId,
+      workOrderId: wo.workOrderId,
+      appointmentType: (wo.serviceType ?? "repair").toLowerCase(),
+      startTime: wo.appointmentDate as Date,
+      endTime: null as Date | null,
+      status: wo.woStatus === "cancelled" ? "cancelled" : "scheduled",
+      notes: null as string | null,
+      staffId: null as number | null,
+      staffIds: null as number[] | null,
+      workOrderNumber: wo.workOrderNumber,
+      woStatus: wo.woStatus,
+      itemDescription: wo.itemDescription,
+      customerName: wo.customerName,
+      priority: wo.priority,
+      assignedStaffIds: wo.assignedStaffIds,
+    })),
+  ].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+  // Non-office staff only see visits assigned to them (visit team first,
+  // falling back to the work order's assigned technicians).
+  const visible = officeRole
+    ? combined
+    : combined.filter((r) => {
+        const visitTeam = Array.isArray(r.staffIds) && r.staffIds.length
+          ? r.staffIds
+          : r.staffId != null
+            ? [r.staffId]
+            : (Array.isArray(r.assignedStaffIds) ? (r.assignedStaffIds as number[]) : []);
+        return visitTeam.includes(callerStaffId);
+      });
+
+  res.json(visible);
 });
 
 /* ─── Work orders reports (monthly trend + breakdown) ─────────────────────── */

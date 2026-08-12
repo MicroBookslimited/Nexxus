@@ -260,6 +260,9 @@ export const workOrderAppointmentsTable = pgTable("work_order_appointments", {
   tenantId: integer("tenant_id").notNull(),
   workOrderId: integer("work_order_id").notNull().references(() => workOrdersTable.id, { onDelete: "cascade" }),
   staffId: integer("staff_id").references(() => staffTable.id),
+  // Full technician team for this visit (staffId keeps the primary tech for
+  // backwards compatibility).
+  staffIds: jsonb("staff_ids").$type<number[]>(),
   appointmentType: text("appointment_type").notNull().default("repair"),
   // assessment | repair | installation | site_visit | pickup | delivery | follow_up
   startTime: timestamp("start_time", { withTimezone: true }).notNull(),

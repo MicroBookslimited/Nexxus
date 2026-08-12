@@ -120,6 +120,16 @@ export default function JobQueueScreen() {
             {staff?.name}{isAdminRole(staff?.role) ? ' · Admin' : ''}
           </Text>
         </View>
+        <Pressable
+          testID="calendar-button"
+          onPress={() => router.push('/calendar')}
+          style={({ pressed }) => [
+            styles.iconButton,
+            { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1, marginRight: 8 },
+          ]}
+        >
+          <Feather name="calendar" size={18} color={colors.foreground} />
+        </Pressable>
         {isAdminRole(staff?.role) ? (
           <Pressable
             testID="create-job-button"
