@@ -1017,6 +1017,67 @@ const FollowUpBody = z.object({
  * emails the technician(s) and the customer.
  * Office action — requires an admin/manager/owner/supervisor x-staff-id.
  */
+// ─── Mark a completed job incomplete (admin) ─────────────────────────────────
+// Reopens field work: clears workCompletedAt (and any completion sign-off,
+// which is void once work resumes) and moves the status back to in_progress.
+router.post("/work-orders/:id/mark-incomplete", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!(await rejectNonAdminStaffHeader(req as never, res as never, tenantId))) return;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const actorId = getStaffId(req as never);
+  const [actor] = actorId != null
+    ? await db.select({ id: staffTable.id, name: staffTable.name }).from(staffTable)
+        .where(and(eq(staffTable.id, actorId), eq(staffTable.tenantId, tenantId)))
+    : [];
+
+  const result = await db.transaction(async (tx) => {
+    const [wo] = await tx.select().from(workOrdersTable)
+      .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)))
+      .for("update");
+    if (!wo) return { error: 404 as const, message: "Work order not found" };
+    if (wo.status === "collected" || wo.status === "cancelled") {
+      return { error: 400 as const, message: "This work order is closed — reopen is not available once it's collected or cancelled" };
+    }
+    if (!wo.workCompletedAt) {
+      return { error: 409 as const, message: "This job hasn't been marked complete yet" };
+    }
+
+    const hadSignOff = Boolean(wo.completionSignature);
+    const [row] = await tx.update(workOrdersTable)
+      .set({
+        workCompletedAt: null,
+        completionSignature: null,
+        completionSignedBy: null,
+        completionSignedAt: null,
+        completionVerifiedVia: null,
+        completionOtpHash: null,
+        completionOtpExpiresAt: null,
+        completionOtpAttempts: 0,
+        status: "in_progress",
+        updatedAt: new Date(),
+      })
+      .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)))
+      .returning();
+
+    await tx.insert(workOrderStatusHistoryTable).values({
+      tenantId, workOrderId: id,
+      fromStatus: wo.status, toStatus: "in_progress",
+      changedByStaffId: actor?.id ?? null,
+      changedByName: actor?.name ?? "Admin",
+      note: `Job marked incomplete by ${actor?.name ?? "admin"} — work reopened${hadSignOff ? " (previous customer sign-off voided)" : ""}`,
+    });
+    return { row };
+  });
+
+  if ("error" in result && typeof result.error === "number") {
+    res.status(result.error).json({ error: result.message }); return;
+  }
+  res.json("row" in result ? result.row : null);
+});
+
 router.post("/work-orders/:id/follow-up", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }

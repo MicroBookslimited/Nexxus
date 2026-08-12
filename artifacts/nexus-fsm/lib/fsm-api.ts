@@ -423,6 +423,12 @@ export function completeJob(staffId: number, id: number): Promise<FsmJob> {
   return request<FsmJob>(`/api/fsm/jobs/${id}/complete`, { method: 'POST', headers: staffHeaders(staffId) });
 }
 
+/** Admin: reopen a completed job — clears completion (and any sign-off) and
+ * moves it back to In Progress. */
+export function markJobIncomplete(staffId: number, id: number): Promise<unknown> {
+  return request(`/api/work-orders/${id}/mark-incomplete`, { method: 'POST', headers: staffHeaders(staffId) });
+}
+
 /* ───────────── Completion verification by email code ───────────── */
 
 export function sendCompletionOtp(

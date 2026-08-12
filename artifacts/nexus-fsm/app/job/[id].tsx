@@ -41,6 +41,7 @@ import {
   isAdminRole,
   canEditWorkOrders,
   updateWorkOrderStatus,
+  markJobIncomplete,
   type FsmJobHistory,
   type FsmJobNote,
 } from '@/lib/fsm-api';
@@ -127,6 +128,7 @@ export default function JobDetailScreen() {
   const [noteText, setNoteText] = useState('');
   const [completeSheetOpen, setCompleteSheetOpen] = useState(false);
   const [signOpen, setSignOpen] = useState(false);
+  const [markIncompleteOpen, setMarkIncompleteOpen] = useState(false);
   const [signName, setSignName] = useState('');
   // Email-OTP alternative to the drawn signature
   const [signMode, setSignMode] = useState<'draw' | 'otp'>('draw');
@@ -165,6 +167,11 @@ export default function JobDetailScreen() {
   const adminStatusMutation = useMutation({
     mutationFn: (status: string) => updateWorkOrderStatus(staff!.id, jobId, status),
     ...mutationOpts,
+  });
+  const markIncompleteMutation = useMutation({
+    mutationFn: () => markJobIncomplete(staff!.id, jobId),
+    onSuccess: () => { setMarkIncompleteOpen(false); notify('success'); invalidate(); },
+    onError: () => { setMarkIncompleteOpen(false); notify('error'); },
   });
   const travelMutation = useMutation({ mutationFn: () => startTravel(staff!.id, jobId), ...mutationOpts });
   const arriveMutation = useMutation({ mutationFn: () => arriveOnSite(staff!.id, jobId), ...mutationOpts });
@@ -540,6 +547,29 @@ export default function JobDetailScreen() {
                     </Pressable>
                   ))}
                 </View>
+                {job.workCompletedAt && !isClosed ? (
+                  <Pressable
+                    testID="mark-incomplete-button"
+                    disabled={markIncompleteMutation.isPending}
+                    onPress={() => setMarkIncompleteOpen(true)}
+                    style={[styles.card, styles.installLink, { backgroundColor: colors.card, borderColor: '#F59E0B66', marginTop: 8 }]}
+                  >
+                    <Feather name="rotate-ccw" size={18} color="#F59E0B" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.body, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
+                        Mark job incomplete
+                      </Text>
+                      <Text style={[styles.installLinkSub, { color: colors.mutedForeground }]}>
+                        Reopens the work and moves it back to In Progress
+                      </Text>
+                    </View>
+                    {markIncompleteMutation.isPending ? (
+                      <ActivityIndicator color="#F59E0B" />
+                    ) : (
+                      <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+                    )}
+                  </Pressable>
+                ) : null}
               </>
             ) : null}
 
@@ -719,7 +749,7 @@ export default function JobDetailScreen() {
                 primaryBtn('Arrive on Site', 'map-pin', () => arriveMutation.mutate(), arriveMutation.isPending, 'arrive-button')
               ) : phase === 'on_site' ? (
                 <>
-                  {isPaused
+                  {isPaused || !job.activeEntry
                     ? primaryBtn('Resume', 'play', () => resumeMutation.mutate(), resumeMutation.isPending, 'resume-button', '#F59E0B')
                     : (
                       <Pressable
@@ -821,6 +851,46 @@ export default function JobDetailScreen() {
         </Pressable>
       </Modal>
 
+      {/* Admin: confirm mark-incomplete */}
+      <Modal visible={markIncompleteOpen} transparent animationType="fade" onRequestClose={() => setMarkIncompleteOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setMarkIncompleteOpen(false)}>
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => undefined}
+          >
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Mark this job incomplete?</Text>
+            <Text style={[styles.rowLabel, { color: colors.mutedForeground, marginBottom: 12 }]}>
+              The job moves back to In Progress so the technician can continue working.
+              {job?.completionSignedAt ? ' The customer sign-off already captured will be voided and must be collected again.' : ''}
+            </Text>
+            <Pressable
+              testID="confirm-mark-incomplete-button"
+              disabled={markIncompleteMutation.isPending}
+              onPress={() => markIncompleteMutation.mutate()}
+              style={({ pressed }) => [styles.modalActionBtn, { backgroundColor: '#F59E0B', opacity: pressed || markIncompleteMutation.isPending ? 0.7 : 1 }]}
+            >
+              {markIncompleteMutation.isPending ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Feather name="rotate-ccw" size={18} color="#fff" />
+                  <Text style={[styles.actionText, { color: '#fff' }]}>Mark Incomplete</Text>
+                </>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={() => setMarkIncompleteOpen(false)}
+              style={({ pressed }) => [
+                styles.modalActionBtn,
+                { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1, marginTop: 10, opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text style={[styles.actionText, { color: colors.mutedForeground }]}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Complete: signature prompt sheet */}
       <Modal visible={completeSheetOpen} transparent animationType="fade" onRequestClose={() => setCompleteSheetOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setCompleteSheetOpen(false)}>
@@ -834,11 +904,22 @@ export default function JobDetailScreen() {
             </Text>
             <Pressable
               testID="capture-signoff-button"
-              onPress={() => { setCompleteSheetOpen(false); setSignOpen(true); }}
+              onPress={() => { setCompleteSheetOpen(false); setSignMode('draw'); setSignOpen(true); }}
               style={({ pressed }) => [styles.modalActionBtn, { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}
             >
               <Feather name="edit-3" size={18} color={colors.primaryForeground} />
               <Text style={[styles.actionText, { color: colors.primaryForeground }]}>Capture Sign-off</Text>
+            </Pressable>
+            <Pressable
+              testID="verify-by-code-button"
+              onPress={() => { setCompleteSheetOpen(false); setSignMode('otp'); setOtpCode(''); setOtpSentTo(null); setSignOpen(true); }}
+              style={({ pressed }) => [
+                styles.modalActionBtn,
+                { backgroundColor: colors.background, borderColor: colors.primary, borderWidth: 1, marginTop: 10, opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Feather name="mail" size={18} color={colors.primary} />
+              <Text style={[styles.actionText, { color: colors.primary }]}>Verify by Email Code</Text>
             </Pressable>
             <Pressable
               testID="complete-without-signature-button"
@@ -855,8 +936,8 @@ export default function JobDetailScreen() {
       </Modal>
 
       {/* Signature capture */}
-      <Modal visible={signOpen} transparent animationType="fade" onRequestClose={() => setSignOpen(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setSignOpen(false)}>
+      <Modal visible={signOpen} transparent animationType="fade" onRequestClose={() => { setSignOpen(false); setSignMode('draw'); setOtpCode(''); setOtpSentTo(null); }}>
+        <Pressable style={styles.modalBackdrop} onPress={() => { setSignOpen(false); setSignMode('draw'); setOtpCode(''); setOtpSentTo(null); }}>
           <Pressable
             style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: '88%' }]}
             onPress={() => undefined}
@@ -979,7 +1060,7 @@ export default function JobDetailScreen() {
                 </Pressable>
                 <Pressable
                   testID="switch-to-otp-button"
-                  onPress={() => setSignMode('otp')}
+                  onPress={() => { setSignMode('otp'); setOtpCode(''); setOtpSentTo(null); }}
                   style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, paddingVertical: 10, alignItems: 'center' as const }]}
                 >
                   <Text style={[styles.rowLabel, { color: colors.primary }]}>

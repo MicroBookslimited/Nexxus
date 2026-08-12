@@ -1,0 +1,34 @@
+# Dependencies & VCS
+node_modules/
+**/node_modules/
+.git/
+.cache/
+.pnpm-store/
+
+# Expo / build outputs
+.expo/
+**/.expo/
+**/dist/
+**/build/
+**/android/
+**/ios/
+**/web-build/
+
+# Replit uploads & generated media (not needed to build the app)
+attached_assets/
+screenshots/
+exports/
+docs/
+
+# Documents
+*.pdf
+*.zip
+*.apk
+*.aab
+*.mp4
+*.mov
+
+# Logs & local env
+*.log
+.env
+.env.*

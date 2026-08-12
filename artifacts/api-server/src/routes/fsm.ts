@@ -523,10 +523,12 @@ async function execTransition(
         if (!job.arrivedAt) {
           return { error: 400 as const, message: "Arrive on site before resuming work" };
         }
-        if (!openEntry || openEntry.entryType === "work") {
+        if (openEntry && openEntry.entryType === "work") {
           return { error: 400 as const, message: "Work is not paused" };
         }
-        await closeOpenEntry();
+        // No open entry happens when a completed job was reopened (completion
+        // closed the clock) — resuming simply starts a fresh work entry.
+        if (openEntry) await closeOpenEntry();
         await openNewEntry("work", null);
         historyNote = `${staff.name} resumed work`;
         break;
