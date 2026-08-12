@@ -160,7 +160,16 @@ export default function CreateJobScreen() {
                 <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>📍 {customer.directions}</Text>
               )}
             </View>
-            <Pressable hitSlop={10} onPress={() => setCustomer(null)}>
+            <Pressable
+              hitSlop={10}
+              onPress={() => {
+                // Clear the pre-filled contact fields too, so the old
+                // customer's name/phone don't linger on the new work order.
+                if (customer && contactName.trim() === customer.name) setContactName('');
+                if (customer && contactPhone.trim() === (customer.phone ?? customer.phone2 ?? '')) setContactPhone('');
+                setCustomer(null);
+              }}
+            >
               <Feather name="x-circle" size={20} color={colors.mutedForeground} />
             </Pressable>
           </View>

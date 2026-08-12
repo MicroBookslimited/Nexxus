@@ -123,9 +123,27 @@ export default function EditJobScreen() {
         address: newCust.address.trim() || undefined,
         directions: newCust.directions.trim() || undefined,
       }),
-    onSuccess: (c) => {
+    onSuccess: async (c) => {
       selectCustomer(c);
       setNewCust({ name: '', phone: '', phone2: '', email: '', address: '', directions: '' });
+      // Link the new customer to the work order right away, so "Save & link"
+      // does what it says even if the user never presses the main Save button.
+      try {
+        await updateWorkOrder(staff!.id, jobId, {
+          customerId: c.id,
+          contactEmail: c.email ?? null,
+          contactName: c.name,
+          contactPhone: c.phone ?? c.phone2 ?? '',
+        });
+        // Await the refetch so the job baseline reflects the new link before
+        // the main Save button re-enables (prevents a duplicate-email race).
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ['fsm-jobs'] }),
+          qc.invalidateQueries({ queryKey: ['fsm-job', staff?.id, jobId] }),
+        ]);
+      } catch (e) {
+        setError(`Customer saved, but linking to the work order failed: ${(e as Error).message}`);
+      }
     },
     onError: (e) => setError((e as Error).message),
   });
@@ -138,9 +156,11 @@ export default function EditJobScreen() {
         // Only send customerId when it changed, so an untouched edit doesn't
         // re-trigger the customer notification.
         ...(customer && customer.id !== job?.customerId ? { customerId: customer.id, contactEmail: customer.email ?? null } : {}),
-        ...(customerCleared && job?.customerId != null ? { customerId: null } : {}),
-        contactName: contactName.trim() || undefined,
-        contactPhone: contactPhone.trim() || undefined,
+        ...(customerCleared && job?.customerId != null ? { customerId: null, contactEmail: null } : {}),
+        // Send empty strings (not undefined) so clearing a contact field
+        // actually persists on the work order.
+        contactName: contactName.trim(),
+        contactPhone: contactPhone.trim(),
         itemDescription: itemDescription.trim(),
         problemDescription: problemDescription.trim(),
         serviceChannel: channel,
@@ -210,7 +230,17 @@ export default function EditJobScreen() {
                 </Text>
               )}
             </View>
-            <Pressable hitSlop={10} onPress={() => { setCustomer(null); setCustomerCleared(true); }}>
+            <Pressable
+              hitSlop={10}
+              onPress={() => {
+                // Clear the pre-filled contact fields too, so the old
+                // customer's name/phone don't linger on the work order.
+                if (customer && contactName.trim() === customer.name) setContactName('');
+                if (customer && contactPhone.trim() === (customer.phone ?? customer.phone2 ?? '')) setContactPhone('');
+                setCustomer(null);
+                setCustomerCleared(true);
+              }}
+            >
               <Feather name="x-circle" size={20} color={colors.mutedForeground} />
             </Pressable>
           </View>
@@ -308,7 +338,7 @@ export default function EditJobScreen() {
         {error ? <Text style={{ color: '#dc2626', marginTop: 12, fontSize: 13 }}>{error}</Text> : null}
 
         <Pressable
-          disabled={!canSubmit || !apptValid || saveMutation.isPending}
+          disabled={!canSubmit || !apptValid || saveMutation.isPending || newCustomerMutation.isPending}
           onPress={() => { setError(null); saveMutation.mutate(); }}
           style={[styles.submitBtn, { backgroundColor: canSubmit && apptValid ? colors.primary : colors.border }]}
         >
