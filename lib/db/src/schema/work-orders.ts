@@ -115,6 +115,12 @@ export const workOrdersTable = pgTable("work_orders", {
   completionOtpHash: text("completion_otp_hash"),
   completionOtpExpiresAt: timestamp("completion_otp_expires_at", { withTimezone: true }),
   completionOtpAttempts: integer("completion_otp_attempts").notNull().default(0),
+  // Manager override code required for "Complete Without Signature": the
+  // technician calls the office, a manager generates the code and reads it
+  // out. Stored hashed, short-lived.
+  managerCodeHash: text("manager_code_hash"),
+  managerCodeExpiresAt: timestamp("manager_code_expires_at", { withTimezone: true }),
+  managerCodeAttempts: integer("manager_code_attempts").notNull().default(0),
   // Guard so the post-completion review request is only emailed once.
   reviewEmailSentAt: timestamp("review_email_sent_at", { withTimezone: true }),
 

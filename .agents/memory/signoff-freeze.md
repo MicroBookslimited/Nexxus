@@ -14,3 +14,5 @@ Gotchas:
 - FSM sign modal: review content (summary + InstallFormPreview) scrolls in a bounded ScrollView; name input + SignaturePad + save stay static below it so the pad doesn't move under the pen.
 
 **Reopening (mark-incomplete):** admin-only `POST /work-orders/:id/mark-incomplete` clears workCompletedAt AND all completion sign-off/OTP fields (voids the sign-off, which un-freezes edits) and sets status in_progress in one row-locked txn. FSM `resume` intentionally accepts a job with NO open time entry (completion closed the clock) and starts a fresh work entry — don't "fix" that guard back.
+
+**Manager completion code:** completing WITHOUT a sign-off requires a 6-digit manager code (shared helper in api-server `lib/manager-code.ts` — kept OUT of routes to avoid the work-orders↔fsm circular import that crashes startup at module load). Admin/manager/owner are exempt. EVERY successful completion + mark-incomplete clears the code fields (one-time use, no reuse after reopen); generation is a conditional UPDATE requiring the job still open & uncompleted.

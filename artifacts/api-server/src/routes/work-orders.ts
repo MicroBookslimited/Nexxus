@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, eq, gte, lte, lt, desc, sql, inArray, isNull } from "drizzle-orm";
-import { createHmac } from "crypto";
+import { createHmac, randomInt } from "crypto";
+import { hashManagerCode, MANAGER_CODE_TTL_MINUTES } from "../lib/manager-code";
 import {
   db,
   workOrdersTable,
@@ -1017,6 +1018,53 @@ const FollowUpBody = z.object({
  * emails the technician(s) and the customer.
  * Office action — requires an admin/manager/owner/supervisor x-staff-id.
  */
+// ─── Manager completion code (admin) ─────────────────────────────────────────
+// A technician completing work WITHOUT a customer sign-off must enter this
+// code. The tech calls the office; a manager generates it here (visible once)
+// and reads it out over the phone.
+router.post("/work-orders/:id/manager-code", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!(await rejectNonAdminStaffHeader(req as never, res as never, tenantId))) return;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [wo] = await db.select({
+    id: workOrdersTable.id,
+    status: workOrdersTable.status,
+    workCompletedAt: workOrdersTable.workCompletedAt,
+  }).from(workOrdersTable)
+    .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
+  if (!wo) { res.status(404).json({ error: "Work order not found" }); return; }
+  if (wo.status === "collected" || wo.status === "cancelled") {
+    res.status(400).json({ error: "This work order is closed" }); return;
+  }
+  if (wo.workCompletedAt) {
+    res.status(400).json({ error: "This job is already completed" }); return;
+  }
+
+  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  // Conditional update: a concurrent completion between the read above and
+  // this write must not leave a valid code on an already-completed job.
+  const [updated] = await db.update(workOrdersTable)
+    .set({
+      managerCodeHash: hashManagerCode(code, id, tenantId),
+      managerCodeExpiresAt: new Date(Date.now() + MANAGER_CODE_TTL_MINUTES * 60_000),
+      managerCodeAttempts: 0,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(workOrdersTable.id, id),
+      eq(workOrdersTable.tenantId, tenantId),
+      isNull(workOrdersTable.workCompletedAt),
+      sql`${workOrdersTable.status} NOT IN ('collected', 'cancelled')`,
+    ))
+    .returning({ id: workOrdersTable.id });
+  if (!updated) { res.status(400).json({ error: "This job was just completed or closed — no code issued" }); return; }
+
+  res.json({ code, expiresMinutes: MANAGER_CODE_TTL_MINUTES });
+});
+
 // ─── Mark a completed job incomplete (admin) ─────────────────────────────────
 // Reopens field work: clears workCompletedAt (and any completion sign-off,
 // which is void once work resumes) and moves the status back to in_progress.
@@ -1056,6 +1104,9 @@ router.post("/work-orders/:id/mark-incomplete", async (req, res): Promise<void> 
         completionOtpHash: null,
         completionOtpExpiresAt: null,
         completionOtpAttempts: 0,
+        managerCodeHash: null,
+        managerCodeExpiresAt: null,
+        managerCodeAttempts: 0,
         status: "in_progress",
         updatedAt: new Date(),
       })

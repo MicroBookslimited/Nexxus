@@ -42,6 +42,7 @@ import {
   canEditWorkOrders,
   updateWorkOrderStatus,
   markJobIncomplete,
+  generateManagerCode,
   type FsmJobHistory,
   type FsmJobNote,
 } from '@/lib/fsm-api';
@@ -129,6 +130,8 @@ export default function JobDetailScreen() {
   const [completeSheetOpen, setCompleteSheetOpen] = useState(false);
   const [signOpen, setSignOpen] = useState(false);
   const [markIncompleteOpen, setMarkIncompleteOpen] = useState(false);
+  const [managerCodeOpen, setManagerCodeOpen] = useState(false);
+  const [managerCodeInput, setManagerCodeInput] = useState('');
   const [signName, setSignName] = useState('');
   // Email-OTP alternative to the drawn signature
   const [signMode, setSignMode] = useState<'draw' | 'otp'>('draw');
@@ -170,7 +173,7 @@ export default function JobDetailScreen() {
   });
   const markIncompleteMutation = useMutation({
     mutationFn: () => markJobIncomplete(staff!.id, jobId),
-    onSuccess: () => { setMarkIncompleteOpen(false); notify('success'); invalidate(); },
+    onSuccess: () => { setMarkIncompleteOpen(false); managerCodeGenMutation.reset(); notify('success'); invalidate(); },
     onError: () => { setMarkIncompleteOpen(false); notify('error'); },
   });
   const travelMutation = useMutation({ mutationFn: () => startTravel(staff!.id, jobId), ...mutationOpts });
@@ -181,7 +184,16 @@ export default function JobDetailScreen() {
     onError: () => notify('error'),
   });
   const resumeMutation = useMutation({ mutationFn: () => resumeJob(staff!.id, jobId), ...mutationOpts });
-  const completeMutation = useMutation({ mutationFn: () => completeJob(staff!.id, jobId), ...mutationOpts });
+  const completeMutation = useMutation({
+    mutationFn: (managerCode?: string) => completeJob(staff!.id, jobId, managerCode),
+    onSuccess: () => { setManagerCodeOpen(false); setManagerCodeInput(''); notify('success'); invalidate(); },
+    onError: () => notify('error'),
+  });
+  const managerCodeGenMutation = useMutation({
+    mutationFn: () => generateManagerCode(staff!.id, jobId),
+    onSuccess: () => notify('success'),
+    onError: () => notify('error'),
+  });
   const noteMutation = useMutation({
     mutationFn: (content: string) => addJobNote(staff!.id, jobId, content),
     onSuccess: () => { setNoteOpen(false); setNoteText(''); notify('success'); invalidate(); },
@@ -205,7 +217,7 @@ export default function JobDetailScreen() {
       setSignName('');
       notify('success');
       invalidate();
-      completeMutation.mutate();
+      completeMutation.mutate(undefined);
     },
     onError: () => { notify('error'); invalidate(); },
   });
@@ -225,7 +237,7 @@ export default function JobDetailScreen() {
       setSignName('');
       notify('success');
       invalidate();
-      completeMutation.mutate();
+      completeMutation.mutate(undefined);
     },
     onError: () => notify('error'),
   });
@@ -547,6 +559,48 @@ export default function JobDetailScreen() {
                     </Pressable>
                   ))}
                 </View>
+                {!job.workCompletedAt && !isClosed ? (
+                  <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 8 }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <Feather name="key" size={18} color={colors.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.body, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
+                          Completion code
+                        </Text>
+                        <Text style={[styles.installLinkSub, { color: colors.mutedForeground }]}>
+                          For technicians completing without a customer sign-off — read it out over the phone
+                        </Text>
+                      </View>
+                    </View>
+                    {managerCodeGenMutation.data ? (
+                      <View style={{ alignItems: 'center', marginTop: 10 }}>
+                        <Text style={{ fontSize: 28, letterSpacing: 8, fontFamily: 'Inter_700Bold', color: colors.foreground }}>
+                          {managerCodeGenMutation.data.code}
+                        </Text>
+                        <Text style={[styles.installLinkSub, { color: colors.mutedForeground }]}>
+                          Valid for {managerCodeGenMutation.data.expiresMinutes} minutes
+                        </Text>
+                      </View>
+                    ) : null}
+                    <Pressable
+                      testID="generate-manager-code-button"
+                      disabled={managerCodeGenMutation.isPending}
+                      onPress={() => managerCodeGenMutation.mutate()}
+                      style={({ pressed }) => [
+                        styles.modalActionBtn,
+                        { backgroundColor: colors.primary, marginTop: 10, opacity: pressed || managerCodeGenMutation.isPending ? 0.7 : 1 },
+                      ]}
+                    >
+                      {managerCodeGenMutation.isPending ? (
+                        <ActivityIndicator color={colors.primaryForeground} />
+                      ) : (
+                        <Text style={[styles.actionText, { color: colors.primaryForeground }]}>
+                          {managerCodeGenMutation.data ? 'Generate New Code' : 'Generate Code'}
+                        </Text>
+                      )}
+                    </Pressable>
+                  </View>
+                ) : null}
                 {job.workCompletedAt && !isClosed ? (
                   <Pressable
                     testID="mark-incomplete-button"
@@ -768,7 +822,7 @@ export default function JobDetailScreen() {
                   {primaryBtn(
                     'Complete Work',
                     'check-circle',
-                    () => (job.completionSignedAt ? completeMutation.mutate() : setCompleteSheetOpen(true)),
+                    () => (job.completionSignedAt ? completeMutation.mutate(undefined) : setCompleteSheetOpen(true)),
                     completeMutation.isPending,
                     'complete-button',
                   )}
@@ -851,6 +905,70 @@ export default function JobDetailScreen() {
         </Pressable>
       </Modal>
 
+      {/* Manager completion code entry (complete without signature) */}
+      <Modal visible={managerCodeOpen} transparent animationType="fade" onRequestClose={() => setManagerCodeOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setManagerCodeOpen(false)}>
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => undefined}
+          >
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Manager approval needed</Text>
+            <Text style={[styles.rowLabel, { color: colors.mutedForeground, marginBottom: 12 }]}>
+              Completing without a customer sign-off needs a completion code. Call the office — a manager can generate the code and read it out to you.
+            </Text>
+            <TextInput
+              testID="manager-code-input"
+              style={[styles.noteInput, {
+                backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground,
+                textAlign: 'center', fontSize: 22, letterSpacing: 8, minHeight: 52,
+              }]}
+              value={managerCodeInput}
+              onChangeText={(t) => setManagerCodeInput(t.replace(/\D/g, '').slice(0, 6))}
+              keyboardType="number-pad"
+              maxLength={6}
+              placeholder="••••••"
+              placeholderTextColor={colors.mutedForeground}
+            />
+            {managerCodeOpen && completeMutation.error ? (
+              <Text style={[styles.rowLabel, { color: '#EF4444', marginTop: 8, textAlign: 'center' }]}>
+                {completeMutation.error instanceof Error ? completeMutation.error.message : 'That code was not accepted'}
+              </Text>
+            ) : null}
+            <Pressable
+              testID="manager-code-complete-button"
+              disabled={managerCodeInput.length !== 6 || completeMutation.isPending}
+              onPress={() => completeMutation.mutate(managerCodeInput)}
+              style={({ pressed }) => [
+                styles.modalActionBtn,
+                {
+                  backgroundColor: colors.primary,
+                  marginTop: 14,
+                  opacity: managerCodeInput.length !== 6 || completeMutation.isPending || pressed ? 0.6 : 1,
+                },
+              ]}
+            >
+              {completeMutation.isPending ? (
+                <ActivityIndicator color={colors.primaryForeground} />
+              ) : (
+                <>
+                  <Feather name="check-circle" size={18} color={colors.primaryForeground} />
+                  <Text style={[styles.actionText, { color: colors.primaryForeground }]}>Complete Work</Text>
+                </>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={() => setManagerCodeOpen(false)}
+              style={({ pressed }) => [
+                styles.modalActionBtn,
+                { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1, marginTop: 10, opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text style={[styles.actionText, { color: colors.mutedForeground }]}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Admin: confirm mark-incomplete */}
       <Modal visible={markIncompleteOpen} transparent animationType="fade" onRequestClose={() => setMarkIncompleteOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setMarkIncompleteOpen(false)}>
@@ -866,7 +984,7 @@ export default function JobDetailScreen() {
             <Pressable
               testID="confirm-mark-incomplete-button"
               disabled={markIncompleteMutation.isPending}
-              onPress={() => markIncompleteMutation.mutate()}
+              onPress={() => markIncompleteMutation.mutate(undefined)}
               style={({ pressed }) => [styles.modalActionBtn, { backgroundColor: '#F59E0B', opacity: pressed || markIncompleteMutation.isPending ? 0.7 : 1 }]}
             >
               {markIncompleteMutation.isPending ? (
@@ -923,7 +1041,15 @@ export default function JobDetailScreen() {
             </Pressable>
             <Pressable
               testID="complete-without-signature-button"
-              onPress={() => { setCompleteSheetOpen(false); completeMutation.mutate(); }}
+              onPress={() => {
+                setCompleteSheetOpen(false);
+                if (isAdminRole(staff?.role)) {
+                  completeMutation.mutate(undefined);
+                } else {
+                  setManagerCodeInput('');
+                  setManagerCodeOpen(true);
+                }
+              }}
               style={({ pressed }) => [
                 styles.modalActionBtn,
                 { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1, marginTop: 10, opacity: pressed ? 0.7 : 1 },

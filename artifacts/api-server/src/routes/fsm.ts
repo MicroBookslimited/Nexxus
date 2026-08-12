@@ -23,6 +23,7 @@ import {
   sendCompletionOtpEmail, sendWorkOrderReviewEmail,
 } from "../lib/work-order-mail";
 import { createHash, randomInt } from "node:crypto";
+import { hashManagerCode, MANAGER_CODE_MAX_ATTEMPTS } from "../lib/manager-code";
 import { getSetting } from "./settings";
 
 /**
@@ -412,6 +413,7 @@ function minutesBetween(a: Date, b: Date): number {
 
 type ExecAction = "start-travel" | "arrive" | "pause" | "resume" | "complete";
 
+
 /**
  * Shared field-execution transition. Row-locks the job, validates the phase,
  * manages the open time entry, and writes a history row for the dispatcher.
@@ -433,6 +435,14 @@ async function execTransition(
     const parsed = PauseBody.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: "A pause reason is required" }); return; }
     pauseReason = parsed.data.reason;
+  }
+
+  let managerCode: string | null = null;
+  if (action === "complete") {
+    const body = req.body as { managerCode?: unknown } | null | undefined;
+    if (typeof body?.managerCode === "string" && /^\d{6}$/.test(body.managerCode)) {
+      managerCode = body.managerCode;
+    }
   }
 
   const result = await db.transaction(async (tx) => {
@@ -542,6 +552,44 @@ async function execTransition(
             message: `This job is marked "${job.status === "awaiting_parts" ? "awaiting parts" : "on hold"}" in the POS — the office must clear that before it can be completed`,
           };
         }
+        // Completing WITHOUT a customer sign-off requires a manager code
+        // (admins/managers/owners are exempt — they ARE management).
+        if (!job.completionSignature && !isFsmAdmin(staff)) {
+          if (!managerCode) {
+            return { error: 400 as const, code: "MANAGER_CODE_REQUIRED" as const, message: "A manager completion code is required to complete without a customer sign-off — call the office to get one" };
+          }
+          const validCode =
+            job.managerCodeHash != null &&
+            job.managerCodeExpiresAt != null &&
+            job.managerCodeExpiresAt > now &&
+            job.managerCodeAttempts < MANAGER_CODE_MAX_ATTEMPTS &&
+            job.managerCodeHash === hashManagerCode(managerCode, job.id, tenantId);
+          if (!validCode) {
+            if (!job.managerCodeHash || !job.managerCodeExpiresAt) {
+              return { error: 400 as const, message: "No completion code has been issued — ask a manager to generate one" };
+            }
+            if (job.managerCodeExpiresAt <= now) {
+              return { error: 400 as const, message: "The completion code has expired — ask a manager for a new one" };
+            }
+            if (job.managerCodeAttempts >= MANAGER_CODE_MAX_ATTEMPTS) {
+              return { error: 400 as const, message: "Too many wrong attempts — ask a manager for a new code" };
+            }
+            // Wrong code: count the attempt against this generation.
+            await tx.update(workOrdersTable)
+              .set({ managerCodeAttempts: sql`${workOrdersTable.managerCodeAttempts} + 1` })
+              .where(and(
+                eq(workOrdersTable.id, job.id),
+                eq(workOrdersTable.tenantId, tenantId),
+                eq(workOrdersTable.managerCodeHash, job.managerCodeHash),
+              ));
+            return { error: 400 as const, message: "That completion code is incorrect" };
+          }
+        }
+        // Any successful completion consumes an outstanding manager code so a
+        // stale approval can't survive a reopen (mark-incomplete) cycle.
+        patch.managerCodeHash = null;
+        patch.managerCodeExpiresAt = null;
+        patch.managerCodeAttempts = 0;
         await closeOpenEntry();
         patch.workCompletedAt = now;
         if (job.status !== "ready") { patch.status = "ready"; toStatus = "ready"; }
@@ -568,7 +616,10 @@ async function execTransition(
 
   if ("error" in result) {
     if (result.error === 404) { res.status(404).json({ error: "Job not found" }); return; }
-    res.status(400).json({ error: result.message ?? "Cannot perform this action" });
+    res.status(400).json({
+      error: result.message ?? "Cannot perform this action",
+      ...("code" in result && result.code ? { code: result.code } : {}),
+    });
     return;
   }
   res.json(toJob(result.row));

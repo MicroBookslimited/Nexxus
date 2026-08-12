@@ -419,8 +419,23 @@ export function resumeJob(staffId: number, id: number): Promise<FsmJob> {
   return request<FsmJob>(`/api/fsm/jobs/${id}/resume`, { method: 'POST', headers: staffHeaders(staffId) });
 }
 
-export function completeJob(staffId: number, id: number): Promise<FsmJob> {
-  return request<FsmJob>(`/api/fsm/jobs/${id}/complete`, { method: 'POST', headers: staffHeaders(staffId) });
+/** Complete work. Without a customer sign-off, non-management technicians
+ * must supply a 6-digit manager code (obtained by calling the office). */
+export function completeJob(staffId: number, id: number, managerCode?: string): Promise<FsmJob> {
+  return request<FsmJob>(`/api/fsm/jobs/${id}/complete`, {
+    method: 'POST',
+    headers: staffHeaders(staffId),
+    body: JSON.stringify(managerCode ? { managerCode } : {}),
+  });
+}
+
+/** Admin: generate the one-time manager completion code to read out to the
+ * technician over the phone. */
+export function generateManagerCode(
+  staffId: number,
+  id: number,
+): Promise<{ code: string; expiresMinutes: number }> {
+  return request(`/api/work-orders/${id}/manager-code`, { method: 'POST', headers: staffHeaders(staffId) });
 }
 
 /** Admin: reopen a completed job — clears completion (and any sign-off) and
