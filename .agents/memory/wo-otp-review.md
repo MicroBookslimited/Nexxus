@@ -8,3 +8,5 @@ description: Email-OTP sign-off alternative and post-completion review flow on w
 - Review-request email uses an atomic `reviewEmailSentAt IS NULL` claim; on send failure the claim is released so it can retry. Public review POST is one-per-WO via unique index + onConflictDoNothing.
 - Pre-start gating: install-form PATCH and allocation runs/remarks edits are rejected server-side until `arrivedAt`; dispatch (allocation create) is deliberately un-gated (office stocks the van pre-arrival).
 - estimatedMinutes is nullable — clients clearing the estimate must send `null`, not 0 (API rejects 0).
+
+**Signed-completion email:** dispatch is guarded by an atomic one-shot claim column (`completion_email_sent_at`, manual DDL both DBs) because complete-transition, signature, and OTP routes can race on stale ctx rows — every path just attempts `emailSignedCopy(id)` which re-reads fresh state, requires signed+completed, claims, then sends. Attachments: signed WO PDF + best-effort photos PDF (PDFKit embeds JPEG/PNG only, ~12MB raw photo budget + 18MB rendered cap) — photo failures must NEVER block the signed copy.

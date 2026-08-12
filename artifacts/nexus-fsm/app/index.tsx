@@ -121,6 +121,16 @@ export default function JobQueueScreen() {
           </Text>
         </View>
         <Pressable
+          testID="shift-button"
+          onPress={() => router.push('/shift')}
+          style={({ pressed }) => [
+            styles.iconButton,
+            { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1, marginRight: 8 },
+          ]}
+        >
+          <Feather name="dollar-sign" size={18} color={colors.foreground} />
+        </Pressable>
+        <Pressable
           testID="calendar-button"
           onPress={() => router.push('/calendar')}
           style={({ pressed }) => [

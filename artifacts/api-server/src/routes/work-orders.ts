@@ -14,6 +14,8 @@ import {
   staffTable,
   productsTable,
   workOrderAllocationsTable,
+  workOrderPaymentsTable,
+  cashSessionsTable,
 } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
@@ -896,6 +898,126 @@ router.get("/work-orders/:id/history", async (req, res): Promise<void> => {
     .where(and(eq(workOrderStatusHistoryTable.workOrderId, id), eq(workOrderStatusHistoryTable.tenantId, tenantId)))
     .orderBy(workOrderStatusHistoryTable.createdAt);
   res.json(rows);
+});
+
+/* ─── Onsite payments (technician cash collection) ──────────────────────────── */
+
+router.get("/work-orders/:id/payments", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const rows = await db
+    .select()
+    .from(workOrderPaymentsTable)
+    .where(and(eq(workOrderPaymentsTable.workOrderId, id), eq(workOrderPaymentsTable.tenantId, tenantId)))
+    .orderBy(desc(workOrderPaymentsTable.createdAt));
+  res.json(rows);
+});
+
+const RecordPaymentBody = z.object({
+  amount: z.number().positive(),
+  method: z.enum(["cash", "card", "transfer"]),
+  reference: z.string().max(200).optional(),
+});
+
+/* Record money collected on a work order. Any staff member (technicians
+ * included) may record a payment, but they MUST identify themselves via
+ * x-staff-id and — like a POS cashier — must have an OPEN cash shift so the
+ * money is tracked to their drawer. Payments stay allowed after customer
+ * sign-off (collection usually happens after the work is done). */
+router.post("/work-orders/:id/payments", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = RecordPaymentBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request body" }); return; }
+  // Amounts are money — normalize to cents to avoid float drift.
+  const amount = Math.round(parsed.data.amount * 100) / 100;
+  if (amount < 0.01) { res.status(400).json({ error: "Amount is too small" }); return; }
+
+  const staffIdRaw = req.headers["x-staff-id"];
+  const staffId = parseInt(String(staffIdRaw ?? ""), 10);
+  const [staff] = Number.isFinite(staffId)
+    ? await db.select({ id: staffTable.id, name: staffTable.name, role: staffTable.role }).from(staffTable)
+        .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)))
+    : [];
+  if (!staff) { res.status(403).json({ error: "Staff identification required to record a payment" }); return; }
+  const isManagerial = /^(admin|manager|owner|supervisor)$/i.test(staff.role.trim());
+
+  const result = await db.transaction(async (tx) => {
+    // Same rule as the POS: money can only be taken on an open cash shift.
+    // Locked inside the transaction so the shift can't close underneath the
+    // payment insert (close's UPDATE blocks on this row lock).
+    const [openSession] = await tx.select({ id: cashSessionsTable.id }).from(cashSessionsTable)
+      .where(and(
+        eq(cashSessionsTable.tenantId, tenantId),
+        eq(cashSessionsTable.status, "open"),
+        eq(cashSessionsTable.staffId, staff.id),
+      ))
+      .limit(1)
+      .for("update");
+    if (!openSession) {
+      return { error: "Open your cash shift before collecting payments", status: 400 as const, code: "SHIFT_REQUIRED" };
+    }
+
+    const [wo] = await tx.select({
+      id: workOrdersTable.id,
+      status: workOrdersTable.status,
+      total: workOrdersTable.total,
+      depositPaid: workOrdersTable.depositPaid,
+      assignedStaffId: workOrdersTable.assignedStaffId,
+      assignedStaffIds: workOrdersTable.assignedStaffIds,
+    })
+      .from(workOrdersTable)
+      .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)))
+      .for("update");
+    if (!wo) return { error: "Work order not found", status: 404 as const };
+    if (wo.status === "cancelled") return { error: "This work order is cancelled", status: 400 as const };
+
+    // Technicians may only collect on jobs assigned to them; office roles may
+    // collect on any job (walk-in collection at the counter).
+    const assignedIds = new Set<number>([
+      ...(wo.assignedStaffId != null ? [wo.assignedStaffId] : []),
+      ...((Array.isArray(wo.assignedStaffIds) ? wo.assignedStaffIds : []) as number[]),
+    ]);
+    if (!isManagerial && !assignedIds.has(staff.id)) {
+      return { error: "You can only collect payments on jobs assigned to you", status: 403 as const };
+    }
+
+    const balance = Math.round((Number(wo.total ?? 0) - Number(wo.depositPaid ?? 0)) * 100) / 100;
+    if (balance <= 0) return { error: "This work order is already fully paid", status: 400 as const };
+    if (amount > balance + 0.005) {
+      return { error: `Amount exceeds the outstanding balance of ${balance.toFixed(2)}`, status: 400 as const };
+    }
+
+    const [payment] = await tx.insert(workOrderPaymentsTable).values({
+      tenantId,
+      workOrderId: id,
+      staffId: staff.id,
+      staffName: staff.name,
+      amount,
+      method: parsed.data.method,
+      reference: parsed.data.reference?.trim() || null,
+    }).returning();
+
+    // depositPaid doubles as the running "amount paid" on the work order.
+    await tx.update(workOrdersTable)
+      .set({ depositPaid: sql`${workOrdersTable.depositPaid} + ${amount}`, updatedAt: new Date() })
+      .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
+
+    return { payment, newBalance: Math.round((balance - amount) * 100) / 100 };
+  });
+
+  if ("error" in result && result.error) {
+    res.status(result.status).json({ error: result.error, ...("code" in result && result.code ? { code: result.code } : {}) });
+    return;
+  }
+  res.status(201).json(result);
 });
 
 /* ─── Appointments ───────────────────────────────────────────────────────────── */

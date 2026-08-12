@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, gte, lte, isNotNull, isNull, or, sql, desc } from "drizzle-orm";
-import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable, giftVouchersTable, layawayPaymentsTable, staffTable } from "@workspace/db";
+import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable, giftVouchersTable, layawayPaymentsTable, staffTable, workOrderPaymentsTable } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { logAudit } from "./audit";
@@ -177,6 +177,45 @@ async function computeLayawayCashIn(
   return rows.reduce((s, r) => s + Number(r.amount ?? 0), 0);
 }
 
+/**
+ * Money collected on work orders in the field (technician onsite payments)
+ * during a window. Same pattern as layaway cash: these payments create no
+ * order row, so they must be added to expected cash explicitly. STRICTLY
+ * scoped by the collecting staff member — recording a payment requires that
+ * staff's own open session, so the money is physically in THEIR drawer. A
+ * staffless (tenant-wide office) session must NOT absorb field collections,
+ * or the office drawer shows false overages.
+ */
+async function computeWoTenderIn(
+  tenantId: number,
+  windowStart: Date,
+  windowEnd: Date | null,
+  staffId: number | null | undefined,
+  method: "cash" | "card" | "transfer",
+): Promise<number> {
+  if (!staffId) return 0;
+  const rows = await db
+    .select({ amount: workOrderPaymentsTable.amount })
+    .from(workOrderPaymentsTable)
+    .where(and(
+      eq(workOrderPaymentsTable.tenantId, tenantId),
+      eq(workOrderPaymentsTable.method, method),
+      gte(workOrderPaymentsTable.createdAt, windowStart),
+      ...(windowEnd ? [lte(workOrderPaymentsTable.createdAt, windowEnd)] : []),
+      eq(workOrderPaymentsTable.staffId, staffId),
+    ));
+  return rows.reduce((s, r) => s + Number(r.amount ?? 0), 0);
+}
+
+async function computeWoCashIn(
+  tenantId: number,
+  windowStart: Date,
+  windowEnd: Date | null,
+  staffId: number | null | undefined,
+): Promise<number> {
+  return computeWoTenderIn(tenantId, windowStart, windowEnd, staffId, "cash");
+}
+
 router.get("/cash/sessions", async (req, res): Promise<void> => {
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
@@ -286,6 +325,8 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
 
     // Layaway deposits/installments collected in cash also enter the drawer.
     const layawayCashIn = await computeLayawayCashIn(tenantId, windowStart, windowEnd, s.staffId);
+    // Cash collected onsite on work orders (field technicians) too.
+    const woCashIn = await computeWoCashIn(tenantId, windowStart, windowEnd, s.staffId);
 
     // For split payments, attribute each portion to its correct column so
     // Cash and Card Slips totals reflect exactly what each tender received.
@@ -313,6 +354,7 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       + splitCash
       + voucherCashIn
       + layawayCashIn
+      + woCashIn
       - totalPayouts;
 
     return {
@@ -330,8 +372,10 @@ router.get("/cash/register-report", async (req, res): Promise<void> => {
       voucherCashIn,
       // Cash collected on layaways (deposits/installments, net of cash refunds).
       layawayCashIn,
-      // Cash = pure cash orders + cash portion of split payments + voucher sales + layaway cash
-      cashSales:    sales.cashSales - sales.refundedCash + splitCash + voucherCashIn + layawayCashIn,
+      // Cash collected onsite on work orders by this staff member.
+      woCashIn,
+      // Cash = pure cash orders + cash portion of split payments + voucher sales + layaway cash + work-order cash
+      cashSales:    sales.cashSales - sales.refundedCash + splitCash + voucherCashIn + layawayCashIn + woCashIn,
       // Card = pure card orders + card portion of split payments
       cardSales:    sales.cardSales - sales.refundedCard + splitCard,
       creditSales:  sales.creditSales,
@@ -427,12 +471,17 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
   const voucherCashIn = issuedVouchers.reduce((s, v) => s + Number(v.amountPaid ?? v.originalValue ?? 0), 0);
   // Layaway deposits/installments collected in cash also enter the drawer.
   const layawayCashIn = await computeLayawayCashIn(tenantId, session.openedAt, null, session.staffId);
-  // Expected = opening float + net cash sales (pure cash, net of refunds) + split cash portions + voucher cash + layaway cash − payouts
-  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn + layawayCashIn - totalPayouts;
+  const woCashIn = await computeWoCashIn(tenantId, session.openedAt, null, session.staffId);
+  // Card/transfer taken in the field (mobile card machine): not drawer cash,
+  // but the close screen needs them to declare actualCard/actualOther honestly.
+  const woCardIn = await computeWoTenderIn(tenantId, session.openedAt, null, session.staffId, "card");
+  const woTransferIn = await computeWoTenderIn(tenantId, session.openedAt, null, session.staffId, "transfer");
+  // Expected = opening float + net cash sales (pure cash, net of refunds) + split cash portions + voucher cash + layaway cash + work-order onsite cash − payouts
+  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn + layawayCashIn + woCashIn - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, new Date());
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, new Date());
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, layawayCashIn, itemSummary, creditOrders });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, layawayCashIn, woCashIn, woCardIn, woTransferIn, itemSummary, creditOrders });
 });
 
 router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
@@ -502,11 +551,12 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
   const voucherCashIn = issuedVouchers.reduce((s, v) => s + Number(v.amountPaid ?? v.originalValue ?? 0), 0);
   // Layaway deposits/installments collected in cash also enter the drawer.
   const layawayCashIn = await computeLayawayCashIn(tenantId, session.openedAt, closedAt, session.staffId);
-  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn + layawayCashIn - totalPayouts;
+  const woCashIn = await computeWoCashIn(tenantId, session.openedAt, closedAt, session.staffId);
+  const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn + layawayCashIn + woCashIn - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, closedAt);
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, closedAt);
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, layawayCashIn, itemSummary, creditOrders });
+  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, layawayCashIn, woCashIn, itemSummary, creditOrders });
 });
 
 router.post("/cash/sessions", async (req, res): Promise<void> => {
@@ -553,6 +603,34 @@ router.post("/cash/sessions", async (req, res): Promise<void> => {
   res.status(201).json(session);
 });
 
+/* ─── Session ownership guard ───
+ * A request that identifies a NON-managerial staff member (x-staff-id) may
+ * only touch that staff member's own session. Requests without the header
+ * (web POS office/dashboard) and managerial staff are unrestricted — matches
+ * the existing web POS behavior while blocking a technician from paying out
+ * of or closing someone else's drawer. */
+async function allowSessionMutation(
+  req: { headers: Record<string, string | undefined> },
+  res: { status: (n: number) => { json: (b: object) => void } },
+  tenantId: number,
+  session: { staffId: number | null },
+): Promise<boolean> {
+  const raw = req.headers["x-staff-id"];
+  if (raw == null || raw === "") return true;
+  const staffId = parseInt(String(raw), 10);
+  const [s] = Number.isFinite(staffId)
+    ? await db.select({ id: staffTable.id, role: staffTable.role }).from(staffTable)
+        .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId))).limit(1)
+    : [];
+  if (!s) { res.status(403).json({ error: "Unknown staff member" }); return false; }
+  if (MANAGER_ROLES.has((s.role ?? "").trim().toLowerCase())) return true;
+  if (session.staffId !== s.id) {
+    res.status(403).json({ error: "This shift belongs to another staff member" });
+    return false;
+  }
+  return true;
+}
+
 router.post("/cash/sessions/:id/payouts", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
@@ -570,6 +648,7 @@ router.post("/cash/sessions/:id/payouts", async (req, res): Promise<void> => {
     .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId)));
 
   if (!session) { res.status(404).json({ error: "Open session not found" }); return; }
+  if (!(await allowSessionMutation(req as never, res, tenantId, session))) return;
 
   const [payout] = await db
     .insert(cashPayoutsTable)
@@ -634,6 +713,7 @@ router.post("/cash/sessions/:id/close", async (req, res): Promise<void> => {
     .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.status, "open"), eq(cashSessionsTable.tenantId, tenantId)));
 
   if (!session) { res.status(404).json({ error: "Open session not found" }); return; }
+  if (!(await allowSessionMutation(req as never, res, tenantId, session))) return;
 
   const [closed] = await db
     .update(cashSessionsTable)
@@ -690,7 +770,8 @@ router.post("/cash/sessions/:id/admin-close", async (req, res): Promise<void> =>
     .reduce((s, r) => s + Number(r.splitCashAmount ?? 0), 0);
   // Layaway deposits/installments collected in cash also enter the drawer.
   const layawayCashIn = await computeLayawayCashIn(tenantId, session.openedAt, null, session.staffId);
-  const expectedCash = session.openingCash + (sales.cashSales - sales.refundedCash) + splitCashSales + layawayCashIn - totalPayouts;
+  const woCashIn = await computeWoCashIn(tenantId, session.openedAt, null, session.staffId);
+  const expectedCash = session.openingCash + (sales.cashSales - sales.refundedCash) + splitCashSales + layawayCashIn + woCashIn - totalPayouts;
 
   const [closed] = await db
     .update(cashSessionsTable)

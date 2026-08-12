@@ -123,6 +123,10 @@ export const workOrdersTable = pgTable("work_orders", {
   managerCodeAttempts: integer("manager_code_attempts").notNull().default(0),
   // Guard so the post-completion review request is only emailed once.
   reviewEmailSentAt: timestamp("review_email_sent_at", { withTimezone: true }),
+  /** Atomic claim: set once when the signed-completion email is dispatched, so
+   * the complete transition and the sign-off/OTP routes can all safely attempt
+   * the send without racing or duplicating. */
+  completionEmailSentAt: timestamp("completion_email_sent_at", { withTimezone: true }),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -300,3 +304,24 @@ export const workOrderReviewsTable = pgTable("work_order_reviews", {
 }));
 
 export type WorkOrderReview = typeof workOrderReviewsTable.$inferSelect;
+
+// ─── Work Order Payments ──────────────────────────────────────────────────────
+// Onsite money collection ledger (technicians in the field or office staff).
+// Cash rows feed the collector's cash-session expected-cash calculation (scoped
+// by staffId + createdAt window, same pattern as layaway payments).
+export const workOrderPaymentsTable = pgTable("work_order_payments", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  workOrderId: integer("work_order_id").notNull().references(() => workOrdersTable.id, { onDelete: "cascade" }),
+  staffId: integer("staff_id"),
+  staffName: text("staff_name"),
+  amount: real("amount").notNull(),
+  method: text("method").notNull(), // cash | card | transfer
+  reference: text("reference"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  woIdx: index("work_order_payments_wo_idx").on(t.tenantId, t.workOrderId),
+  staffTimeIdx: index("work_order_payments_staff_time_idx").on(t.tenantId, t.staffId, t.createdAt),
+}));
+
+export type WorkOrderPayment = typeof workOrderPaymentsTable.$inferSelect;

@@ -841,17 +841,10 @@ router.post("/fsm/jobs/:id/signature", async (req, res): Promise<void> => {
   }
   res.json({ ok: true, completionSignedBy: parsed.data.signedBy, completionSignedAt: now });
 
-  // The signed copy is only emailed once work is durably completed. In the
-  // normal mobile flow (sign → complete) the complete transition sends it;
-  // this covers signing AFTER completion.
-  if (ctx.job.workCompletedAt) {
-    emailSignedCopy(ctx.tenantId, {
-      ...ctx.job,
-      completionSignature: parsed.data.image,
-      completionSignedBy: parsed.data.signedBy,
-      completionSignedAt: now,
-    }).catch(() => { /* logged inside */ });
-  }
+  // Attempt the signed-copy email; emailSignedCopy re-reads fresh state and
+  // an atomic claim guarantees exactly one send even if this races the
+  // complete transition.
+  emailSignedCopy(ctx.tenantId, { id: ctx.job.id }).catch(() => { /* logged inside */ });
 });
 
 /* ─── Completion verification by email OTP ────────────────────────────────────
@@ -980,6 +973,9 @@ router.post("/fsm/jobs/:id/verify-completion-otp", async (req, res): Promise<voi
     return;
   }
   res.json({ ok: true, completionSignedBy: parsed.data.verifiedBy, completionSignedAt: now, verifiedVia: "otp" });
+
+  // Attempt the signed-copy email (fresh-state read + atomic claim inside).
+  emailSignedCopy(ctx.tenantId, { id: ctx.job.id }).catch(() => { /* logged inside */ });
 });
 
 /**
@@ -987,9 +983,38 @@ router.post("/fsm/jobs/:id/verify-completion-otp", async (req, res): Promise<voi
  * signature) to the customer, copied to accounts@. Callers ensure the job is
  * completed AND signed before invoking.
  */
-async function emailSignedCopy(tenantId: number, job: typeof workOrdersTable.$inferSelect): Promise<void> {
-  if (!job.completionSignature || !job.completionSignedBy) return;
+async function emailSignedCopy(tenantId: number, jobRef: { id: number }): Promise<void> {
+  // Fresh read: callers may hold a stale row (e.g. sign-off raced completion),
+  // so the decision to email is based only on current durable state.
+  const [job] = await db.select().from(workOrdersTable)
+    .where(and(eq(workOrdersTable.id, jobRef.id), eq(workOrdersTable.tenantId, tenantId)));
+  if (!job || !job.completionSignature || !job.completionSignedBy || !job.workCompletedAt) return;
+
+  // Atomic one-shot claim: complete transition, signature route, and OTP route
+  // all attempt this; exactly one send happens.
+  const [claim] = await db.update(workOrdersTable)
+    .set({ completionEmailSentAt: new Date() })
+    .where(and(
+      eq(workOrdersTable.id, job.id),
+      eq(workOrdersTable.tenantId, tenantId),
+      sql`${workOrdersTable.completionEmailSentAt} IS NULL`,
+    ))
+    .returning({ id: workOrdersTable.id });
+  if (!claim) return;
+
   const currency = await getSetting("currency", tenantId).catch(() => "JMD");
+  const photos = await db.select({
+    data: workOrderPhotosTable.data,
+    caption: workOrderPhotosTable.caption,
+    staffName: workOrderPhotosTable.staffName,
+    createdAt: workOrderPhotosTable.createdAt,
+  }).from(workOrderPhotosTable)
+    .where(and(eq(workOrderPhotosTable.tenantId, tenantId), eq(workOrderPhotosTable.workOrderId, job.id)))
+    .orderBy(workOrderPhotosTable.createdAt)
+    .catch((err) => {
+      console.error(`[fsm] Failed to load photos for signed copy WO ${job.workOrderNumber}:`, err instanceof Error ? err.message : err);
+      return [];
+    });
   const staffIds: number[] = Array.isArray(job.assignedStaffIds) ? job.assignedStaffIds as number[] : [];
   await sendWorkOrderSignedEmail({
     tenantId,
@@ -1016,6 +1041,7 @@ async function emailSignedCopy(tenantId: number, job: typeof workOrdersTable.$in
       signedBy:   job.completionSignedBy,
       signedAt:   job.completionSignedAt ?? new Date(),
     },
+    photos,
   });
 }
 

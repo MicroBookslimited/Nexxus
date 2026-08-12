@@ -7,7 +7,8 @@
 import { db, tenantsTable, staffTable, customersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { sendMail, getFromDetails, PLATFORM_COPY_ADDRESS } from "./mail";
-import { renderWorkOrderPdf } from "./work-order-pdf";
+import { renderWorkOrderPdf, renderWorkOrderPhotosPdf } from "./work-order-pdf";
+import type { WorkOrderPhotoDoc } from "./work-order-pdf";
 import { getSetting, getAllSettings } from "../routes/settings";
 import type { WorkOrderDocItem } from "./work-order-pdf";
 
@@ -359,6 +360,8 @@ export interface WorkOrderSignedMailInput extends WorkOrderMailInput {
     signedBy: string;
     signedAt: Date;
   };
+  /** Proof-of-work photos — attached as a second PDF when any can be embedded. */
+  photos?: WorkOrderPhotoDoc[];
 }
 
 /**
@@ -393,6 +396,25 @@ export async function sendWorkOrderSignedEmail(input: WorkOrderSignedMailInput):
       signature:           input.signature,
     });
 
+    // Photo report is best-effort: never let a bad image block the signed copy.
+    let photosPdf: Buffer | null = null;
+    if (input.photos && input.photos.length > 0) {
+      photosPdf = await renderWorkOrderPhotosPdf(
+        input.workOrderNumber,
+        input.itemDescription,
+        business,
+        input.photos,
+      ).catch((err) => {
+        console.error(`[work-order-mail] Photo report render failed for WO ${input.workOrderNumber}:`, err instanceof Error ? err.message : err);
+        return null;
+      });
+      // Final safety net: never let an oversized attachment sink the signed copy.
+      if (photosPdf && photosPdf.length > 18 * 1024 * 1024) {
+        console.warn(`[work-order-mail] Photo report for WO ${input.workOrderNumber} too large (${photosPdf.length} bytes) — sending signed copy without it`);
+        photosPdf = null;
+      }
+    }
+
     const signedOn = input.signature.signedAt.toLocaleString("en-US", {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
       hour: "numeric", minute: "2-digit",
@@ -423,11 +445,18 @@ export async function sendWorkOrderSignedEmail(input: WorkOrderSignedMailInput):
       fromAddress: from.fromAddress,
       tenantId: input.tenantId,
       platformCopy: true, // signed copies are always copied to accounts@
-      attachments: [{
-        filename: `Work-Order-${input.workOrderNumber}-Signed.pdf`,
-        content:  pdfBuffer,
-        mimeType: "application/pdf",
-      }],
+      attachments: [
+        {
+          filename: `Work-Order-${input.workOrderNumber}-Signed.pdf`,
+          content:  pdfBuffer,
+          mimeType: "application/pdf",
+        },
+        ...(photosPdf ? [{
+          filename: `Work-Order-${input.workOrderNumber}-Photos.pdf`,
+          content:  photosPdf,
+          mimeType: "application/pdf",
+        }] : []),
+      ],
     });
     console.info(`[work-order-mail] Sent signed copy to ${toEmail} (${input.workOrderNumber})`);
   } catch (err) {

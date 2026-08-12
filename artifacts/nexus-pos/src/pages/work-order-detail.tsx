@@ -167,6 +167,7 @@ export default function WorkOrderDetailPage() {
     sessionStorage.setItem(PENDING_WORK_ORDER_KEY, JSON.stringify({
       id: wo.id, workOrderNumber: wo.workOrderNumber, items: wo.items,
       discountAmount: wo.discountAmount ?? 0, customerId: wo.customerId ?? null,
+      depositPaid: wo.depositPaid ?? 0,
       notes: `Work order ${wo.workOrderNumber}: ${wo.itemDescription}`,
     }));
     setLocation("/pos");

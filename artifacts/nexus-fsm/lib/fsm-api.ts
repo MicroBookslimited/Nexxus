@@ -553,3 +553,95 @@ export function createFollowUpVisit(
     headers: staffHeaders(staffId),
   });
 }
+
+/* ───────────── Cash shift & onsite payments ───────────── */
+
+export interface CashSession {
+  id: number;
+  staffId: number | null;
+  staffName: string;
+  openingCash: number;
+  status: string;
+  openedAt: string;
+  closedAt: string | null;
+}
+
+export interface CurrentShift {
+  session: CashSession;
+  expectedCash: number;
+  totalPayouts: number;
+  woCashIn: number;
+  woCardIn: number;
+  woTransferIn: number;
+}
+
+/** The technician's own open cash shift, or null when none is open. */
+export async function getCurrentShift(staffId: number): Promise<CurrentShift | null> {
+  try {
+    return await request<CurrentShift>('/api/cash/sessions/current', { headers: staffHeaders(staffId) });
+  } catch (e) {
+    if (e instanceof Error && /404|not found|no open/i.test(e.message)) return null;
+    throw e;
+  }
+}
+
+export function openShift(staffId: number, staffName: string, openingCash: number): Promise<CashSession> {
+  return request('/api/cash/sessions', {
+    method: 'POST',
+    body: JSON.stringify({ staffId, staffName, openingCash }),
+    headers: staffHeaders(staffId),
+  });
+}
+
+export function closeShift(
+  staffId: number,
+  sessionId: number,
+  body: { actualCash: number; actualCard: number; actualOther?: number; closingNotes?: string },
+): Promise<CashSession> {
+  return request(`/api/cash/sessions/${sessionId}/close`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+export function addShiftPayout(
+  staffId: number,
+  sessionId: number,
+  body: { amount: number; reason: string; staffName: string },
+): Promise<{ id: number }> {
+  return request(`/api/cash/sessions/${sessionId}/payouts`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+export type WoPaymentMethod = 'cash' | 'card' | 'transfer';
+
+export interface WoPayment {
+  id: number;
+  amount: number;
+  method: WoPaymentMethod;
+  reference: string | null;
+  staffName: string | null;
+  createdAt: string;
+}
+
+export function getWoPayments(staffId: number, workOrderId: number): Promise<WoPayment[]> {
+  return request(`/api/work-orders/${workOrderId}/payments`, { headers: staffHeaders(staffId) });
+}
+
+/** Record money collected onsite. Requires the technician's cash shift to be
+ * open (server rejects with code SHIFT_REQUIRED otherwise). */
+export function recordWoPayment(
+  staffId: number,
+  workOrderId: number,
+  body: { amount: number; method: WoPaymentMethod; reference?: string },
+): Promise<{ payment: WoPayment; newBalance: number }> {
+  return request(`/api/work-orders/${workOrderId}/payments`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}

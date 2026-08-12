@@ -324,6 +324,108 @@ function drawSignOff(doc: PDFKit.PDFDocument, data: WorkOrderDocData, y: number)
   }
 }
 
+/* ─── Photo report PDF ─────────────────────────────────────────────────────
+ * Proof-of-work photo attachment sent alongside the signed completion copy.
+ * Photos are stored as base64 data URLs (JPEG/PNG/WebP). PDFKit can only
+ * embed JPEG and PNG, so unsupported/corrupt images are skipped — the report
+ * is best-effort and must never block the completion email. */
+
+export interface WorkOrderPhotoDoc {
+  data: string;             // data URL
+  caption?: string | null;
+  staffName?: string | null;
+  createdAt?: Date | null;
+}
+
+function decodeEmbeddablePhoto(dataUrl: string): Buffer | null {
+  const m = /^data:image\/(jpeg|jpg|png);base64,(.+)$/i.exec(dataUrl.trim());
+  if (!m || !m[2]) return null;
+  try { return Buffer.from(m[2], "base64"); } catch { return null; }
+}
+
+/** Returns null when no photo could be embedded (e.g. all WebP). */
+export async function renderWorkOrderPhotosPdf(
+  workOrderNumber: string,
+  itemDescription: string,
+  business: WorkOrderDocData["business"],
+  photos: WorkOrderPhotoDoc[],
+): Promise<Buffer | null> {
+  const decoded = photos
+    .map((p) => ({ ...p, buffer: decodeEmbeddablePhoto(p.data) }))
+    .filter((p): p is WorkOrderPhotoDoc & { buffer: Buffer } => p.buffer != null);
+  if (decoded.length === 0) return null;
+
+  // Attachment budget: email providers reject oversized payloads, and a failed
+  // send would take the signed copy down with it. Include photos until the raw
+  // byte budget is spent; note how many were left out.
+  const RAW_BUDGET = 12 * 1024 * 1024;
+  const embeddable: typeof decoded = [];
+  let spent = 0;
+  for (const p of decoded) {
+    if (spent + p.buffer.length > RAW_BUDGET && embeddable.length > 0) break;
+    embeddable.push(p);
+    spent += p.buffer.length;
+  }
+  const omitted = decoded.length - embeddable.length;
+
+  const doc = new PDFDocument({ size: "A4", margin: M, autoFirstPage: true });
+  const letterheadBottom = drawLetterhead(doc, business);
+
+  let y = letterheadBottom + 18;
+  doc.font("Helvetica-Bold").fontSize(18).fillColor(C.ink)
+    .text("WORK COMPLETION PHOTOS", M, y, { width: IW, align: "center" });
+  y += 26;
+  doc.font("Helvetica").fontSize(10).fillColor(C.muted)
+    .text(`Work Order ${workOrderNumber} — ${itemDescription}`, M, y, { width: IW, align: "center" });
+  y += 18;
+  doc.moveTo(M, y).lineTo(PW - M, y).strokeColor(C.line).lineWidth(1).stroke();
+  y += 16;
+
+  const PAGE_BOTTOM = 841.89 - M; // A4 height minus margin
+  const MAX_IMG_H = 300;
+  let embeddedCount = 0;
+
+  for (const photo of embeddable) {
+    const captionLines = [
+      photo.caption?.trim() || null,
+      [
+        photo.staffName ? `Taken by ${photo.staffName}` : null,
+        photo.createdAt ? fmtDate(new Date(photo.createdAt)) : null,
+      ].filter(Boolean).join(" — ") || null,
+    ].filter((s): s is string => !!s);
+    doc.font("Helvetica").fontSize(9);
+    const captionH = captionLines.reduce(
+      (h, line) => h + doc.heightOfString(line, { width: IW }) + 3, 0) + 6;
+
+    if (y + MAX_IMG_H + captionH > PAGE_BOTTOM) {
+      doc.addPage();
+      y = M;
+    }
+    try {
+      doc.image(photo.buffer, M, y, { fit: [IW, MAX_IMG_H], align: "center" });
+    } catch {
+      continue; // corrupt image — skip, keep the report going
+    }
+    embeddedCount++;
+    y += MAX_IMG_H + 6;
+    for (const line of captionLines) {
+      doc.font("Helvetica").fontSize(9).fillColor(C.muted).text(line, M, y, { width: IW });
+      y += doc.heightOfString(line, { width: IW }) + 3;
+    }
+    y += 14;
+  }
+
+  if (embeddedCount === 0) return null; // nothing usable — no blank report
+
+  if (omitted > 0) {
+    if (y + 20 > PAGE_BOTTOM) { doc.addPage(); y = M; }
+    doc.font("Helvetica").fontSize(9).fillColor(C.muted)
+      .text(`${omitted} additional photo${omitted === 1 ? "" : "s"} could not be included due to size limits.`, M, y, { width: IW });
+  }
+
+  return toBuffer(doc);
+}
+
 export async function renderWorkOrderPdf(data: WorkOrderDocData): Promise<Buffer> {
   const doc = new PDFDocument({ size: "A4", margin: M, autoFirstPage: true });
 

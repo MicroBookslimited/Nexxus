@@ -43,8 +43,11 @@ import {
   updateWorkOrderStatus,
   markJobIncomplete,
   generateManagerCode,
+  getWoPayments,
+  recordWoPayment,
   type FsmJobHistory,
   type FsmJobNote,
+  type WoPaymentMethod,
 } from '@/lib/fsm-api';
 
 const ADMIN_STATUSES = [
@@ -132,6 +135,10 @@ export default function JobDetailScreen() {
   const [markIncompleteOpen, setMarkIncompleteOpen] = useState(false);
   const [managerCodeOpen, setManagerCodeOpen] = useState(false);
   const [managerCodeInput, setManagerCodeInput] = useState('');
+  const [payOpen, setPayOpen] = useState(false);
+  const [payAmount, setPayAmount] = useState('');
+  const [payMethod, setPayMethod] = useState<WoPaymentMethod>('cash');
+  const [payReference, setPayReference] = useState('');
   const [signName, setSignName] = useState('');
   // Email-OTP alternative to the drawn signature
   const [signMode, setSignMode] = useState<'draw' | 'otp'>('draw');
@@ -192,6 +199,26 @@ export default function JobDetailScreen() {
   const managerCodeGenMutation = useMutation({
     mutationFn: () => generateManagerCode(staff!.id, jobId),
     onSuccess: () => notify('success'),
+    onError: () => notify('error'),
+  });
+  const paymentsQuery = useQuery({
+    queryKey: ['wo-payments', staff?.id, jobId],
+    queryFn: () => getWoPayments(staff!.id, jobId),
+    enabled: !!staff && Number.isInteger(jobId),
+  });
+  const paymentMutation = useMutation({
+    mutationFn: () =>
+      recordWoPayment(staff!.id, jobId, {
+        amount: parseFloat(payAmount),
+        method: payMethod,
+        reference: payReference.trim() || undefined,
+      }),
+    onSuccess: () => {
+      setPayOpen(false); setPayAmount(''); setPayReference(''); setPayMethod('cash');
+      notify('success'); invalidate();
+      void queryClient.invalidateQueries({ queryKey: ['wo-payments', staff?.id, jobId] });
+      void queryClient.invalidateQueries({ queryKey: ['fsm-shift', staff?.id] });
+    },
     onError: () => notify('error'),
   });
   const noteMutation = useMutation({
@@ -498,6 +525,51 @@ export default function JobDetailScreen() {
               </View>
               <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
             </Pressable>
+
+            {job.total > 0 ? (
+              <>
+                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>PAYMENT</Text>
+                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={styles.payStatRow}>
+                    <Text style={[styles.body, { color: colors.mutedForeground }]}>Job total</Text>
+                    <Text style={[styles.body, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>${job.total.toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.payStatRow}>
+                    <Text style={[styles.body, { color: colors.mutedForeground }]}>Paid so far</Text>
+                    <Text style={[styles.body, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>${(job.depositPaid ?? 0).toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.payStatRow}>
+                    <Text style={[styles.body, { color: colors.mutedForeground }]}>Balance due</Text>
+                    <Text style={[styles.body, { color: (job.total - (job.depositPaid ?? 0)) > 0.004 ? '#F59E0B' : '#10B981', fontFamily: 'Inter_700Bold' }]}>
+                      ${Math.max(0, job.total - (job.depositPaid ?? 0)).toFixed(2)}
+                    </Text>
+                  </View>
+                  {(paymentsQuery.data?.length ?? 0) > 0 ? (
+                    <View style={{ marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 8, gap: 4 }}>
+                      {paymentsQuery.data!.map((p) => (
+                        <View key={p.id} style={styles.payStatRow}>
+                          <Text style={[styles.installLinkSub, { color: colors.mutedForeground, flex: 1 }]} numberOfLines={1}>
+                            {new Date(p.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })} · {p.method === 'cash' ? 'Cash' : p.method === 'card' ? 'Card' : 'Transfer'}
+                            {p.staffName ? ` · ${p.staffName}` : ''}{p.reference ? ` · ${p.reference}` : ''}
+                          </Text>
+                          <Text style={[styles.installLinkSub, { color: colors.foreground }]}>${p.amount.toFixed(2)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                  {job.status !== 'cancelled' && job.total - (job.depositPaid ?? 0) > 0.004 ? (
+                    <Pressable
+                      testID="collect-payment-button"
+                      onPress={() => { setPayAmount(''); setPayMethod('cash'); setPayReference(''); paymentMutation.reset(); setPayOpen(true); }}
+                      style={[styles.collectBtn, { backgroundColor: colors.primary }]}
+                    >
+                      <Feather name="dollar-sign" size={16} color="#fff" />
+                      <Text style={{ color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 14 }}>Collect Payment</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </>
+            ) : null}
 
             {canEditWorkOrders(staff?.role) && !job.completionSignature && !job.customerSignature && job.status !== 'collected' && job.status !== 'cancelled' ? (
               <Pressable
@@ -958,6 +1030,82 @@ export default function JobDetailScreen() {
             </Pressable>
             <Pressable
               onPress={() => setManagerCodeOpen(false)}
+              style={({ pressed }) => [
+                styles.modalActionBtn,
+                { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1, marginTop: 10, opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text style={[styles.actionText, { color: colors.mutedForeground }]}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Collect payment */}
+      <Modal visible={payOpen} transparent animationType="fade" onRequestClose={() => setPayOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setPayOpen(false)}>
+          <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Collect Payment</Text>
+            <Text style={[styles.modalHint, { color: colors.mutedForeground }]}>
+              Balance due: ${job ? Math.max(0, job.total - (job.depositPaid ?? 0)).toFixed(2) : '—'}. Cash goes into your shift drawer.
+            </Text>
+            <TextInput
+              testID="payment-amount-input"
+              style={[styles.noteInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, minHeight: 44 }]}
+              placeholder="Amount"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="decimal-pad"
+              value={payAmount}
+              onChangeText={setPayAmount}
+            />
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+              {(['cash', 'card', 'transfer'] as const).map((m) => (
+                <Pressable
+                  key={m}
+                  testID={`payment-method-${m}`}
+                  onPress={() => setPayMethod(m)}
+                  style={[
+                    styles.payMethodChip,
+                    {
+                      borderColor: payMethod === m ? colors.primary : colors.border,
+                      backgroundColor: payMethod === m ? `${colors.primary}22` : colors.background,
+                    },
+                  ]}
+                >
+                  <Text style={{ color: payMethod === m ? colors.primary : colors.mutedForeground, fontFamily: 'Inter_600SemiBold', fontSize: 13 }}>
+                    {m === 'cash' ? 'Cash' : m === 'card' ? 'Card' : 'Transfer'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {payMethod !== 'cash' ? (
+              <TextInput
+                testID="payment-reference-input"
+                style={[styles.noteInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, minHeight: 44, marginTop: 10 }]}
+                placeholder={payMethod === 'card' ? 'Card machine receipt # (optional)' : 'Transfer reference (optional)'}
+                placeholderTextColor={colors.mutedForeground}
+                value={payReference}
+                onChangeText={setPayReference}
+              />
+            ) : null}
+            {paymentMutation.error ? (
+              <Text style={[styles.modalHint, { color: '#EF4444', marginTop: 8 }]}>
+                {paymentMutation.error instanceof Error ? paymentMutation.error.message : 'Could not record the payment'}
+              </Text>
+            ) : null}
+            <Pressable
+              testID="payment-submit-button"
+              disabled={paymentMutation.isPending || !(parseFloat(payAmount) > 0)}
+              onPress={() => paymentMutation.mutate()}
+              style={({ pressed }) => [
+                styles.modalActionBtn,
+                { backgroundColor: colors.primary, marginTop: 12, opacity: paymentMutation.isPending || !(parseFloat(payAmount) > 0) ? 0.5 : pressed ? 0.8 : 1 },
+              ]}
+            >
+              {paymentMutation.isPending ? <ActivityIndicator color="#fff" /> : <Text style={[styles.actionText, { color: '#fff' }]}>Record Payment</Text>}
+            </Pressable>
+            <Pressable
+              onPress={() => setPayOpen(false)}
               style={({ pressed }) => [
                 styles.modalActionBtn,
                 { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1, marginTop: 10, opacity: pressed ? 0.7 : 1 },
@@ -1449,6 +1597,7 @@ const styles = StyleSheet.create({
   },
   signReviewScroll: { flexGrow: 0, flexShrink: 1, marginBottom: 10 },
   modalTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold', marginBottom: 12 },
+  modalHint: { fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 18, marginBottom: 10 },
   signSummary: {
     borderWidth: 1,
     borderRadius: 12,
@@ -1487,6 +1636,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  payStatRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 3 },
+  collectBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, paddingVertical: 12, marginTop: 12 },
+  payMethodChip: { flex: 1, borderWidth: 1, borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
   installLinkSub: {
     fontSize: 11,
     fontFamily: 'Inter_400Regular',

@@ -656,6 +656,7 @@ export function POS() {
           isTaxable?: boolean;
         }>;
         discountAmount?: number;
+        depositPaid?: number;
         customerId?: number | null;
         notes?: string;
       };
@@ -728,16 +729,21 @@ export function POS() {
           } as CartItem];
         }),
       );
-      if (pending.discountAmount && pending.discountAmount > 0) {
+      // Deposits / onsite payments already collected on the work order must be
+      // credited here, or the customer gets charged the full total again.
+      const paymentsReceived = Math.max(0, pending.depositPaid ?? 0);
+      const woDiscount = pending.discountAmount && pending.discountAmount > 0 ? pending.discountAmount : 0;
+      if (woDiscount + paymentsReceived > 0) {
         setDiscountType("fixed");
-        setDiscountAmount(pending.discountAmount);
+        setDiscountAmount(woDiscount + paymentsReceived);
       }
       if (pending.customerId) setSelectedCustomerId(pending.customerId);
-      if (pending.notes) setNotes(pending.notes);
+      const paidNote = paymentsReceived > 0 ? ` (less ${paymentsReceived.toFixed(2)} already paid)` : "";
+      if (pending.notes || paidNote) setNotes(`${pending.notes ?? ""}${paidNote}`);
       setLoadedWorkOrder({ id: pending.id, workOrderNumber: pending.workOrderNumber ?? "" });
       toast({
         title: "Work order loaded",
-        description: `${pending.workOrderNumber ?? "Work order"} loaded into cart — complete checkout to mark it collected.`,
+        description: `${pending.workOrderNumber ?? "Work order"} loaded into cart${paymentsReceived > 0 ? ` — ${paymentsReceived.toFixed(2)} already paid is applied as a credit` : ""} — complete checkout to mark it collected.`,
       });
     } catch {
       toast({ title: "Could not load work order", variant: "destructive" });
