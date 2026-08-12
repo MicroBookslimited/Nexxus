@@ -27,9 +27,14 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useStaff } from "@/contexts/StaffContext";
-import { Cable, Package, Plus, Trash2, Search, Undo2, ChevronDown, ChevronUp } from "lucide-react";
+import { Cable, Package, Plus, Trash2, Search, Undo2, ChevronDown, ChevronUp, Printer } from "lucide-react";
+import { generateDispatchSlip, type DispatchSlipMeta } from "@/lib/dispatch-slip-doc";
 
-export function WorkOrderMaterials({ workOrderId, readOnly }: { workOrderId: number; readOnly?: boolean }) {
+export function WorkOrderMaterials({ workOrderId, readOnly, printMeta }: {
+  workOrderId: number;
+  readOnly?: boolean;
+  printMeta?: DispatchSlipMeta;
+}) {
   const { toast } = useToast();
   const { staff } = useStaff();
   const { data: allocations, isLoading } = useWorkOrderAllocations(workOrderId);
@@ -52,11 +57,28 @@ export function WorkOrderMaterials({ workOrderId, readOnly }: { workOrderId: num
         <p className="text-sm text-muted-foreground">
           Materials dispatched to this job. Inventory-linked items deduct stock when dispatched and restore it when returned.
         </p>
-        {!readOnly && (
-          <Button size="sm" onClick={() => setShowAdd(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Dispatch Item
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {/* Always printable — a blank slip can be printed pre-dispatch and filled by hand. */}
+          {printMeta && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const html = generateDispatchSlip(printMeta, allocations ?? []);
+                const win = window.open("", "_blank");
+                if (win) { win.document.write(html); win.document.close(); }
+                else { toast({ title: "Pop-up blocked", description: "Allow pop-ups to print the dispatch slip", variant: "destructive" }); }
+              }}
+            >
+              <Printer className="h-4 w-4 mr-1" /> Dispatch Slip
+            </Button>
+          )}
+          {!readOnly && (
+            <Button size="sm" onClick={() => setShowAdd(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Dispatch Item
+            </Button>
+          )}
+        </div>
       </div>
 
       {isLoading && <p className="text-sm text-muted-foreground animate-pulse">Loading…</p>}

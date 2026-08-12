@@ -308,7 +308,24 @@ export default function WorkOrderDetailPage() {
       {tab === "install" && (
         <WorkOrderInstallForm wo={wo} readOnly={isLocked} onPatch={(updates) => patchWO(updates as never)} />
       )}
-      {tab === "materials" && <WorkOrderMaterials workOrderId={wo.id} readOnly={isLocked} />}
+      {tab === "materials" && (
+        <WorkOrderMaterials
+          workOrderId={wo.id}
+          readOnly={isLocked}
+          printMeta={{
+            workOrderNumber: wo.workOrderNumber,
+            businessName: profile?.businessName,
+            siteName: clientName,
+            technicianNames:
+              wo.assignedStaffNames && wo.assignedStaffNames.length > 0
+                ? wo.assignedStaffNames
+                : wo.assignedStaffName
+                  ? [wo.assignedStaffName]
+                  : [],
+            dispatchDate: wo.createdAt,
+          }}
+        />
+      )}
       {tab === "notes" && <NotesTab workOrderId={wo.id} />}
       {tab === "appointments" && <AppointmentsTab workOrderId={wo.id} staff={staff ?? []} />}
       {tab === "history" && <HistoryTab workOrderId={wo.id} serviceChannel={wo.serviceChannel} />}
