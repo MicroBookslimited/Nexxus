@@ -101,6 +101,8 @@ function toJob(w: typeof workOrdersTable.$inferSelect, customerName?: string | n
     contactPhone: customerPhone ?? w.contactPhone ?? null,
     contactEmail: w.contactEmail,
     storageLocation: w.storageLocation,
+    customerId: w.customerId,
+    assignedStaffIds: Array.isArray(w.assignedStaffIds) ? (w.assignedStaffIds as number[]) : [],
     estimatedMinutes: w.estimatedMinutes,
     appointmentDate: w.appointmentDate,
     promisedDate: w.promisedDate,

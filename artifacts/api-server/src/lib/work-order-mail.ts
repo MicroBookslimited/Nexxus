@@ -515,6 +515,96 @@ export async function sendWorkOrderEmail(input: WorkOrderMailInput): Promise<voi
   }
 }
 
+/* ─── Technician assignment notification ────────────────────────────────────── */
+
+/**
+ * Emails each newly-assigned technician who has an email on file that a work
+ * order has been assigned to them. Fire-and-forget — errors are logged only.
+ */
+export async function sendTechnicianAssignmentEmail(input: {
+  tenantId: number;
+  workOrderNumber: string;
+  staffIds: number[];
+  itemDescription: string;
+  problemDescription: string;
+  priority: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  customerId: number | null;
+  scheduledDate: string | null;
+}): Promise<void> {
+  try {
+    if (input.staffIds.length === 0) return;
+    const { inArray } = await import("drizzle-orm");
+    const [staffRows, from, tenant] = await Promise.all([
+      db.select({ id: staffTable.id, name: staffTable.name, email: staffTable.email })
+        .from(staffTable)
+        .where(and(eq(staffTable.tenantId, input.tenantId), inArray(staffTable.id, input.staffIds))),
+      getFromDetails(input.tenantId),
+      db.query.tenantsTable.findFirst({ where: eq(tenantsTable.id, input.tenantId) }),
+    ]);
+
+    // Customer display info (name/phone) — prefer the linked customer record.
+    let custName = input.contactName;
+    let custPhone = input.contactPhone;
+    if (input.customerId) {
+      const customer = await db.query.customersTable.findFirst({
+        where: and(eq(customersTable.id, input.customerId), eq(customersTable.tenantId, input.tenantId)),
+      });
+      if (customer) {
+        custName = customer.name || custName;
+        custPhone = custPhone || customer.phone || null;
+      }
+    }
+
+    const scheduledLabel = formatScheduledDate(input.scheduledDate);
+    const businessName = tenant?.businessName ?? "NEXXUS POS";
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    const recipients = staffRows.filter((s) => s.email?.trim());
+    if (recipients.length === 0) {
+      console.info(`[work-order-mail] No technician emails on file for WO ${input.workOrderNumber} — skipping assignment notice`);
+      return;
+    }
+
+    await Promise.all(recipients.map((s) => {
+      const html = /* html */ `
+<!DOCTYPE html>
+<html lang="en"><body style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.5;">
+  <p>Hi ${esc(s.name)},</p>
+  <p>You have been assigned to work order <b>${esc(input.workOrderNumber)}</b>.</p>
+  <table cellpadding="0" cellspacing="0" style="font-size:14px;">
+    <tr><td style="padding:2px 12px 2px 0;color:#666;">Job</td><td>${esc(input.itemDescription)}</td></tr>
+    <tr><td style="padding:2px 12px 2px 0;color:#666;">Description</td><td>${esc(input.problemDescription)}</td></tr>
+    ${input.priority ? `<tr><td style="padding:2px 12px 2px 0;color:#666;">Priority</td><td style="text-transform:capitalize;">${esc(input.priority)}</td></tr>` : ""}
+    ${custName ? `<tr><td style="padding:2px 12px 2px 0;color:#666;">Customer</td><td>${esc(custName)}</td></tr>` : ""}
+    ${custPhone ? `<tr><td style="padding:2px 12px 2px 0;color:#666;">Phone</td><td>${esc(custPhone)}</td></tr>` : ""}
+    ${scheduledLabel ? `<tr><td style="padding:2px 12px 2px 0;color:#666;">Appointment</td><td>${esc(scheduledLabel)}</td></tr>` : ""}
+  </table>
+  <p>Open the NEXXUS FSM app to accept or decline this job.</p>
+  <p style="color:#666;font-size:13px;">— ${esc(businessName)}</p>
+</body></html>`;
+      return sendMail({
+        to: s.email!.trim(),
+        subject: `New job assigned: ${input.workOrderNumber} – ${input.itemDescription}`,
+        html,
+        fromName: from.fromName,
+        fromAddress: from.fromAddress,
+        tenantId: input.tenantId,
+        platformCopy: false, // internal tenant→staff email
+      });
+    }));
+
+    console.info(`[work-order-mail] Sent assignment notice for WO ${input.workOrderNumber} to ${recipients.length} technician(s)`);
+  } catch (err) {
+    console.error("[work-order-mail] Failed to send technician assignment email", {
+      wo: input.workOrderNumber,
+      tenantId: input.tenantId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /* ─── Completion OTP ─────────────────────────────────────────────────────────── */
 
 /** Base URL for public customer links (portal / review). */

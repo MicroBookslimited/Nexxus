@@ -39,6 +39,7 @@ import {
   startTravel,
   submitSignature,
   isAdminRole,
+  canEditWorkOrders,
   updateWorkOrderStatus,
   type FsmJobHistory,
   type FsmJobNote,
@@ -478,6 +479,24 @@ export default function JobDetailScreen() {
               </View>
               <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
             </Pressable>
+
+            {canEditWorkOrders(staff?.role) && !job.completionSignature && !job.customerSignature && job.status !== 'collected' && job.status !== 'cancelled' ? (
+              <Pressable
+                onPress={() => router.push(`/edit-job/${job.id}`)}
+                style={[styles.card, styles.installLink, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 16 }]}
+              >
+                <Feather name="edit-2" size={18} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.body, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
+                    Edit work order
+                  </Text>
+                  <Text style={[styles.installLinkSub, { color: colors.mutedForeground }]}>
+                    Customer, details, schedule & technicians
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+              </Pressable>
+            ) : null}
 
             {isAdminRole(staff?.role) ? (
               <>

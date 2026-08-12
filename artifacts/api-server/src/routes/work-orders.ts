@@ -17,7 +17,7 @@ import {
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { getSetting } from "./settings";
-import { sendWorkOrderEmail, sendWorkOrderStatusEmail } from "../lib/work-order-mail";
+import { sendWorkOrderEmail, sendWorkOrderStatusEmail, sendTechnicianAssignmentEmail } from "../lib/work-order-mail";
 
 const router: IRouter = Router();
 
@@ -475,6 +475,22 @@ router.post("/work-orders", async (req, res): Promise<void> => {
     })),
     currency: currency || "JMD",
   }).catch(() => { /* already logged inside sendWorkOrderEmail */ });
+
+  // Notify assigned technicians immediately (fire-and-forget).
+  if (createdIds.length > 0) {
+    sendTechnicianAssignmentEmail({
+      tenantId,
+      workOrderNumber: row.workOrderNumber,
+      staffIds: createdIds,
+      itemDescription: row.itemDescription,
+      problemDescription: row.problemDescription,
+      priority: row.priority,
+      contactName: row.contactName,
+      contactPhone: row.contactPhone,
+      customerId: row.customerId,
+      scheduledDate: row.appointmentDate ? String(row.appointmentDate) : null,
+    }).catch(() => { /* logged inside */ });
+  }
 });
 
 // UPDATE
@@ -482,13 +498,27 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
   if (!requireFullTenant(req as never, res as never)) return;
   const tenantId = getTenantId(req as never);
   if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  if (!(await rejectNonAdminStaffHeader(req as never, res as never, tenantId))) return;
+  // Supervisors may edit work orders (FSM mobile), alongside admins/managers.
+  if (!(await rejectNonAdminStaffHeader(req as never, res as never, tenantId, { allowSupervisor: true }))) return;
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const parsed = UpdateWorkOrderBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const data = parsed.data;
+
+  // Supervisors are limited to job-detail fields — no status moves, money,
+  // signatures, conversions or installation data.
+  const headerRole = await getHeaderStaffRole(req as never, tenantId);
+  if (headerRole === "supervisor") {
+    const blocked = Object.keys(data).filter(
+      (k) => (data as Record<string, unknown>)[k] !== undefined && !SUPERVISOR_EDITABLE_FIELDS.has(k),
+    );
+    if (blocked.length > 0) {
+      res.status(403).json({ error: `Supervisors cannot change: ${blocked.join(", ")}` });
+      return;
+    }
+  }
 
   const [existing] = await db
     .select()
@@ -669,6 +699,62 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
       fromStatus:      existing.status,
       toStatus:        row.status,
     }).catch(() => { /* logged inside */ });
+  }
+
+  // Fire-and-forget: notify technicians who were NEWLY added to the assignment.
+  if (updStaffIds !== null) {
+    const prevIds: number[] = Array.isArray(existing.assignedStaffIds) ? existing.assignedStaffIds as number[] : [];
+    const newlyAdded = updStaffIds.filter((sid) => !prevIds.includes(sid));
+    if (newlyAdded.length > 0) {
+      sendTechnicianAssignmentEmail({
+        tenantId,
+        workOrderNumber: row.workOrderNumber,
+        staffIds: newlyAdded,
+        itemDescription: row.itemDescription,
+        problemDescription: row.problemDescription,
+        priority: row.priority,
+        contactName: row.contactName,
+        contactPhone: row.contactPhone,
+        customerId: row.customerId,
+        scheduledDate: row.appointmentDate ? String(row.appointmentDate) : null,
+      }).catch(() => { /* logged inside */ });
+    }
+  }
+
+  // Fire-and-forget: a newly linked customer gets the work-order confirmation
+  // email (same one sent on creation) so they know the job exists.
+  const customerChanged = data.customerId !== undefined && data.customerId !== existing.customerId && row.customerId != null;
+  // Only treat contactEmail as "newly added" when there was no email before —
+  // replacing one email with another is a correction, not a new recipient.
+  const contactEmailAdded = data.contactEmail !== undefined && !!data.contactEmail && !existing.contactEmail?.trim();
+  if (customerChanged || contactEmailAdded) {
+    // When the linked customer changed, resolve the recipient from the NEW
+    // customer record unless this PATCH also explicitly set contactEmail —
+    // otherwise a stale contactEmail would mail the old contact.
+    const recipientContactEmail = customerChanged && data.contactEmail === undefined ? null : row.contactEmail;
+    getSetting("currency", tenantId).catch(() => "JMD").then((currency) =>
+      sendWorkOrderEmail({
+        tenantId,
+        workOrderId:       row.id,
+        workOrderNumber:   row.workOrderNumber,
+        contactName:       row.contactName,
+        contactEmail:      recipientContactEmail,
+        customerId:        row.customerId,
+        assignedStaffId:   row.assignedStaffId,
+        assignedStaffIds:  updatedIds,
+        itemDescription:   row.itemDescription,
+        problemDescription: row.problemDescription,
+        notes:             row.notes,
+        scheduledDate:     row.appointmentDate ? String(row.appointmentDate) : null,
+        promisedDate:      row.promisedDate ? String(row.promisedDate) : null,
+        lineItems:         (row.items ?? []).map((it) => ({
+          description: it.description,
+          quantity:    it.quantity,
+          unitPrice:   it.price,
+        })),
+        currency: currency || "JMD",
+      }),
+    ).catch(() => { /* logged inside */ });
   }
 });
 
@@ -1195,6 +1281,7 @@ async function rejectNonAdminStaffHeader(
   req: { headers: Record<string, string | undefined> },
   res: { status: (n: number) => { json: (b: unknown) => void } },
   tenantId: number,
+  opts: { allowSupervisor?: boolean } = {},
 ): Promise<boolean> {
   const raw = req.headers["x-staff-id"];
   if (!raw) return true;
@@ -1203,12 +1290,43 @@ async function rejectNonAdminStaffHeader(
     ? await db.select({ role: staffTable.role }).from(staffTable)
         .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)))
     : [];
-  if (!s || !/^(admin|manager|owner)$/i.test(s.role.trim())) {
+  const rolePattern = opts.allowSupervisor
+    ? /^(admin|manager|owner|supervisor)$/i
+    : /^(admin|manager|owner)$/i;
+  if (!s || !rolePattern.test(s.role.trim())) {
     res.status(403).json({ error: "Admin access required" });
     return false;
   }
   return true;
 }
+
+/** Role of the staff member identified by the x-staff-id header, or null when
+ * the header is absent (web POS office session). */
+async function getHeaderStaffRole(
+  req: { headers: Record<string, string | undefined> },
+  tenantId: number,
+): Promise<string | null> {
+  const raw = req.headers["x-staff-id"];
+  if (!raw) return null;
+  const staffId = parseInt(String(raw), 10);
+  const [s] = Number.isFinite(staffId)
+    ? await db.select({ role: staffTable.role }).from(staffTable)
+        .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)))
+    : [];
+  return s?.role.trim().toLowerCase() ?? null;
+}
+
+/** Fields a supervisor may edit via PATCH — job details, scheduling and
+ * assignment only. Financials, status moves, signatures, conversions and
+ * installation data remain admin/manager territory. */
+const SUPERVISOR_EDITABLE_FIELDS = new Set([
+  "customerId", "contactName", "contactPhone", "contactEmail",
+  "itemDescription", "brand", "model", "serialNumber", "imei", "assetTag", "colour",
+  "problemDescription", "serviceType", "serviceChannel", "priority",
+  "assignedStaffId", "assignedStaffIds",
+  "estimatedMinutes", "promisedDate", "appointmentDate", "storageLocation",
+  "notes",
+]);
 
 /** Lock a work order row inside `tx` and confirm it is still open. */
 async function lockOpenWorkOrder(

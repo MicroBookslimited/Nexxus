@@ -105,6 +105,8 @@ export interface FsmJob {
   contactPhone: string | null;
   contactEmail: string | null;
   storageLocation: string | null;
+  customerId: number | null;
+  assignedStaffIds: number[];
   appointmentDate: string | null;
   estimatedMinutes: number | null;
   promisedDate: string | null;
@@ -275,6 +277,11 @@ export function isAdminRole(role: string | undefined | null): boolean {
   return /^(admin|manager|owner)$/i.test((role ?? '').trim());
 }
 
+/** Roles allowed to edit a work order from the app (server enforces the same). */
+export function canEditWorkOrders(role: string | undefined | null): boolean {
+  return /^(admin|manager|owner|supervisor)$/i.test((role ?? '').trim());
+}
+
 export interface ProductLite {
   id: number;
   name: string;
@@ -338,6 +345,29 @@ export function createWorkOrder(staffId: number, body: {
 }): Promise<{ id: number; workOrderNumber: string }> {
   return request(`/api/work-orders`, {
     method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/** Admin/manager/supervisor: edit a work order's details. Newly-assigned
+ * technicians and a newly-linked customer are emailed by the server. */
+export function updateWorkOrder(staffId: number, id: number, body: {
+  customerId?: number | null;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string | null;
+  itemDescription?: string;
+  problemDescription?: string;
+  serviceChannel?: string;
+  priority?: string;
+  assignedStaffIds?: number[];
+  appointmentDate?: string | null;
+  estimatedMinutes?: number | null;
+  notes?: string | null;
+}): Promise<{ id: number }> {
+  return request(`/api/work-orders/${id}`, {
+    method: 'PATCH',
     body: JSON.stringify(body),
     headers: staffHeaders(staffId),
   });
