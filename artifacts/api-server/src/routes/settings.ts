@@ -3,6 +3,7 @@ import { db, appSettingsTable, tenantsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
+import { hasWorkOrdersEntitlement } from "../lib/addon-entitlement";
 
 const router: IRouter = Router();
 
@@ -118,6 +119,13 @@ router.patch("/settings", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid body", details: parsed.error.issues });
     return;
   }
+  // Paid entitlement keys can't be self-granted through the generic settings
+  // endpoint: enabling Work Orders requires a paid-up add-on (or legacy access).
+  if (parsed.data["work_orders_enabled"] === "true" && !(await hasWorkOrdersEntitlement(tenantId))) {
+    res.status(403).json({ error: "Work Orders is a paid add-on. Purchase it on the Subscription page to enable this module." });
+    return;
+  }
+
   for (const [key, value] of Object.entries(parsed.data)) {
     const dbKey = makeDbKey(tenantId, key);
     await db

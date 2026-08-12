@@ -14,6 +14,7 @@ import {
 import { sendPendingForCampaign } from "./lib/campaign-sender";
 import { sendMail } from "./lib/mail";
 import { repairTimestampDefaults } from "./lib/repair-timestamp-defaults";
+import { backfillWorkOrdersLegacyAccess, seedAddonCatalog } from "./lib/addon-entitlement";
 
 const RESUME_ALERT_THRESHOLD = 3;
 
@@ -204,6 +205,8 @@ app.listen(port, async (err) => {
     );
   }
   await migratePrimaryAdminUsers();
+  await seedAddonCatalog();
+  await backfillWorkOrdersLegacyAccess();
   await resumeInterruptedCampaigns();
 });
 

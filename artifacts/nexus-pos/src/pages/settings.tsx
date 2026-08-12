@@ -18,7 +18,8 @@ import {
 import { cn } from "@/lib/utils";
 import { TIMEZONES } from "@/lib/timezones";
 import { getRoles, createRole, updateRole, deleteRole, type RoleRow, type PermissionDef, TENANT_TOKEN_KEY,
-  setBusinessType, setBusinessFeature, type BusinessType } from "@/lib/saas-api";
+  setBusinessType, setBusinessFeature, getAddons, type BusinessType, type TenantAddonRow } from "@/lib/saas-api";
+import { useLocation } from "wouter";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { QRCodeSVG } from "qrcode.react";
 import { ShopifyIntegrationCard } from "@/components/ShopifyIntegrationCard";
@@ -110,6 +111,9 @@ export function AdminSettings() {
   const [kioskLockEnabled, setKioskLockEnabled] = useState(false);
   const [layawayEnabled, setLayawayEnabled] = useState(false);
   const [workOrdersEnabled, setWorkOrdersEnabled] = useState(false);
+  // Work Orders is a paid add-on ($5/mo): null = still loading, otherwise the tenant's addon row (or undefined if never purchased)
+  const [workOrdersAddon, setWorkOrdersAddon] = useState<TenantAddonRow | null | undefined>(null);
+  const [, navigate] = useLocation();
   const [packagesEnabled, setPackagesEnabled] = useState(false);
   const [showProductSize, setShowProductSize] = useState(false);
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
@@ -176,6 +180,9 @@ export function AdminSettings() {
     setKioskLockEnabled(settings.kiosk_lock_enabled === "true");
     setLayawayEnabled(settings.layaway_enabled === "true");
     setWorkOrdersEnabled(settings.work_orders_enabled === "true");
+    getAddons()
+      .then((r) => setWorkOrdersAddon(r.mine.find((m) => m.addonSlug === "work_orders")))
+      .catch(() => setWorkOrdersAddon(undefined));
     setPackagesEnabled(settings.packages_enabled === "true");
     setShowProductSize(settings.show_product_size === "true");
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
@@ -1893,29 +1900,73 @@ export function AdminSettings() {
             </button>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-border p-4">
-            <div>
-              <p className="text-sm font-medium">Work Orders (Repairs)</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Track repair jobs from intake to collection: record the item and problem, assign a technician, add parts and labor, and move the job through Received → In Progress → Ready → Collected. Ready jobs can be loaded into the POS cart to charge the customer.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={workOrdersEnabled}
-              onClick={() => { setWorkOrdersEnabled(!workOrdersEnabled); markDirty(); }}
-              className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                workOrdersEnabled ? "bg-amber-500" : "bg-muted-foreground/30"
-              )}
-            >
-              <span className={cn(
-                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
-                workOrdersEnabled ? "translate-x-5" : "translate-x-0"
-              )} />
-            </button>
-          </div>
+          {(() => {
+            // Work Orders is a paid add-on. Show the free toggle only when the
+            // module is already on (legacy/manually-enabled tenants keep control)
+            // or the tenant has a purchased add-on that hasn't expired.
+            const addonPaidUp = workOrdersAddon != null && workOrdersAddon !== undefined &&
+              (workOrdersAddon.status === "active" ||
+               (workOrdersAddon.status === "cancelled" && new Date(workOrdersAddon.currentPeriodEnd) > new Date()));
+            const showToggle = workOrdersEnabled || addonPaidUp || workOrdersAddon === null; // null = still loading
+            if (showToggle) {
+              return (
+                <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                  <div>
+                    <p className="text-sm font-medium">Work Orders (Repairs)</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Track repair jobs from intake to collection: record the item and problem, assign a technician, add parts and labor, and move the job through Received → In Progress → Ready → Collected. Ready jobs can be loaded into the POS cart to charge the customer.
+                    </p>
+                    {workOrdersAddon?.status === "cancelled" && new Date(workOrdersAddon.currentPeriodEnd) > new Date() && (
+                      <p className="text-xs text-amber-500 mt-1">
+                        Add-on cancelled — available until {new Date(workOrdersAddon.currentPeriodEnd).toLocaleDateString()}.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={workOrdersEnabled}
+                    onClick={() => { setWorkOrdersEnabled(!workOrdersEnabled); markDirty(); }}
+                    className={cn(
+                      "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      workOrdersEnabled ? "bg-amber-500" : "bg-muted-foreground/30"
+                    )}
+                  >
+                    <span className={cn(
+                      "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                      workOrdersEnabled ? "translate-x-5" : "translate-x-0"
+                    )} />
+                  </button>
+                </div>
+              );
+            }
+            return (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      Work Orders (Repairs)
+                      <Badge variant="outline" className="border-amber-500/50 text-amber-600 dark:text-amber-400">Paid add-on</Badge>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Track repair jobs from intake to collection: record the item and problem, assign a technician, add parts and labor, and move the job through Received → In Progress → Ready → Collected. Ready jobs can be loaded into the POS cart to charge the customer.
+                    </p>
+                    {workOrdersAddon?.status === "expired" && (
+                      <p className="text-xs text-amber-500 mt-1">Your Work Orders add-on has expired. Renew to regain access.</p>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    className="bg-amber-500 hover:bg-amber-600 text-white shrink-0"
+                    onClick={() => navigate("/subscription")}
+                  >
+                    <CreditCard className="h-4 w-4 mr-1.5" />
+                    {workOrdersAddon?.status === "expired" ? "Renew" : "Enable"} Work Orders — $5/month
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="flex items-center justify-between rounded-lg border border-border p-4">
             <div>

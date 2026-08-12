@@ -19,10 +19,25 @@ import {
 } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
+import { hasWorkOrdersEntitlement } from "../lib/addon-entitlement";
 import { getSetting } from "./settings";
 import { sendWorkOrderEmail, sendWorkOrderStatusEmail, sendTechnicianAssignmentEmail, sendFollowUpVisitEmails } from "../lib/work-order-mail";
 
 const router: IRouter = Router();
+
+/* Work Orders is a paid add-on: every tenant-facing route in this module is
+ * gated on a server-side entitlement check (paid-up add-on or grandfathered
+ * legacy access). Public customer links (/public/work-orders/...) stay open. */
+router.use(async (req, res, next) => {
+  // This router is mounted at the shared /api root, so the middleware sees
+  // every API request — only gate the work-order paths themselves.
+  const isWorkOrderPath = req.path.startsWith("/work-orders") || req.path.startsWith("/work-order-appointments");
+  if (!isWorkOrderPath || req.path.startsWith("/public/")) { next(); return; }
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { next(); return; } // let each route return its own 401
+  if (await hasWorkOrdersEntitlement(tenantId)) { next(); return; }
+  res.status(403).json({ error: "The Work Orders add-on is not active. Purchase it on the Subscription page to use this module." });
+});
 
 function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
   const auth = req.headers["authorization"];

@@ -9,8 +9,9 @@ import {
   TENANT_TOKEN_KEY, saasMe, getPlans, createPayPalOrder, capturePayPalOrder,
   initiatePowerTranz, getPowerTranz3dsStatus, getBankAccounts, submitBankTransferProof, getMyBankTransferProofs,
   activateFreeSubscription, redeemCoupon, getBillingInvoices, openBillingPdf, resendBillingInvoice,
+  getAddons, initiateAddonPowerTranz, cancelAddon,
   type Plan, type Tenant, type Subscription, type BankAccount, type BankTransferProofRow, type NextScheduledPayment,
-  type BillingInvoiceRow,
+  type BillingInvoiceRow, type AddonInfo, type TenantAddonRow,
 } from "@/lib/saas-api";
 import { loadScript } from "@paypal/paypal-js";
 
@@ -51,6 +52,22 @@ export function SubscriptionPage() {
   const [threeDsData, setThreeDsData] = useState<{ spiToken: string; redirectData: string } | null>(null);
   const threeDsContainerRef = useRef<HTMLDivElement>(null);
 
+  // ── Add-ons (e.g. Work Orders $5/mo) ──
+  const [addons, setAddons] = useState<AddonInfo[]>([]);
+  const [myAddons, setMyAddons] = useState<TenantAddonRow[]>([]);
+  const [buyingAddon, setBuyingAddon] = useState<string | null>(null); // slug whose card form is open
+  const [addonCycle, setAddonCycle] = useState<"monthly" | "annual">("monthly");
+  const [addonCard, setAddonCard] = useState({ number: "", expiry: "", cvv: "", name: "" });
+  const [cancellingAddon, setCancellingAddon] = useState<string | null>(null);
+
+  const reloadAddons = useCallback(async () => {
+    try {
+      const r = await getAddons();
+      setAddons(r.addons);
+      setMyAddons(r.mine);
+    } catch { /* section simply stays empty */ }
+  }, []);
+
   async function reload() {
     const me = await saasMe();
     setTenant(me.tenant);
@@ -88,6 +105,7 @@ export function SubscriptionPage() {
     const token = localStorage.getItem(TENANT_TOKEN_KEY);
     if (!token) { navigate("/signup"); return; }
 
+    void reloadAddons();
     Promise.all([saasMe(), getPlans(), getBankAccounts(), getMyBankTransferProofs(), getBillingInvoices().catch(() => [])])
       .then(([me, p, ba, proofs, inv]) => {
         setTenant(me.tenant);
@@ -163,13 +181,16 @@ export function SubscriptionPage() {
     setIsProcessing(false);
     if (status === "approved") {
       const rrnSuffix = rrn ? ` · RRN: ${rrn}` : "";
-      setSuccess(`Successfully subscribed to ${planName ?? selectedPlan?.name ?? "plan"}!${rrnSuffix}`);
+      setSuccess(`Payment approved — ${planName ?? selectedPlan?.name ?? "plan"} is now active!${rrnSuffix}`);
       setShowPayment(false);
+      setBuyingAddon(null);
+      setAddonCard({ number: "", expiry: "", cvv: "", name: "" });
       await reload();
+      await reloadAddons();
     } else {
       setError(message || "Payment declined. Please try another card.");
     }
-  }, [selectedPlan, reload]);
+  }, [selectedPlan, reload, reloadAddons]);
 
   useEffect(() => {
     window.addEventListener("message", handle3dsMessage);
@@ -281,6 +302,63 @@ export function SubscriptionPage() {
       setError(msg.startsWith("PowerTranz") ? msg : `Payment failed: ${msg}`);
     } finally {
       if (!needs3ds) setIsProcessing(false);
+    }
+  }
+
+  async function handleAddonPowerTranz(addon: AddonInfo) {
+    const rawNumber = addonCard.number.replace(/\s/g, "");
+    if (!rawNumber || rawNumber.length < 13) { setError("Please enter a valid card number."); return; }
+    if (!addonCard.expiry || !/^\d{2}\s*\/\s*\d{2}$/.test(addonCard.expiry)) { setError("Please enter expiry in MM / YY format."); return; }
+    if (!addonCard.cvv || addonCard.cvv.length < 3) { setError("Please enter your CVV."); return; }
+    if (!addonCard.name.trim()) { setError("Please enter the cardholder name."); return; }
+    setError(""); setSuccess(""); setIsProcessing(true);
+    let needs3ds = false;
+    try {
+      const res = await initiateAddonPowerTranz({
+        addonSlug: addon.slug, billingCycle: addonCycle,
+        cardNumber: addonCard.number, cardExpiry: addonCard.expiry,
+        cardCvv: addonCard.cvv, cardholderName: addonCard.name,
+        returnUrl: window.location.href,
+      });
+
+      if (res.step === "3ds" && res.spiToken && res.redirectData) {
+        needs3ds = true;
+        setThreeDsData({ spiToken: res.spiToken, redirectData: res.redirectData });
+        return;
+      }
+
+      if (res.step === "approved") {
+        const ref = res.rrn ? ` · RRN: ${res.rrn}` : res.transactionId ? ` · Ref: ${res.transactionId}` : "";
+        setSuccess(`${addon.name} is now active!${ref}`);
+        setBuyingAddon(null);
+        setAddonCard({ number: "", expiry: "", cvv: "", name: "" });
+        await reloadAddons();
+        return;
+      }
+
+      const code = res.responseCode ?? "unknown";
+      const gatewayMsg = res.responseMessage ? ` — ${res.responseMessage}` : "";
+      setError(DECLINE_CODES[code] ?? `Payment declined (code: ${code}${gatewayMsg}).`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg.startsWith("PowerTranz") ? msg : `Payment failed: ${msg}`);
+    } finally {
+      if (!needs3ds) setIsProcessing(false);
+    }
+  }
+
+  async function handleCancelAddon(addon: AddonInfo) {
+    if (!confirm(`Cancel ${addon.name}? You keep access until the end of the period you've paid for.`)) return;
+    setCancellingAddon(addon.slug);
+    setError(""); setSuccess("");
+    try {
+      const res = await cancelAddon(addon.slug);
+      setSuccess(`${addon.name} cancelled — access continues until ${new Date(res.activeUntil).toLocaleDateString()}.`);
+      await reloadAddons();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not cancel the add-on.");
+    } finally {
+      setCancellingAddon(null);
     }
   }
 
@@ -446,6 +524,129 @@ export function SubscriptionPage() {
           </div>
         )}
       </div>
+
+      {/* Add-ons */}
+      {addons.length > 0 && (
+        <div className="bg-[#1a2332] border border-[#2a3a55] rounded-xl p-6 mb-6">
+          <h2 className="text-lg font-semibold text-white mb-1">Add-ons</h2>
+          <p className="text-[#94a3b8] text-sm mb-4">Optional modules billed on top of your plan.</p>
+          <div className="space-y-4">
+            {addons.map((addon) => {
+              const mine = myAddons.find((m) => m.addonSlug === addon.slug);
+              const isActive = mine?.status === "active";
+              const isCancelled = mine?.status === "cancelled" && new Date(mine.currentPeriodEnd) > new Date();
+              const canBuy = !isActive && !isCancelled;
+              const buying = buyingAddon === addon.slug;
+              return (
+                <div key={addon.slug} className="bg-[#0f1729] border border-[#2a3a55] rounded-lg p-4">
+                  <div className="flex items-start justify-between flex-wrap gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-white font-semibold">{addon.name}</span>
+                        {isActive && <span className="text-xs font-medium text-green-400 bg-green-500/10 border border-green-500/20 rounded-full px-2 py-0.5">Active until {new Date(mine!.currentPeriodEnd).toLocaleDateString()}</span>}
+                        {isCancelled && <span className="text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2 py-0.5">Cancelled — access until {new Date(mine!.currentPeriodEnd).toLocaleDateString()}</span>}
+                        {mine?.status === "expired" && <span className="text-xs font-medium text-[#94a3b8] bg-[#475569]/20 border border-[#475569]/40 rounded-full px-2 py-0.5">Expired</span>}
+                      </div>
+                      <p className="text-[#94a3b8] text-sm mt-1">{addon.description}</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xl font-bold text-white">${addon.priceMonthly}<span className="text-sm text-[#94a3b8] font-normal">/mo</span></div>
+                      <div className="text-xs text-[#94a3b8]">or ${addon.priceAnnual}/yr</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex gap-2 flex-wrap">
+                    {canBuy && !buying && (
+                      <button
+                        onClick={() => { setBuyingAddon(addon.slug); setError(""); setSuccess(""); }}
+                        className="px-4 py-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <CreditCard size={15} /> {mine ? "Renew" : "Purchase"} — ${addonCycle === "annual" ? addon.priceAnnual : addon.priceMonthly}/{addonCycle === "annual" ? "yr" : "mo"}
+                      </button>
+                    )}
+                    {isActive && (
+                      <button
+                        onClick={() => handleCancelAddon(addon)}
+                        disabled={cancellingAddon === addon.slug}
+                        className="px-4 py-2 border border-[#2a3a55] hover:border-red-500/50 text-[#94a3b8] hover:text-red-400 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {cancellingAddon === addon.slug ? "Cancelling…" : "Cancel add-on"}
+                      </button>
+                    )}
+                  </div>
+
+                  {buying && (
+                    <div className="mt-4 border-t border-[#2a3a55] pt-4 space-y-3">
+                      <div className="flex items-center gap-2 bg-[#1a2332] rounded-lg p-1 w-fit">
+                        <button onClick={() => setAddonCycle("monthly")}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${addonCycle === "monthly" ? "bg-[#3b82f6] text-white" : "text-[#94a3b8] hover:text-white"}`}>
+                          Monthly ${addon.priceMonthly}
+                        </button>
+                        <button onClick={() => setAddonCycle("annual")}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${addonCycle === "annual" ? "bg-[#3b82f6] text-white" : "text-[#94a3b8] hover:text-white"}`}>
+                          Annual ${addon.priceAnnual}
+                        </button>
+                      </div>
+                      <input
+                        placeholder="Cardholder name"
+                        value={addonCard.name}
+                        onChange={(e) => setAddonCard({ ...addonCard, name: e.target.value })}
+                        className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm placeholder-[#475569] focus:border-[#3b82f6] outline-none"
+                      />
+                      <input
+                        placeholder="Card number"
+                        inputMode="numeric"
+                        value={addonCard.number}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, "").slice(0, 19);
+                          setAddonCard({ ...addonCard, number: digits.replace(/(\d{4})(?=\d)/g, "$1 ") });
+                        }}
+                        className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm placeholder-[#475569] focus:border-[#3b82f6] outline-none"
+                      />
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          placeholder="MM / YY"
+                          inputMode="numeric"
+                          value={addonCard.expiry}
+                          onChange={(e) => {
+                            const digits = e.target.value.replace(/\D/g, "").slice(0, 4);
+                            setAddonCard({ ...addonCard, expiry: digits.length > 2 ? `${digits.slice(0, 2)} / ${digits.slice(2)}` : digits });
+                          }}
+                          className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm placeholder-[#475569] focus:border-[#3b82f6] outline-none"
+                        />
+                        <input
+                          placeholder="CVV"
+                          inputMode="numeric"
+                          type="password"
+                          value={addonCard.cvv}
+                          onChange={(e) => setAddonCard({ ...addonCard, cvv: e.target.value.replace(/\D/g, "").slice(0, 4) })}
+                          className="w-full bg-[#1a2332] border border-[#2a3a55] rounded-lg px-3 py-2 text-white text-sm placeholder-[#475569] focus:border-[#3b82f6] outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleAddonPowerTranz(addon)}
+                          disabled={isProcessing}
+                          className="px-4 py-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                        >
+                          {isProcessing ? <RefreshCw size={15} className="animate-spin" /> : <Shield size={15} />}
+                          Pay ${addonCycle === "annual" ? addon.priceAnnual : addon.priceMonthly} USD
+                        </button>
+                        <button
+                          onClick={() => { setBuyingAddon(null); setAddonCard({ number: "", expiry: "", cvv: "", name: "" }); }}
+                          className="px-4 py-2 border border-[#2a3a55] text-[#94a3b8] hover:text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      <p className="text-[#475569] text-xs">Charged in USD via secure 3D authentication. The module unlocks immediately after payment.</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Plan Selection */}
       {!showPayment && (

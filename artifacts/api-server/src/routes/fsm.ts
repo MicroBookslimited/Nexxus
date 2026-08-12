@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
+import { hasWorkOrdersEntitlement } from "../lib/addon-entitlement";
 import {
   ServiceAreasSchema, InstallDetailsSchema,
   AllocationCreateSchema, AllocationUpdateSchema,
@@ -37,6 +38,17 @@ import { getSetting } from "./settings";
  */
 
 const router: IRouter = Router();
+
+/* Work Orders is a paid add-on: the technician-facing FSM API operates on the
+ * same work-order data, so it carries the same server-side entitlement gate.
+ * (Routers share the /api mount, so filter by path prefix.) */
+router.use(async (req, res, next) => {
+  if (!req.path.startsWith("/fsm/")) { next(); return; }
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { next(); return; } // let each route return its own 401
+  if (await hasWorkOrdersEntitlement(tenantId)) { next(); return; }
+  res.status(403).json({ error: "The Work Orders add-on is not active. Purchase it on the Subscription page to use this module." });
+});
 
 function getTenantId(req: { headers: Record<string, string | undefined> }): number | null {
   const auth = req.headers["authorization"];

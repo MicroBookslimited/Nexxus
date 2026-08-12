@@ -126,6 +126,26 @@ export const initiatePowerTranz = (data: { planSlug: string; billingCycle: "mont
 export const getPowerTranz3dsStatus = (spiToken: string) =>
   api<{ status: "pending" | "approved" | "declined" | "not_found"; planName?: string; rrn?: string; message?: string }>(`/billing/powertranz/3ds-status?spiToken=${encodeURIComponent(spiToken)}`);
 
+/* ─── Add-ons ─── */
+export type AddonInfo = { slug: string; name: string; description: string; priceMonthly: number; priceAnnual: number };
+export type TenantAddonRow = {
+  addonSlug: string; status: "active" | "cancelled" | "expired";
+  billingCycle: "monthly" | "annual"; currentPeriodStart: string; currentPeriodEnd: string; amount: number | null;
+};
+
+export const getAddons = () =>
+  api<{ addons: AddonInfo[]; mine: TenantAddonRow[] }>("/billing/addons", { headers: tenantAuthHeaders() });
+
+export const initiateAddonPowerTranz = (data: { addonSlug: string; billingCycle: "monthly" | "annual"; cardNumber: string; cardExpiry: string; cardCvv: string; cardholderName: string; returnUrl: string }) =>
+  api<{ step: "3ds" | "approved" | "declined"; spiToken?: string; redirectData?: string; approved?: boolean; transactionId?: string; rrn?: string; responseCode?: string; responseMessage?: string }>("/billing/addons/powertranz/initiate", {
+    method: "POST", body: JSON.stringify(data), headers: tenantAuthHeaders(),
+  });
+
+export const cancelAddon = (slug: string) =>
+  api<{ success: boolean; activeUntil: string }>(`/billing/addons/${encodeURIComponent(slug)}/cancel`, {
+    method: "POST", headers: tenantAuthHeaders(),
+  });
+
 export const getBankAccounts = () =>
   api<BankAccount[]>("/billing/bank-accounts", { headers: tenantAuthHeaders() });
 

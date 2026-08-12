@@ -72,4 +72,5 @@
 - [WO follow-up & calendar](wo-followup-calendar.md) — follow-up = appointment row w/ staff_ids jsonb (manual DDL both DBs); calendar feed requires x-staff-id and server-filters non-office staff to their own visits.
 - [WO edit & notify](wo-edit-notify.md) — supervisors edit WOs via server-side field allowlist on the generic PATCH; assignment/customer emails fire only for newly-added recipients.
 - [Technician cash shifts & WO payments](tech-cash-shift.md) — techs share POS cash_sessions; work_order_payments strictly staff-scoped; WO→POS handoff credits depositPaid as fixed discount (no negative lines).
+- [Paid add-on entitlement](paid-addon-entitlement.md) — setting ≠ entitlement; server-side check + route middleware; durable row-locked pending reservation before gateway call; routers share /api mount so middleware must path-filter.
 - [Work Orders Phase 1 architecture](work-orders-phase1.md) — full module built; new tables, 7-status flow, notes/appointments/history API, list+kanban UI, job card HTML with CDN JsBarcode; add-on billing tables in place but self-serve purchase route not wired.

@@ -3,7 +3,8 @@ import {
   db, subscriptionsTable, subscriptionPlansTable, tenantsTable,
   bankAccountSettingsTable, bankTransferProofsTable, subscriptionInvoicesTable,
   subscriptionCouponsTable, subscriptionCouponRedemptionsTable,
-  type SubscriptionInvoice,
+  subscriptionAddonsTable, tenantAddonsTable, appSettingsTable,
+  type SubscriptionInvoice, type SubscriptionAddon,
 } from "@workspace/db";
 import { recordResellerCommission } from "./reseller";
 import { creditWallet as creditTopupWallet } from "./topup";
@@ -193,11 +194,13 @@ router.post("/billing/paypal/capture-order", async (req, res): Promise<void> => 
 
 /* ─── PowerTranz: Pending 3DS Store (in-memory, 10-min TTL) ─── */
 interface Pending3DS {
-  kind: "subscription" | "wallet";
+  kind: "subscription" | "wallet" | "addon";
   tenantId: number; planId: number; billingCycle: string; amount: number; planName: string;
   status: "pending" | "approved" | "declined";
   txId?: string; rrn?: string; message?: string;
   fundJmd?: number;
+  /** Set when kind === "addon": which add-on is being purchased. */
+  addonSlug?: string;
 }
 const pending3DS = new Map<string, Pending3DS>();
 
@@ -229,6 +232,84 @@ async function activateSubscription(
       providerRef: txId ?? null, periodStart: now, periodEnd, paidAt: now,
     });
   }
+}
+
+/* ─── Add-on billing helpers ───
+   Add-ons (e.g. Work Orders at $5/mo) are purchased on top of the base plan.
+   On successful payment we upsert the tenant_addons row and flip the matching
+   `<slug>_enabled` tenant setting on so the module unlocks immediately.
+   Expiry is applied lazily in GET /billing/addons (no cron): once
+   currentPeriodEnd passes, the row is marked expired and the setting turned off. */
+
+async function setTenantSetting(tenantId: number, key: string, value: string): Promise<void> {
+  // Same upsert pattern as PATCH /settings (routes/settings.ts).
+  const dbKey = `${tenantId}:${key}`;
+  await db
+    .insert(appSettingsTable)
+    .values({ key: dbKey, tenantId, value, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: appSettingsTable.key, set: { value, updatedAt: new Date() } });
+}
+
+function addonSettingKey(slug: string): string {
+  return `${slug}_enabled`; // e.g. work_orders → work_orders_enabled
+}
+
+/** Release a purchase reservation (status "pending") after a declined/failed payment. */
+async function releaseAddonReservation(tenantId: number, addonSlug: string): Promise<void> {
+  await db.update(tenantAddonsTable)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(and(
+      eq(tenantAddonsTable.tenantId, tenantId),
+      eq(tenantAddonsTable.addonSlug, addonSlug),
+      eq(tenantAddonsTable.status, "pending"),
+    ));
+}
+
+async function activateAddon(
+  tenantId: number, addon: SubscriptionAddon, billingCycle: string, txId: string | undefined, amount: number,
+) {
+  const now = new Date();
+  // Row-locked + idempotent activation: concurrent successful payments
+  // serialize on the lock and STACK periods (nothing paid for is lost);
+  // a retried callback with the same gateway txId is a no-op.
+  const { periodStart, periodEnd } = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(tenantAddonsTable).where(and(
+      eq(tenantAddonsTable.tenantId, tenantId),
+      eq(tenantAddonsTable.addonSlug, addon.slug),
+    )).for("update");
+
+    if (existing && txId && existing.providerRef === txId && existing.status === "active") {
+      // Duplicate callback for the same transaction — already activated.
+      return { periodStart: existing.currentPeriodStart, periodEnd: existing.currentPeriodEnd };
+    }
+
+    const start = existing && (existing.status === "active" || existing.status === "cancelled") && existing.currentPeriodEnd > now
+      ? new Date(existing.currentPeriodEnd) : now;
+    const end = new Date(start);
+    if (billingCycle === "annual") end.setFullYear(end.getFullYear() + 1);
+    else end.setMonth(end.getMonth() + 1);
+
+    await tx.insert(tenantAddonsTable).values({
+      tenantId, addonSlug: addon.slug, billingCycle, status: "active",
+      currentPeriodStart: start, currentPeriodEnd: end,
+      provider: "powertranz", providerRef: txId ?? null, amount,
+    }).onConflictDoUpdate({
+      target: [tenantAddonsTable.tenantId, tenantAddonsTable.addonSlug],
+      set: {
+        billingCycle, status: "active", currentPeriodStart: start, currentPeriodEnd: end,
+        provider: "powertranz", providerRef: txId ?? null, amount, updatedAt: now,
+      },
+    });
+    return { periodStart: start, periodEnd: end };
+  });
+
+  await setTenantSetting(tenantId, addonSettingKey(addon.slug), "true");
+
+  await issueSubscriptionInvoice({
+    tenantId, planId: null, planName: `${addon.name} add-on`, billingCycle, amount,
+    currency: "USD", provider: "powertranz", paymentMethodLabel: "Card",
+    providerRef: txId ?? null, periodStart, periodEnd, paidAt: now,
+  });
 }
 
 async function callPowerTranz(endpoint: string, body: object | string): Promise<{ raw: string; status: number; data: Record<string, unknown> }> {
@@ -358,6 +439,208 @@ router.post("/billing/powertranz/initiate", async (req, res): Promise<void> => {
   }
 });
 
+/* ─── Add-ons: list (with lazy expiry) ─── */
+router.get("/billing/addons", async (req, res): Promise<void> => {
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const addons = await db.select().from(subscriptionAddonsTable).where(eq(subscriptionAddonsTable.isActive, true));
+  const mine = await db.select().from(tenantAddonsTable).where(eq(tenantAddonsTable.tenantId, tenant.tenantId));
+
+  // Lazy expiry: no cron — when a purchased/cancelled add-on's period has
+  // lapsed, mark it expired and switch the module setting off.
+  const now = new Date();
+  for (const row of mine) {
+    if ((row.status === "active" || row.status === "cancelled") && row.currentPeriodEnd < now) {
+      await db.update(tenantAddonsTable)
+        .set({ status: "expired", updatedAt: now })
+        .where(eq(tenantAddonsTable.id, row.id));
+      await setTenantSetting(tenant.tenantId, addonSettingKey(row.addonSlug), "false");
+      row.status = "expired";
+    }
+  }
+
+  res.json({
+    addons: addons.map((a) => ({
+      slug: a.slug, name: a.name, description: a.description,
+      priceMonthly: a.priceMonthly, priceAnnual: a.priceAnnual,
+    })),
+    // "pending" rows are purchase reservations mid-3DS — not shown to the UI.
+    mine: mine.filter((m) => m.status !== "pending").map((m) => ({
+      addonSlug: m.addonSlug, status: m.status, billingCycle: m.billingCycle,
+      currentPeriodStart: m.currentPeriodStart, currentPeriodEnd: m.currentPeriodEnd,
+      amount: m.amount,
+    })),
+  });
+});
+
+/* ─── Add-ons: PowerTranz initiate (mirrors the plan 3DS flow) ─── */
+const AddonPowerTranzBody = z.object({
+  addonSlug: z.string(),
+  billingCycle: z.enum(["monthly", "annual"]),
+  cardNumber: z.string(),
+  cardExpiry: z.string(),
+  cardCvv: z.string(),
+  cardholderName: z.string(),
+  returnUrl: z.string().url(),
+});
+
+router.post("/billing/addons/powertranz/initiate", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req, res)) return;
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const parsed = AddonPowerTranzBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request", details: parsed.error.issues }); return; }
+
+  const { spId, spPassword, enabled } = await getPowerTranzConfig();
+  if (!spId || !spPassword) { res.status(503).json({ error: "PowerTranz not configured. Add credentials in Superadmin → Gateway Settings." }); return; }
+  if (!enabled) { res.status(503).json({ error: "PowerTranz card payments are currently disabled." }); return; }
+
+  const [addon] = await db.select().from(subscriptionAddonsTable).where(and(
+    eq(subscriptionAddonsTable.slug, parsed.data.addonSlug),
+    eq(subscriptionAddonsTable.isActive, true),
+  ));
+  if (!addon) { res.status(404).json({ error: "Add-on not found" }); return; }
+
+  // Guard against double-charge: take a durable reservation on the tenant's
+  // add-on row (status "pending") under a row lock BEFORE calling the gateway.
+  // Two concurrent initiates serialize on the lock; the loser gets a 409.
+  // The reservation is released (status "expired") on decline/error, and a
+  // stale one (>15 min) can be taken over.
+  const reserved = await db.transaction(async (tx) => {
+    const [row] = await tx.select().from(tenantAddonsTable).where(and(
+      eq(tenantAddonsTable.tenantId, tenant.tenantId),
+      eq(tenantAddonsTable.addonSlug, addon.slug),
+    )).for("update");
+    const nowTs = new Date();
+    if (row) {
+      if ((row.status === "active" || row.status === "cancelled") && row.currentPeriodEnd > nowTs) {
+        return { ok: false as const, error: `${addon.name} is already available until ${row.currentPeriodEnd.toISOString().slice(0, 10)}.` };
+      }
+      // A pending reservation blocks new attempts until its 3DS session can no
+      // longer complete: sessions are released after 10 min (see initiate), and
+      // PowerTranz SPI tokens themselves expire well within 30 min, so a
+      // 30-minute-old reservation (e.g. leftover from a server restart) is
+      // safe to take over — the original attempt can no longer charge.
+      if (row.status === "pending" && row.updatedAt > new Date(nowTs.getTime() - 30 * 60 * 1000)) {
+        return { ok: false as const, error: "A payment for this add-on is already in progress. Please wait a few minutes and try again." };
+      }
+      await tx.update(tenantAddonsTable)
+        .set({ status: "pending", updatedAt: nowTs })
+        .where(eq(tenantAddonsTable.id, row.id));
+    } else {
+      await tx.insert(tenantAddonsTable).values({
+        tenantId: tenant.tenantId, addonSlug: addon.slug, billingCycle: parsed.data.billingCycle,
+        status: "pending", currentPeriodStart: nowTs, currentPeriodEnd: nowTs,
+        provider: "powertranz", providerRef: null, amount: null,
+      });
+    }
+    return { ok: true as const };
+  });
+  if (!reserved.ok) { res.status(409).json({ error: reserved.error }); return; }
+
+  const amount = parsed.data.billingCycle === "annual" ? addon.priceAnnual : addon.priceMonthly;
+  const [mm, yy] = parsed.data.cardExpiry.split("/").map((s) => s.trim());
+  const cardExpiration = `${yy}${mm}`;
+  const origin = new URL(parsed.data.returnUrl).origin;
+  const merchantResponseUrl = `${origin}/api/billing/powertranz/3ds-callback`;
+
+  try {
+    const txId = crypto.randomUUID();
+    const { data } = await callPowerTranz("/api/spi/sale", {
+      TransactionIdentifier: txId,
+      TotalAmount: Number(amount),
+      CurrencyCode: "840",
+      ThreeDSecure: true,
+      Source: {
+        CardPan: parsed.data.cardNumber.replace(/\s/g, ""),
+        CardCvv: parsed.data.cardCvv,
+        CardExpiration: cardExpiration,
+        CardholderName: parsed.data.cardholderName,
+      },
+      OrderIdentifier: `NXADDON-${tenant.tenantId}-${Date.now()}`,
+      ExtendedData: {
+        ThreeDSecure: { ChallengeWindowSize: "05", ChallengeIndicator: "01" },
+        MerchantResponseUrl: merchantResponseUrl,
+      },
+    });
+
+    const isoCode = data.IsoResponseCode as string | undefined;
+    const spiToken = data.SpiToken as string | undefined;
+
+    if (isoCode === "SP4" && spiToken && data.RedirectData) {
+      pending3DS.set(spiToken, {
+        kind: "addon", addonSlug: addon.slug,
+        tenantId: tenant.tenantId, planId: 0,
+        billingCycle: parsed.data.billingCycle, amount: Number(amount),
+        planName: `${addon.name} add-on`, status: "pending",
+      });
+      // Durably link the reservation to this 3DS session (survives restarts,
+      // enables reconciliation against the gateway by token/tx reference).
+      await db.update(tenantAddonsTable)
+        .set({ providerRef: `spi:${spiToken}`, updatedAt: new Date() })
+        .where(and(
+          eq(tenantAddonsTable.tenantId, tenant.tenantId),
+          eq(tenantAddonsTable.addonSlug, addon.slug),
+          eq(tenantAddonsTable.status, "pending"),
+        ));
+      // When the 3DS window lapses, drop the session AND release the
+      // reservation if the callback never resolved it.
+      setTimeout(() => {
+        const p = pending3DS.get(spiToken!);
+        pending3DS.delete(spiToken!);
+        if (p && p.status === "pending") {
+          void releaseAddonReservation(tenant.tenantId, addon.slug).catch(() => {});
+        }
+      }, 10 * 60 * 1000);
+      res.json({ step: "3ds", spiToken, redirectData: data.RedirectData });
+      return;
+    }
+
+    // Direct approval (frictionless)
+    if (data.Approved) {
+      await activateAddon(tenant.tenantId, addon, parsed.data.billingCycle, data.TransactionIdentifier as string, Number(amount));
+      res.json({ step: "approved", approved: true, transactionId: data.TransactionIdentifier, rrn: data.RrN, authCode: data.AuthorizationCode });
+      return;
+    }
+
+    const errors = data.Errors as Array<{ Code: string; Message: string }> | undefined;
+    const declineMsg = (data.ResponseMessage as string) ?? errors?.[0]?.Message ?? "Payment declined";
+    await releaseAddonReservation(tenant.tenantId, addon.slug);
+    void sendSubscriptionPaymentFailureEmail({ tenantId: tenant.tenantId, planName: `${addon.name} add-on`, reason: declineMsg });
+    res.json({
+      step: "declined", approved: false,
+      responseCode: isoCode ?? data.ResponseCode ?? "unknown",
+      responseMessage: declineMsg,
+    });
+  } catch (err) {
+    console.error("[PowerTranz] addon initiate error:", err);
+    await releaseAddonReservation(tenant.tenantId, addon.slug).catch(() => {});
+    res.status(500).json({ error: "PowerTranz request failed", details: String(err) });
+  }
+});
+
+/* ─── Add-ons: cancel (access continues until the paid period ends) ─── */
+router.post("/billing/addons/:slug/cancel", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req, res)) return;
+  const tenant = getTenantFromAuth(req);
+  if (!tenant) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const slug = req.params.slug;
+  const [row] = await db.select().from(tenantAddonsTable).where(and(
+    eq(tenantAddonsTable.tenantId, tenant.tenantId),
+    eq(tenantAddonsTable.addonSlug, slug),
+  ));
+  if (!row || row.status !== "active") { res.status(404).json({ error: "No active add-on to cancel" }); return; }
+
+  await db.update(tenantAddonsTable)
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(eq(tenantAddonsTable.id, row.id));
+
+  res.json({ success: true, activeUntil: row.currentPeriodEnd });
+});
+
 /* ─── PowerTranz: 3DS Callback (iframe redirect target, Step 2) ─── */
 router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> => {
   console.log("[PowerTranz 3DS callback] body keys:", Object.keys(req.body || {}));
@@ -399,6 +682,21 @@ router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> 
         pending3DS.set(spiToken, { ...pending, status: "approved", txId: data.TransactionIdentifier as string, rrn: data.RrN as string });
         setTimeout(() => pending3DS.delete(spiToken), 5 * 60 * 1000);
         res.send(closeScript("approved", `Wallet funded!${rrn}`, `,fundJmd:${JSON.stringify(pending.fundJmd ?? 0)}`));
+      } else if (pending.kind === "addon") {
+        const [addon] = await db.select().from(subscriptionAddonsTable).where(eq(subscriptionAddonsTable.slug, pending.addonSlug ?? ""));
+        if (!addon) {
+          // Payment captured but we can't activate — surface a failure so the
+          // tenant contacts support instead of believing the module is live.
+          console.error("[PowerTranz] addon 3ds-callback: addon not found:", pending.addonSlug);
+          pending3DS.set(spiToken, { ...pending, status: "declined", message: "Payment received but activation failed — please contact support." });
+          setTimeout(() => pending3DS.delete(spiToken), 5 * 60 * 1000);
+          res.send(closeScript("declined", "Payment received but activation failed — please contact support."));
+          return;
+        }
+        await activateAddon(pending.tenantId, addon, pending.billingCycle, data.TransactionIdentifier as string, pending.amount);
+        pending3DS.set(spiToken, { ...pending, status: "approved", txId: data.TransactionIdentifier as string, rrn: data.RrN as string });
+        setTimeout(() => pending3DS.delete(spiToken), 5 * 60 * 1000);
+        res.send(closeScript("approved", `Payment approved!${rrn}`, `,planName:${JSON.stringify(pending.planName)}`));
       } else {
         await activateSubscription(pending.tenantId, pending.planId, pending.billingCycle, data.TransactionIdentifier as string, { amount: pending.amount, planName: pending.planName });
         await recordResellerCommission(pending.tenantId, pending.planId, pending.amount);
@@ -409,8 +707,11 @@ router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> 
     } else {
       const msg = (data.ResponseMessage as string) ?? "Payment was declined";
       pending3DS.set(spiToken, { ...pending, status: "declined", message: msg });
-      // Notify the tenant immediately — subscription payments only (not wallet funding).
-      if (pending.kind === "subscription") {
+      if (pending.kind === "addon" && pending.addonSlug) {
+        await releaseAddonReservation(pending.tenantId, pending.addonSlug).catch(() => {});
+      }
+      // Notify the tenant immediately — subscription & add-on payments (not wallet funding).
+      if (pending.kind === "subscription" || pending.kind === "addon") {
         void sendSubscriptionPaymentFailureEmail({ tenantId: pending.tenantId, planName: pending.planName, reason: msg });
       }
       res.send(closeScript("declined", msg, `,responseCode:${JSON.stringify(data.IsoResponseCode ?? data.ResponseCode ?? "")}`));
@@ -419,8 +720,11 @@ router.post("/billing/powertranz/3ds-callback", async (req, res): Promise<void> 
     console.error("[PowerTranz] 3ds-callback error:", err);
     const errMsg = String(err);
     pending3DS.set(spiToken, { ...pending, status: "declined", message: errMsg });
-    // Notify the tenant on processing errors too — subscription only.
-    if (pending.kind === "subscription") {
+    if (pending.kind === "addon" && pending.addonSlug) {
+      await releaseAddonReservation(pending.tenantId, pending.addonSlug).catch(() => {});
+    }
+    // Notify the tenant on processing errors too — subscription & add-on.
+    if (pending.kind === "subscription" || pending.kind === "addon") {
       void sendSubscriptionPaymentFailureEmail({ tenantId: pending.tenantId, planName: pending.planName, reason: "Payment processing error. Please try again or contact support." });
     }
     res.send(closeScript("error", "Payment processing error. Please try again."));
