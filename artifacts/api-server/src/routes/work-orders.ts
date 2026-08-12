@@ -6,6 +6,7 @@ import {
   workOrdersTable,
   workOrderNotesTable,
   workOrderPhotosTable,
+  workOrderReviewsTable,
   workOrderStatusHistoryTable,
   workOrderAppointmentsTable,
   customersTable,
@@ -97,6 +98,7 @@ const CreateWorkOrderBody = z.object({
   priority: z.enum(["low", "normal", "high", "urgent", "emergency"]).optional(),
   assignedStaffId: z.number().int().optional(),
   assignedStaffIds: z.array(z.number().int()).optional(),
+  estimatedMinutes: z.number().int().positive().max(60 * 24 * 30).optional(),
   promisedDate: z.coerce.date().optional(),
   appointmentDate: z.coerce.date().optional(),
   storageLocation: z.string().max(100).optional(),
@@ -132,6 +134,7 @@ const UpdateWorkOrderBody = z.object({
   priority: z.enum(["low", "normal", "high", "urgent", "emergency"]).optional(),
   assignedStaffId: z.number().int().nullable().optional(),
   assignedStaffIds: z.array(z.number().int()).nullable().optional(),
+  estimatedMinutes: z.number().int().positive().max(60 * 24 * 30).nullable().optional(),
   promisedDate: z.coerce.date().nullable().optional(),
   appointmentDate: z.coerce.date().nullable().optional(),
   storageLocation: z.string().max(100).nullable().optional(),
@@ -256,7 +259,7 @@ async function batchResolveStaffNames(
 /* ─── Work order normalise ───────────────────────────────────────────────────── */
 type WorkOrderRow = typeof workOrdersTable.$inferSelect;
 /* ─── HMAC portal token (lets customers check their own job status) ────────── */
-function makePortalToken(woId: number, tenantId: number): string {
+export function makePortalToken(woId: number, tenantId: number): string {
   const secret = process.env["SESSION_SECRET"] ?? "nexus-pos-secret";
   return createHmac("sha256", secret).update(`wo:${woId}:${tenantId}`).digest("hex").slice(0, 16);
 }
@@ -272,8 +275,10 @@ function normalize(
   const assignedStaffNames = staffNamesMap && ids.length > 0
     ? ids.map((id) => staffNamesMap.get(id) ?? "").filter(Boolean)
     : staffName ? [staffName] : undefined;
+  // Never expose the completion-OTP secret material to clients.
+  const { completionOtpHash: _otp, completionOtpExpiresAt: _exp, completionOtpAttempts: _att, ...safe } = w;
   return {
-    ...w,
+    ...safe,
     assignedStaffIds: ids,
     customerName: customerName ?? undefined,
     customerPhone: customerPhone ?? undefined,
@@ -340,7 +345,12 @@ router.get("/work-orders/:id", async (req, res): Promise<void> => {
   if (!row) { res.status(404).json({ error: "Work order not found" }); return; }
   const woIds: number[] = Array.isArray(row.workOrder.assignedStaffIds) ? row.workOrder.assignedStaffIds as number[] : [];
   const staffNamesMap = await batchResolveStaffNames(tenantId, woIds);
-  res.json(normalize(row.workOrder, row.customerName, row.customerPhone, row.staffName, staffNamesMap));
+  const [review] = await db.select().from(workOrderReviewsTable)
+    .where(and(eq(workOrderReviewsTable.tenantId, tenantId), eq(workOrderReviewsTable.workOrderId, id)));
+  res.json({
+    ...normalize(row.workOrder, row.customerName, row.customerPhone, row.staffName, staffNamesMap),
+    review: review ? { rating: review.rating, comment: review.comment, reviewerName: review.reviewerName, createdAt: review.createdAt } : null,
+  });
 });
 
 // CREATE
@@ -405,6 +415,7 @@ router.post("/work-orders", async (req, res): Promise<void> => {
         priority: data.priority ?? "normal",
         assignedStaffId: primaryStaffId,
         assignedStaffIds: staffIds,
+        estimatedMinutes: data.estimatedMinutes ?? null,
         promisedDate: data.promisedDate ?? null,
         appointmentDate: data.appointmentDate ?? null,
         storageLocation: data.storageLocation ?? null,
@@ -567,6 +578,7 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
   for (const f of textFields) {
     if (data[f] !== undefined) (updates as Record<string, unknown>)[f] = data[f];
   }
+  if (data.estimatedMinutes !== undefined) updates.estimatedMinutes = data.estimatedMinutes;
   if (data.serviceAreas !== undefined) updates.serviceAreas = data.serviceAreas;
   if (data.installDetails !== undefined) {
     // Atomic section-level merge in SQL so concurrent saves (POS + technician
@@ -1034,6 +1046,9 @@ router.get("/public/work-orders/:id/:token", async (req, res): Promise<void> => 
     ))
     .orderBy(desc(workOrderNotesTable.createdAt));
 
+  const [review] = await db.select().from(workOrderReviewsTable)
+    .where(and(eq(workOrderReviewsTable.tenantId, wo.tenantId), eq(workOrderReviewsTable.workOrderId, id)));
+
   res.json({
     workOrderNumber: wo.workOrderNumber,
     status: wo.status,
@@ -1049,7 +1064,48 @@ router.get("/public/work-orders/:id/:token", async (req, res): Promise<void> => 
     createdAt: wo.createdAt,
     updatedAt: wo.updatedAt,
     notes: notes.map((n) => ({ content: n.content, createdAt: n.createdAt })),
+    // Review & ratings: the customer may rate once the work is done.
+    workCompletedAt: wo.workCompletedAt,
+    canReview: !!wo.workCompletedAt && !review,
+    review: review ? { rating: review.rating, comment: review.comment, createdAt: review.createdAt } : null,
   });
+});
+
+// Public: submit a rating for a completed job (one per work order).
+const PublicReviewBody = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(2000).optional(),
+  name: z.string().max(120).optional(),
+});
+router.post("/public/work-orders/:id/:token/review", async (req, res): Promise<void> => {
+  const id = parseInt(req.params["id"] ?? "", 10);
+  if (!id || isNaN(id)) { res.status(404).json({ error: "Not found" }); return; }
+  const token = (req.params["token"] ?? "").trim();
+
+  const wo = await db.query.workOrdersTable.findFirst({ where: eq(workOrdersTable.id, id) });
+  if (!wo) { res.status(404).json({ error: "Not found" }); return; }
+  if (!token || token !== makePortalToken(id, wo.tenantId)) {
+    res.status(403).json({ error: "Invalid or expired link" }); return;
+  }
+  if (!wo.workCompletedAt && wo.status !== "collected" && wo.status !== "ready") {
+    res.status(400).json({ error: "This job isn't completed yet" }); return;
+  }
+  const parsed = PublicReviewBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Please choose a rating from 1 to 5" }); return; }
+
+  // One review per work order — the unique index makes this race-safe.
+  const [created] = await db.insert(workOrderReviewsTable)
+    .values({
+      tenantId: wo.tenantId,
+      workOrderId: id,
+      rating: parsed.data.rating,
+      comment: parsed.data.comment?.trim() || null,
+      reviewerName: parsed.data.name?.trim() || wo.contactName || null,
+    })
+    .onConflictDoNothing()
+    .returning();
+  if (!created) { res.status(409).json({ error: "A review was already submitted for this job — thank you!" }); return; }
+  res.status(201).json({ ok: true, rating: created.rating });
 });
 
 router.get("/work-orders-stats", async (req, res): Promise<void> => {

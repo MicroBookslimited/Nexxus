@@ -53,6 +53,7 @@ export type WorkOrder = {
   assignmentStatus?: "pending" | "accepted" | "declined";
   assignmentRespondedAt?: string | null;
   declineReason?: string | null;
+  estimatedMinutes: number | null;
   promisedDate: string | null;
   appointmentDate: string | null;
   storageLocation: string | null;
@@ -75,6 +76,9 @@ export type WorkOrder = {
   completionSignature?: string | null;
   completionSignedBy?: string | null;
   completionSignedAt?: string | null;
+  completionVerifiedVia?: string | null;
+  reviewEmailSentAt?: string | null;
+  review?: { rating: number; comment: string | null; reviewerName: string | null; createdAt: string } | null;
   portalToken?: string;
   createdAt: string;
   updatedAt: string;
@@ -162,6 +166,15 @@ export type PublicWorkOrder = {
   createdAt: string;
   updatedAt: string;
   notes: Array<{ content: string; createdAt: string }>;
+  workCompletedAt?: string | null;
+  canReview?: boolean;
+  review?: { rating: number; comment: string | null; createdAt: string } | null;
+};
+
+export type WorkOrderReview = {
+  rating: number;
+  comment: string | null;
+  createdAt: string;
 };
 
 export type CreateWorkOrderInput = {
@@ -184,6 +197,7 @@ export type CreateWorkOrderInput = {
   priority?: string;
   assignedStaffId?: number;
   assignedStaffIds?: number[];
+  estimatedMinutes?: number;
   promisedDate?: string;
   appointmentDate?: string;
   storageLocation?: string;
@@ -560,4 +574,22 @@ export function usePublicWorkOrder(id: number | null, token: string | null) {
     enabled: id != null && !!token,
     retry: false,
   });
+}
+
+/** Public review submission — one per work order, validated by the portal token. */
+export async function submitPublicWorkOrderReview(
+  id: number,
+  token: string,
+  body: { rating: number; comment?: string; name?: string },
+): Promise<{ ok: boolean; rating: number }> {
+  const res = await fetch(`/api/public/work-orders/${id}/${token}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as { error?: string }).error ?? "Failed to submit review");
+  }
+  return res.json() as Promise<{ ok: boolean; rating: number }>;
 }

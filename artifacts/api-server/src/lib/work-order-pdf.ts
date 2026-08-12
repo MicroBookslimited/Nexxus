@@ -302,14 +302,20 @@ function drawSignOff(doc: PDFKit.PDFDocument, data: WorkOrderDocData, y: number)
   y += 14;
 
   if (data.signature) {
-    // Captured digital signature
+    // Captured digital signature (or OTP verification sentinel — no strokes to draw)
+    const isOtp = data.signature.svgDataUrl === "otp-verified";
     doc.font("Helvetica").fontSize(9).fillColor(C.ink).text(data.signature.signedBy, M + 12, y);
     y += 13;
-    const sigH = drawSignatureStrokes(doc, data.signature.svgDataUrl, M + 12, y, 260, 80);
+    const sigH = isOtp ? 0 : drawSignatureStrokes(doc, data.signature.svgDataUrl, M + 12, y, 260, 80);
     y += (sigH > 0 ? sigH : 0) + 4;
     doc.moveTo(M + 12, y).lineTo(M + 280, y).strokeColor(C.muted).lineWidth(0.5).stroke();
     doc.font("Helvetica").fontSize(8).fillColor(C.muted)
-      .text(`Digitally signed on ${fmtDate(data.signature.signedAt)}`, M + 12, y + 4);
+      .text(
+        isOtp
+          ? `Completion verified via one-time email code on ${fmtDate(data.signature.signedAt)}`
+          : `Digitally signed on ${fmtDate(data.signature.signedAt)}`,
+        M + 12, y + 4,
+      );
   } else {
     doc.font("Helvetica").fontSize(9).fillColor(C.ink).text(`Name & Signature — ${data.clientName}`, M + 12, y);
     y += 13;

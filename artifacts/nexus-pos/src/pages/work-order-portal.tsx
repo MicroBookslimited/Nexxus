@@ -3,9 +3,11 @@
  * URL: /wo/:id/:token
  * The token is an HMAC-SHA256 fragment generated server-side per work order.
  */
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "wouter";
-import { usePublicWorkOrder } from "@workspace/api-client-react";
-import { Wrench, Clock, CheckCircle2, Package, Pause, Ban, AlertTriangle } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { usePublicWorkOrder, submitPublicWorkOrderReview } from "@workspace/api-client-react";
+import { Wrench, Clock, CheckCircle2, Package, Pause, Ban, AlertTriangle, Star } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   received: "Received",
@@ -199,9 +201,117 @@ export default function WorkOrderPortalPage() {
           </div>
         </div>
 
+        {/* Review & ratings */}
+        {(wo.canReview || wo.review) && (
+          <ReviewSection woId={id} token={token} review={wo.review ?? null} />
+        )}
+
         <p className="text-center text-xs text-slate-400 pb-4">
           Powered by NEXXUS POS · {wo.workOrderNumber}
         </p>
+      </div>
+    </div>
+  );
+}
+
+function ReviewSection({
+  woId, token, review,
+}: {
+  woId: number;
+  token: string;
+  review: { rating: number; comment: string | null; createdAt: string } | null;
+}) {
+  const queryClient = useQueryClient();
+  const [rating, setRating] = useState(0);
+  const [hover, setHover] = useState(0);
+  const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
+
+  // The review email links to …#review — scroll the section into view.
+  useEffect(() => {
+    if (window.location.hash === "#review" && anchorRef.current) {
+      anchorRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, []);
+
+  const submit = async () => {
+    if (!rating || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await submitPublicWorkOrderReview(woId, token, {
+        rating,
+        ...(comment.trim() ? { comment: comment.trim() } : {}),
+      });
+      setDone(true);
+      void queryClient.invalidateQueries({ queryKey: ["public-wo", woId, token] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to submit review");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div ref={anchorRef} id="review" className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Rate Your Experience</p>
+      </div>
+      <div className="px-5 py-4 space-y-3">
+        {review || done ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Star
+                  key={i}
+                  className={`h-6 w-6 ${i <= (review?.rating ?? rating) ? "text-amber-400 fill-amber-400" : "text-slate-200"}`}
+                />
+              ))}
+            </div>
+            {review?.comment && <p className="text-sm text-slate-600 whitespace-pre-wrap">{review.comment}</p>}
+            <p className="text-sm text-emerald-600 font-medium">Thank you for your feedback!</p>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-slate-600">How was the service on this job?</p>
+            <div className="flex items-center gap-1.5" onMouseLeave={() => setHover(0)}>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <button
+                  key={i}
+                  type="button"
+                  aria-label={`${i} star${i > 1 ? "s" : ""}`}
+                  onMouseEnter={() => setHover(i)}
+                  onClick={() => setRating(i)}
+                  className="p-0.5"
+                >
+                  <Star
+                    className={`h-8 w-8 transition-colors ${i <= (hover || rating) ? "text-amber-400 fill-amber-400" : "text-slate-300"}`}
+                  />
+                </button>
+              ))}
+            </div>
+            <textarea
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+              rows={3}
+              maxLength={2000}
+              placeholder="Anything you'd like to tell us? (optional)"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+            />
+            {error && <p className="text-sm text-rose-600">{error}</p>}
+            <button
+              type="button"
+              disabled={!rating || submitting}
+              onClick={() => void submit()}
+              className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              {submitting ? "Submitting…" : "Submit Review"}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

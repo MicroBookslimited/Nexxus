@@ -83,7 +83,9 @@ export default function MaterialsScreen() {
   const readOnly = job ? job.status === 'collected' || job.status === 'cancelled' : false;
   // After customer sign-off the job content is frozen (no new dispatches, no
   // cable-run edits) but returning tools/materials to stock stays allowed.
+  // Cable-run logging is also locked until work is started (Arrive on Site).
   const signedOff = job ? !!(job.completionSignature || job.customerSignature) : false;
+  const notStarted = job ? !job.arrivedAt : false;
   const allocations = job?.allocations ?? [];
 
   if (isLoading || !job) {
@@ -131,7 +133,7 @@ export default function MaterialsScreen() {
             open={openId === a.id}
             onToggle={() => setOpenId(openId === a.id ? null : a.id)}
             readOnly={readOnly}
-            contentLocked={signedOff}
+            contentLocked={signedOff || notStarted}
             saving={patchMutation.isPending}
             onPatch={(body) => patchMutation.mutate({ allocationId: a.id, body })}
           />

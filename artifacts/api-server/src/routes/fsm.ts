@@ -16,8 +16,13 @@ import {
   ServiceAreasSchema, InstallDetailsSchema,
   AllocationCreateSchema, AllocationUpdateSchema,
   createAllocation, updateAllocation, listAllocations,
+  makePortalToken,
 } from "./work-orders";
-import { sendWorkOrderStatusEmail, sendWorkOrderSignedEmail } from "../lib/work-order-mail";
+import {
+  sendWorkOrderStatusEmail, sendWorkOrderSignedEmail,
+  sendCompletionOtpEmail, sendWorkOrderReviewEmail,
+} from "../lib/work-order-mail";
+import { createHash, randomInt } from "node:crypto";
 import { getSetting } from "./settings";
 
 /**
@@ -96,6 +101,7 @@ function toJob(w: typeof workOrdersTable.$inferSelect, customerName?: string | n
     contactPhone: customerPhone ?? w.contactPhone ?? null,
     contactEmail: w.contactEmail,
     storageLocation: w.storageLocation,
+    estimatedMinutes: w.estimatedMinutes,
     appointmentDate: w.appointmentDate,
     promisedDate: w.promisedDate,
     notes: w.notes,
@@ -240,6 +246,11 @@ router.patch("/fsm/jobs/:id/allocations/:allocId", async (req, res): Promise<voi
   if (!Number.isInteger(allocId)) { res.status(400).json({ error: "Invalid id" }); return; }
   const parsed = AllocationUpdateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  // Cable runs / remarks are work logs — require work to be started in the app.
+  if ((parsed.data.runs !== undefined || parsed.data.remarks !== undefined) && !ctx.job.arrivedAt) {
+    res.status(400).json({ error: "Start work first — tap Arrive on Site before logging cable runs" });
+    return;
+  }
   const result = await updateAllocation(ctx.tenantId, ctx.job.id, allocId, parsed.data);
   if (result.error) { res.status(result.status ?? 400).json({ error: result.error }); return; }
   res.json(result.allocation);
@@ -264,6 +275,11 @@ router.patch("/fsm/jobs/:id/install-details", async (req, res): Promise<void> =>
   }
   if (ctx.job.completionSignature || ctx.job.customerSignature) {
     res.status(400).json({ error: "The customer has signed off on this job — the form can no longer be changed" });
+    return;
+  }
+  // Work can't be logged before the technician has started it in the app.
+  if (!ctx.job.arrivedAt) {
+    res.status(400).json({ error: "Start work first — tap Arrive on Site before filling the installation form" });
     return;
   }
 
@@ -574,6 +590,42 @@ async function execTransition(
   if (action === "complete" && "fromStatus" in result && result.row.workCompletedAt && result.row.completionSignature) {
     emailSignedCopy(tenantId, result.row).catch(() => { /* logged inside */ });
   }
+
+  // After every completed job: ask the customer to rate the experience (once).
+  if (action === "complete" && "fromStatus" in result && result.row.workCompletedAt) {
+    sendReviewRequestOnce(tenantId, result.row).catch(() => { /* logged inside */ });
+  }
+}
+
+/** Sends the review-request email exactly once per work order (atomic claim). */
+async function sendReviewRequestOnce(tenantId: number, job: typeof workOrdersTable.$inferSelect): Promise<void> {
+  const [claim] = await db.update(workOrdersTable)
+    .set({ reviewEmailSentAt: new Date() })
+    .where(and(
+      eq(workOrdersTable.id, job.id),
+      eq(workOrdersTable.tenantId, tenantId),
+      isNull(workOrdersTable.reviewEmailSentAt),
+    ))
+    .returning({ id: workOrdersTable.id });
+  if (!claim) return; // already sent
+  try {
+    await sendWorkOrderReviewEmail({
+      tenantId,
+      workOrderId: job.id,
+      workOrderNumber: job.workOrderNumber,
+      contactName: job.contactName,
+      contactEmail: job.contactEmail,
+      customerId: job.customerId,
+      itemDescription: job.itemDescription,
+      portalToken: makePortalToken(job.id, tenantId),
+    });
+  } catch (err) {
+    // Release the claim so a later completion (or re-complete) can retry.
+    await db.update(workOrdersTable)
+      .set({ reviewEmailSentAt: null })
+      .where(and(eq(workOrdersTable.id, job.id), eq(workOrdersTable.tenantId, tenantId)));
+    throw err;
+  }
 }
 
 router.post("/fsm/jobs/:id/start-travel", (req, res) => execTransition(req as never, res as never, "start-travel"));
@@ -745,6 +797,134 @@ router.post("/fsm/jobs/:id/signature", async (req, res): Promise<void> => {
       completionSignedAt: now,
     }).catch(() => { /* logged inside */ });
   }
+});
+
+/* ─── Completion verification by email OTP ────────────────────────────────────
+ * Alternative to the drawn signature: the customer receives a 6-digit code by
+ * email and reads it back to the technician. Verifying it records the sign-off
+ * (completionSignature sentinel "otp-verified") so the same freeze applies. */
+
+const OTP_TTL_MINUTES = 15;
+const OTP_MAX_ATTEMPTS = 5;
+export const OTP_SIGNATURE_SENTINEL = "otp-verified";
+
+function hashOtp(code: string, woId: number, tenantId: number): string {
+  const secret = process.env["SESSION_SECRET"] ?? "nexus-pos-secret";
+  return createHash("sha256").update(`${secret}:${tenantId}:${woId}:${code}`).digest("hex");
+}
+
+router.post("/fsm/jobs/:id/send-completion-otp", async (req, res): Promise<void> => {
+  const ctx = await loadAssignedJob(req as never, res as never);
+  if (!ctx) return;
+  if (ctx.job.assignmentStatus !== "accepted" || !ctx.job.arrivedAt) {
+    res.status(400).json({ error: "Arrive on site before requesting a verification code" });
+    return;
+  }
+  if (ctx.job.completionSignature) {
+    res.status(409).json({ error: "This job is already signed off" });
+    return;
+  }
+  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60_000);
+
+  const sent = await sendCompletionOtpEmail({
+    tenantId: ctx.tenantId,
+    workOrderNumber: ctx.job.workOrderNumber,
+    contactName: ctx.job.contactName,
+    contactEmail: ctx.job.contactEmail,
+    customerId: ctx.job.customerId,
+    itemDescription: ctx.job.itemDescription,
+    code,
+    expiresMinutes: OTP_TTL_MINUTES,
+  }).catch((err) => ({ error: err instanceof Error ? err.message : "Failed to send email" }));
+  if ("error" in sent) { res.status(400).json({ error: sent.error }); return; }
+
+  // Store the hash only after the email actually went out.
+  await db.update(workOrdersTable)
+    .set({
+      completionOtpHash: hashOtp(code, ctx.job.id, ctx.tenantId),
+      completionOtpExpiresAt: expiresAt,
+      completionOtpAttempts: 0,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(workOrdersTable.id, ctx.job.id), eq(workOrdersTable.tenantId, ctx.tenantId)));
+
+  // Mask the recipient so the technician sees where it went without full PII.
+  const masked = sent.sentTo.replace(/^(.{2}).*(@.*)$/, "$1•••$2");
+  res.json({ ok: true, sentTo: masked, expiresMinutes: OTP_TTL_MINUTES });
+});
+
+const VerifyOtpBody = z.object({
+  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
+  verifiedBy: z.string().min(1).max(120),
+});
+
+router.post("/fsm/jobs/:id/verify-completion-otp", async (req, res): Promise<void> => {
+  const ctx = await loadAssignedJob(req as never, res as never);
+  if (!ctx) return;
+  const parsed = VerifyOtpBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Enter the 6-digit code and the customer's name" }); return; }
+  const expectedHash = hashOtp(parsed.data.code, ctx.job.id, ctx.tenantId);
+  const now = new Date();
+
+  // Atomic claim: hash match, not expired, attempts under limit, and no
+  // sign-off yet — all validated INSIDE the UPDATE predicate so a concurrent
+  // resend (which replaces the hash) or a second verifier can't slip through.
+  const claimed = await db.transaction(async (tx) => {
+    const [row] = await tx.update(workOrdersTable)
+      .set({
+        completionSignature: OTP_SIGNATURE_SENTINEL,
+        completionSignedBy: parsed.data.verifiedBy,
+        completionSignedAt: now,
+        completionVerifiedVia: "otp",
+        completionOtpHash: null,
+        completionOtpExpiresAt: null,
+        updatedAt: now,
+      })
+      .where(and(
+        eq(workOrdersTable.id, ctx.job.id),
+        eq(workOrdersTable.tenantId, ctx.tenantId),
+        eq(workOrdersTable.completionOtpHash, expectedHash),
+        sql`${workOrdersTable.completionOtpExpiresAt} > now()`,
+        sql`${workOrdersTable.completionOtpAttempts} < ${OTP_MAX_ATTEMPTS}`,
+        sql`${workOrdersTable.completionSignature} IS NULL`,
+      ))
+      .returning({ id: workOrdersTable.id });
+    if (!row) return false;
+    await tx.insert(workOrderStatusHistoryTable).values({
+      tenantId: ctx.tenantId, workOrderId: ctx.job.id,
+      fromStatus: ctx.job.status, toStatus: ctx.job.status,
+      changedByStaffId: ctx.staff.id, changedByName: ctx.staff.name,
+      note: `Completion verified by email code from ${parsed.data.verifiedBy}`,
+    });
+    return true;
+  });
+
+  if (!claimed) {
+    // Work out why, in priority order, from the current row state.
+    const [fresh] = await db.select({
+      completionSignature: workOrdersTable.completionSignature,
+      hash: workOrdersTable.completionOtpHash,
+      expiresAt: workOrdersTable.completionOtpExpiresAt,
+      attempts: workOrdersTable.completionOtpAttempts,
+    }).from(workOrdersTable)
+      .where(and(eq(workOrdersTable.id, ctx.job.id), eq(workOrdersTable.tenantId, ctx.tenantId)));
+    if (fresh?.completionSignature) { res.status(409).json({ error: "A completion sign-off was already captured" }); return; }
+    if (!fresh?.hash || !fresh.expiresAt) { res.status(400).json({ error: "No code has been sent — send the verification email first" }); return; }
+    if (fresh.expiresAt < new Date()) { res.status(400).json({ error: "The code has expired — send a new one" }); return; }
+    if (fresh.attempts >= OTP_MAX_ATTEMPTS) { res.status(400).json({ error: "Too many wrong attempts — send a new code" }); return; }
+    // Wrong code: count the attempt against the SAME generation only.
+    await db.update(workOrdersTable)
+      .set({ completionOtpAttempts: sql`${workOrdersTable.completionOtpAttempts} + 1` })
+      .where(and(
+        eq(workOrdersTable.id, ctx.job.id),
+        eq(workOrdersTable.tenantId, ctx.tenantId),
+        eq(workOrdersTable.completionOtpHash, fresh.hash),
+      ));
+    res.status(400).json({ error: "That code is incorrect" });
+    return;
+  }
+  res.json({ ok: true, completionSignedBy: parsed.data.verifiedBy, completionSignedAt: now, verifiedVia: "otp" });
 });
 
 /**

@@ -106,6 +106,7 @@ export interface FsmJob {
   contactEmail: string | null;
   storageLocation: string | null;
   appointmentDate: string | null;
+  estimatedMinutes: number | null;
   promisedDate: string | null;
   notes: string | null;
   total: number;
@@ -390,6 +391,27 @@ export function resumeJob(staffId: number, id: number): Promise<FsmJob> {
 
 export function completeJob(staffId: number, id: number): Promise<FsmJob> {
   return request<FsmJob>(`/api/fsm/jobs/${id}/complete`, { method: 'POST', headers: staffHeaders(staffId) });
+}
+
+/* ───────────── Completion verification by email code ───────────── */
+
+export function sendCompletionOtp(
+  staffId: number,
+  id: number,
+): Promise<{ ok: boolean; sentTo: string; expiresMinutes: number }> {
+  return request(`/api/fsm/jobs/${id}/send-completion-otp`, { method: 'POST', headers: staffHeaders(staffId) });
+}
+
+export function verifyCompletionOtp(
+  staffId: number,
+  id: number,
+  body: { code: string; verifiedBy: string },
+): Promise<{ ok: boolean; completionSignedBy: string; completionSignedAt: string }> {
+  return request(`/api/fsm/jobs/${id}/verify-completion-otp`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
 }
 
 export function addJobPhoto(staffId: number, id: number, image: string, caption?: string): Promise<FsmPhoto> {

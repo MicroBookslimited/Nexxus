@@ -68,4 +68,5 @@
 - [WO material/cable allocations](wo-allocations.md) — dispatch deducts stock via row-locked helpers only; cable lengthFt server-derived; FSM admin gated by x-staff-id role check on office endpoints.
 - [Work-order sign-off freeze](signoff-freeze.md) — after customer sign-off, WO content frozen via signature-null predicates IN the UPDATE/DELETE where-clause (atomic); returns stay allowed; service-area ids must match shared lib.
 - [Universal installation form](install-form-architecture.md) — form schema lives only in shared lib; per-section saves merge atomically via SQL jsonb `||`, never read-modify-write.
+- [WO OTP sign-off & review emails](wo-otp-review.md) — 'otp-verified' signature sentinel (renderers must special-case), hash-bound atomic OTP verify, retry-safe review-email claim, pre-arrival edit gating.
 - [Work Orders Phase 1 architecture](work-orders-phase1.md) — full module built; new tables, 7-status flow, notes/appointments/history API, list+kanban UI, job card HTML with CDN JsBarcode; add-on billing tables in place but self-serve purchase route not wired.

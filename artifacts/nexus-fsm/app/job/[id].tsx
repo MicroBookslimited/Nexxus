@@ -33,6 +33,8 @@ import {
   deleteJobPhoto,
   getJob,
   pauseJob,
+  sendCompletionOtp,
+  verifyCompletionOtp,
   resumeJob,
   startTravel,
   submitSignature,
@@ -125,6 +127,10 @@ export default function JobDetailScreen() {
   const [completeSheetOpen, setCompleteSheetOpen] = useState(false);
   const [signOpen, setSignOpen] = useState(false);
   const [signName, setSignName] = useState('');
+  // Email-OTP alternative to the drawn signature
+  const [signMode, setSignMode] = useState<'draw' | 'otp'>('draw');
+  const [otpSentTo, setOtpSentTo] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState('');
   const signRef = useRef<{ strokes: { x: number; y: number }[][]; size: { width: number; height: number } }>({
     strokes: [],
     size: { width: 0, height: 0 },
@@ -195,6 +201,26 @@ export default function JobDetailScreen() {
     },
     onError: () => { notify('error'); invalidate(); },
   });
+  const otpSendMutation = useMutation({
+    mutationFn: () => sendCompletionOtp(staff!.id, jobId),
+    onSuccess: (r) => { setOtpSentTo(r.sentTo); notify('success'); },
+    onError: () => notify('error'),
+  });
+  const otpVerifyMutation = useMutation({
+    mutationFn: ({ code, verifiedBy }: { code: string; verifiedBy: string }) =>
+      verifyCompletionOtp(staff!.id, jobId, { code, verifiedBy }),
+    onSuccess: () => {
+      setSignOpen(false);
+      setSignMode('draw');
+      setOtpCode('');
+      setOtpSentTo(null);
+      setSignName('');
+      notify('success');
+      invalidate();
+      completeMutation.mutate();
+    },
+    onError: () => notify('error'),
+  });
 
   const pickPhoto = async (fromCamera: boolean) => {
     const options: ImagePicker.ImagePickerOptions = {
@@ -217,7 +243,7 @@ export default function JobDetailScreen() {
     acceptMutation.isPending || declineMutation.isPending || travelMutation.isPending ||
     arriveMutation.isPending || pauseMutation.isPending || resumeMutation.isPending ||
     completeMutation.isPending;
-  const mutationError = [acceptMutation, declineMutation, travelMutation, arriveMutation, pauseMutation, resumeMutation, completeMutation, noteMutation, photoMutation, photoDeleteMutation, signatureMutation]
+  const mutationError = [acceptMutation, declineMutation, travelMutation, arriveMutation, pauseMutation, resumeMutation, completeMutation, noteMutation, photoMutation, photoDeleteMutation, signatureMutation, otpSendMutation, otpVerifyMutation]
     .map((m) => (m.error instanceof Error ? m.error.message : null))
     .find(Boolean) ?? null;
 
@@ -335,6 +361,23 @@ export default function JobDetailScreen() {
                       />
                     ) : null}
                   </View>
+                  {job.estimatedMinutes ? (
+                    <View style={[styles.estRow, { borderTopColor: colors.border }]}>
+                      <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                        Expected: {fmtDuration(job.estimatedMinutes)}
+                      </Text>
+                      {phase !== 'en_route' ? (
+                        <Text style={[
+                          styles.estRemaining,
+                          { color: liveMinutes > job.estimatedMinutes ? colors.destructive : colors.success ?? colors.primary },
+                        ]}>
+                          {liveMinutes > job.estimatedMinutes
+                            ? `${fmtDuration(liveMinutes - job.estimatedMinutes)} over`
+                            : `${fmtDuration(job.estimatedMinutes - liveMinutes)} remaining`}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                   {(job.pausedMinutes ?? 0) > 0 ? (
                     <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
                       Paused total: {fmtDuration(job.pausedMinutes)} (not billed)
@@ -866,35 +909,129 @@ export default function JobDetailScreen() {
               onChangeText={setSignName}
             />
             <View style={{ height: 12 }} />
-            <SignaturePad
-              height={180}
-              onStrokesChange={(strokes, size) => { signRef.current = { strokes, size }; }}
-            />
-            <Pressable
-              testID="save-signature-button"
-              disabled={signatureMutation.isPending}
-              onPress={() => {
-                const { strokes, size } = signRef.current;
-                if (!signName.trim() || strokes.length === 0 || size.width === 0) return;
-                signatureMutation.mutate({
-                  image: strokesToSvgDataUrl(strokes, Math.round(size.width), Math.round(size.height)),
-                  signedBy: signName.trim(),
-                });
-              }}
-              style={({ pressed }) => [
-                styles.modalActionBtn,
-                { backgroundColor: colors.primary, opacity: pressed || signatureMutation.isPending ? 0.6 : 1, marginTop: 14 },
-              ]}
-            >
-              {signatureMutation.isPending ? (
-                <ActivityIndicator color={colors.primaryForeground} />
-              ) : (
-                <>
-                  <Feather name="check-circle" size={18} color={colors.primaryForeground} />
-                  <Text style={[styles.actionText, { color: colors.primaryForeground }]}>Save & Complete Work</Text>
-                </>
-              )}
-            </Pressable>
+            {signMode === 'draw' ? (
+              <>
+                <SignaturePad
+                  height={180}
+                  onStrokesChange={(strokes, size) => { signRef.current = { strokes, size }; }}
+                />
+                <Pressable
+                  testID="save-signature-button"
+                  disabled={signatureMutation.isPending}
+                  onPress={() => {
+                    const { strokes, size } = signRef.current;
+                    if (!signName.trim() || strokes.length === 0 || size.width === 0) return;
+                    signatureMutation.mutate({
+                      image: strokesToSvgDataUrl(strokes, Math.round(size.width), Math.round(size.height)),
+                      signedBy: signName.trim(),
+                    });
+                  }}
+                  style={({ pressed }) => [
+                    styles.modalActionBtn,
+                    { backgroundColor: colors.primary, opacity: pressed || signatureMutation.isPending ? 0.6 : 1, marginTop: 14 },
+                  ]}
+                >
+                  {signatureMutation.isPending ? (
+                    <ActivityIndicator color={colors.primaryForeground} />
+                  ) : (
+                    <>
+                      <Feather name="check-circle" size={18} color={colors.primaryForeground} />
+                      <Text style={[styles.actionText, { color: colors.primaryForeground }]}>Save & Complete Work</Text>
+                    </>
+                  )}
+                </Pressable>
+                <Pressable
+                  testID="switch-to-otp-button"
+                  onPress={() => setSignMode('otp')}
+                  style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, paddingVertical: 10, alignItems: 'center' as const }]}
+                >
+                  <Text style={[styles.rowLabel, { color: colors.primary }]}>
+                    Customer can't sign? Verify by email code instead
+                  </Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                {otpSentTo ? (
+                  <>
+                    <Text style={[styles.rowLabel, { color: colors.mutedForeground, marginBottom: 8 }]}>
+                      Code sent to {otpSentTo}. Ask the customer for the 6-digit code from the email.
+                    </Text>
+                    <TextInput
+                      testID="otp-code-input"
+                      style={[styles.noteInput, {
+                        backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground,
+                        minHeight: 52, fontSize: 24, letterSpacing: 10, textAlign: 'center',
+                      }]}
+                      placeholder="······"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={otpCode}
+                      onChangeText={(t) => setOtpCode(t.replace(/\D/g, '').slice(0, 6))}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                    />
+                    <Pressable
+                      testID="verify-otp-button"
+                      disabled={otpVerifyMutation.isPending || otpCode.length !== 6 || !signName.trim()}
+                      onPress={() => otpVerifyMutation.mutate({ code: otpCode, verifiedBy: signName.trim() })}
+                      style={({ pressed }) => [
+                        styles.modalActionBtn,
+                        { backgroundColor: colors.primary, opacity: pressed || otpVerifyMutation.isPending || otpCode.length !== 6 || !signName.trim() ? 0.6 : 1, marginTop: 14 },
+                      ]}
+                    >
+                      {otpVerifyMutation.isPending ? (
+                        <ActivityIndicator color={colors.primaryForeground} />
+                      ) : (
+                        <>
+                          <Feather name="check-circle" size={18} color={colors.primaryForeground} />
+                          <Text style={[styles.actionText, { color: colors.primaryForeground }]}>Verify & Complete Work</Text>
+                        </>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      onPress={() => otpSendMutation.mutate()}
+                      disabled={otpSendMutation.isPending}
+                      style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, paddingVertical: 10, alignItems: 'center' as const }]}
+                    >
+                      <Text style={[styles.rowLabel, { color: colors.primary }]}>
+                        {otpSendMutation.isPending ? 'Sending…' : 'Resend code'}
+                      </Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.rowLabel, { color: colors.mutedForeground, marginBottom: 8 }]}>
+                      We'll email the customer a one-time code. They read it back to you to confirm
+                      the work is complete — no signature needed.
+                    </Text>
+                    <Pressable
+                      testID="send-otp-button"
+                      disabled={otpSendMutation.isPending}
+                      onPress={() => otpSendMutation.mutate()}
+                      style={({ pressed }) => [
+                        styles.modalActionBtn,
+                        { backgroundColor: colors.primary, opacity: pressed || otpSendMutation.isPending ? 0.6 : 1 },
+                      ]}
+                    >
+                      {otpSendMutation.isPending ? (
+                        <ActivityIndicator color={colors.primaryForeground} />
+                      ) : (
+                        <>
+                          <Feather name="mail" size={18} color={colors.primaryForeground} />
+                          <Text style={[styles.actionText, { color: colors.primaryForeground }]}>Email Verification Code</Text>
+                        </>
+                      )}
+                    </Pressable>
+                  </>
+                )}
+                <Pressable
+                  onPress={() => { setSignMode('draw'); setOtpCode(''); }}
+                  style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, paddingVertical: 10, alignItems: 'center' as const }]}
+                >
+                  <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>Back to signature</Text>
+                </Pressable>
+              </>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -1002,6 +1139,15 @@ const styles = StyleSheet.create({
   },
   addNoteText: { fontSize: 12, fontFamily: 'Inter_600SemiBold' },
   timerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  estRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  estRemaining: { fontSize: 13, fontFamily: 'Inter_700Bold' },
   timerValue: { fontSize: 30, fontFamily: 'Inter_700Bold', fontVariant: ['tabular-nums'] },
   body: { fontSize: 14, fontFamily: 'Inter_400Regular', lineHeight: 20 },
   row: { flexDirection: 'row', gap: 10, paddingVertical: 4 },

@@ -514,3 +514,139 @@ export async function sendWorkOrderEmail(input: WorkOrderMailInput): Promise<voi
     });
   }
 }
+
+/* ─── Completion OTP ─────────────────────────────────────────────────────────── */
+
+/** Base URL for public customer links (portal / review). */
+export function publicAppBaseUrl(): string {
+  if (process.env["APP_BASE_URL"]) return process.env["APP_BASE_URL"];
+  const domains = process.env["REPLIT_DOMAINS"];
+  if (domains) return `https://${domains.split(",")[0]}`;
+  return "";
+}
+
+/**
+ * Emails the customer a one-time code the technician can use to verify job
+ * completion when the customer can't or prefers not to sign.
+ */
+export async function sendCompletionOtpEmail(input: {
+  tenantId: number;
+  workOrderNumber: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  customerId: number | null;
+  itemDescription: string;
+  code: string;
+  expiresMinutes: number;
+}): Promise<{ sentTo: string } | { error: string }> {
+  const toEmail = await resolveToEmail({
+    contactEmail: input.contactEmail,
+    customerId: input.customerId,
+    tenantId: input.tenantId,
+  } as WorkOrderMailInput);
+  if (!toEmail) return { error: "No customer email on file" };
+
+  const [business, from] = await Promise.all([
+    getBusinessDetails(input.tenantId),
+    getFromDetails(input.tenantId),
+  ]);
+
+  const bodyHtml = `
+    <p>Your technician has finished the job below and asked us to send you a verification code. Read this code back to the technician to confirm the work is complete — it replaces a signature.</p>
+    <div class="details"><table>
+      <tr><td>Work Order #:</td><td><b>${escHtml(input.workOrderNumber)}</b></td></tr>
+      <tr><td>Item / Job:</td><td>${escHtml(input.itemDescription)}</td></tr>
+    </table></div>
+    <p style="text-align:center;margin:24px 0;">
+      <span style="display:inline-block;font-size:32px;letter-spacing:8px;font-weight:bold;padding:12px 24px;border:2px dashed #999;border-radius:8px;">${escHtml(input.code)}</span>
+    </p>
+    <p>This code expires in ${input.expiresMinutes} minutes. If you did not expect this email or the work is not complete, do not share the code.</p>`;
+
+  await sendMail({
+    to: toEmail,
+    subject: `Your completion code for Work Order ${input.workOrderNumber}`,
+    html: buildNotificationHtml({
+      businessName: business.name,
+      businessPhone: business.phone,
+      businessEmail: business.email,
+      headerSub: "Job Completion Verification",
+      clientName: input.contactName ?? "",
+      bodyHtml,
+    }),
+    fromName: from.fromName,
+    fromAddress: from.fromAddress,
+    tenantId: input.tenantId,
+    platformCopy: false, // contains a secret code — never copy anyone
+  });
+  console.info(`[work-order-mail] Sent completion OTP to ${toEmail} (${input.workOrderNumber})`);
+  return { sentTo: toEmail };
+}
+
+/* ─── Review request ─────────────────────────────────────────────────────────── */
+
+/**
+ * Emails the customer a link to rate the completed job on the public portal.
+ * Safe to call fire-and-forget.
+ */
+export async function sendWorkOrderReviewEmail(input: {
+  tenantId: number;
+  workOrderId: number;
+  workOrderNumber: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  customerId: number | null;
+  itemDescription: string;
+  portalToken: string;
+}): Promise<void> {
+  try {
+    const toEmail = await resolveToEmail({
+      contactEmail: input.contactEmail,
+      customerId: input.customerId,
+      tenantId: input.tenantId,
+    } as WorkOrderMailInput);
+    if (!toEmail) {
+      console.info(`[work-order-mail] No recipient for review email WO ${input.workOrderNumber} — skipping`);
+      return;
+    }
+    const base = publicAppBaseUrl();
+    if (!base) { console.warn("[work-order-mail] No public base URL — skipping review email"); return; }
+    const link = `${base}/wo/${input.workOrderId}/${input.portalToken}#review`;
+
+    const [business, from] = await Promise.all([
+      getBusinessDetails(input.tenantId),
+      getFromDetails(input.tenantId),
+    ]);
+
+    const bodyHtml = `
+    <p>Thank you for choosing ${escHtml(business.name)}! Your job below has been completed.</p>
+    <div class="details"><table>
+      <tr><td>Work Order #:</td><td><b>${escHtml(input.workOrderNumber)}</b></td></tr>
+      <tr><td>Item / Job:</td><td>${escHtml(input.itemDescription)}</td></tr>
+    </table></div>
+    <p>We'd love to hear how we did. It only takes a moment:</p>
+    <p style="text-align:center;margin:24px 0;">
+      <a href="${link}" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 28px;border-radius:8px;">Rate your experience</a>
+    </p>
+    <p style="font-size:12px;color:#777;">If the button doesn't work, copy this link into your browser:<br>${escHtml(link)}</p>`;
+
+    await sendMail({
+      to: toEmail,
+      subject: `How did we do? — Work Order ${input.workOrderNumber}`,
+      html: buildNotificationHtml({
+        businessName: business.name,
+        businessPhone: business.phone,
+        businessEmail: business.email,
+        headerSub: "Rate Your Experience",
+        clientName: input.contactName ?? "",
+        bodyHtml,
+      }),
+      fromName: from.fromName,
+      fromAddress: from.fromAddress,
+      tenantId: input.tenantId,
+      platformCopy: true,
+    });
+    console.info(`[work-order-mail] Sent review request to ${toEmail} (${input.workOrderNumber})`);
+  } catch (err) {
+    console.error("[work-order-mail] Failed to send review email", { wo: input.workOrderNumber, err: err instanceof Error ? err.message : err });
+  }
+}

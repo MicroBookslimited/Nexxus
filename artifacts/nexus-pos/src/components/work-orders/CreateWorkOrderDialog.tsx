@@ -47,6 +47,7 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
   const [priority, setPriority] = useState("normal");
   const [assignedStaffIds, setAssignedStaffIds] = useState<number[]>([]);
   const [promisedDate, setPromisedDate] = useState("");
+  const [estimatedHours, setEstimatedHours] = useState("");
   const [depositRequired, setDepositRequired] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -55,7 +56,7 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
     setItemDescription(""); setBrand(""); setModel(""); setSerialNumber("");
     setColour(""); setConditionReceived(""); setProblemDescription("");
     setServiceType(""); setServiceChannel("in_store"); setPriority("normal");
-    setAssignedStaffIds([]); setPromisedDate(""); setDepositRequired(""); setNotes("");
+    setAssignedStaffIds([]); setPromisedDate(""); setEstimatedHours(""); setDepositRequired(""); setNotes("");
   };
 
   const toggleStaff = (id: number) => {
@@ -87,6 +88,7 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
         priority: priority as "low" | "normal" | "high" | "urgent" | "emergency",
         ...(assignedStaffIds.length > 0 ? { assignedStaffIds } : {}),
         ...(promisedDate ? { promisedDate } : {}),
+        ...(Number(estimatedHours) > 0 ? { estimatedMinutes: Math.round(Number(estimatedHours) * 60) } : {}),
         ...(depositRequired ? { depositRequired: Number(depositRequired) } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
       },
@@ -283,6 +285,13 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
                 <div>
                   <Label>Promised date</Label>
                   <Input type="date" value={promisedDate} onChange={(e) => setPromisedDate(e.target.value)} className="mt-1" />
+                </div>
+                <div>
+                  <Label>Expected completion time (hours)</Label>
+                  <Input
+                    type="number" min="0" step="0.25" placeholder="e.g. 2.5"
+                    value={estimatedHours} onChange={(e) => setEstimatedHours(e.target.value)} className="mt-1"
+                  />
                 </div>
                 <div>
                   <Label>Deposit required</Label>

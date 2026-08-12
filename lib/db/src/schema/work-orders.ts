@@ -60,6 +60,9 @@ export const workOrdersTable = pgTable("work_orders", {
   travelStartedAt: timestamp("travel_started_at", { withTimezone: true }),
   arrivedAt: timestamp("arrived_at", { withTimezone: true }),
   workCompletedAt: timestamp("work_completed_at", { withTimezone: true }),
+  // Expected job duration in minutes — shown next to the live clock so the
+  // technician can see time remaining / overrun.
+  estimatedMinutes: integer("estimated_minutes"),
   promisedDate: timestamp("promised_date", { withTimezone: true }),
   appointmentDate: timestamp("appointment_date", { withTimezone: true }),
   storageLocation: text("storage_location"),
@@ -104,6 +107,16 @@ export const workOrdersTable = pgTable("work_orders", {
   completionSignature: text("completion_signature"),
   completionSignedBy: text("completion_signed_by"),
   completionSignedAt: timestamp("completion_signed_at", { withTimezone: true }),
+  // How completion was verified: "signature" (drawn) or "otp" (emailed code).
+  // When "otp", completionSignature holds the sentinel "otp-verified".
+  completionVerifiedVia: text("completion_verified_via"),
+  // One-time code the customer receives by email to confirm completion
+  // when they can't / don't want to sign. Stored hashed.
+  completionOtpHash: text("completion_otp_hash"),
+  completionOtpExpiresAt: timestamp("completion_otp_expires_at", { withTimezone: true }),
+  completionOtpAttempts: integer("completion_otp_attempts").notNull().default(0),
+  // Guard so the post-completion review request is only emailed once.
+  reviewEmailSentAt: timestamp("review_email_sent_at", { withTimezone: true }),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -262,3 +275,19 @@ export const workOrderAppointmentsTable = pgTable("work_order_appointments", {
 }));
 
 export type WorkOrderAppointment = typeof workOrderAppointmentsTable.$inferSelect;
+
+// ─── Work Order Reviews ───────────────────────────────────────────────────────
+// Customer rating collected after job completion via the public portal link.
+export const workOrderReviewsTable = pgTable("work_order_reviews", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  workOrderId: integer("work_order_id").notNull().references(() => workOrdersTable.id, { onDelete: "cascade" }),
+  rating: integer("rating").notNull(), // 1-5 stars
+  comment: text("comment"),
+  reviewerName: text("reviewer_name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  woUniq: uniqueIndex("work_order_reviews_wo_unique").on(t.tenantId, t.workOrderId),
+}));
+
+export type WorkOrderReview = typeof workOrderReviewsTable.$inferSelect;

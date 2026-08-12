@@ -34,6 +34,7 @@ import {
   Plus, Trash2, Search, Clock, MessageSquare, Calendar,
   FileText, Activity, Lock, Pencil, Check, X,
   ChevronRight, Save, ClipboardList, Boxes,
+  Star,
 } from "lucide-react";
 import { WorkOrderInstallForm } from "@/components/WorkOrderInstallForm";
 import { WorkOrderMaterials } from "@/components/WorkOrderMaterials";
@@ -62,6 +63,13 @@ function fmtDateTime(d: string | null | undefined) {
   if (!d) return "—";
   const dt = new Date(d);
   return isNaN(dt.getTime()) ? "—" : dt.toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function fmtEstimate(minutes: number) {
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${m}m`;
 }
 const PRIORITY_COLOR: Record<string, string> = {
   low: "text-slate-400", normal: "", high: "text-amber-500", urgent: "text-orange-500 font-semibold", emergency: "text-rose-500 font-bold",
@@ -477,6 +485,7 @@ function OverviewTab({
   const [editing, setEditing] = useState<string | null>(null);
   const [diagnosisVal, setDiagnosisVal] = useState(wo.diagnosis ?? "");
   const [storageVal, setStorageVal] = useState(wo.storageLocation ?? "");
+  const [estimateVal, setEstimateVal] = useState(wo.estimatedMinutes ? String(wo.estimatedMinutes / 60) : "");
   const [depositPaidVal, setDepositPaidVal] = useState(String(wo.depositPaid ?? 0));
 
   // Editing is locked once the WO is closed OR the customer has signed off.
@@ -609,6 +618,21 @@ function OverviewTab({
               <Field label="Promised date" value={fmtDate(wo.promisedDate)} />
               <Field label="Appointment" value={fmtDateTime(wo.appointmentDate)} />
               <div>
+                <p className="text-xs text-muted-foreground">Expected completion time</p>
+                {editing === "estimate" ? (
+                  <div className="flex gap-2 mt-1">
+                    <Input type="number" min={0} step="0.25" value={estimateVal} onChange={(e) => setEstimateVal(e.target.value)} placeholder="hours" className="h-7 text-sm flex-1" />
+                    <Button size="sm" className="h-7 w-7 p-0" onClick={() => { const h = Number(estimateVal); onPatch({ estimatedMinutes: h > 0 ? Math.round(h * 60) : null }, "Estimate updated"); setEditing(null); }}><Check className="h-3.5 w-3.5" /></Button>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditing(null)}><X className="h-3.5 w-3.5" /></Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-medium">{wo.estimatedMinutes ? fmtEstimate(wo.estimatedMinutes) : "—"}</p>
+                    {!isTerminal && <button className="text-muted-foreground hover:text-foreground" onClick={() => { setEstimateVal(wo.estimatedMinutes ? String(wo.estimatedMinutes / 60) : ""); setEditing("estimate"); }}><Pencil className="h-3 w-3" /></button>}
+                  </div>
+                )}
+              </div>
+              <div>
                 <p className="text-xs text-muted-foreground">Storage location</p>
                 {editing === "storage" ? (
                   <div className="flex gap-2 mt-1">
@@ -692,6 +716,25 @@ function OverviewTab({
         )}
 
         <ProofOfWorkCard wo={wo} />
+
+        {/* Customer review */}
+        {wo.review && (
+          <Card data-testid="customer-review-card">
+            <CardContent className="p-4 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Customer Review</p>
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <Star key={i} className={`h-4 w-4 ${i <= wo.review!.rating ? "text-amber-400 fill-amber-400" : "text-muted-foreground/30"}`} />
+                ))}
+                <span className="ml-2 text-sm font-medium">{wo.review.rating}/5</span>
+              </div>
+              {wo.review.comment && <p className="text-sm whitespace-pre-wrap">{wo.review.comment}</p>}
+              <p className="text-xs text-muted-foreground">
+                {wo.review.reviewerName ? `${wo.review.reviewerName} · ` : ""}{new Date(wo.review.createdAt).toLocaleDateString()}
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -725,14 +768,21 @@ function ProofOfWorkCard({ wo }: { wo: WorkOrder }) {
         )}
         {hasSignature && (
           <div className="space-y-1">
-            <img
-              src={wo.completionSignature!}
-              alt="Customer sign-off signature"
-              className="h-24 rounded-md border bg-white"
-              data-testid="completion-signature"
-            />
+            {wo.completionSignature === "otp-verified" ? (
+              <div className="flex items-center gap-2 rounded-md border bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2" data-testid="completion-otp-verified">
+                <Check className="h-4 w-4 text-emerald-600" />
+                <p className="text-sm text-emerald-700 dark:text-emerald-400">Completion verified via email code</p>
+              </div>
+            ) : (
+              <img
+                src={wo.completionSignature!}
+                alt="Customer sign-off signature"
+                className="h-24 rounded-md border bg-white"
+                data-testid="completion-signature"
+              />
+            )}
             <p className="text-xs text-muted-foreground">
-              Signed by {wo.completionSignedBy ?? "customer"}
+              {wo.completionSignature === "otp-verified" ? "Confirmed by" : "Signed by"} {wo.completionSignedBy ?? "customer"}
               {wo.completionSignedAt ? ` · ${new Date(wo.completionSignedAt).toLocaleString()}` : ""}
             </p>
           </div>

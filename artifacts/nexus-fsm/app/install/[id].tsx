@@ -107,9 +107,12 @@ export default function InstallFormScreen() {
   };
 
   // Locked once the job is closed OR the customer has signed off on the work.
+  // Also locked BEFORE work is started in the app (Arrive on Site) so the
+  // technician can't log work they haven't officially begun.
+  const notStarted = job ? !job.arrivedAt : false;
   const readOnly = job
     ? job.status === 'collected' || job.status === 'cancelled' ||
-      !!job.completionSignature || !!job.customerSignature
+      !!job.completionSignature || !!job.customerSignature || notStarted
     : false;
   const sections = visibleInstallSections(areas);
 
@@ -135,6 +138,13 @@ export default function InstallFormScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
+        {notStarted ? (
+          <View style={[styles.areaChip, { backgroundColor: colors.warning + '22', borderColor: colors.warning, borderWidth: 1, marginBottom: 12, alignSelf: 'stretch' }]}>
+            <Text style={[styles.hint, { color: colors.warning, marginTop: 0 }]}>
+              Start work first — tap "Arrive on Site" on the job screen to unlock this form.
+            </Text>
+          </View>
+        ) : null}
         {/* Service areas */}
         <Text style={[styles.groupLabel, { color: colors.mutedForeground }]}>SERVICE AREAS ON THIS JOB</Text>
         <View style={styles.areaWrap}>
