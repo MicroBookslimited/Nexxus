@@ -13,13 +13,19 @@ const ZEPTOMAIL_API_URL = "api.zeptomail.com/";
 export const PLATFORM_COPY_ADDRESS = "accounts@microbookssolutions.com";
 
 export async function getFromDetails(tenantId = 0): Promise<{ fromAddress: string; fromName: string }> {
-  const [fromAddress, fromName] = await Promise.all([
+  const [fromAddress, fromName, businessName] = await Promise.all([
     getSetting("from_email", tenantId),
     getSetting("from_name", tenantId),
+    // Tenant emails default to the tenant's business name so customers see
+    // who the mail is from; "NEXXUS POS" is only the platform-level fallback.
+    tenantId > 0 ? getSetting("business_name", tenantId) : Promise.resolve(""),
   ]);
+  // getSetting returns the static default "NEXXUS POS" when the tenant never
+  // saved a from_name — treat that as unset so the business name wins.
+  const explicitFromName = fromName && fromName !== "NEXXUS POS" ? fromName : "";
   return {
     fromAddress: fromAddress || "noreply@microbookspos.com",
-    fromName: fromName || "NEXXUS POS",
+    fromName: explicitFromName || businessName || "NEXXUS POS",
   };
 }
 

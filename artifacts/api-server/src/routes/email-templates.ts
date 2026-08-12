@@ -289,7 +289,9 @@ export async function sendTemplateEmail(opts: {
 
   const settings = await getAllSettings(tenantId);
   const fromAddress = settings["from_email"] || "noreply@microbookspos.com";
-  const fromName = settings["from_name"] || settings["business_name"] || "NEXXUS POS";
+  // The static default from_name is "NEXXUS POS" — treat it as unset so the
+  // tenant's business name is what customers see.
+  const fromName = (settings["from_name"] && settings["from_name"] !== "NEXXUS POS" ? settings["from_name"] : "") || settings["business_name"] || "NEXXUS POS";
   const provider = settings["email_provider"];
 
   if (provider === "smtp") {
