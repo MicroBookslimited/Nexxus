@@ -572,6 +572,14 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
     }
   }
 
+  // Once field work is completed, installed equipment has been deducted from
+  // inventory — freeze the installation form so its contents keep matching
+  // what was deducted. (Reopening the job clears workCompletedAt.)
+  if (existing.workCompletedAt && (data.installDetails !== undefined || data.serviceAreas !== undefined)) {
+    res.status(400).json({ error: "This job has been completed — the installation form can no longer be changed" });
+    return;
+  }
+
   // Once the customer has signed off, the content of the work order is frozen.
   // Only the pickup/close workflow may proceed: status transitions, the
   // collection signatures, invoice conversion, and internal notes.
@@ -670,6 +678,11 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
         ...(touchesFrozenContent
           ? [isNull(workOrdersTable.completionSignature), isNull(workOrdersTable.customerSignature)]
           : []),
+        // Same freeze re-asserted atomically for the installation form: a
+        // completion committed after our earlier read can't be overwritten.
+        ...(data.installDetails !== undefined || data.serviceAreas !== undefined
+          ? [isNull(workOrdersTable.workCompletedAt)]
+          : []),
       ))
       .returning();
     if (!updated) return undefined;
@@ -691,6 +704,14 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
         changedByName: staffName,
         note: data.statusNote ?? null,
       });
+    }
+
+    // Collected = job done & handed over: deduct product-linked installation
+    // equipment from inventory in the SAME transaction, so collection and
+    // deduction commit or fail together (one-shot; no-op if the FSM
+    // completion already claimed it).
+    if (data.status === "collected" && existing.status !== "collected") {
+      await deductInstallEquipmentStock(tx, tenantId, id);
     }
     return updated;
   });
@@ -1755,6 +1776,71 @@ async function lockOpenWorkOrder(
 }
 
 const SIGNED_OFF_ERROR = "The customer has signed off on this work order — it can no longer be changed";
+
+/**
+ * Deduct installed equipment (installation-form Equipment rows linked to a
+ * catalog product) from inventory — exactly once per work order, claimed
+ * atomically via equipment_deducted_at. Called when the job completes in the
+ * field (FSM) or is collected in the POS, whichever happens first.
+ *
+ * Rules:
+ * - Only rows with a valid `equipmentProductId` and qty > 0 deduct; free-text
+ *   / customer-supplied rows are untouched.
+ * - Sources "Existing", "Customer Supplied" and "Loaner" never consume stock.
+ * - The work is already done, so stock may go negative (like a sale) rather
+ *   than blocking completion.
+ */
+const NON_STOCK_SOURCES = new Set(["Existing", "Customer Supplied", "Loaner"]);
+
+export async function deductInstallEquipmentStock(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tenantId: number,
+  workOrderId: number,
+): Promise<void> {
+  {
+    // Atomic one-shot claim inside the caller's completion/collection
+    // transaction, so completion and deduction commit (or fail) together.
+    const [claim] = await tx.update(workOrdersTable)
+      .set({ equipmentDeductedAt: new Date() })
+      .where(and(
+        eq(workOrdersTable.id, workOrderId),
+        eq(workOrdersTable.tenantId, tenantId),
+        isNull(workOrdersTable.equipmentDeductedAt),
+      ))
+      .returning({ installDetails: workOrdersTable.installDetails });
+    if (!claim) return; // already deducted
+
+    const equipment = (claim.installDetails?.["equipment"] ?? {}) as Record<string, unknown>;
+    const rows = Array.isArray(equipment["items"]) ? (equipment["items"] as Array<Record<string, unknown>>) : [];
+
+    // Aggregate per product so duplicate rows lock/deduct once each.
+    const byProduct = new Map<number, number>();
+    for (const row of rows) {
+      const pid = Number(row["equipmentProductId"]);
+      const qty = Number(row["qty"]);
+      if (!Number.isInteger(pid) || pid <= 0) continue;
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      if (typeof row["source"] === "string" && NON_STOCK_SOURCES.has(row["source"] as string)) continue;
+      byProduct.set(pid, (byProduct.get(pid) ?? 0) + qty);
+    }
+    if (byProduct.size === 0) return;
+
+    // Deterministic lock order to avoid deadlocks with concurrent deductions.
+    for (const [productId, qty] of [...byProduct.entries()].sort((a, b) => a[0] - b[0])) {
+      const [product] = await tx.select({ id: productsTable.id })
+        .from(productsTable)
+        .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)))
+        .for("update");
+      if (!product) continue; // product deleted since linking — skip, keep free-text record
+      await tx.update(productsTable)
+        .set({
+          stockCount: sql`${productsTable.stockCount} - ${qty}`,
+          inStock: sql`CASE WHEN ${productsTable.stockCount} - ${qty} <= 0 THEN false ELSE ${productsTable.inStock} END`,
+        })
+        .where(and(eq(productsTable.id, productId), eq(productsTable.tenantId, tenantId)));
+    }
+  }
+}
 
 export async function createAllocation(
   tenantId: number,

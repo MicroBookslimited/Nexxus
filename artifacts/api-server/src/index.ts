@@ -185,11 +185,19 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+/** Idempotent additive DDL: guarantee the one-shot installation-equipment
+ * deduction claim column exists in every environment (drizzle push is blocked
+ * by unrelated pre-existing schema drift, so additive SQL is applied here). */
+async function ensureEquipmentDeductedColumn() {
+  await db.execute(sql`ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS equipment_deducted_at timestamptz`);
+}
+
 // Repair any timestamp DEFAULTs that the deploy-time migration may have
 // dropped (see lib/repair-timestamp-defaults.ts for full context). Must run
 // BEFORE we start serving requests, otherwise the first save into the
 // affected tables crashes with a not-null constraint violation.
 await repairTimestampDefaults();
+await ensureEquipmentDeductedColumn();
 
 app.listen(port, async (err) => {
   if (err) {

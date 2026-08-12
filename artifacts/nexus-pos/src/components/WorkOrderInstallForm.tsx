@@ -6,9 +6,10 @@
  * reveal based on earlier answers. Each section saves independently and
  * merges server-side, so partial saves never wipe technician answers.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   INSTALL_SECTIONS,
+  useListProducts,
   SERVICE_AREAS,
   installFieldVisible,
   installSectionProgress,
@@ -299,8 +300,10 @@ function FieldInput({ field, value, onChange, readOnly }: {
                       key={col.id}
                       col={col}
                       value={row[col.id]}
+                      row={row}
                       readOnly={readOnly}
                       onChange={(v) => onChange(rows.map((r, j) => (j === i ? { ...r, [col.id]: v } : r)))}
+                      onPatchRow={(patch) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))}
                     />
                   ))}
                 </div>
@@ -319,6 +322,73 @@ function FieldInput({ field, value, onChange, readOnly }: {
     default:
       return null;
   }
+}
+
+/**
+ * Free-text equipment cell with catalog search: picking a product links the
+ * row (stores `${col.id}ProductId`) so completing the job deducts inventory;
+ * typing freely clears the link (customer-supplied / non-catalog items).
+ */
+function ProductCell({ col, value, row, onPatchRow, readOnly }: {
+  col: InstallTableColumn;
+  value: unknown;
+  row: Row;
+  onPatchRow: (patch: Row) => void;
+  readOnly: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const { data: products } = useListProducts();
+  const text = value == null ? "" : String(value);
+  const linkedId = row[`${col.id}ProductId`];
+  const linked = typeof linkedId === "number" && linkedId > 0;
+
+  const matches = useMemo(() => {
+    if (!focused || linked) return [];
+    const q = text.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return (products ?? []).filter((p) => p.name.toLowerCase().includes(q)).slice(0, 6);
+  }, [focused, linked, text, products]);
+
+  return (
+    <div className="relative">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-[11px] font-semibold text-muted-foreground">{col.label}</p>
+        {linked && (
+          <span className="text-[10px] font-semibold text-emerald-600">In catalog — deducts stock</span>
+        )}
+      </div>
+      <Input
+        disabled={readOnly}
+        className="h-8 text-sm"
+        value={text}
+        placeholder="Type name or pick from catalog"
+        onFocus={() => setFocused(true)}
+        onBlur={() => setTimeout(() => setFocused(false), 150)}
+        onChange={(e) => onPatchRow({ [col.id]: e.target.value, [`${col.id}ProductId`]: null })}
+      />
+      {matches.length > 0 && (
+        <div className="absolute z-10 mt-1 w-full rounded-md border bg-popover shadow-md max-h-48 overflow-auto">
+          {matches.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onPatchRow({ [col.id]: p.name, [`${col.id}ProductId`]: p.id });
+                setFocused(false);
+              }}
+            >
+              {p.name}
+              <span className="text-xs text-muted-foreground ml-2">
+                {p.stockCount != null ? `${p.stockCount} in stock` : ""}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function FieldLabel({ field }: { field: InstallField }) {
@@ -342,12 +412,18 @@ function OptionChip({ label, on, disabled, onClick }: {
   );
 }
 
-function TableCell({ col, value, onChange, readOnly }: {
+function TableCell({ col, value, row, onChange, onPatchRow, readOnly }: {
   col: InstallTableColumn;
   value: unknown;
+  row?: Row;
   onChange: (v: unknown) => void;
+  onPatchRow?: (patch: Row) => void;
   readOnly: boolean;
 }) {
+  if (col.type === "product" && onPatchRow) {
+    return <ProductCell col={col} value={value} row={row ?? {}} onPatchRow={onPatchRow} readOnly={readOnly} />;
+  }
+
   if (col.type === "yesno") {
     const on = value === true;
     return (

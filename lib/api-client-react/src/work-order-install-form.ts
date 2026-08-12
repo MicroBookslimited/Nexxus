@@ -43,7 +43,13 @@ export interface InstallShowIf {
 export interface InstallTableColumn {
   id: string;
   label: string;
-  type?: "text" | "number" | "yesno" | "select";
+  /**
+   * "product": free-text with catalog search. The typed/picked text lives at
+   * row[col.id]; when a catalog product is picked, its id is stored alongside
+   * at row[`${col.id}ProductId`] (cleared when the text is edited freely).
+   * Product-linked rows are deducted from inventory when the job completes.
+   */
+  type?: "text" | "number" | "yesno" | "select" | "product";
   options?: string[];          // for select columns
   width?: "narrow" | "normal" | "wide";
 }
@@ -117,7 +123,7 @@ export const INSTALL_SECTIONS: InstallSection[] = [
         id: "items", label: "Equipment", type: "table", rowLabel: "Item",
         columns: [
           { id: "qty",      label: "Qty", type: "number", width: "narrow" },
-          { id: "equipment", label: "Equipment", width: "wide" },
+          { id: "equipment", label: "Equipment", type: "product", width: "wide" },
           { id: "brand",    label: "Brand" },
           { id: "model",    label: "Model" },
           { id: "serial",   label: "Serial #" },

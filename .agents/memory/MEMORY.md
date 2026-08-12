@@ -67,6 +67,7 @@
 - [FSM assignment response model](fsm-assignment-response.md) — ONE work-order-wide accept/decline (pending-only transition, 409 otherwise); reassignment resets to pending; columns added via manual Supabase DDL.
 - [WO material/cable allocations](wo-allocations.md) — dispatch deducts stock via row-locked helpers only; cable lengthFt server-derived; FSM admin gated by x-staff-id role check on office endpoints.
 - [Work-order sign-off freeze](signoff-freeze.md) — after customer sign-off, WO content frozen via signature-null predicates IN the UPDATE/DELETE where-clause (atomic); returns stay allowed; service-area ids must match shared lib.
+- [Install equipment stock deduction](install-equipment-deduction.md) — deduct inside the completion/collection txn with a one-shot claim; form freezes on workCompletedAt; reopen+re-complete never re-deducts.
 - [Universal installation form](install-form-architecture.md) — form schema lives only in shared lib; per-section saves merge atomically via SQL jsonb `||`, never read-modify-write.
 - [WO OTP sign-off & review emails](wo-otp-review.md) — 'otp-verified' signature sentinel (renderers must special-case), hash-bound atomic OTP verify, retry-safe review-email claim, pre-arrival edit gating.
 - [WO follow-up & calendar](wo-followup-calendar.md) — follow-up = appointment row w/ staff_ids jsonb (manual DDL both DBs); calendar feed requires x-staff-id and server-filters non-office staff to their own visits.

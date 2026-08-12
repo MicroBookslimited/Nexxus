@@ -127,6 +127,10 @@ export const workOrdersTable = pgTable("work_orders", {
    * the complete transition and the sign-off/OTP routes can all safely attempt
    * the send without racing or duplicating. */
   completionEmailSentAt: timestamp("completion_email_sent_at", { withTimezone: true }),
+  /** Atomic claim: set once when product-linked installation-form equipment
+   * rows have been deducted from inventory (at FSM completion or POS
+   * collection, whichever happens first). */
+  equipmentDeductedAt: timestamp("equipment_deducted_at", { withTimezone: true }),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

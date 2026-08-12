@@ -17,7 +17,7 @@ import {
   ServiceAreasSchema, InstallDetailsSchema,
   AllocationCreateSchema, AllocationUpdateSchema,
   createAllocation, updateAllocation, listAllocations,
-  makePortalToken,
+  makePortalToken, deductInstallEquipmentStock,
 } from "./work-orders";
 import {
   sendWorkOrderStatusEmail, sendWorkOrderSignedEmail,
@@ -297,6 +297,13 @@ router.patch("/fsm/jobs/:id/install-details", async (req, res): Promise<void> =>
     res.status(400).json({ error: "Start work first — tap Arrive on Site before filling the installation form" });
     return;
   }
+  // Once work is completed, installed equipment has been deducted from
+  // inventory — the form is frozen so its contents keep matching what was
+  // deducted. (Reopening the job clears workCompletedAt and unlocks it.)
+  if (ctx.job.workCompletedAt) {
+    res.status(400).json({ error: "This job has been completed — the installation form can no longer be changed" });
+    return;
+  }
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.serviceAreas !== undefined) updates.serviceAreas = parsed.data.serviceAreas;
@@ -314,10 +321,11 @@ router.patch("/fsm/jobs/:id/install-details", async (req, res): Promise<void> =>
       eq(workOrdersTable.tenantId, ctx.tenantId),
       isNull(workOrdersTable.completionSignature),
       isNull(workOrdersTable.customerSignature),
+      isNull(workOrdersTable.workCompletedAt),
     ))
     .returning();
   if (!row) {
-    res.status(400).json({ error: "The customer has signed off on this job — the form can no longer be changed" });
+    res.status(400).json({ error: "This job has been completed or signed off — the form can no longer be changed" });
     return;
   }
   res.json({
@@ -606,6 +614,11 @@ async function execTransition(
         patch.workCompletedAt = now;
         if (job.status !== "ready") { patch.status = "ready"; toStatus = "ready"; }
         historyNote = `Work completed by ${staff.name}`;
+        // Deduct product-linked installation equipment from inventory in the
+        // SAME transaction (the WO row is already locked), so completion and
+        // deduction commit or fail together. One-shot claim — the POS
+        // "collected" path calls the same helper and no-ops if already done.
+        await deductInstallEquipmentStock(tx, tenantId, id);
         break;
       }
     }

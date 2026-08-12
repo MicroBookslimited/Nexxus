@@ -34,7 +34,7 @@ import {
 import { ScannerModal, isScannableField } from '@/components/ScannerModal';
 import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
-import { getJob, patchInstallDetails, type InstallDetailsMap } from '@/lib/fsm-api';
+import { getJob, patchInstallDetails, searchProducts, type InstallDetailsMap, type ProductLite } from '@/lib/fsm-api';
 
 type SectionData = Record<string, unknown>;
 type Row = Record<string, unknown>;
@@ -110,9 +110,12 @@ export default function InstallFormScreen() {
   // Also locked BEFORE work is started in the app (Arrive on Site) so the
   // technician can't log work they haven't officially begun.
   const notStarted = job ? !job.arrivedAt : false;
+  // Also locked once work is completed: installed equipment has been deducted
+  // from inventory, so the form must keep matching what was deducted.
   const readOnly = job
     ? job.status === 'collected' || job.status === 'cancelled' ||
-      !!job.completionSignature || !!job.customerSignature || notStarted
+      !!job.completionSignature || !!job.customerSignature || notStarted ||
+      !!job.workCompletedAt
     : false;
   const sections = visibleInstallSections(areas);
 
@@ -393,8 +396,10 @@ function FieldInput({ field, value, onChange, readOnly }: {
                   key={col.id}
                   col={col}
                   value={row[col.id]}
+                  row={row}
                   readOnly={readOnly}
                   onChange={(v) => onChange(rows.map((r, j) => (j === i ? { ...r, [col.id]: v } : r)))}
+                  onPatchRow={(patch) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))}
                 />
               ))}
             </View>
@@ -414,13 +419,19 @@ function FieldInput({ field, value, onChange, readOnly }: {
   }
 }
 
-function TableCell({ col, value, onChange, readOnly }: {
+function TableCell({ col, value, row, onChange, onPatchRow, readOnly }: {
   col: InstallTableColumn;
   value: unknown;
+  row?: Row;
   onChange: (v: unknown) => void;
+  onPatchRow?: (patch: Row) => void;
   readOnly: boolean;
 }) {
   const colors = useColors();
+
+  if (col.type === 'product' && onPatchRow) {
+    return <ProductCell col={col} value={value} row={row ?? {}} onPatchRow={onPatchRow} readOnly={readOnly} />;
+  }
 
   if (col.type === 'yesno') {
     const on = value === true;
@@ -468,6 +479,78 @@ function TableCell({ col, value, onChange, readOnly }: {
         placeholderTextColor={colors.mutedForeground}
         style={[styles.input, styles.cellInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
       />
+    </View>
+  );
+}
+
+/**
+ * Free-text equipment cell with catalog search: picking a product links the
+ * row (stores `${col.id}ProductId`) so completing the job deducts inventory;
+ * typing freely clears the link (customer-supplied / non-catalog items).
+ */
+function ProductCell({ col, value, row, onPatchRow, readOnly }: {
+  col: InstallTableColumn;
+  value: unknown;
+  row: Row;
+  onPatchRow: (patch: Row) => void;
+  readOnly: boolean;
+}) {
+  const colors = useColors();
+  const [focused, setFocused] = useState(false);
+  const [matches, setMatches] = useState<ProductLite[]>([]);
+  const text = value == null ? '' : String(value);
+  const linkedId = row[`${col.id}ProductId`];
+  const linked = typeof linkedId === 'number' && linkedId > 0;
+
+  useEffect(() => {
+    if (!focused || linked || text.trim().length < 2) { setMatches([]); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      searchProducts(text).then((res) => { if (!cancelled) setMatches(res.slice(0, 6)); }).catch(() => {});
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [focused, linked, text]);
+
+  return (
+    <View style={styles.cellWrap}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={[styles.cellLabel, { color: colors.mutedForeground }]}>{col.label}</Text>
+        {linked ? (
+          <Text style={{ fontSize: 10, fontWeight: '600', color: '#22C55E' }}>In catalog — deducts stock</Text>
+        ) : null}
+      </View>
+      <TextInput
+        editable={!readOnly}
+        value={text}
+        placeholder="Type name or pick from catalog"
+        placeholderTextColor={colors.mutedForeground}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setTimeout(() => setFocused(false), 200)}
+        onChangeText={(t) => onPatchRow({ [col.id]: t, [`${col.id}ProductId`]: null })}
+        style={[styles.input, styles.cellInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+      />
+      {focused && matches.length > 0 && (
+        <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, marginTop: 4, backgroundColor: colors.card }}>
+          {matches.map((p) => (
+            <Pressable
+              key={p.id}
+              onPress={() => {
+                onPatchRow({ [col.id]: p.name, [`${col.id}ProductId`]: p.id });
+                setMatches([]);
+                setFocused(false);
+              }}
+              style={{ paddingHorizontal: 12, paddingVertical: 9 }}
+            >
+              <Text style={{ color: colors.foreground, fontSize: 13 }}>
+                {p.name}
+                {p.stockCount != null ? (
+                  <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>  {p.stockCount} in stock</Text>
+                ) : null}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
