@@ -108,7 +108,8 @@ export default function InstallFormScreen() {
 
   // Locked once the job is closed OR the customer has signed off on the work.
   const readOnly = job
-    ? job.status === 'collected' || job.status === 'cancelled' || !!job.completionSignature
+    ? job.status === 'collected' || job.status === 'cancelled' ||
+      !!job.completionSignature || !!job.customerSignature
     : false;
   const sections = visibleInstallSections(areas);
 

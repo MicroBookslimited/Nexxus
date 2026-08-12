@@ -113,6 +113,10 @@ export default function WorkOrderDetailPage() {
 
   const currency = settings?.base_currency || "JMD";
   const isTerminal = wo?.status === "collected" || wo?.status === "cancelled";
+  // Once the customer has signed off, work-order content is frozen (server enforces
+  // this too) — only status moves / collection / POS conversion remain available.
+  const isSignedOff = !!(wo?.completionSignature || wo?.customerSignature);
+  const isLocked = isTerminal || isSignedOff;
 
   // Staff PIN gate
   const { staff: sessionStaff, setStaff } = useStaff();
@@ -263,6 +267,12 @@ export default function WorkOrderDetailPage() {
         </div>
       </div>
 
+      {isSignedOff && !isTerminal && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          Customer has signed off — this work order is locked. Only status moves and collection are still allowed.
+        </div>
+      )}
+
       {/* ── Tab nav ── */}
       <div className="border-b flex gap-1 overflow-x-auto">
         {tabs.map(({ key, label, icon: Icon }) => (
@@ -287,9 +297,9 @@ export default function WorkOrderDetailPage() {
         <ItemsTab wo={wo} products={products ?? []} currency={currency} onPatch={patchWO} />
       )}
       {tab === "install" && (
-        <WorkOrderInstallForm wo={wo} readOnly={isTerminal} onPatch={(updates) => patchWO(updates as never)} />
+        <WorkOrderInstallForm wo={wo} readOnly={isLocked} onPatch={(updates) => patchWO(updates as never)} />
       )}
-      {tab === "materials" && <WorkOrderMaterials workOrderId={wo.id} readOnly={isTerminal} />}
+      {tab === "materials" && <WorkOrderMaterials workOrderId={wo.id} readOnly={isLocked} />}
       {tab === "notes" && <NotesTab workOrderId={wo.id} />}
       {tab === "appointments" && <AppointmentsTab workOrderId={wo.id} staff={staff ?? []} />}
       {tab === "history" && <HistoryTab workOrderId={wo.id} serviceChannel={wo.serviceChannel} />}
@@ -469,7 +479,9 @@ function OverviewTab({
   const [storageVal, setStorageVal] = useState(wo.storageLocation ?? "");
   const [depositPaidVal, setDepositPaidVal] = useState(String(wo.depositPaid ?? 0));
 
-  const isTerminal = wo.status === "collected" || wo.status === "cancelled";
+  // Editing is locked once the WO is closed OR the customer has signed off.
+  const isTerminal = wo.status === "collected" || wo.status === "cancelled" ||
+    !!(wo.completionSignature || wo.customerSignature);
 
   const Field = ({ label, value }: { label: string; value: string | null | undefined }) =>
     value ? (
@@ -745,7 +757,9 @@ function ItemsTab({
   const [feeDesc, setFeeDesc] = useState("");
   const [feePrice, setFeePrice] = useState("");
   const { toast } = useToast();
-  const isTerminal = wo.status === "collected" || wo.status === "cancelled";
+  // Editing is locked once the WO is closed OR the customer has signed off.
+  const isTerminal = wo.status === "collected" || wo.status === "cancelled" ||
+    !!(wo.completionSignature || wo.customerSignature);
 
   const productMatches = productSearch.trim().length > 0
     ? (products ?? []).filter((p: any) => !p.archivedAt).filter((p: any) =>

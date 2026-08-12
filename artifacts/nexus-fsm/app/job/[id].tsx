@@ -22,6 +22,7 @@ import { PriorityChip, StatusChip, formatDate } from '@/components/JobBits';
 import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
 import SignaturePad, { strokesToSvgDataUrl } from '@/components/SignaturePad';
+import { InstallFormPreview } from '@/components/InstallFormPreview';
 import {
   acceptJob,
   addJobNote,
@@ -754,7 +755,7 @@ export default function JobDetailScreen() {
             <Pressable
               testID="capture-signoff-button"
               onPress={() => { setCompleteSheetOpen(false); setSignOpen(true); }}
-              style={({ pressed }) => [styles.actionButton, { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}
+              style={({ pressed }) => [styles.modalActionBtn, { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }]}
             >
               <Feather name="edit-3" size={18} color={colors.primaryForeground} />
               <Text style={[styles.actionText, { color: colors.primaryForeground }]}>Capture Sign-off</Text>
@@ -763,7 +764,7 @@ export default function JobDetailScreen() {
               testID="complete-without-signature-button"
               onPress={() => { setCompleteSheetOpen(false); completeMutation.mutate(); }}
               style={({ pressed }) => [
-                styles.actionButton,
+                styles.modalActionBtn,
                 { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1, marginTop: 10, opacity: pressed ? 0.7 : 1 },
               ]}
             >
@@ -780,12 +781,17 @@ export default function JobDetailScreen() {
             style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: '88%' }]}
             onPress={() => undefined}
           >
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>Customer sign-off</Text>
             <Text style={[styles.rowLabel, { color: colors.mutedForeground, marginBottom: 10 }]}>
               Please review the work summary below before signing.
             </Text>
 
+            {/* Scrollable review — everything the customer is signing off on */}
+            <ScrollView
+              style={styles.signReviewScroll}
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+            >
             {/* What the customer is signing */}
             <View style={[styles.signSummary, { backgroundColor: colors.background, borderColor: colors.border }]}>
               <Text style={[styles.signSummaryLabel, { color: colors.mutedForeground }]}>WORK ORDER</Text>
@@ -837,11 +843,20 @@ export default function JobDetailScreen() {
               ) : null}
             </View>
 
+            {/* Installation form answers + materials used */}
+            <InstallFormPreview
+              serviceAreas={job?.serviceAreas ?? []}
+              installDetails={job?.installDetails ?? {}}
+              allocations={job?.allocations ?? []}
+            />
+
             <Text style={[styles.signAttestation, { color: colors.mutedForeground }]}>
               By signing below, I confirm that the work described above has been completed to my
               satisfaction. A copy of the signed work order will be emailed to me.
             </Text>
+            </ScrollView>
 
+            {/* Static signing area — kept outside the scroll so the pad doesn't move under the pen */}
             <TextInput
               testID="signer-name-input"
               style={[styles.noteInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, minHeight: 44 }]}
@@ -867,7 +882,7 @@ export default function JobDetailScreen() {
                 });
               }}
               style={({ pressed }) => [
-                styles.actionButton,
+                styles.modalActionBtn,
                 { backgroundColor: colors.primary, opacity: pressed || signatureMutation.isPending ? 0.6 : 1, marginTop: 14 },
               ]}
             >
@@ -880,7 +895,6 @@ export default function JobDetailScreen() {
                 </>
               )}
             </Pressable>
-            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1032,6 +1046,18 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   modalCard: { borderRadius: 16, borderWidth: 1, padding: 18 },
+  // Modal buttons must NOT use actionButton (flex: 1) — inside a modal column
+  // that collapses the button height and clips the label.
+  modalActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignSelf: 'stretch',
+  },
+  signReviewScroll: { flexGrow: 0, flexShrink: 1, marginBottom: 10 },
   modalTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold', marginBottom: 12 },
   signSummary: {
     borderWidth: 1,

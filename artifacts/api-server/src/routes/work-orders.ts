@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
+import { and, eq, gte, lte, desc, sql, inArray, isNull } from "drizzle-orm";
 import { createHmac } from "crypto";
 import {
   db,
@@ -60,7 +60,8 @@ const STATUS_FLOW: Record<WorkOrderStatus, WorkOrderStatus[]> = {
 
 /* ─── Validation schemas ─────────────────────────────────────────────────────── */
 /* Universal installation form — service areas + JSONB details */
-export const SERVICE_AREA_IDS = ["pos", "networking", "pc", "access_control", "cctv", "other"] as const;
+// Must match SERVICE_AREAS ids in lib/api-client-react/src/work-order-install-form.ts
+export const SERVICE_AREA_IDS = ["pos", "networking", "pc_it", "access_control", "cctv", "other"] as const;
 export const ServiceAreasSchema = z.array(z.enum(SERVICE_AREA_IDS)).max(SERVICE_AREA_IDS.length);
 export const InstallDetailsSchema = z
   .record(z.string().max(60), z.record(z.string().max(60), z.unknown()))
@@ -591,12 +592,27 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
 
   const staffId = getStaffId(req as never);
 
+  // Re-assert the sign-off freeze atomically: if this PATCH touches frozen
+  // content, the UPDATE itself requires both signatures to still be NULL so a
+  // sign-off committed after our earlier read can't be overwritten.
+  const allowedAfterSignoffFields = ["status", "customerSignature", "staffSignature", "convertedOrderId", "notes", "internalNotes", "statusNote"];
+  const touchesFrozenContent = Object.keys(data).some(
+    (k) => (data as Record<string, unknown>)[k] !== undefined && !allowedAfterSignoffFields.includes(k),
+  );
+
   const row = await db.transaction(async (tx) => {
     const [updated] = await tx
       .update(workOrdersTable)
       .set(updates)
-      .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)))
+      .where(and(
+        eq(workOrdersTable.id, id),
+        eq(workOrdersTable.tenantId, tenantId),
+        ...(touchesFrozenContent
+          ? [isNull(workOrdersTable.completionSignature), isNull(workOrdersTable.customerSignature)]
+          : []),
+      ))
       .returning();
+    if (!updated) return undefined;
 
     // Record status change in history
     if (data.status && data.status !== existing.status) {
@@ -618,6 +634,11 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
     }
     return updated;
   });
+
+  if (!row) {
+    res.status(400).json({ error: "The customer has signed off on this work order — it can no longer be changed" });
+    return;
+  }
 
   const updatedIds: number[] = Array.isArray(row.assignedStaffIds) ? row.assignedStaffIds as number[] : [];
   const updStaffNamesMap = await batchResolveStaffNames(tenantId, updatedIds);
@@ -654,9 +675,23 @@ router.delete("/work-orders/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Only received or cancelled work orders can be deleted" });
     return;
   }
+  if (existing.completionSignature || existing.customerSignature) {
+    res.status(400).json({ error: "This work order has a customer sign-off and cannot be deleted" });
+    return;
+  }
 
-  await db.delete(workOrdersTable)
-    .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
+  const deleted = await db.delete(workOrdersTable)
+    .where(and(
+      eq(workOrdersTable.id, id),
+      eq(workOrdersTable.tenantId, tenantId),
+      isNull(workOrdersTable.completionSignature),
+      isNull(workOrdersTable.customerSignature),
+    ))
+    .returning({ id: workOrdersTable.id });
+  if (deleted.length === 0) {
+    res.status(400).json({ error: "This work order has a customer sign-off and cannot be deleted" });
+    return;
+  }
   res.sendStatus(204);
 });
 

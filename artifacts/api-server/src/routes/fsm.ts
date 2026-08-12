@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, desc, inArray, sql } from "drizzle-orm";
+import { and, eq, desc, inArray, sql, isNull } from "drizzle-orm";
 import {
   db,
   workOrdersTable,
@@ -199,6 +199,7 @@ router.get("/fsm/jobs/:id", async (req, res): Promise<void> => {
     notes, history, timeEntries, billableMinutes, pausedMinutes, activeEntry,
     photos,
     completionSignature: row.workOrder.completionSignature,
+    customerSignature: row.workOrder.customerSignature,
     // Line items shown to the customer in the pre-signature preview
     items: row.workOrder.items ?? [],
     subtotal: row.workOrder.subtotal,
@@ -273,13 +274,24 @@ router.patch("/fsm/jobs/:id/install-details", async (req, res): Promise<void> =>
     // app, or two technicians) can't overwrite each other's sections.
     updates.installDetails = sql`coalesce(${workOrdersTable.installDetails}, '{}'::jsonb) || ${JSON.stringify(parsed.data.installDetails)}::jsonb`;
   }
+  // Signature-null predicates make the freeze atomic — a sign-off committed
+  // after the read above can't be overwritten by this update.
   const [row] = await db.update(workOrdersTable)
     .set(updates)
-    .where(and(eq(workOrdersTable.id, ctx.job.id), eq(workOrdersTable.tenantId, ctx.tenantId)))
+    .where(and(
+      eq(workOrdersTable.id, ctx.job.id),
+      eq(workOrdersTable.tenantId, ctx.tenantId),
+      isNull(workOrdersTable.completionSignature),
+      isNull(workOrdersTable.customerSignature),
+    ))
     .returning();
+  if (!row) {
+    res.status(400).json({ error: "The customer has signed off on this job — the form can no longer be changed" });
+    return;
+  }
   res.json({
-    serviceAreas: row?.serviceAreas ?? [],
-    installDetails: row?.installDetails ?? {},
+    serviceAreas: row.serviceAreas ?? [],
+    installDetails: row.installDetails ?? {},
   });
 });
 

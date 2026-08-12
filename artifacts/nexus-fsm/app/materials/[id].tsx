@@ -81,6 +81,9 @@ export default function MaterialsScreen() {
   });
 
   const readOnly = job ? job.status === 'collected' || job.status === 'cancelled' : false;
+  // After customer sign-off the job content is frozen (no new dispatches, no
+  // cable-run edits) but returning tools/materials to stock stays allowed.
+  const signedOff = job ? !!(job.completionSignature || job.customerSignature) : false;
   const allocations = job?.allocations ?? [];
 
   if (isLoading || !job) {
@@ -101,7 +104,7 @@ export default function MaterialsScreen() {
           <Text style={[styles.title, { color: colors.foreground }]}>Materials & Cable</Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>{job.workOrderNumber}</Text>
         </View>
-        {admin && !readOnly && (
+        {admin && !readOnly && !signedOff && (
           <Pressable
             onPress={() => setShowAdd(true)}
             style={[styles.addBtn, { backgroundColor: colors.primary }]}
@@ -128,6 +131,7 @@ export default function MaterialsScreen() {
             open={openId === a.id}
             onToggle={() => setOpenId(openId === a.id ? null : a.id)}
             readOnly={readOnly}
+            contentLocked={signedOff}
             saving={patchMutation.isPending}
             onPatch={(body) => patchMutation.mutate({ allocationId: a.id, body })}
           />
@@ -149,12 +153,14 @@ export default function MaterialsScreen() {
 
 /* ── Allocation card ───────────────────────────────────────────────────────── */
 
-function AllocationCard({ a, colors, open, onToggle, readOnly, saving, onPatch }: {
+function AllocationCard({ a, colors, open, onToggle, readOnly, contentLocked, saving, onPatch }: {
   a: Allocation;
   colors: ReturnType<typeof useColors>;
   open: boolean;
   onToggle: () => void;
   readOnly: boolean;
+  /** Sign-off freeze: blocks run/remark edits but still allows returns. */
+  contentLocked: boolean;
   saving: boolean;
   onPatch: (body: { qtyReturned?: number; runs?: CableRun[] }) => void;
 }) {
@@ -183,7 +189,7 @@ function AllocationCard({ a, colors, open, onToggle, readOnly, saving, onPatch }
       {open && (
         <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
           {a.isCable && (
-            <RunLog key={`runs-${a.id}-${a.updatedAt}`} runs={a.runs} colors={colors} readOnly={readOnly} saving={saving} onSave={(runs) => onPatch({ runs })} />
+            <RunLog key={`runs-${a.id}-${a.updatedAt}`} runs={a.runs} colors={colors} readOnly={readOnly || contentLocked} saving={saving} onSave={(runs) => onPatch({ runs })} />
           )}
           {!readOnly && (
             <ReturnRow key={`ret-${a.id}-${a.updatedAt}`} a={a} colors={colors} onSave={(qtyReturned) => onPatch({ qtyReturned })} />

@@ -227,6 +227,7 @@ export function getJob(
   activeEntry: FsmTimeEntry | null;
   photos: FsmPhoto[];
   completionSignature: string | null;
+  customerSignature: string | null;
   items: FsmWorkItem[];
   subtotal: number | null;
   discountAmount: number | null;

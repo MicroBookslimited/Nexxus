@@ -69,6 +69,9 @@
 
 /* ── LIGHT MODE (default :root) ─────────────────────────── */
 :root {
+  /* Native form controls (date/time picker icons, scrollbars, etc.) render
+     for a light background: dark calendar icon on light fields. */
+  color-scheme: light;
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
   --opaque-button-border-intensity: -8;
@@ -126,6 +129,10 @@
 
 /* ── DARK MODE ──────────────────────────────────────────── */
 .dark {
+  /* Flips native picker icons (date/time/month) to white in dark mode.
+     Any element given an explicitly light background can opt back out
+     with `[style*=background] { color-scheme: light }` or a utility. */
+  color-scheme: dark;
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
   --opaque-button-border-intensity: 9;
