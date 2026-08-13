@@ -8,8 +8,8 @@ import {
   subscriptionCouponsTable, subscriptionCouponRedemptionsTable,
   subscriptionInvoicesTable, type SubscriptionInvoice,
 } from "@workspace/db";
-import { issueSubscriptionInvoice, renderInvoiceDocs, sendInvoiceEmail } from "../lib/subscription-invoices";
-import { eq, desc, count, sql, ilike, or, and, isNull } from "drizzle-orm";
+import { issueSubscriptionInvoice, renderInvoiceDocs, sendInvoiceEmail, sendSubscriptionActivationEmail } from "../lib/subscription-invoices";
+import { eq, ne, desc, count, sql, ilike, or, and, isNull } from "drizzle-orm";
 import { computeNextStartDate, addBillingCycle } from "../utils/manual-payments";
 import { getActiveProductCount, planProductLimitError } from "../utils/plan-limits";
 import { getSetting } from "./settings";
@@ -212,9 +212,10 @@ router.post("/superadmin/tenants", async (req, res): Promise<void> => {
   }).returning();
 
   let planId: number | undefined;
+  let planName: string | undefined;
   if (planSlug) {
     const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.slug, planSlug));
-    if (plan) planId = plan.id;
+    if (plan) { planId = plan.id; planName = plan.name; }
   }
 
   const subStatus = subscriptionStatus ?? (planId ? "active" : "trial");
@@ -239,6 +240,19 @@ router.post("/superadmin/tenants", async (req, res): Promise<void> => {
     currentPeriodStart: subStatus === "active" ? now : undefined,
     currentPeriodEnd: subStatus === "active" ? periodEnd : undefined,
   });
+
+  // Activated by hand rather than through an online checkout — tell the
+  // customer (and copy accounts@) that their plan is live.
+  if (subStatus === "active") {
+    void sendSubscriptionActivationEmail({
+      tenantId: tenant.id,
+      planName: planName ?? "Subscription",
+      billingCycle: billingCycle ?? "monthly",
+      periodStart: now,
+      periodEnd,
+      methodLabel: "Offline activation by MicroBooks",
+    });
+  }
 
   res.status(201).json({ success: true, tenant: { id: tenant.id, email: tenant.email } });
 });
@@ -294,15 +308,49 @@ router.patch("/superadmin/tenants/:id", async (req, res): Promise<void> => {
         setPeriodEnd = end;
       }
 
-      await db.update(subscriptionsTable).set({
-        ...(setStatus ? { status: setStatus } : {}),
-        ...(setProvider ? { provider: setProvider } : {}),
-        ...(setPeriodStart ? { currentPeriodStart: setPeriodStart } : {}),
-        ...(setPeriodEnd ? { currentPeriodEnd: setPeriodEnd } : {}),
+      // Switching a subscription ON is claimed atomically (status <> 'active'),
+      // so two simultaneous requests can't both believe they activated it and
+      // send the customer two confirmations.
+      let activated = false;
+      if (setStatus === "active") {
+        const claimed = await db.update(subscriptionsTable).set({
+          status: "active",
+          ...(setProvider ? { provider: setProvider } : {}),
+          ...(setPeriodStart ? { currentPeriodStart: setPeriodStart } : {}),
+          ...(setPeriodEnd ? { currentPeriodEnd: setPeriodEnd } : {}),
+          updatedAt: new Date(),
+        }).where(and(
+          eq(subscriptionsTable.tenantId, id),
+          ne(subscriptionsTable.status, "active"),
+        )).returning({ id: subscriptionsTable.id });
+        activated = claimed.length > 0;
+      }
+
+      const rest = {
+        ...(setStatus && setStatus !== "active" ? { status: setStatus } : {}),
         ...(parsed.data.planId ? { planId: parsed.data.planId } : {}),
         ...(parsed.data.billingCycle ? { billingCycle: parsed.data.billingCycle } : {}),
-        updatedAt: new Date(),
-      }).where(eq(subscriptionsTable.tenantId, id));
+      };
+      if (Object.keys(rest).length > 0) {
+        await db.update(subscriptionsTable)
+          .set({ ...rest, updatedAt: new Date() })
+          .where(eq(subscriptionsTable.tenantId, id));
+      }
+
+      if (activated) {
+        const emailPlanId = parsed.data.planId ?? existing.planId;
+        const [plan] = emailPlanId
+          ? await db.select({ name: subscriptionPlansTable.name }).from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, emailPlanId))
+          : [];
+        void sendSubscriptionActivationEmail({
+          tenantId: id,
+          planName: plan?.name ?? "Subscription",
+          billingCycle: cycle,
+          periodStart: setPeriodStart ?? existing.currentPeriodStart,
+          periodEnd: setPeriodEnd ?? existing.currentPeriodEnd,
+          methodLabel: "Offline activation by MicroBooks",
+        });
+      }
     }
   }
 
@@ -476,6 +524,24 @@ router.patch("/superadmin/bank-transfer-proofs/:id", async (req, res): Promise<v
     }
 
     await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, proof.tenantId));
+
+    // Money was actually received, so the customer gets the full invoice +
+    // receipt email (accounts@ is copied by the platform mailer). Idempotent
+    // per proof, so re-approving never issues a second document.
+    void issueSubscriptionInvoice({
+      tenantId: proof.tenantId,
+      planId: proof.planId,
+      planName: "Subscription",
+      billingCycle: proof.billingCycle,
+      amount: proof.amount,
+      currency: "USD",
+      provider: "bank_transfer",
+      paymentMethodLabel: "Bank transfer",
+      providerRef: `bank_transfer:${id}`,
+      periodStart: now,
+      periodEnd,
+      paidAt: now,
+    });
   }
 
   res.json({ success: true });
@@ -1356,7 +1422,36 @@ router.patch("/superadmin/subscriptions/:id", async (req, res): Promise<void> =>
   if (d.currentPeriodEnd !== undefined) update.currentPeriodEnd = d.currentPeriodEnd ? new Date(d.currentPeriodEnd) : null;
   if (d.trialEndsAt !== undefined) update.trialEndsAt = d.trialEndsAt ? new Date(d.trialEndsAt) : null;
 
-  await db.update(subscriptionsTable).set(update).where(eq(subscriptionsTable.id, id));
+  let activated = false;
+  if (d.status === "active") {
+    // Claim the transition: only the request that actually flipped the row
+    // out of a non-active state emails the customer.
+    const claimed = await db.update(subscriptionsTable).set(update)
+      .where(and(eq(subscriptionsTable.id, id), ne(subscriptionsTable.status, "active")))
+      .returning({ id: subscriptionsTable.id });
+    activated = claimed.length > 0;
+    if (!activated) {
+      await db.update(subscriptionsTable).set(update).where(eq(subscriptionsTable.id, id));
+    }
+  } else {
+    await db.update(subscriptionsTable).set(update).where(eq(subscriptionsTable.id, id));
+  }
+
+  if (activated) {
+    const emailPlanId = d.planId ?? existing.planId;
+    const [plan] = emailPlanId
+      ? await db.select({ name: subscriptionPlansTable.name }).from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, emailPlanId))
+      : [];
+    void sendSubscriptionActivationEmail({
+      tenantId: existing.tenantId,
+      planName: plan?.name ?? "Subscription",
+      billingCycle: update.billingCycle ?? existing.billingCycle ?? "monthly",
+      periodStart: update.currentPeriodStart ?? existing.currentPeriodStart,
+      periodEnd: update.currentPeriodEnd ?? existing.currentPeriodEnd,
+      methodLabel: "Offline activation by MicroBooks",
+    });
+  }
+
   res.json({ success: true });
 });
 

@@ -14,7 +14,7 @@ export interface IssueInvoiceParams {
   billingCycle: string;
   amount: number;
   currency?: string;
-  provider: "paypal" | "powertranz" | "manual";
+  provider: "paypal" | "powertranz" | "manual" | "bank_transfer";
   paymentMethodLabel: string;
   providerRef?: string | null;
   periodStart?: Date | null;
@@ -26,6 +26,11 @@ export interface IssueInvoiceParams {
 
 function pad(n: number): string {
   return String(n).padStart(5, "0");
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 function fmtRange(start?: Date | null, end?: Date | null): string {
@@ -68,11 +73,11 @@ function emailHtml(rec: SubscriptionInvoice): string {
     <h2 style="margin:0 0 4px">Thank you for your payment</h2>
     <p style="color:#6b7280;margin:0 0 20px">Your NEXXUS POS subscription is confirmed.</p>
     <table style="width:100%;border-collapse:collapse;font-size:14px">
-      <tr><td style="padding:6px 0;color:#6b7280">Plan</td><td style="padding:6px 0;text-align:right;font-weight:600">${rec.planName} (${rec.billingCycle})</td></tr>
-      <tr><td style="padding:6px 0;color:#6b7280">Amount paid</td><td style="padding:6px 0;text-align:right;font-weight:700">${amount}</td></tr>
-      <tr><td style="padding:6px 0;color:#6b7280">Date paid</td><td style="padding:6px 0;text-align:right">${paid}</td></tr>
-      <tr><td style="padding:6px 0;color:#6b7280">Invoice</td><td style="padding:6px 0;text-align:right">${rec.invoiceNumber}</td></tr>
-      <tr><td style="padding:6px 0;color:#6b7280">Receipt</td><td style="padding:6px 0;text-align:right">${rec.receiptNumber}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Plan</td><td style="padding:6px 0;text-align:right;font-weight:600">${escapeHtml(rec.planName)} (${escapeHtml(rec.billingCycle)})</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Amount paid</td><td style="padding:6px 0;text-align:right;font-weight:700">${escapeHtml(amount)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Date paid</td><td style="padding:6px 0;text-align:right">${escapeHtml(paid)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Invoice</td><td style="padding:6px 0;text-align:right">${escapeHtml(rec.invoiceNumber)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Receipt</td><td style="padding:6px 0;text-align:right">${escapeHtml(rec.receiptNumber)}</td></tr>
     </table>
     <p style="color:#6b7280;font-size:13px;margin-top:20px">Your invoice and receipt are attached as PDFs. Questions? Reply to this email or contact accounts@microbookssolutions.com.</p>
     <p style="color:#9ca3af;font-size:12px;margin-top:24px">MicroBooks Limited · Shop 15, 12A Molynes Road, Kingston 10, Jamaica · +1-876-787-1538</p>
@@ -148,15 +153,15 @@ export async function sendSubscriptionPaymentFailureEmail(params: {
     <span style="font-size:22px;font-weight:bold;color:#00AEEF">MicroBooks</span>
   </div>
   <h2 style="margin:0 0 4px;color:#dc2626">Payment Unsuccessful</h2>
-  <p style="color:#6b7280;margin:0 0 20px">Hi ${name}, we were unable to process your NEXXUS POS subscription payment.</p>
+  <p style="color:#6b7280;margin:0 0 20px">Hi ${escapeHtml(name)}, we were unable to process your NEXXUS POS subscription payment.</p>
   <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px">
     <tr>
       <td style="padding:8px 0;color:#6b7280;border-bottom:1px solid #f3f4f6">Plan</td>
-      <td style="padding:8px 0;text-align:right;font-weight:600;border-bottom:1px solid #f3f4f6">${params.planName}</td>
+      <td style="padding:8px 0;text-align:right;font-weight:600;border-bottom:1px solid #f3f4f6">${escapeHtml(params.planName)}</td>
     </tr>
     <tr>
       <td style="padding:8px 0;color:#6b7280">Reason</td>
-      <td style="padding:8px 0;text-align:right;color:#dc2626;font-weight:600">${params.reason}</td>
+      <td style="padding:8px 0;text-align:right;color:#dc2626;font-weight:600">${escapeHtml(params.reason)}</td>
     </tr>
   </table>
   <p style="margin:0 0 12px">To keep your subscription active, please try again with a different payment method or check with your bank if the card was declined.</p>
@@ -176,6 +181,100 @@ export async function sendSubscriptionPaymentFailureEmail(params: {
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.message : String(err), tenantId: params.tenantId },
       "sendSubscriptionPaymentFailureEmail: failed to send");
+  }
+}
+
+/**
+ * Confirms an OFFLINE subscription activation to the customer — one that never
+ * passed through an online card/PayPal checkout: a superadmin activating or
+ * extending a plan by hand, an approved bank transfer, or a promotional code.
+ *
+ * The customer gets the confirmation and accounts@ is copied automatically
+ * (platform email → tenantId 0). Best-effort: never throws, because a mail
+ * failure must not roll back an activation that already happened.
+ */
+export interface ActivationEmailParams {
+  tenantId: number;
+  planName: string;
+  billingCycle: string;
+  periodStart?: Date | null;
+  periodEnd?: Date | null;
+  /** How it was activated, as shown to the customer, e.g. "Bank transfer". */
+  methodLabel: string;
+  /** Payment/coupon reference to print, when there is one. */
+  reference?: string | null;
+  /** Amount received, when money actually changed hands. */
+  amount?: number | null;
+  currency?: string;
+}
+
+/** Pure renderer for the offline-activation email (exported for testing). */
+export function buildActivationEmailHtml(params: ActivationEmailParams, customerName: string): string {
+    const name = customerName;
+    const fmtDate = (d?: Date | null) =>
+      d ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(d) : null;
+    const currency = params.currency ?? "USD";
+    const amount = params.amount != null && params.amount > 0
+      ? (() => {
+          try { return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(params.amount as number); }
+          catch { return `${currency} ${(params.amount as number).toFixed(2)}`; }
+        })()
+      : null;
+
+    const rows: Array<[string, string]> = [
+      ["Plan", `${params.planName} (${params.billingCycle})`],
+      ["Activated by", params.methodLabel],
+    ];
+    if (amount) rows.push(["Amount received", amount]);
+    if (params.reference) rows.push(["Reference", params.reference]);
+    const start = fmtDate(params.periodStart);
+    const end = fmtDate(params.periodEnd);
+    if (start) rows.push(["Start date", start]);
+    if (end) rows.push(["Active until", end]);
+
+    const rowsHtml = rows.map(([label, value]) =>
+      `<tr><td style="padding:8px 0;color:#6b7280;border-bottom:1px solid #f3f4f6">${escapeHtml(label)}</td>` +
+      `<td style="padding:8px 0;text-align:right;font-weight:600;border-bottom:1px solid #f3f4f6">${escapeHtml(value)}</td></tr>`,
+    ).join("");
+
+    const html = `
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1a1a1a">
+  <div style="border-bottom:3px solid #00AEEF;padding-bottom:12px;margin-bottom:20px">
+    <span style="font-size:22px;font-weight:bold;color:#00AEEF">MicroBooks</span>
+  </div>
+  <h2 style="margin:0 0 4px">Your subscription is active</h2>
+  <p style="color:#6b7280;margin:0 0 20px">Hi ${escapeHtml(name)}, your NEXXUS POS subscription has been activated.</p>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px">${rowsHtml}</table>
+  <p style="margin:0 0 20px">You can review your plan any time in NEXXUS POS under <strong>Settings → Subscription</strong>.</p>
+  <p style="color:#6b7280;font-size:13px;margin-top:20px">Questions about this activation? Reply to this email or contact <a href="mailto:accounts@microbookssolutions.com" style="color:#00AEEF">accounts@microbookssolutions.com</a>.</p>
+  <p style="color:#9ca3af;font-size:12px;margin-top:24px">MicroBooks Limited · Shop 15, 12A Molynes Road, Kingston 10, Jamaica · +1-876-787-1538</p>
+</div>`;
+    return html;
+}
+
+export async function sendSubscriptionActivationEmail(params: ActivationEmailParams): Promise<void> {
+  try {
+    const [tenant] = await db.select().from(tenantsTable).where(eq(tenantsTable.id, params.tenantId));
+    if (!tenant?.email) {
+      logger.warn({ tenantId: params.tenantId }, "sendSubscriptionActivationEmail: no tenant email");
+      return;
+    }
+
+    const html = buildActivationEmailHtml(params, tenant.businessName || tenant.ownerName || "there");
+    const { fromAddress } = await getFromDetails(0);
+    await sendMail({
+      to: tenant.email,
+      subject: `Your NEXXUS POS ${params.planName} subscription is active`,
+      html,
+      fromName: "MicroBooks",
+      fromAddress,
+      tenantId: 0,   // platform email → BCC accounts@ automatically
+    });
+    logger.info({ tenantId: params.tenantId, methodLabel: params.methodLabel },
+      "sendSubscriptionActivationEmail: sent");
+  } catch (err) {
+    logger.error({ err: err instanceof Error ? err.message : String(err), tenantId: params.tenantId },
+      "sendSubscriptionActivationEmail: failed to send");
   }
 }
 

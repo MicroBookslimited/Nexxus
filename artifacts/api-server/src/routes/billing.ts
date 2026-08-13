@@ -8,12 +8,12 @@ import {
 } from "@workspace/db";
 import { recordResellerCommission } from "./reseller";
 import { creditWallet as creditTopupWallet } from "./topup";
-import { eq, and, desc, sql, lt } from "drizzle-orm";
+import { eq, ne, and, desc, sql, lt } from "drizzle-orm";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { getSetting } from "./settings";
 import { getActiveProductCount, planProductLimitError } from "../utils/plan-limits";
-import { issueSubscriptionInvoice, renderInvoiceDocs, sendInvoiceEmail, sendSubscriptionPaymentFailureEmail } from "../lib/subscription-invoices";
+import { issueSubscriptionInvoice, renderInvoiceDocs, sendInvoiceEmail, sendSubscriptionActivationEmail, sendSubscriptionPaymentFailureEmail } from "../lib/subscription-invoices";
 
 const router: IRouter = Router();
 
@@ -1012,18 +1012,45 @@ router.post("/billing/free-activate", async (req, res): Promise<void> => {
     return;
   }
 
+  let activated = false;
   if (existing) {
-    await db.update(subscriptionsTable).set({
+    // Claim the switch into "active" atomically so a double-click can't send
+    // the customer two activation confirmations.
+    const claimed = await db.update(subscriptionsTable).set({
       planId: plan.id, status: "active", provider: "free", providerOrderId: null,
       billingCycle: parsed.data.billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd, updatedAt: now,
-    }).where(eq(subscriptionsTable.tenantId, tenant.tenantId));
+    }).where(and(
+      eq(subscriptionsTable.tenantId, tenant.tenantId),
+      ne(subscriptionsTable.status, "active"),
+    )).returning({ id: subscriptionsTable.id });
+    activated = claimed.length > 0;
+    if (!activated) {
+      await db.update(subscriptionsTable).set({
+        planId: plan.id, status: "active", provider: "free", providerOrderId: null,
+        billingCycle: parsed.data.billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd, updatedAt: now,
+      }).where(eq(subscriptionsTable.tenantId, tenant.tenantId));
+    }
   } else {
     await db.insert(subscriptionsTable).values({
       tenantId: tenant.tenantId, planId: plan.id, status: "active", provider: "free",
       billingCycle: parsed.data.billingCycle, currentPeriodStart: now, currentPeriodEnd: periodEnd,
     });
+    activated = true;
   }
   await db.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 }).where(eq(tenantsTable.id, tenant.tenantId));
+
+  // No gateway involved, so this is an offline activation too: confirm it to
+  // the customer with accounts@ copied.
+  if (activated) {
+    void sendSubscriptionActivationEmail({
+      tenantId: tenant.tenantId,
+      planName: plan.name,
+      billingCycle: parsed.data.billingCycle,
+      periodStart: now,
+      periodEnd,
+      methodLabel: "Free plan activation",
+    });
+  }
 
   res.json({ success: true, plan: { name: plan.name, slug: plan.slug } });
 });
@@ -1118,8 +1145,25 @@ router.post("/billing/redeem-coupon", async (req, res): Promise<void> => {
       await tx.update(tenantsTable).set({ onboardingComplete: true, onboardingStep: 5 })
         .where(eq(tenantsTable.id, tenant.tenantId));
 
-      return { status: 200 as const, body: { success: true, plan: { name: plan.name, slug: plan.slug } } };
+      return {
+        status: 200 as const,
+        body: { success: true, plan: { name: plan.name, slug: plan.slug } },
+        activated: { planName: plan.name, billingCycle, periodStart: now, periodEnd, code },
+      };
     });
+    // Redeeming a code activates the plan without any online payment, so the
+    // customer gets the same offline confirmation (copied to accounts@).
+    if (result.status === 200 && "activated" in result && result.activated) {
+      void sendSubscriptionActivationEmail({
+        tenantId: tenant.tenantId,
+        planName: result.activated.planName,
+        billingCycle: result.activated.billingCycle,
+        periodStart: result.activated.periodStart,
+        periodEnd: result.activated.periodEnd,
+        methodLabel: "Promotional code",
+        reference: result.activated.code,
+      });
+    }
     res.status(result.status).json(result.body);
   } catch (e) {
     if (e instanceof CouponExhaustedError) {
