@@ -8,6 +8,7 @@ import {
   workOrderNotesTable,
   workOrderPhotosTable,
   workOrderReviewsTable,
+  workOrderManagerReviewsTable,
   workOrderStatusHistoryTable,
   workOrderAppointmentsTable,
   customersTable,
@@ -365,9 +366,109 @@ router.get("/work-orders/:id", async (req, res): Promise<void> => {
   const staffNamesMap = await batchResolveStaffNames(tenantId, woIds);
   const [review] = await db.select().from(workOrderReviewsTable)
     .where(and(eq(workOrderReviewsTable.tenantId, tenantId), eq(workOrderReviewsTable.workOrderId, id)));
+  const [managerReview] = await db.select().from(workOrderManagerReviewsTable)
+    .where(and(eq(workOrderManagerReviewsTable.tenantId, tenantId), eq(workOrderManagerReviewsTable.workOrderId, id)));
   res.json({
     ...normalize(row.workOrder, row.customerName, row.customerPhone, row.staffName, staffNamesMap),
     review: review ? { rating: review.rating, comment: review.comment, reviewerName: review.reviewerName, createdAt: review.createdAt } : null,
+    managerReview: managerReview ? {
+      rating: managerReview.rating,
+      outcome: managerReview.outcome,
+      comment: managerReview.comment,
+      reviewerStaffId: managerReview.reviewerStaffId,
+      reviewerName: managerReview.reviewerName,
+      createdAt: managerReview.createdAt,
+      updatedAt: managerReview.updatedAt,
+    } : null,
+  });
+});
+
+// ─── Manager / Admin QA review ────────────────────────────────────────────────
+// Internal quality-assurance rating of how the job itself was executed —
+// distinct from the customer's public review. One per work order, editable.
+// Unlike rejectNonAdminStaffHeader (which lets header-less office sessions
+// through), this endpoint POSITIVELY requires a managerial staff identity:
+// the x-staff-id header must be present and resolve to admin/manager/owner.
+const ManagerReviewBody = z.object({
+  rating: z.number().int().min(1).max(5),
+  outcome: z.enum(["satisfactory", "needs_improvement", "unsatisfactory"]),
+  comment: z.string().max(2000).optional(),
+});
+router.put("/work-orders/:id/manager-review", async (req, res): Promise<void> => {
+  if (!requireFullTenant(req as never, res as never)) return;
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const staffId = getStaffId(req as never);
+  const [reviewer] = staffId != null
+    ? await db.select({ id: staffTable.id, name: staffTable.name, role: staffTable.role }).from(staffTable)
+        .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)))
+    : [];
+  if (!reviewer || !/^(admin|manager|owner)$/i.test(reviewer.role.trim())) {
+    res.status(403).json({ error: "Only managers or admins can review a job" });
+    return;
+  }
+
+  const parsed = ManagerReviewBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Please choose a rating from 1 to 5 and an outcome" }); return; }
+
+  // Eligibility check + upsert run in ONE transaction with the work-order row
+  // locked, so a concurrent reopen (e.g. ready → in_progress) can't slip in
+  // between the check and the write and leave a review on an unfinished job.
+  const result = await db.transaction(async (tx) => {
+    const [wo] = await tx.select({ status: workOrdersTable.status, workCompletedAt: workOrdersTable.workCompletedAt })
+      .from(workOrdersTable)
+      .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)))
+      .for("update");
+    if (!wo) return { error: 404 as const };
+    // QA happens once the work is done (or the job is closed out) — not mid-job.
+    if (!wo.workCompletedAt && !["ready", "collected", "cancelled"].includes(wo.status)) {
+      return { error: 400 as const };
+    }
+
+    const values = {
+      tenantId,
+      workOrderId: id,
+      rating: parsed.data.rating,
+      outcome: parsed.data.outcome,
+      comment: parsed.data.comment?.trim() || null,
+      reviewerStaffId: reviewer.id,
+      reviewerName: reviewer.name,
+    };
+    // One review per job; a re-save updates it (unique index makes this race-safe).
+    const [saved] = await tx.insert(workOrderManagerReviewsTable)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [workOrderManagerReviewsTable.tenantId, workOrderManagerReviewsTable.workOrderId],
+        set: {
+          rating: values.rating,
+          outcome: values.outcome,
+          comment: values.comment,
+          reviewerStaffId: values.reviewerStaffId,
+          reviewerName: values.reviewerName,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return { saved };
+  });
+  if ("error" in result) {
+    if (result.error === 404) { res.status(404).json({ error: "Work order not found" }); return; }
+    res.status(400).json({ error: "This job can be reviewed once the work is completed" });
+    return;
+  }
+  const saved = result.saved;
+  if (!saved) { res.status(500).json({ error: "Could not save review" }); return; }
+  res.json({
+    rating: saved.rating,
+    outcome: saved.outcome,
+    comment: saved.comment,
+    reviewerStaffId: saved.reviewerStaffId,
+    reviewerName: saved.reviewerName,
+    createdAt: saved.createdAt,
+    updatedAt: saved.updatedAt,
   });
 });
 

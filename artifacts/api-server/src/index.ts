@@ -227,6 +227,24 @@ async function ensureCashCustodyTables() {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS cash_handovers_tenant_status_idx ON cash_handovers (tenant_id, status)`);
 }
 
+// Internal QA reviews: management's rating of how a job was executed.
+// Additive and idempotent; the unique index keeps one review per work order.
+async function ensureManagerReviewTable() {
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS work_order_manager_reviews (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL,
+    work_order_id integer NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+    rating integer NOT NULL,
+    outcome text NOT NULL DEFAULT 'satisfactory',
+    comment text,
+    reviewer_staff_id integer,
+    reviewer_name text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS work_order_manager_reviews_wo_unique ON work_order_manager_reviews (tenant_id, work_order_id)`);
+}
+
 // Repair any timestamp DEFAULTs that the deploy-time migration may have
 // dropped (see lib/repair-timestamp-defaults.ts for full context). Must run
 // BEFORE we start serving requests, otherwise the first save into the
@@ -235,6 +253,7 @@ await repairTimestampDefaults();
 await ensureEquipmentDeductedColumn();
 await ensureSupplierLinkColumns();
 await ensureCashCustodyTables();
+await ensureManagerReviewTable();
 
 app.listen(port, async (err) => {
   if (err) {

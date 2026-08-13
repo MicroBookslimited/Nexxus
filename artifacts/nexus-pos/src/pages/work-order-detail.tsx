@@ -17,6 +17,7 @@ import {
   useCreateWorkOrderAppointment,
   useUpdateWorkOrderAppointment,
   useDeleteWorkOrderAppointment,
+  useSaveManagerReview,
   APPOINTMENT_SLOTS,
   DEFAULT_APPOINTMENT_SLOT_ID,
   slotToRange,
@@ -101,7 +102,7 @@ const APPT_STATUS_STYLE: Record<string, string> = {
   no_show: "bg-slate-500/15 text-slate-500 border-slate-500/30",
 };
 
-type Tab = "overview" | "items" | "install" | "materials" | "notes" | "appointments" | "history" | "jobcard";
+type Tab = "overview" | "items" | "install" | "materials" | "notes" | "appointments" | "history" | "review" | "jobcard";
 
 /* ─── Main component ─────────────────────────────────────────────────────── */
 export default function WorkOrderDetailPage() {
@@ -241,6 +242,7 @@ export default function WorkOrderDetailPage() {
     { key: "notes", label: "Notes", icon: MessageSquare },
     { key: "appointments", label: "Appointments", icon: Calendar },
     { key: "history", label: "History", icon: Activity },
+    { key: "review", label: "QA Review", icon: Star },
     { key: "jobcard", label: "Job Card", icon: Printer },
   ];
 
@@ -333,6 +335,7 @@ export default function WorkOrderDetailPage() {
       {tab === "notes" && <NotesTab workOrderId={wo.id} />}
       {tab === "appointments" && <AppointmentsTab workOrderId={wo.id} staff={staff ?? []} />}
       {tab === "history" && <HistoryTab workOrderId={wo.id} serviceChannel={wo.serviceChannel} />}
+      {tab === "review" && <ManagerReviewTab wo={wo} />}
       {tab === "jobcard" && (
         <JobCardTab wo={wo} currency={currency} onPrint={handlePrintJobCard} />
       )}
@@ -955,6 +958,157 @@ function ItemsTab({
             <Button variant="outline" onClick={addFee}>+ Fee</Button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ── QA Review Tab ───────────────────────────────────────────────────────── */
+const QA_OUTCOMES = [
+  { value: "satisfactory", label: "Satisfactory", cls: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30" },
+  { value: "needs_improvement", label: "Needs Improvement", cls: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
+  { value: "unsatisfactory", label: "Unsatisfactory", cls: "bg-rose-500/15 text-rose-600 border-rose-500/30" },
+] as const;
+
+function StarRating({ value, onChange, readOnly }: { value: number; onChange?: (n: number) => void; readOnly?: boolean }) {
+  return (
+    <div className="flex gap-1">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          disabled={readOnly}
+          onClick={() => onChange?.(n)}
+          className={readOnly ? "cursor-default" : "cursor-pointer"}
+          aria-label={`${n} star${n > 1 ? "s" : ""}`}
+        >
+          <Star className={`h-6 w-6 ${n <= value ? "fill-amber-400 text-amber-400" : "text-muted-foreground/40"}`} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ManagerReviewTab({ wo }: { wo: WorkOrder }) {
+  const { staff: sessionStaff } = useStaff();
+  const saveReview = useSaveManagerReview();
+  const { toast } = useToast();
+
+  const existing = wo.managerReview ?? null;
+  const isManager = !!sessionStaff && /^(admin|manager|owner)$/i.test(sessionStaff.role ?? "");
+  const jobDone = !!wo.workCompletedAt || ["ready", "collected", "cancelled"].includes(wo.status);
+
+  const [editing, setEditing] = useState(false);
+  const [rating, setRating] = useState(existing?.rating ?? 0);
+  const [outcome, setOutcome] = useState<(typeof QA_OUTCOMES)[number]["value"]>(existing?.outcome ?? "satisfactory");
+  const [comment, setComment] = useState(existing?.comment ?? "");
+
+  const startEdit = () => {
+    setRating(existing?.rating ?? 0);
+    setOutcome(existing?.outcome ?? "satisfactory");
+    setComment(existing?.comment ?? "");
+    setEditing(true);
+  };
+
+  const handleSave = () => {
+    if (!sessionStaff || rating < 1) return;
+    saveReview.mutate(
+      { workOrderId: wo.id, staffId: sessionStaff.id, data: { rating, outcome, comment: comment.trim() || undefined } },
+      {
+        onSuccess: () => { setEditing(false); toast({ title: "QA review saved" }); },
+        onError: (e: any) => toast({ title: "Could not save review", description: e?.message, variant: "destructive" }),
+      },
+    );
+  };
+
+  const outcomeMeta = (v: string) => QA_OUTCOMES.find((o) => o.value === v);
+
+  return (
+    <div className="space-y-4 max-w-xl">
+      <div>
+        <h3 className="font-semibold">Management QA Review</h3>
+        <p className="text-sm text-muted-foreground">
+          Internal quality-assurance rating of how this job was executed. Visible to staff only — separate from the customer's review.
+        </p>
+      </div>
+
+      {!jobDone && (
+        <p className="text-sm text-muted-foreground border rounded-md p-3">
+          This job can be reviewed once the work is completed.
+        </p>
+      )}
+
+      {jobDone && existing && !editing && (
+        <Card>
+          <CardContent className="pt-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <StarRating value={existing.rating} readOnly />
+              <Badge variant="outline" className={outcomeMeta(existing.outcome)?.cls}>
+                {outcomeMeta(existing.outcome)?.label ?? existing.outcome}
+              </Badge>
+            </div>
+            {existing.comment && <p className="text-sm whitespace-pre-wrap">{existing.comment}</p>}
+            <p className="text-xs text-muted-foreground">
+              Reviewed by {existing.reviewerName ?? "management"} · {fmtDateTime(existing.updatedAt)}
+            </p>
+            {isManager && (
+              <Button size="sm" variant="outline" onClick={startEdit}>
+                <Pencil className="h-3.5 w-3.5 mr-1" /> Edit Review
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {jobDone && !existing && !editing && (
+        <div className="border rounded-md p-4 space-y-3">
+          <p className="text-sm text-muted-foreground">No QA review yet.</p>
+          {isManager ? (
+            <Button size="sm" onClick={startEdit}>
+              <Star className="h-4 w-4 mr-1" /> Review this Job
+            </Button>
+          ) : (
+            <p className="text-xs text-muted-foreground">Only managers or admins can review a job.</p>
+          )}
+        </div>
+      )}
+
+      {jobDone && editing && (
+        <Card>
+          <CardContent className="pt-4 space-y-4">
+            <div className="space-y-1.5">
+              <Label>Job quality rating</Label>
+              <StarRating value={rating} onChange={setRating} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Outcome</Label>
+              <div className="flex gap-2 flex-wrap">
+                {QA_OUTCOMES.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setOutcome(o.value)}
+                    className={`px-3 py-1.5 rounded-md border text-sm font-medium transition-colors ${
+                      outcome === o.value ? o.cls : "text-muted-foreground border-border hover:text-foreground"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Comments (what went well, what to improve)</Label>
+              <Textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={4} maxLength={2000} />
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleSave} disabled={rating < 1 || saveReview.isPending}>
+                <Save className="h-4 w-4 mr-1" /> {saveReview.isPending ? "Saving…" : "Save Review"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

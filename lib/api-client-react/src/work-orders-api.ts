@@ -79,7 +79,20 @@ export type WorkOrder = {
   completionVerifiedVia?: string | null;
   reviewEmailSentAt?: string | null;
   review?: { rating: number; comment: string | null; reviewerName: string | null; createdAt: string } | null;
+  managerReview?: WorkOrderManagerReview | null;
+  workCompletedAt?: string | null;
   portalToken?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Internal QA review by management (distinct from the customer's review)
+export type WorkOrderManagerReview = {
+  rating: number;
+  outcome: "satisfactory" | "needs_improvement" | "unsatisfactory";
+  comment: string | null;
+  reviewerStaffId: number | null;
+  reviewerName: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -293,6 +306,27 @@ export function useGetWorkOrder(id: number | null) {
     queryKey: [WO_KEY, id],
     queryFn: () => customFetch<WorkOrder>(`/api/work-orders/${id}`),
     enabled: id != null,
+  });
+}
+
+/** Save (create or update) management's QA review of a job. The server
+ *  requires the x-staff-id header to resolve to an admin/manager/owner. */
+export function useSaveManagerReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workOrderId, staffId, data }: {
+      workOrderId: number;
+      staffId: number;
+      data: { rating: number; outcome: WorkOrderManagerReview["outcome"]; comment?: string };
+    }) =>
+      customFetch<WorkOrderManagerReview>(`/api/work-orders/${workOrderId}/manager-review`, {
+        method: "PUT",
+        headers: { "x-staff-id": String(staffId) },
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (_d, { workOrderId }) => {
+      void qc.invalidateQueries({ queryKey: [WO_KEY, workOrderId] });
+    },
   });
 }
 

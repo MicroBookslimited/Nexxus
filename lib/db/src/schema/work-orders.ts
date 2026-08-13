@@ -309,6 +309,27 @@ export const workOrderReviewsTable = pgTable("work_order_reviews", {
 
 export type WorkOrderReview = typeof workOrderReviewsTable.$inferSelect;
 
+// ─── Work Order Manager Reviews ──────────────────────────────────────────────
+// Internal QA: management rates how well the job itself was executed
+// (distinct from the customer's public review). One per work order,
+// editable by managerial staff; created/updated audit fields kept.
+export const workOrderManagerReviewsTable = pgTable("work_order_manager_reviews", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  workOrderId: integer("work_order_id").notNull().references(() => workOrdersTable.id, { onDelete: "cascade" }),
+  rating: integer("rating").notNull(), // 1-5 stars
+  outcome: text("outcome").notNull().default("satisfactory"), // satisfactory | needs_improvement | unsatisfactory
+  comment: text("comment"),
+  reviewerStaffId: integer("reviewer_staff_id"),
+  reviewerName: text("reviewer_name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  woUniq: uniqueIndex("work_order_manager_reviews_wo_unique").on(t.tenantId, t.workOrderId),
+}));
+
+export type WorkOrderManagerReview = typeof workOrderManagerReviewsTable.$inferSelect;
+
 // ─── Work Order Payments ──────────────────────────────────────────────────────
 // Onsite money collection ledger (technicians in the field or office staff).
 // Cash rows feed the collector's cash-session expected-cash calculation (scoped
