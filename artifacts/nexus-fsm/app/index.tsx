@@ -266,17 +266,16 @@ const styles = StyleSheet.create({
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   woNumber: {
-    fontSize: 17,
+    fontSize: 13,
     fontFamily: 'Inter_700Bold',
     letterSpacing: 0.3,
     flexShrink: 1,
     marginRight: 8,
-    // Illuminated: soft glow around the text so it reads at arm's length.
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
   customerName: {
-    fontSize: 19,
+    fontSize: 16,
     fontFamily: 'Inter_700Bold',
     letterSpacing: 0.2,
     textShadowOffset: { width: 0, height: 0 },
