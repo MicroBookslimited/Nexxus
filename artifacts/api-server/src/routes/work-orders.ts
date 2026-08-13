@@ -261,6 +261,111 @@ async function validateRefs(
   return null;
 }
 
+/* ─── Walk-in contact → POS customer sync ────────────────────────────────────
+ * A work order taken for a "walk-in" only carried contact fields, so those
+ * people never appeared in the Customers module. Every work order now resolves
+ * to a real customer record: an existing one when we can confidently match it
+ * (phone, then email, then — only when neither was given — a unique exact name),
+ * otherwise a newly created one. Blank details on a matched customer are filled
+ * in from the work order; existing values are never overwritten.
+ */
+
+/** Loyalty card number, same format/uniqueness rule as the customers module. */
+function randomLoyaltyCard(): string {
+  let digits = "";
+  for (let k = 0; k < 10; k++) digits += Math.floor(Math.random() * 10);
+  return `LM${digits}`;
+}
+
+type DbLike = Pick<typeof db, "select" | "insert" | "update">;
+
+/** Find (or create) the POS customer for a work order's contact details.
+ *  Returns the customer id, or null when there is nothing to go on.
+ *  Lookups are bounded SQL queries (never loads the tenant's whole customer
+ *  list) and are always tenant-scoped. */
+async function syncContactToCustomer(
+  tx: DbLike,
+  tenantId: number,
+  contact: { name?: string | null; phone?: string | null; email?: string | null },
+): Promise<number | null> {
+  const name = contact.name?.trim();
+  const phone = contact.phone?.trim() || null;
+  const email = contact.email?.trim() || null;
+  if (!name) return null;
+
+  const phoneDigits = (phone ?? "").replace(/\D/g, "");
+  const emailKey = email?.toLowerCase() ?? null;
+
+  let match: { id: number; phone: string | null; email: string | null } | undefined;
+
+  // 1) Phone is the strongest identifier — compare digits only, so
+  //    "876-555-1234" and "(876) 555 1234" are the same person.
+  if (phoneDigits) {
+    [match] = await tx
+      .select({ id: customersTable.id, phone: customersTable.phone, email: customersTable.email })
+      .from(customersTable)
+      .where(and(
+        eq(customersTable.tenantId, tenantId),
+        sql`regexp_replace(coalesce(${customersTable.phone}, ''), '[^0-9]', '', 'g') = ${phoneDigits}`,
+      ))
+      .orderBy(customersTable.id)
+      .limit(1);
+  }
+  // 2) Then email.
+  if (!match && emailKey) {
+    [match] = await tx
+      .select({ id: customersTable.id, phone: customersTable.phone, email: customersTable.email })
+      .from(customersTable)
+      .where(and(
+        eq(customersTable.tenantId, tenantId),
+        sql`lower(trim(coalesce(${customersTable.email}, ''))) = ${emailKey}`,
+      ))
+      .orderBy(customersTable.id)
+      .limit(1);
+  }
+  // 3) With no phone or email to go on, accept a name match only when it is
+  //    unambiguous — never attach a job to a different person of the same name.
+  if (!match && !phoneDigits && !emailKey) {
+    const byName = await tx
+      .select({ id: customersTable.id, phone: customersTable.phone, email: customersTable.email })
+      .from(customersTable)
+      .where(and(
+        eq(customersTable.tenantId, tenantId),
+        sql`lower(trim(${customersTable.name})) = ${name.toLowerCase()}`,
+      ))
+      .orderBy(customersTable.id)
+      .limit(2);
+    if (byName.length === 1) match = byName[0];
+  }
+
+  if (match) {
+    // Fill in details the customer record is missing; never overwrite.
+    const fill: Record<string, string> = {};
+    if (phone && !match.phone?.trim()) fill["phone"] = phone;
+    if (email && !match.email?.trim()) fill["email"] = email;
+    if (Object.keys(fill).length > 0) {
+      await tx.update(customersTable).set(fill)
+        .where(and(eq(customersTable.id, match.id), eq(customersTable.tenantId, tenantId)));
+    }
+    return match.id;
+  }
+
+  // New customer. Card numbers are unique per tenant; on the (very rare)
+  // random collision retry rather than failing the work order.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [created] = await tx.insert(customersTable)
+      .values({ tenantId, name, phone, email, cardNumber: randomLoyaltyCard() })
+      .onConflictDoNothing()
+      .returning({ id: customersTable.id });
+    if (created) return created.id;
+  }
+  // Last resort: create without a card number rather than block the job.
+  const [fallback] = await tx.insert(customersTable)
+    .values({ tenantId, name, phone, email })
+    .returning({ id: customersTable.id });
+  return fallback?.id ?? null;
+}
+
 /** Batch-lookup staff names for multiple work orders' assignedStaffIds arrays. */
 async function batchResolveStaffNames(
   tenantId: number,
@@ -510,12 +615,19 @@ router.post("/work-orders", async (req, res): Promise<void> => {
 
   const row = await db.transaction(async (tx) => {
     const workOrderNumber = await nextWorkOrderNumber(tx, tenantId, clientName);
+    // Walk-in jobs still belong to a real person: make sure the contact exists
+    // in the Customers module and link the job to it.
+    const customerId = data.customerId ?? await syncContactToCustomer(tx, tenantId, {
+      name: data.contactName,
+      phone: data.contactPhone,
+      email: data.contactEmail,
+    });
     const [created] = await tx
       .insert(workOrdersTable)
       .values({
         tenantId,
         workOrderNumber,
-        customerId: data.customerId ?? null,
+        customerId,
         contactName: data.contactName ?? null,
         contactPhone: data.contactPhone ?? null,
         contactEmail: data.contactEmail ?? null,
@@ -735,6 +847,21 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
   for (const f of textFields) {
     if (data[f] !== undefined) (updates as Record<string, unknown>)[f] = data[f];
   }
+
+  // Editing the contact on a walk-in job (one with no customer linked yet)
+  // keeps the Customers module in step. The lookup/create runs inside the
+  // work-order transaction below, so a customer is never created for an update
+  // that ends up rejected. An explicitly-set customerId always wins.
+  const contactEdited = data.contactName !== undefined || data.contactPhone !== undefined || data.contactEmail !== undefined;
+  const shouldSyncContact = data.customerId === undefined && existing.customerId == null && contactEdited;
+  // Use the POST-edit contact state: an explicitly cleared field must not fall
+  // back to the stored value.
+  const mergedContact = {
+    name: data.contactName !== undefined ? data.contactName : existing.contactName,
+    phone: data.contactPhone !== undefined ? data.contactPhone : existing.contactPhone,
+    email: data.contactEmail !== undefined ? data.contactEmail : existing.contactEmail,
+  };
+
   if (data.estimatedMinutes !== undefined) updates.estimatedMinutes = data.estimatedMinutes;
   if (data.serviceAreas !== undefined) updates.serviceAreas = data.serviceAreas;
   if (data.installDetails !== undefined) {
@@ -770,6 +897,18 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
   );
 
   const row = await db.transaction(async (tx) => {
+    if (shouldSyncContact) {
+      // Lock the job first so two concurrent contact edits can't each create
+      // their own customer record for the same person.
+      const [locked] = await tx.select({ customerId: workOrdersTable.customerId })
+        .from(workOrdersTable)
+        .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)))
+        .for("update");
+      if (locked && locked.customerId == null) {
+        const linkedId = await syncContactToCustomer(tx, tenantId, mergedContact);
+        if (linkedId != null) updates.customerId = linkedId;
+      }
+    }
     const [updated] = await tx
       .update(workOrdersTable)
       .set(updates)

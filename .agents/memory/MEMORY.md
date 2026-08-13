@@ -76,4 +76,5 @@
 - [Technician cash shifts & WO payments](tech-cash-shift.md) — techs share POS cash_sessions; work_order_payments strictly staff-scoped; WO→POS handoff credits depositPaid as fixed discount (no negative lines).
 - [Paid add-on entitlement](paid-addon-entitlement.md) — setting ≠ entitlement; server-side check + route middleware; durable row-locked pending reservation before gateway call; routers share /api mount so middleware must path-filter.
 - [Work Orders Phase 1 architecture](work-orders-phase1.md) — full module built; new tables, 7-status flow, notes/appointments/history API, list+kanban UI, job card HTML with CDN JsBarcode; add-on billing tables in place but self-serve purchase route not wired.
+- [Work-order walk-in → customer sync](work-order-customer-sync.md) — every WO resolves its contact to a real customers row; match phone-digits → email → unique name; sync inside the WO txn.
 - [Supplier master linking](supplier-master-linking.md) — POs/bills link to the vendors master and the server copies the name into the legacy text; confirmed bills raise ONE AP subledger row (GL credit is separate, not a double count).
