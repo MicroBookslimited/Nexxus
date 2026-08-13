@@ -15,6 +15,7 @@ import type { UpdatePurchaseOrderBodyTaxMode } from "./updatePurchaseOrderBodyTa
 export interface UpdatePurchaseOrderBody {
   status?: UpdatePurchaseOrderBodyStatus;
   convertedBillId?: number | null;
+  vendorId?: number | null;
   supplier?: string | null;
   expectedDate?: string | null;
   notes?: string | null;

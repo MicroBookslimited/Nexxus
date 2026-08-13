@@ -10,6 +10,7 @@ import type { CreatePurchaseOrderBodyTaxMode } from "./createPurchaseOrderBodyTa
 import type { CreatePurchaseOrderItemBody } from "./createPurchaseOrderItemBody";
 
 export interface CreatePurchaseOrderBody {
+  vendorId?: number | null;
   supplier?: string;
   /** Expected delivery date (ISO YYYY-MM-DD). */
   expectedDate?: string;

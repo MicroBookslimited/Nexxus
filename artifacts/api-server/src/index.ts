@@ -192,12 +192,23 @@ async function ensureEquipmentDeductedColumn() {
   await db.execute(sql`ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS equipment_deducted_at timestamptz`);
 }
 
+// Supplier-list links on purchase documents, plus the payable raised when a
+// bill is confirmed. Additive and idempotent; the partial unique index is what
+// stops a repeated confirm from raising the same payable twice.
+async function ensureSupplierLinkColumns() {
+  await db.execute(sql`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS vendor_id integer`);
+  await db.execute(sql`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS vendor_id integer`);
+  await db.execute(sql`ALTER TABLE ap_entries ADD COLUMN IF NOT EXISTS purchase_bill_id integer`);
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS ap_entries_purchase_bill_unique ON ap_entries (tenant_id, purchase_bill_id) WHERE purchase_bill_id IS NOT NULL`);
+}
+
 // Repair any timestamp DEFAULTs that the deploy-time migration may have
 // dropped (see lib/repair-timestamp-defaults.ts for full context). Must run
 // BEFORE we start serving requests, otherwise the first save into the
 // affected tables crashes with a not-null constraint violation.
 await repairTimestampDefaults();
 await ensureEquipmentDeductedColumn();
+await ensureSupplierLinkColumns();
 
 app.listen(port, async (err) => {
   if (err) {

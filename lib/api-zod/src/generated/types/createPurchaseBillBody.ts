@@ -11,6 +11,7 @@ import type { CreatePurchaseBillItemBody } from "./createPurchaseBillItemBody";
 
 export interface CreatePurchaseBillBody {
   billNumber: string;
+  vendorId?: number | null;
   supplier?: string;
   notes?: string;
   status?: CreatePurchaseBillBodyStatus;

@@ -13,6 +13,7 @@ import type { UpdatePurchaseBillBodyTaxMode } from "./updatePurchaseBillBodyTaxM
  */
 export interface UpdatePurchaseBillBody {
   billNumber?: string;
+  vendorId?: number | null;
   supplier?: string;
   notes?: string;
   defaultTaxRate?: number;

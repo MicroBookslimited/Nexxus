@@ -22,6 +22,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
 import { canEditWorkOrders, createFollowUpVisit, getJob, listStaff } from '@/lib/fsm-api';
+import {
+  APPOINTMENT_SLOTS,
+  DEFAULT_APPOINTMENT_SLOT_ID,
+  isValidDateInput,
+  slotToRange,
+} from '@workspace/api-client-react';
 
 export default function FollowUpScreen() {
   const colors = useColors();
@@ -42,7 +48,7 @@ export default function FollowUpScreen() {
 
   const [loaded, setLoaded] = useState(false);
   const [date, setDate] = useState('');
-  const [time, setTime] = useState('09:00');
+  const [slotId, setSlotId] = useState(DEFAULT_APPOINTMENT_SLOT_ID);
   const [notes, setNotes] = useState('');
   const [assigneeIds, setAssigneeIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -55,21 +61,16 @@ export default function FollowUpScreen() {
 
   // Require a real calendar date (rejects e.g. 2026-02-31, which JS would
   // silently roll over into March).
-  const dateValid = (() => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
-    if (!m) return false;
-    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    return d.getFullYear() === Number(m[1]) && d.getMonth() === Number(m[2]) - 1 && d.getDate() === Number(m[3]);
-  })();
-  const timeValid = /^([01]?\d|2[0-3]):[0-5]\d$/.test(time.trim());
-  const canSubmit = dateValid && timeValid;
+  const dateValid = isValidDateInput(date);
+  const canSubmit = dateValid;
 
   const submitMutation = useMutation({
     mutationFn: () => {
-      const start = new Date(`${date.trim()}T${time.trim()}:00`);
-      if (isNaN(start.getTime())) throw new Error('Invalid date or time');
+      const range = slotToRange(date, slotId);
+      if (!range) throw new Error('Invalid date or arrival window');
       return createFollowUpVisit(staff!.id, jobId, {
-        startTime: start.toISOString(),
+        startTime: range.start.toISOString(),
+        endTime: range.end.toISOString(),
         notes: notes.trim() || undefined,
         staffIds: assigneeIds.length ? assigneeIds : undefined,
       });
@@ -138,10 +139,16 @@ export default function FollowUpScreen() {
         {!!date.trim() && !dateValid && (
           <Text style={styles.fieldError}>Use the format YYYY-MM-DD.</Text>
         )}
-        <Field label="Time (24h HH:MM) *" value={time} onChange={setTime} colors={colors} placeholder="e.g. 09:00" />
-        {!!time.trim() && !timeValid && (
-          <Text style={styles.fieldError}>Use the 24-hour format HH:MM, e.g. 14:30.</Text>
-        )}
+        <Text style={[styles.label, { color: colors.mutedForeground }]}>Arrival window *</Text>
+        <View style={styles.chipRow}>
+          {APPOINTMENT_SLOTS.map((s) => (
+            <Chip key={s.id} label={s.label} on={slotId === s.id} onPress={() => setSlotId(s.id)} colors={colors} />
+          ))}
+        </View>
+        <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 4, marginBottom: 14 }}>
+          The customer is given a two-hour arrival window, not an exact time.
+        </Text>
+
         <Field label="Notes for the visit" value={notes} onChange={setNotes} colors={colors} placeholder="What still needs to be done?" multiline />
 
         <Text style={[styles.label, { color: colors.mutedForeground }]}>Technicians for this visit</Text>

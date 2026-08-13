@@ -1089,6 +1089,11 @@ router.post("/work-orders/:id/appointments", async (req, res): Promise<void> => 
 
   const parsed = CreateAppointmentBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  // Appointments are booked as an arrival window, so an end time that isn't
+  // after the start would render as a nonsense range on the calendar/emails.
+  if (parsed.data.endTime && parsed.data.endTime.getTime() <= parsed.data.startTime.getTime()) {
+    res.status(400).json({ error: "End time must be after the start time" }); return;
+  }
 
   const [wo] = await db.select({ id: workOrdersTable.id }).from(workOrdersTable)
     .where(and(eq(workOrdersTable.id, id), eq(workOrdersTable.tenantId, tenantId)));
@@ -1130,6 +1135,14 @@ router.patch("/work-orders/:id/appointments/:apptId", async (req, res): Promise<
   const [existing] = await db.select().from(workOrderAppointmentsTable)
     .where(and(eq(workOrderAppointmentsTable.id, apptId), eq(workOrderAppointmentsTable.tenantId, tenantId)));
   if (!existing) { res.status(404).json({ error: "Appointment not found" }); return; }
+
+  // Validate the resulting window, not just the fields that were sent — moving
+  // only the start time can still leave the visit ending before it begins.
+  const nextStart = parsed.data.startTime ?? existing.startTime;
+  const nextEnd = parsed.data.endTime !== undefined ? parsed.data.endTime : existing.endTime;
+  if (nextEnd && nextEnd.getTime() <= nextStart.getTime()) {
+    res.status(400).json({ error: "End time must be after the start time" }); return;
+  }
 
   const updates: Partial<typeof workOrderAppointmentsTable.$inferInsert> = { updatedAt: new Date() };
   if (parsed.data.appointmentType !== undefined) updates.appointmentType = parsed.data.appointmentType;
@@ -1349,6 +1362,7 @@ router.post("/work-orders/:id/follow-up", async (req, res): Promise<void> => {
     contactPhone: wo.contactPhone,
     customerId: wo.customerId,
     startTime: parsed.data.startTime,
+    endTime: parsed.data.endTime ?? null,
     notes: parsed.data.notes ?? null,
   });
 

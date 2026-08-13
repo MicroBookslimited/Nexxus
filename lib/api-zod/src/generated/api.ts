@@ -3563,6 +3563,7 @@ export const createPurchaseBillBodyTaxModeDefault = `exclusive`;
 
 export const CreatePurchaseBillBody = zod.object({
   billNumber: zod.string(),
+  vendorId: zod.number().nullish(),
   supplier: zod.string().optional(),
   notes: zod.string().optional(),
   status: zod.enum(["draft", "confirmed"]).optional(),
@@ -3671,6 +3672,7 @@ export const UpdatePurchaseBillParams = zod.object({
 export const UpdatePurchaseBillBody = zod
   .object({
     billNumber: zod.string().optional(),
+    vendorId: zod.number().nullish(),
     supplier: zod.string().optional(),
     notes: zod.string().optional(),
     defaultTaxRate: zod.number().optional(),
@@ -3872,6 +3874,7 @@ export const createPurchaseOrderBodyStatusDefault = `draft`;
 export const createPurchaseOrderBodyTaxModeDefault = `exclusive`;
 
 export const CreatePurchaseOrderBody = zod.object({
+  vendorId: zod.number().nullish(),
   supplier: zod.string().optional(),
   expectedDate: zod
     .string()
@@ -3962,6 +3965,7 @@ export const UpdatePurchaseOrderBody = zod
   .object({
     status: zod.enum(["draft", "sent", "converted", "cancelled"]).optional(),
     convertedBillId: zod.number().nullish(),
+    vendorId: zod.number().nullish(),
     supplier: zod.string().nullish(),
     expectedDate: zod.string().nullish(),
     notes: zod.string().nullish(),

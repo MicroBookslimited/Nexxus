@@ -772,18 +772,28 @@ export async function sendWorkOrderReviewEmail(input: {
 
 /* ─── Follow-up visit notifications ─────────────────────────────────────────── */
 
-/** Formats an appointment start time (date + time) in the tenant's timezone. */
-async function formatVisitDateTime(tenantId: number, when: Date): Promise<string> {
+/**
+ * Formats a visit as a date plus its arrival window in the tenant's timezone,
+ * e.g. "Saturday, August 15, 2026, 9:00 AM – 11:00 AM". Technicians are booked
+ * in two-hour windows, so the end time is shown whenever it's known rather
+ * than promising an exact arrival time.
+ */
+async function formatVisitDateTime(tenantId: number, when: Date, until?: Date | null): Promise<string> {
   let tz = "America/Jamaica";
   try {
     const set = await getSetting("timezone", tenantId);
     if (set?.trim()) tz = set.trim();
   } catch { /* fall back to default */ }
   try {
-    return when.toLocaleString("en-US", {
+    const label = when.toLocaleString("en-US", {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
       hour: "numeric", minute: "2-digit", timeZone: tz,
     });
+    if (!until || isNaN(until.getTime())) return label;
+    const endLabel = until.toLocaleString("en-US", {
+      hour: "numeric", minute: "2-digit", timeZone: tz,
+    });
+    return `${label} – ${endLabel}`;
   } catch {
     return when.toISOString();
   }
@@ -803,6 +813,8 @@ export async function sendFollowUpVisitEmails(input: {
   contactPhone: string | null;
   customerId: number | null;
   startTime: Date;
+  /** Arrival-window end; shown as a range so no exact time is promised. */
+  endTime?: Date | null;
   notes: string | null;
 }): Promise<void> {
   try {
@@ -816,7 +828,7 @@ export async function sendFollowUpVisitEmails(input: {
       getFromDetails(input.tenantId),
       db.query.tenantsTable.findFirst({ where: eq(tenantsTable.id, input.tenantId) }),
       getBusinessDetails(input.tenantId),
-      formatVisitDateTime(input.tenantId, input.startTime),
+      formatVisitDateTime(input.tenantId, input.startTime, input.endTime ?? null),
     ]);
 
     // Resolve the customer's display name / email from the linked record when

@@ -1282,6 +1282,7 @@ export const PurchaseBillTaxMode = {
 export interface PurchaseBill {
   id: number;
   billNumber: string;
+  vendorId?: number | null;
   supplier?: string | null;
   status: PurchaseBillStatus;
   notes?: string | null;
@@ -1330,6 +1331,7 @@ export const PurchaseBillWithItemsTaxMode = {
 export interface PurchaseBillWithItems {
   id: number;
   billNumber: string;
+  vendorId?: number | null;
   supplier?: string | null;
   status: PurchaseBillWithItemsStatus;
   notes?: string | null;
@@ -1375,6 +1377,7 @@ export const CreatePurchaseBillBodyTaxMode = {
 
 export interface CreatePurchaseBillBody {
   billNumber: string;
+  vendorId?: number | null;
   supplier?: string;
   notes?: string;
   status?: CreatePurchaseBillBodyStatus;
@@ -1398,6 +1401,7 @@ export const UpdatePurchaseBillBodyTaxMode = {
  */
 export interface UpdatePurchaseBillBody {
   billNumber?: string;
+  vendorId?: number | null;
   supplier?: string;
   notes?: string;
   defaultTaxRate?: number;
@@ -1442,6 +1446,7 @@ export const PurchaseOrderTaxMode = {
 export interface PurchaseOrder {
   id: number;
   poNumber: string;
+  vendorId?: number | null;
   supplier?: string | null;
   status: PurchaseOrderStatus;
   /** Expected delivery date (ISO YYYY-MM-DD) or null. */
@@ -1481,6 +1486,7 @@ export const PurchaseOrderWithItemsTaxMode = {
 export interface PurchaseOrderWithItems {
   id: number;
   poNumber: string;
+  vendorId?: number | null;
   supplier?: string | null;
   status: PurchaseOrderWithItemsStatus;
   expectedDate?: string | null;
@@ -1525,6 +1531,7 @@ export const CreatePurchaseOrderBodyTaxMode = {
 } as const;
 
 export interface CreatePurchaseOrderBody {
+  vendorId?: number | null;
   supplier?: string;
   /** Expected delivery date (ISO YYYY-MM-DD). */
   expectedDate?: string;
@@ -1561,6 +1568,7 @@ export const UpdatePurchaseOrderBodyTaxMode = {
 export interface UpdatePurchaseOrderBody {
   status?: UpdatePurchaseOrderBodyStatus;
   convertedBillId?: number | null;
+  vendorId?: number | null;
   supplier?: string | null;
   expectedDate?: string | null;
   notes?: string | null;

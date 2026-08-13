@@ -11,6 +11,8 @@ import {
   journalEntryLinesTable,
   locationInventoryTable,
   locationsTable,
+  vendorsTable,
+  apEntriesTable,
 } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
@@ -38,8 +40,29 @@ const CreateBillItemBody = z.object({
   expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
 });
 
+/**
+ * Resolves a supplier picked from the supplier list (vendors master). The
+ * vendor's own name is what gets stored in the document's `supplier` text, so
+ * the two can never disagree. Throws when the id isn't one of this tenant's
+ * suppliers.
+ */
+async function resolveVendor(
+  tx: { select: typeof db.select },
+  tenantId: number,
+  vendorId: number,
+): Promise<{ id: number; name: string; paymentTermsDays: number | null }> {
+  const [vendor] = await tx
+    .select({ id: vendorsTable.id, name: vendorsTable.name, paymentTermsDays: vendorsTable.paymentTermsDays })
+    .from(vendorsTable)
+    .where(and(eq(vendorsTable.id, vendorId), eq(vendorsTable.tenantId, tenantId)));
+  if (!vendor) throw new Error("Supplier not found");
+  return vendor;
+}
+
 const CreatePurchaseBillBody = z.object({
   billNumber: z.string().min(1),
+  /** Supplier picked from the supplier list; its name fills `supplier`. */
+  vendorId: z.number().int().positive().nullable().optional(),
   supplier: z.string().optional(),
   notes: z.string().optional(),
   status: z.enum(["draft", "confirmed"]).default("draft"),
@@ -286,6 +309,36 @@ async function confirmBillSideEffects(
     }
   }
 
+  // Raise the payable so the bill shows up under the supplier in Accounts
+  // Payable and can be paid from there. Only bills booked against a supplier
+  // from the supplier list can be tracked this way — a typed-in name has no
+  // account to owe. `onConflictDoNothing` on the (tenant, bill) unique index
+  // makes a retried or repeated confirm a no-op instead of a double payable.
+  if (bill.vendorId && totalCost > 0) {
+    const [vendor] = await tx
+      .select({ id: vendorsTable.id, paymentTermsDays: vendorsTable.paymentTermsDays })
+      .from(vendorsTable)
+      .where(and(eq(vendorsTable.id, bill.vendorId), eq(vendorsTable.tenantId, tenantId)));
+    if (vendor) {
+      const termDays = vendor.paymentTermsDays ?? 30;
+      await tx
+        .insert(apEntriesTable)
+        .values({
+          tenantId,
+          vendorId: vendor.id,
+          purchaseBillId: bill.id,
+          dueDate: new Date(Date.now() + termDays * 24 * 60 * 60 * 1000),
+          invoiceRef: bill.billNumber,
+          amountTotal: totalCost,
+          amountPaid: 0,
+          amountBalance: totalCost,
+          status: "pending",
+          notes: `Auto-created from purchase bill ${bill.billNumber}`,
+        })
+        .onConflictDoNothing();
+    }
+  }
+
   return costChanges;
 }
 
@@ -355,7 +408,18 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
     return;
   }
 
-  const { billNumber, supplier, notes, status, defaultTaxRate, taxMode, items } = parsed.data;
+  const { billNumber, vendorId, supplier, notes, status, defaultTaxRate, taxMode, items } = parsed.data;
+
+  // A supplier chosen from the list wins over any typed name.
+  let supplierName = supplier ?? null;
+  if (vendorId) {
+    try {
+      supplierName = (await resolveVendor(db, tenantId, vendorId)).name;
+    } catch {
+      res.status(400).json({ error: "Supplier not found" });
+      return;
+    }
+  }
 
   for (const item of items) {
     const [product] = await db.select({
@@ -412,7 +476,8 @@ router.post("/purchase-bills", async (req, res): Promise<void> => {
       .values({
         tenantId,
         billNumber,
-        supplier: supplier ?? null,
+        vendorId: vendorId ?? null,
+        supplier: supplierName,
         notes: notes ?? null,
         status,
         defaultTaxRate,
@@ -543,6 +608,7 @@ router.post("/purchase-bills/:id/confirm", async (req, res): Promise<void> => {
 
 const UpdatePurchaseBillBody = z.object({
   billNumber: z.string().min(1).optional(),
+  vendorId: z.number().int().positive().nullable().optional(),
   supplier: z.string().optional(),
   notes: z.string().optional(),
   defaultTaxRate: z.number().min(0).max(100).optional(),
@@ -569,7 +635,19 @@ router.patch("/purchase-bills/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const { billNumber, supplier, notes, defaultTaxRate, taxMode, items } = parsed.data;
+  const { billNumber, vendorId, supplier, notes, defaultTaxRate, taxMode, items } = parsed.data;
+
+  // Supplier picked from the list wins over any typed name; sending
+  // vendorId: null unlinks the bill and keeps whatever name is on it.
+  let supplierName = supplier;
+  if (vendorId) {
+    try {
+      supplierName = (await resolveVendor(db, tenantId, vendorId)).name;
+    } catch {
+      res.status(400).json({ error: "Supplier not found" });
+      return;
+    }
+  }
   const effectiveTaxMode = taxMode ?? bill.taxMode;
   const effectiveDefaultRate = defaultTaxRate ?? bill.defaultTaxRate;
 
@@ -636,7 +714,8 @@ router.patch("/purchase-bills/:id", async (req, res): Promise<void> => {
 
     const [updatedBill] = await tx.update(purchaseBillsTable).set({
       ...(billNumber !== undefined ? { billNumber } : {}),
-      ...(supplier !== undefined ? { supplier: supplier || null } : {}),
+      ...(vendorId !== undefined ? { vendorId: vendorId ?? null } : {}),
+      ...(supplierName !== undefined ? { supplier: supplierName || null } : {}),
       ...(notes !== undefined ? { notes: notes || null } : {}),
       ...(defaultTaxRate !== undefined ? { defaultTaxRate: effectiveDefaultRate } : {}),
       ...(taxMode !== undefined ? { taxMode: effectiveTaxMode } : {}),

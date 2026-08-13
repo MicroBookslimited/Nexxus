@@ -7,6 +7,7 @@ import {
   useUpdateWorkOrder,
   useWorkOrderCalendar,
   useWorkOrderReports,
+  formatAppointmentWindowShort,
 } from "@workspace/api-client-react";
 import type { WorkOrder, WorkOrderStatus, WorkOrderCalendarEntry } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -394,9 +395,6 @@ function CalendarView({ onOpen }: { currency: string; onOpen: (id: number) => vo
     return map;
   }, [appointments]);
 
-  const fmtTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-
   const today = new Date().toDateString();
   const weekLabel = `${days[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${days[6].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
 
@@ -446,7 +444,7 @@ function CalendarView({ onOpen }: { currency: string; onOpen: (id: number) => vo
                       >
                         <p className="font-semibold font-mono truncate">{a.workOrderNumber}</p>
                         <p className="truncate opacity-80">{a.itemDescription}</p>
-                        <p className="opacity-70">{fmtTime(a.startTime)}</p>
+                        <p className="opacity-70">{formatAppointmentWindowShort(a.startTime, a.endTime)}</p>
                         <p className="capitalize opacity-60">{a.appointmentType.replace("_", " ")}</p>
                       </button>
                     );

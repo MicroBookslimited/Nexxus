@@ -45,6 +45,10 @@ export const purchaseBillsTable = pgTable("purchase_bills", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().default(0),
   billNumber: text("bill_number").notNull(),
+  // Supplier master link (vendors). Nullable so historic bills captured before
+  // the supplier list existed keep working; `supplier` holds the display name
+  // and is kept in sync with the linked vendor's name on write.
+  vendorId: integer("vendor_id"),
   supplier: text("supplier"),
   status: text("status").notNull().default("draft"),
   notes: text("notes"),
@@ -104,6 +108,8 @@ export const purchaseOrdersTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id").notNull().default(0),
     poNumber: text("po_number").notNull(),
+    // Supplier master link (vendors); see purchase_bills.vendorId.
+    vendorId: integer("vendor_id"),
     supplier: text("supplier"),
     // draft | sent | converted | cancelled
     status: text("status").notNull().default("draft"),

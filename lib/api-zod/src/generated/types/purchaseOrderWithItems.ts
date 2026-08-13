@@ -12,6 +12,7 @@ import type { PurchaseOrderWithItemsTaxMode } from "./purchaseOrderWithItemsTaxM
 export interface PurchaseOrderWithItems {
   id: number;
   poNumber: string;
+  vendorId?: number | null;
   supplier?: string | null;
   status: PurchaseOrderWithItemsStatus;
   expectedDate?: string | null;

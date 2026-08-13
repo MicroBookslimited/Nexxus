@@ -6,6 +6,7 @@ import {
   purchaseOrderItemsTable,
   purchaseBillsTable,
   productsTable,
+  vendorsTable,
 } from "@workspace/db";
 import {
   CreatePurchaseOrderBody,
@@ -129,6 +130,20 @@ async function enrichPOWithItems(po: typeof purchaseOrdersTable.$inferSelect) {
   };
 }
 
+/**
+ * Resolves a supplier picked from the supplier list (vendors master) and
+ * returns its name, which becomes the document's stored `supplier` text so the
+ * two can't disagree. Returns null when the id isn't one of this tenant's
+ * suppliers.
+ */
+async function vendorName(tenantId: number, vendorId: number): Promise<string | null> {
+  const [vendor] = await db
+    .select({ name: vendorsTable.name })
+    .from(vendorsTable)
+    .where(and(eq(vendorsTable.id, vendorId), eq(vendorsTable.tenantId, tenantId)));
+  return vendor?.name ?? null;
+}
+
 /** Reject lines that point at a product not owned by this tenant. */
 async function validateProducts(tenantId: number, items: POItemInput[]): Promise<string | null> {
   for (const item of items) {
@@ -165,7 +180,14 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { supplier, expectedDate, notes, status, defaultTaxRate, taxMode, items } = parsed.data;
+  const { vendorId, supplier, expectedDate, notes, status, defaultTaxRate, taxMode, items } = parsed.data;
+
+  // A supplier chosen from the list wins over any typed name.
+  let supplierName = supplier ?? null;
+  if (vendorId) {
+    supplierName = await vendorName(tenantId, vendorId);
+    if (!supplierName) { res.status(400).json({ error: "Supplier not found" }); return; }
+  }
   if (items.length === 0) {
     res.status(400).json({ error: "A purchase order needs at least one item" });
     return;
@@ -192,7 +214,8 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
       .values({
         tenantId,
         poNumber,
-        supplier: supplier ?? null,
+        vendorId: vendorId ?? null,
+        supplier: supplierName,
         status: status ?? "draft",
         expectedDate: expectedDate ?? null,
         notes: notes ?? null,
@@ -299,6 +322,16 @@ router.patch("/purchase-orders/:id", async (req, res): Promise<void> => {
   if (body.data.status !== undefined) updates.status = body.data.status;
   if (body.data.convertedBillId !== undefined) updates.convertedBillId = body.data.convertedBillId ?? null;
   if (body.data.supplier !== undefined) updates.supplier = body.data.supplier ?? null;
+  // A supplier picked from the list wins over any typed name; sending
+  // vendorId: null unlinks it and leaves whatever name is on the order.
+  if (body.data.vendorId !== undefined) {
+    updates.vendorId = body.data.vendorId ?? null;
+    if (body.data.vendorId) {
+      const name = await vendorName(tenantId, body.data.vendorId);
+      if (!name) { res.status(400).json({ error: "Supplier not found" }); return; }
+      updates.supplier = name;
+    }
+  }
   if (body.data.expectedDate !== undefined) updates.expectedDate = body.data.expectedDate ?? null;
   if (body.data.notes !== undefined) updates.notes = body.data.notes ?? null;
 

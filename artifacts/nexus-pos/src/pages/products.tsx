@@ -37,6 +37,7 @@ import {
   useUpdateSettings,
   useGetProductStockHistory,
   useListVendors,
+  useCreateVendor,
   useGetCompositeComponents,
   useSaveCompositeComponents,
   useGetCompositeCost,
@@ -233,13 +234,13 @@ const emptyRestockForm = (): RestockForm => ({ quantity: "", unitCost: "", notes
 // taxRate is a string so an empty value means "inherit bill default".
 // Anything else parses as a percentage.
 type BillLineItem = { tempId: string; productId: string; quantity: string; unitCost: string; taxRate: string; batchNumber: string; expiryDate: string };
-type BillForm = { billNumber: string; supplier: string; notes: string; defaultTaxRate: string; taxMode: "exclusive" | "inclusive"; items: BillLineItem[] };
+type BillForm = { billNumber: string; vendorId: string; supplier: string; notes: string; defaultTaxRate: string; taxMode: "exclusive" | "inclusive"; items: BillLineItem[] };
 
 // Purchase Order form. POs are an ordering document with NO batch/expiry and no
 // stock/accounting side effects. The PO number is generated server-side, so it
 // is not part of the create form. taxRate empty = inherit PO default.
 type PoLineItem = { tempId: string; productId: string; quantity: string; unitCost: string; taxRate: string };
-type PoForm = { supplier: string; expectedDate: string; notes: string; defaultTaxRate: string; taxMode: "exclusive" | "inclusive"; items: PoLineItem[] };
+type PoForm = { vendorId: string; supplier: string; expectedDate: string; notes: string; defaultTaxRate: string; taxMode: "exclusive" | "inclusive"; items: PoLineItem[] };
 
 // One row in the post-confirm "review cost changes" dialog. The user can
 // edit `newPrice` before applying.
@@ -265,13 +266,13 @@ function emptyLineItem(): BillLineItem {
   return { tempId: makeId(), productId: "", quantity: "", unitCost: "", taxRate: "", batchNumber: "", expiryDate: "" };
 }
 function emptyBillForm(): BillForm {
-  return { billNumber: generateBillNumber(), supplier: "", notes: "", defaultTaxRate: "", taxMode: "exclusive", items: [emptyLineItem()] };
+  return { billNumber: generateBillNumber(), vendorId: "", supplier: "", notes: "", defaultTaxRate: "", taxMode: "exclusive", items: [emptyLineItem()] };
 }
 function emptyPoLineItem(): PoLineItem {
   return { tempId: makeId(), productId: "", quantity: "", unitCost: "", taxRate: "" };
 }
 function emptyPoForm(): PoForm {
-  return { supplier: "", expectedDate: "", notes: "", defaultTaxRate: "", taxMode: "exclusive", items: [emptyPoLineItem()] };
+  return { vendorId: "", supplier: "", expectedDate: "", notes: "", defaultTaxRate: "", taxMode: "exclusive", items: [emptyPoLineItem()] };
 }
 
 /* ─── Product form types ─── */
@@ -3070,6 +3071,33 @@ export function Products() {
   const confirmBill = useConfirmPurchaseBill();
   const deleteBill = useDeletePurchaseBill();
   const { data: vendors = [] } = useListVendors();
+  const createVendor = useCreateVendor();
+  // Which form opened the quick "add supplier" dialog, so the new supplier can
+  // be selected straight back into it.
+  const [newSupplierTarget, setNewSupplierTarget] = useState<"bill" | "po" | null>(null);
+  const [newSupplier, setNewSupplier] = useState({ name: "", contactName: "", phone: "", email: "" });
+
+  const handleCreateSupplier = async () => {
+    const name = newSupplier.name.trim();
+    if (!name) { toast({ title: "Supplier name is required", variant: "destructive" }); return; }
+    try {
+      const created = await createVendor.mutateAsync({
+        name,
+        contactName: newSupplier.contactName.trim() || undefined,
+        phone: newSupplier.phone.trim() || undefined,
+        email: newSupplier.email.trim() || undefined,
+      });
+      const target = newSupplierTarget;
+      if (target === "bill") setBillForm((f) => ({ ...f, vendorId: String(created.id), supplier: created.name }));
+      if (target === "po") setPoForm((f) => ({ ...f, vendorId: String(created.id), supplier: created.name }));
+      queryClient.invalidateQueries({ queryKey: ["/api/vendors"] });
+      setNewSupplierTarget(null);
+      setNewSupplier({ name: "", contactName: "", phone: "", email: "" });
+      toast({ title: "Supplier added" });
+    } catch {
+      toast({ title: "Failed to add supplier", variant: "destructive" });
+    }
+  };
 
   const [pageTab, setPageTab] = useState<"products" | "purchases" | "orders" | "units">("products");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
@@ -3125,6 +3153,7 @@ export function Products() {
     if (!editBillDetail || !editingBillId) return;
     setBillForm({
       billNumber: editBillDetail.billNumber,
+      vendorId: editBillDetail.vendorId ? String(editBillDetail.vendorId) : "",
       supplier: editBillDetail.supplier ?? "",
       notes: editBillDetail.notes ?? "",
       defaultTaxRate: editBillDetail.defaultTaxRate ? String(editBillDetail.defaultTaxRate) : "",
@@ -3143,7 +3172,9 @@ export function Products() {
           }))
         : [emptyLineItem()],
     });
-    setBillSupplierManual(true);
+    // Only fall back to the free-text box when the bill isn't linked to a
+    // supplier from the list (older bills, or a one-off name).
+    setBillSupplierManual(!editBillDetail.vendorId && !!editBillDetail.supplier);
   }, [editBillDetail, editingBillId]);
 
   // ── Purchase Orders ──
@@ -3408,6 +3439,7 @@ export function Products() {
     createPo.mutate(
       {
         data: {
+          vendorId: poForm.vendorId ? parseInt(poForm.vendorId) : null,
           supplier: poForm.supplier || undefined,
           expectedDate: poForm.expectedDate || undefined,
           notes: poForm.notes || undefined,
@@ -3481,6 +3513,7 @@ export function Products() {
   const handleConvertPoToBill = (po: NonNullable<typeof viewPoDetail>) => {
     setBillForm({
       ...emptyBillForm(),
+      vendorId: po.vendorId ? String(po.vendorId) : "",
       supplier: po.supplier ?? "",
       notes: po.notes ? `From ${po.poNumber}: ${po.notes}` : `Converted from ${po.poNumber}`,
       defaultTaxRate: po.defaultTaxRate ? String(po.defaultTaxRate) : "",
@@ -3502,7 +3535,7 @@ export function Products() {
         : [emptyLineItem()],
     });
     setConvertingPoId(po.id);
-    setBillSupplierManual(true);
+    setBillSupplierManual(!po.vendorId && !!po.supplier);
     setViewPoId(null);
     setBillView("new");
     setPageTab("purchases");
@@ -3547,6 +3580,7 @@ export function Products() {
       {
         data: {
           billNumber: billForm.billNumber.trim(),
+          vendorId: billForm.vendorId ? parseInt(billForm.vendorId) : null,
           supplier: billForm.supplier || undefined,
           notes: billForm.notes || undefined,
           status,
@@ -3627,6 +3661,7 @@ export function Products() {
         id: editingBillId,
         data: {
           billNumber: billForm.billNumber.trim(),
+          vendorId: billForm.vendorId ? parseInt(billForm.vendorId) : null,
           supplier: billForm.supplier || undefined,
           notes: billForm.notes || undefined,
           defaultTaxRate,
@@ -4885,36 +4920,38 @@ export function Products() {
                     </div>
                     <div className="grid gap-1.5">
                       <Label className="text-xs text-muted-foreground uppercase tracking-wide">Supplier</Label>
-                      {(billSupplierManual || vendors.length === 0) ? (
+                      {billSupplierManual ? (
                         <div className="flex gap-1">
                           <Input
                             value={billForm.supplier}
-                            onChange={(e) => setBillForm((f) => ({ ...f, supplier: e.target.value }))}
+                            onChange={(e) => setBillForm((f) => ({ ...f, vendorId: "", supplier: e.target.value }))}
                             placeholder="Type supplier name"
                             className="flex-1"
                           />
-                          {vendors.length > 0 && (
-                            <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
-                              onClick={() => { setBillSupplierManual(false); setBillForm(f => ({ ...f, supplier: "" })); }}>
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
+                          <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
+                            title="Back to the supplier list"
+                            onClick={() => { setBillSupplierManual(false); setBillForm(f => ({ ...f, vendorId: "", supplier: "" })); }}>
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       ) : (
                         <Select
-                          value={billForm.supplier}
+                          value={billForm.vendorId}
                           onValueChange={(v) => {
-                            if (v === "__manual__") { setBillSupplierManual(true); setBillForm(f => ({ ...f, supplier: "" })); }
-                            else setBillForm((f) => ({ ...f, supplier: v }));
+                            if (v === "__manual__") { setBillSupplierManual(true); setBillForm(f => ({ ...f, vendorId: "", supplier: "" })); return; }
+                            if (v === "__new__") { setNewSupplierTarget("bill"); return; }
+                            const vendor = vendors.find((x) => String(x.id) === v);
+                            setBillForm((f) => ({ ...f, vendorId: v, supplier: vendor?.name ?? "" }));
                           }}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select vendor..." />
+                            <SelectValue placeholder="Select supplier..." />
                           </SelectTrigger>
                           <SelectContent>
                             {vendors.filter(v => v.isActive).map((v) => (
-                              <SelectItem key={v.id} value={v.name}>{v.name}</SelectItem>
+                              <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
                             ))}
+                            <SelectItem value="__new__" className="text-primary">+ Add new supplier...</SelectItem>
                             <SelectItem value="__manual__" className="text-muted-foreground italic">Enter manually...</SelectItem>
                           </SelectContent>
                         </Select>
@@ -5359,36 +5396,38 @@ export function Products() {
                   <div className="grid grid-cols-4 gap-4">
                     <div className="grid gap-1.5">
                       <Label className="text-xs text-muted-foreground uppercase tracking-wide">Supplier</Label>
-                      {(poSupplierManual || vendors.length === 0) ? (
+                      {poSupplierManual ? (
                         <div className="flex gap-1">
                           <Input
                             value={poForm.supplier}
-                            onChange={(e) => setPoForm((f) => ({ ...f, supplier: e.target.value }))}
+                            onChange={(e) => setPoForm((f) => ({ ...f, vendorId: "", supplier: e.target.value }))}
                             placeholder="Type supplier name"
                             className="flex-1"
                           />
-                          {vendors.length > 0 && (
-                            <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
-                              onClick={() => { setPoSupplierManual(false); setPoForm(f => ({ ...f, supplier: "" })); }}>
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
+                          <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
+                            title="Back to the supplier list"
+                            onClick={() => { setPoSupplierManual(false); setPoForm(f => ({ ...f, vendorId: "", supplier: "" })); }}>
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       ) : (
                         <Select
-                          value={poForm.supplier}
+                          value={poForm.vendorId}
                           onValueChange={(v) => {
-                            if (v === "__manual__") { setPoSupplierManual(true); setPoForm(f => ({ ...f, supplier: "" })); }
-                            else setPoForm((f) => ({ ...f, supplier: v }));
+                            if (v === "__manual__") { setPoSupplierManual(true); setPoForm(f => ({ ...f, vendorId: "", supplier: "" })); return; }
+                            if (v === "__new__") { setNewSupplierTarget("po"); return; }
+                            const vendor = vendors.find((x) => String(x.id) === v);
+                            setPoForm((f) => ({ ...f, vendorId: v, supplier: vendor?.name ?? "" }));
                           }}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select vendor..." />
+                            <SelectValue placeholder="Select supplier..." />
                           </SelectTrigger>
                           <SelectContent>
                             {vendors.filter(v => v.isActive).map((v) => (
-                              <SelectItem key={v.id} value={v.name}>{v.name}</SelectItem>
+                              <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
                             ))}
+                            <SelectItem value="__new__" className="text-primary">+ Add new supplier...</SelectItem>
                             <SelectItem value="__manual__" className="text-muted-foreground italic">Enter manually...</SelectItem>
                           </SelectContent>
                         </Select>
@@ -6648,6 +6687,63 @@ export function Products() {
           queryClient.invalidateQueries({ queryKey: ["/api/products/plan-limit"] });
         }}
       />
+
+      {/* Quick "add supplier" — saves into the shared supplier list (Accounts
+          Payable → Suppliers) and selects it back into the form that opened it. */}
+      <Dialog open={!!newSupplierTarget} onOpenChange={(o) => { if (!o) setNewSupplierTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add supplier</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-1">
+            <div className="grid gap-1.5">
+              <Label>Supplier name *</Label>
+              <Input
+                autoFocus
+                value={newSupplier.name}
+                onChange={(e) => setNewSupplier((v) => ({ ...v, name: e.target.value }))}
+                placeholder="e.g. ABC Foods Ltd"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Contact person</Label>
+                <Input
+                  value={newSupplier.contactName}
+                  onChange={(e) => setNewSupplier((v) => ({ ...v, contactName: e.target.value }))}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Phone</Label>
+                <Input
+                  value={newSupplier.phone}
+                  onChange={(e) => setNewSupplier((v) => ({ ...v, phone: e.target.value }))}
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={newSupplier.email}
+                onChange={(e) => setNewSupplier((v) => ({ ...v, email: e.target.value }))}
+                placeholder="Optional"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Saved to your supplier list, so it's available everywhere — including Accounts Payable.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewSupplierTarget(null)}>Cancel</Button>
+            <Button onClick={handleCreateSupplier} disabled={createVendor.isPending}>
+              {createVendor.isPending ? "Saving..." : "Add supplier"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <SubscriptionExpiredDialog
         open={subscriptionExpiredMsg !== null}

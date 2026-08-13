@@ -76,6 +76,10 @@ export const apEntriesTable = pgTable("ap_entries", {
   tenantId: integer("tenant_id").notNull(),
   vendorId: integer("vendor_id").references(() => vendorsTable.id, { onDelete: "set null" }),
   purchaseId: integer("purchase_id").references(() => rawMaterialPurchasesTable.id, { onDelete: "set null" }),
+  /** Supplier bill this payable came from (products purchasing). One AP entry
+   *  per confirmed bill — enforced by a partial unique index so re-confirming
+   *  or retrying can never raise the same payable twice. */
+  purchaseBillId: integer("purchase_bill_id"),
   entryDate: timestamp("entry_date", { withTimezone: true }).notNull().defaultNow(),
   dueDate: timestamp("due_date", { withTimezone: true }),
   invoiceRef: text("invoice_ref"),

@@ -24,6 +24,7 @@ import {
   getCalendarAppointments,
   type CalendarAppointment,
 } from '@/lib/fsm-api';
+import { formatAppointmentWindow } from '@workspace/api-client-react';
 
 type Mode = 'day' | 'week' | 'month';
 
@@ -52,10 +53,6 @@ function startOfMonth(d: Date): Date {
 function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
-
 const TYPE_LABELS: Record<string, string> = {
   follow_up: 'Follow-up',
   assessment: 'Assessment',
@@ -156,10 +153,9 @@ export default function CalendarScreen() {
       style={[styles.apptCard, { backgroundColor: colors.card, borderColor: a.appointmentType === 'follow_up' ? colors.accent : colors.border }]}
     >
       <View style={styles.apptTimeCol}>
-        <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '700' }}>{fmtTime(a.startTime)}</Text>
-        {a.endTime ? (
-          <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>– {fmtTime(a.endTime)}</Text>
-        ) : null}
+        <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '700' }}>
+          {formatAppointmentWindow(a.startTime, a.endTime)}
+        </Text>
       </View>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

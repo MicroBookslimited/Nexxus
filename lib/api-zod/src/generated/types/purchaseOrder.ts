@@ -11,6 +11,7 @@ import type { PurchaseOrderTaxMode } from "./purchaseOrderTaxMode";
 export interface PurchaseOrder {
   id: number;
   poNumber: string;
+  vendorId?: number | null;
   supplier?: string | null;
   status: PurchaseOrderStatus;
   /** Expected delivery date (ISO YYYY-MM-DD) or null. */

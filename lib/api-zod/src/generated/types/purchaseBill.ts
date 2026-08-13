@@ -11,6 +11,7 @@ import type { PurchaseBillTaxMode } from "./purchaseBillTaxMode";
 export interface PurchaseBill {
   id: number;
   billNumber: string;
+  vendorId?: number | null;
   supplier?: string | null;
   status: PurchaseBillStatus;
   notes?: string | null;

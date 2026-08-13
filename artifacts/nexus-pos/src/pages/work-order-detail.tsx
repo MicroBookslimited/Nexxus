@@ -17,6 +17,10 @@ import {
   useCreateWorkOrderAppointment,
   useUpdateWorkOrderAppointment,
   useDeleteWorkOrderAppointment,
+  APPOINTMENT_SLOTS,
+  DEFAULT_APPOINTMENT_SLOT_ID,
+  slotToRange,
+  formatAppointmentDateWindow,
 } from "@workspace/api-client-react";
 import type { WorkOrder, WorkOrderStatus, WorkOrderNote, WorkOrderAppointment } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1035,17 +1039,26 @@ function AppointmentsTab({ workOrderId, staff }: { workOrderId: number; staff: a
   const [showAdd, setShowAdd] = useState(false);
   const [apptType, setApptType] = useState("repair");
   const [staffId, setStaffId] = useState<number | "">("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [visitDate, setVisitDate] = useState("");
+  const [slotId, setSlotId] = useState(DEFAULT_APPOINTMENT_SLOT_ID);
   const [apptNotes, setApptNotes] = useState("");
 
   const handleCreate = () => {
-    if (!startTime) { toast({ title: "Select a start time", variant: "destructive" }); return; }
+    if (!visitDate) { toast({ title: "Pick a visit date", variant: "destructive" }); return; }
+    const range = slotToRange(visitDate, slotId);
+    if (!range) { toast({ title: "Pick a valid date and time slot", variant: "destructive" }); return; }
     createAppt.mutate(
-      { workOrderId, appointmentType: apptType, staffId: staffId ? Number(staffId) : undefined, startTime, endTime: endTime || undefined, notes: apptNotes || undefined },
+      {
+        workOrderId,
+        appointmentType: apptType,
+        staffId: staffId ? Number(staffId) : undefined,
+        startTime: range.start.toISOString(),
+        endTime: range.end.toISOString(),
+        notes: apptNotes || undefined,
+      },
       {
         onSuccess: () => {
-          setShowAdd(false); setStartTime(""); setEndTime(""); setApptNotes("");
+          setShowAdd(false); setVisitDate(""); setSlotId(DEFAULT_APPOINTMENT_SLOT_ID); setApptNotes("");
           toast({ title: "Appointment scheduled" });
         },
         onError: (e: any) => toast({ title: "Could not create appointment", description: e?.message, variant: "destructive" }),
@@ -1078,14 +1091,23 @@ function AppointmentsTab({ workOrderId, staff }: { workOrderId: number; staff: a
                 </select>
               </div>
               <div>
-                <Label>Start</Label>
-                <Input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="mt-1" />
+                <Label>Visit date</Label>
+                <Input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className="mt-1" />
               </div>
               <div>
-                <Label>End (optional)</Label>
-                <Input type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="mt-1" />
+                <Label>Arrival window</Label>
+                <select
+                  className="w-full mt-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={slotId}
+                  onChange={(e) => setSlotId(e.target.value)}
+                >
+                  {APPOINTMENT_SLOTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
               </div>
             </div>
+            <p className="text-xs text-muted-foreground -mt-1">
+              The customer is given a two-hour arrival window, not an exact time.
+            </p>
             <div>
               <Label>Notes</Label>
               <Textarea value={apptNotes} onChange={(e) => setApptNotes(e.target.value)} rows={2} className="mt-1" />
@@ -1113,7 +1135,7 @@ function AppointmentsTab({ workOrderId, staff }: { workOrderId: number; staff: a
                     <span className="font-medium">{APPT_TYPE_LABEL[a.appointmentType] ?? a.appointmentType}</span>
                     <Badge variant="outline" className={`text-xs ${APPT_STATUS_STYLE[a.status] ?? ""}`}>{a.status}</Badge>
                   </div>
-                  <p className="text-muted-foreground mt-1">{fmtDateTime(a.startTime)}{a.endTime ? ` → ${fmtDateTime(a.endTime)}` : ""}</p>
+                  <p className="text-muted-foreground mt-1">{formatAppointmentDateWindow(a.startTime, a.endTime)}</p>
                   {a.notes && <p className="text-xs text-muted-foreground mt-1">{a.notes}</p>}
                 </div>
                 <div className="flex gap-1">
