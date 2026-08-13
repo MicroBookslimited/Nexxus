@@ -5,6 +5,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { PrinterProvider } from '@/context/PrinterContext';
 import { StaffProvider, useStaff } from '@/context/StaffContext';
 import {
   Inter_400Regular,
@@ -49,6 +50,9 @@ function RootLayoutNav() {
       <Stack.Screen name="login" />
       <Stack.Screen name="pin" />
       <Stack.Screen name="job/[id]" />
+      <Stack.Screen name="eod-report" />
+      <Stack.Screen name="cash-handover" />
+      <Stack.Screen name="printer-settings" />
     </Stack>
   );
 }
@@ -77,7 +81,9 @@ export default function RootLayout() {
             <KeyboardProvider>
               <AuthProvider>
                 <StaffProvider>
-                  <RootLayoutNav />
+                  <PrinterProvider>
+                    <RootLayoutNav />
+                  </PrinterProvider>
                 </StaffProvider>
               </AuthProvider>
             </KeyboardProvider>

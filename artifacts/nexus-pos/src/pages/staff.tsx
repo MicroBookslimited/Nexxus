@@ -344,6 +344,9 @@ function StaffCard({
       {member.isTechnician && (
         <Badge variant="outline" className="text-xs w-fit border-blue-500/40 bg-blue-500/10 text-blue-500">Technician</Badge>
       )}
+      {member.canReceiveCash && (
+        <Badge variant="outline" className="text-xs w-fit border-emerald-500/40 bg-emerald-500/10 text-emerald-500">Cash receiver</Badge>
+      )}
       {!member.isActive && (
         <Badge variant="outline" className="text-xs w-fit bg-secondary/50 text-muted-foreground">Inactive</Badge>
       )}
@@ -370,6 +373,7 @@ interface StaffForm {
   role: string;
   isActive?: boolean;
   isTechnician: boolean;
+  canReceiveCash: boolean;
   email: string;
 }
 
@@ -395,6 +399,7 @@ function StaffDialog({
     role: member?.role ?? defaultRole,
     isActive: member?.isActive ?? true,
     isTechnician: member?.isTechnician ?? false,
+    canReceiveCash: member?.canReceiveCash ?? false,
     email: member?.email ?? "",
   }));
 
@@ -405,6 +410,7 @@ function StaffDialog({
       role: member?.role ?? (roles[0]?.name ?? "Cashier"),
       isActive: member?.isActive ?? true,
       isTechnician: member?.isTechnician ?? false,
+      canReceiveCash: member?.canReceiveCash ?? false,
       email: member?.email ?? "",
     });
   }, [member, roles]);
@@ -502,6 +508,16 @@ function StaffDialog({
               )}
             </div>
           )}
+          <div className="flex items-center justify-between rounded-md border border-border p-3">
+            <div>
+              <Label>Can receive cash</Label>
+              <p className="text-xs text-muted-foreground">May sign for cash handed in by technicians at the end of a shift</p>
+            </div>
+            <Switch
+              checked={form.canReceiveCash}
+              onCheckedChange={(checked) => setForm((f) => ({ ...f, canReceiveCash: checked }))}
+            />
+          </div>
           {isEditing && (
             <div className="flex items-center justify-between">
               <Label>Active</Label>
@@ -552,11 +568,12 @@ export function Staff() {
 
   const handleSave = (data: StaffForm) => {
     if (editingMember) {
-      const payload: { name?: string; pin?: string; role?: string; isActive?: boolean; isTechnician?: boolean; email?: string } = {
+      const payload: { name?: string; pin?: string; role?: string; isActive?: boolean; isTechnician?: boolean; canReceiveCash?: boolean; email?: string } = {
         name: data.name,
         role: data.role,
         isActive: data.isActive,
         isTechnician: data.isTechnician,
+        canReceiveCash: data.canReceiveCash,
         email: data.email.trim(),
       };
       if (data.pin) payload.pin = data.pin;
@@ -572,7 +589,7 @@ export function Staff() {
       );
     } else {
       createStaff.mutate(
-        { data: { name: data.name, pin: data.pin, role: data.role, isTechnician: data.isTechnician, ...(data.email.trim() ? { email: data.email.trim() } : {}) } },
+        { data: { name: data.name, pin: data.pin, role: data.role, isTechnician: data.isTechnician, canReceiveCash: data.canReceiveCash, ...(data.email.trim() ? { email: data.email.trim() } : {}) } },
         {
           onSuccess: () => { toast({ title: "Staff member created" }); invalidate(); setDialogOpen(false); },
           onError: (err: any) => {

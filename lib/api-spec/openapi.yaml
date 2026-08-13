@@ -4475,6 +4475,8 @@ components:
           type: boolean
         isTechnician:
           type: boolean
+        canReceiveCash:
+          type: boolean
         email:
           type: string
           nullable: true
@@ -4499,6 +4501,8 @@ components:
           type: string
         isTechnician:
           type: boolean
+        canReceiveCash:
+          type: boolean
         email:
           type: string
       required:
@@ -4517,6 +4521,8 @@ components:
         isActive:
           type: boolean
         isTechnician:
+          type: boolean
+        canReceiveCash:
           type: boolean
         email:
           type: string

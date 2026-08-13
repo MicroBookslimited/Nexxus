@@ -9,6 +9,9 @@ export const staffTable = pgTable("staff", {
   // Field technician flag (Work Orders module): technicians sign into the FSM
   // app and must have an email on file.
   isTechnician: boolean("is_technician").notNull().default(false),
+  // May sign for cash handed in by a technician at the end of a shift.
+  // Admin/manager roles can always sign; this flag opts in anyone else.
+  canReceiveCash: boolean("can_receive_cash").notNull().default(false),
   email: text("email"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

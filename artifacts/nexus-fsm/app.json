@@ -14,11 +14,22 @@
       "backgroundColor": "#0A1220"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Allow NEXXUS FSM to connect to Bluetooth receipt printers."
+      }
     },
     "android": {
       "package": "com.nexxuspos.fsm",
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.INTERNET"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -36,6 +47,16 @@
         "expo-camera",
         {
           "cameraPermission": "Allow NEXXUS FSM to use the camera to scan serial numbers and barcodes."
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": [
+            "peripheral"
+          ],
+          "bluetoothAlwaysPermission": "Allow NEXXUS FSM to connect to Bluetooth receipt printers."
         }
       ]
     ],

@@ -3,7 +3,7 @@
  * POS uses. Open a shift with a starting float, watch expected cash grow as
  * onsite payments are recorded, log payouts, and close with a counted amount.
  */
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -26,12 +26,16 @@ import {
   addShiftPayout,
   closeShift,
   getCurrentShift,
+  listCashHandovers,
   openShift,
 } from '@/lib/fsm-api';
 
 function money(n: number): string {
   return `$${n.toFixed(2)}`;
 }
+
+/** Jamaican notes and coins, largest first — the order people count in. */
+const DENOMINATIONS = [5000, 2000, 1000, 500, 100, 50, 20, 10, 5, 1];
 
 export default function ShiftScreen() {
   const colors = useColors();
@@ -47,6 +51,28 @@ export default function ShiftScreen() {
   const [closeOpen, setCloseOpen] = useState(false);
   const [countedCash, setCountedCash] = useState('');
   const [closingNotes, setClosingNotes] = useState('');
+  const [denomCounts, setDenomCounts] = useState<Record<number, string>>({});
+
+  // Counting notes and coins fills in the total, so the technician never has
+  // to add it up in their head at the end of a long day.
+  const denomTotal = useMemo(
+    () => DENOMINATIONS.reduce((sum, d) => sum + d * (parseInt(denomCounts[d] ?? '', 10) || 0), 0),
+    [denomCounts],
+  );
+  const anyDenomEntered = useMemo(
+    () => DENOMINATIONS.some((d) => (parseInt(denomCounts[d] ?? '', 10) || 0) > 0),
+    [denomCounts],
+  );
+
+  const setDenom = (d: number, raw: string) => {
+    const clean = raw.replace(/[^0-9]/g, '');
+    setDenomCounts((prev) => {
+      const next = { ...prev, [d]: clean };
+      const total = DENOMINATIONS.reduce((sum, x) => sum + x * (parseInt(next[x] ?? '', 10) || 0), 0);
+      setCountedCash(total > 0 ? String(total) : '');
+      return next;
+    });
+  };
 
   const shiftQuery = useQuery({
     queryKey: ['fsm-shift', staff?.id],
@@ -54,6 +80,14 @@ export default function ShiftScreen() {
     enabled: !!staff,
   });
   const shift = shiftQuery.data ?? null;
+
+  // Cash from an already-closed shift that nobody has signed for yet.
+  const handoversQuery = useQuery({
+    queryKey: ['fsm-handovers', staff?.id],
+    queryFn: () => listCashHandovers(staff!.id, 'pending'),
+    enabled: !!staff,
+  });
+  const pendingHandover = (handoversQuery.data ?? [])[0] ?? null;
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['fsm-shift', staff?.id] });
 
@@ -73,16 +107,31 @@ export default function ShiftScreen() {
   });
 
   const closeMutation = useMutation({
-    mutationFn: () =>
-      closeShift(staff!.id, shift!.session.id, {
+    mutationFn: () => {
+      const sessionId = shift!.session.id;
+      const breakdown = Object.fromEntries(
+        DENOMINATIONS.map((d) => [d, parseInt(denomCounts[d] ?? '', 10) || 0]).filter(([, c]) => (c as number) > 0),
+      );
+      return closeShift(staff!.id, sessionId, {
         actualCash: parseFloat(countedCash),
         // Card/transfer taken on the mobile machine settle outside the drawer;
         // declare them so the office can reconcile slips against the report.
         actualCard: shift!.woCardIn ?? 0,
         actualOther: shift!.woTransferIn ?? 0,
         closingNotes: closingNotes.trim() || undefined,
-      }),
-    onSuccess: () => { setCloseOpen(false); setCountedCash(''); setClosingNotes(''); invalidate(); },
+        denominationBreakdown: anyDenomEntered ? JSON.stringify(breakdown) : undefined,
+      }).then(() => sessionId);
+    },
+    onSuccess: (sessionId) => {
+      setCloseOpen(false);
+      setCountedCash('');
+      setClosingNotes('');
+      setDenomCounts({});
+      invalidate();
+      qc.invalidateQueries({ queryKey: ['fsm-handovers', staff?.id] });
+      // Straight to the report: print it, email it, and hand the cash in.
+      router.push({ pathname: '/eod-report', params: { sessionId: String(sessionId) } });
+    },
   });
 
   const counted = parseFloat(countedCash);
@@ -97,6 +146,19 @@ export default function ShiftScreen() {
         <Text style={[styles.title, { color: colors.foreground }]}>Cash Shift</Text>
         <View style={{ width: 36 }} />
       </View>
+
+      {pendingHandover ? (
+        <Pressable
+          testID="pending-handover-banner"
+          onPress={() => router.push({ pathname: '/cash-handover', params: { handoverId: String(pendingHandover.id) } })}
+          style={[styles.banner, { borderColor: '#EF4444', backgroundColor: '#EF444418' }]}
+        >
+          <Feather name="alert-circle" size={16} color="#EF4444" />
+          <Text style={[styles.bannerText, { color: colors.foreground }]}>
+            You are holding {money(pendingHandover.amount)} — tap to hand it over
+          </Text>
+        </Pressable>
+      ) : null}
 
       {shiftQuery.isLoading ? (
         <ActivityIndicator style={{ marginTop: 48 }} color={colors.primary} />
@@ -178,8 +240,17 @@ export default function ShiftScreen() {
           </Pressable>
 
           <Pressable
+            testID="view-eod-report-button"
+            onPress={() => router.push({ pathname: '/eod-report', params: { sessionId: String(shift.session.id) } })}
+            style={[styles.secondaryBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+          >
+            <Feather name="file-text" size={16} color={colors.foreground} />
+            <Text style={[styles.secondaryBtnText, { color: colors.foreground }]}>End of Day Report</Text>
+          </Pressable>
+
+          <Pressable
             testID="close-shift-button"
-            onPress={() => { setCountedCash(''); setCloseOpen(true); }}
+            onPress={() => { setCountedCash(''); setDenomCounts({}); setCloseOpen(true); }}
             style={[styles.primaryBtn, { backgroundColor: '#EF4444' }]}
           >
             <Text style={styles.primaryBtnText}>Close Shift</Text>
@@ -238,7 +309,35 @@ export default function ShiftScreen() {
             <Text style={[styles.hint, { color: colors.mutedForeground }]}>
               Count the cash you're handing in. Expected: {shift ? money(shift.expectedCash) : '—'}
             </Text>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Counted cash</Text>
+            <ScrollView style={{ maxHeight: 320 }} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Count your notes and coins</Text>
+              {DENOMINATIONS.map((d) => (
+                <View key={d} style={styles.denomRow}>
+                  <Text style={[styles.denomLabel, { color: colors.foreground }]}>{money(d)}</Text>
+                  <TextInput
+                    testID={`denom-${d}-input`}
+                    value={denomCounts[d] ?? ''}
+                    onChangeText={(t) => setDenom(d, t)}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor={colors.mutedForeground}
+                    style={[styles.denomInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+                  />
+                  <Text style={[styles.denomValue, { color: colors.mutedForeground }]}>
+                    {money(d * (parseInt(denomCounts[d] ?? '', 10) || 0))}
+                  </Text>
+                </View>
+              ))}
+              {anyDenomEntered ? (
+                <View style={styles.denomRow}>
+                  <Text style={[styles.denomLabel, { color: colors.foreground, fontWeight: '700' }]}>Counted</Text>
+                  <View style={{ flex: 1 }} />
+                  <Text style={[styles.denomValue, { color: colors.primary, fontWeight: '700' }]}>{money(denomTotal)}</Text>
+                </View>
+              ) : null}
+            </ScrollView>
+
+            <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 10 }]}>Counted cash</Text>
             <TextInput
               testID="counted-cash-input"
               value={countedCash}
@@ -306,4 +405,10 @@ const styles = StyleSheet.create({
   err: { fontSize: 13, marginBottom: 8, textAlign: 'center' },
   modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
   modalCard: { borderWidth: 1, borderRadius: 14, padding: 18 },
+  denomRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  denomLabel: { fontSize: 14, width: 72 },
+  denomInput: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 15, textAlign: 'center' },
+  denomValue: { fontSize: 13, width: 84, textAlign: 'right' },
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginBottom: 8, padding: 12, borderWidth: 1, borderRadius: 12 },
+  bannerText: { flex: 1, fontSize: 13, fontWeight: '600' },
 });

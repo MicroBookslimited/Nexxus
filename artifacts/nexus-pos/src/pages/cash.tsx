@@ -17,13 +17,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PinPad } from "@/components/PinPad";
 import {
   Coins, DollarSign, TrendingUp, TrendingDown, CreditCard, Banknote,
   SplitSquareHorizontal, Plus, CheckCircle2, History,
   ArrowDownLeft, UserCheck, ArrowLeft, Mail, BookOpen, ShoppingBag, MapPin,
   ListChecks, ChevronRight, ChevronDown, SkipForward, AlertTriangle, ShoppingCart,
+  HandCoins,
 } from "lucide-react";
 import { useGetSettings } from "@workspace/api-client-react";
 import { format } from "date-fns";
@@ -1722,6 +1723,203 @@ function SessionHistoryItem({ sessionId, staffFilter }: { sessionId: number; sta
   );
 }
 
+
+/* ─── Technician cash custody ───────────────────────────────────────────────
+ * Cash a technician counted at the end of their shift stays their
+ * responsibility until somebody authorised signs for it here. Until then it
+ * shows as outstanding, so nothing quietly disappears between the van and the
+ * office safe.
+ */
+interface CashHandoverRow {
+  id: number;
+  sessionId: number;
+  staffId: number;
+  staffName: string;
+  amount: number;
+  status: string;
+  receivedAmount: number | null;
+  receivedByName: string | null;
+  notes: string | null;
+  signedAt: string | null;
+  createdAt: string;
+  closedAt: string | null;
+  locationName: string | null;
+}
+
+interface CashReceiver { id: number; name: string; role: string }
+
+function authHeaders(): HeadersInit {
+  const token = localStorage.getItem(TENANT_TOKEN_KEY) ?? "";
+  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
+
+function usePendingHandovers() {
+  return useQuery<CashHandoverRow[]>({
+    queryKey: ["/api/cash/handovers", "pending"],
+    queryFn: async () => {
+      const resp = await fetch("/api/cash/handovers?status=pending", { headers: authHeaders() });
+      if (!resp.ok) throw new Error("Could not load cash handovers");
+      return resp.json();
+    },
+    refetchInterval: 60000,
+  });
+}
+
+function SignHandoverDialog({ handover, onClose, onSigned }: {
+  handover: CashHandoverRow;
+  onClose: () => void;
+  onSigned: () => void;
+}) {
+  const { toast } = useToast();
+  const [receivers, setReceivers] = useState<CashReceiver[]>([]);
+  const [receiverId, setReceiverId] = useState<number | null>(null);
+  const [pin, setPin] = useState("");
+  const [amount, setAmount] = useState(String(handover.amount.toFixed(2)));
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/cash/handovers/receivers", { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : []))
+      // The technician holding the money can never sign for it themselves.
+      .then((rows: CashReceiver[]) => setReceivers(rows.filter((r) => r.id !== handover.staffId)))
+      .catch(() => {});
+  }, [handover.staffId]);
+
+  const parsedAmount = parseFloat(amount);
+  const amountValid = Number.isFinite(parsedAmount) && parsedAmount >= 0;
+
+  const submit = async () => {
+    if (!receiverId || pin.length < 4 || !amountValid) return;
+    setSaving(true);
+    try {
+      const resp = await fetch(`/api/cash/handovers/${handover.id}/sign`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          receivedByStaffId: receiverId,
+          pin,
+          receivedAmount: parsedAmount,
+          notes: notes.trim() || undefined,
+        }),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body?.error ?? "Could not record the handover");
+      toast({ title: "Cash received", description: `${formatCurrency(parsedAmount)} signed for.` });
+      onSigned();
+      onClose();
+    } catch (e) {
+      toast({ title: "Could not record the handover", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const shortBy = handover.amount - (amountValid ? parsedAmount : handover.amount);
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Receive cash from {handover.staffName}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-1">
+          <div className="rounded-lg border border-border bg-secondary/20 p-3">
+            <p className="text-2xl font-bold font-mono">{formatCurrency(handover.amount)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Counted at the close of shift #{handover.sessionId}
+              {handover.closedAt ? ` on ${format(new Date(handover.closedAt), "dd/MM/yyyy h:mm a")}` : ""}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Receiving staff member</Label>
+            <select
+              className="w-full h-10 rounded-md border border-border bg-background px-3 text-sm"
+              value={receiverId ?? ""}
+              onChange={(e) => setReceiverId(e.target.value ? parseInt(e.target.value) : null)}
+            >
+              <option value="">Select…</option>
+              {receivers.map((r) => (
+                <option key={r.id} value={r.id}>{r.name} · {r.role}</option>
+              ))}
+            </select>
+            {receivers.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Nobody is set up to receive cash yet. Tick “Can receive cash” on a staff member in Staff.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>PIN</Label>
+            <Input type="password" inputMode="numeric" value={pin} maxLength={8}
+              onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))} placeholder="••••" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Amount actually received</Label>
+            <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            {!amountValid && (
+              <p className="text-xs text-destructive">Enter the amount you are taking in</p>
+            )}
+            {amountValid && Math.abs(shortBy) > 0.005 && (
+              <p className="text-xs text-amber-400">
+                {shortBy > 0 ? `Short by ${formatCurrency(shortBy)}` : `Over by ${formatCurrency(-shortBy)}`} versus what was counted
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Notes (optional)</Label>
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. short, technician to explain" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={!receiverId || pin.length < 4 || !amountValid || saving} onClick={submit}>
+            {saving ? "Saving…" : "Sign for cash"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CashCustodyPanel({ rows, onSigned }: { rows: CashHandoverRow[]; onSigned: () => void }) {
+  const [signing, setSigning] = useState<CashHandoverRow | null>(null);
+  const total = rows.reduce((sum, r) => sum + r.amount, 0);
+
+  return (
+    <>
+      <div className="px-4 py-3 border-b border-border">
+        <h2 className="text-sm font-semibold flex items-center gap-2">
+          <HandCoins className="h-4 w-4 text-amber-400" />
+          Cash With Technicians ({formatCurrency(total)})
+        </h2>
+      </div>
+      <div className="p-3 space-y-2 border-b border-border">
+        {rows.map((r) => (
+          <div key={r.id} className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{r.staffName}</p>
+              <p className="text-xs text-muted-foreground">
+                Shift #{r.sessionId}
+                {r.closedAt ? ` · ${format(new Date(r.closedAt), "dd/MM h:mm a")}` : ""}
+              </p>
+            </div>
+            <p className="font-mono font-semibold text-sm shrink-0">{formatCurrency(r.amount)}</p>
+            <Button size="sm" className="h-8 text-xs shrink-0" onClick={() => setSigning(r)}>Receive</Button>
+          </div>
+        ))}
+      </div>
+      {signing && (
+        <SignHandoverDialog handover={signing} onClose={() => setSigning(null)} onSigned={onSigned} />
+      )}
+    </>
+  );
+}
+
 /* ─── Main Cash Management Page ─── */
 export function CashManagement() {
   const { can, staff: sessionStaff, setStaff, clearStaff } = useStaff();
@@ -1739,6 +1937,8 @@ export function CashManagement() {
   const [eodSessionId, setEodSessionId] = useState<number | null>(null);
   const [sessionConflict, setSessionConflict] = useState(false);
   const [forceClosing, setForceClosing] = useState(false);
+  const { data: pendingHandovers, refetch: refetchHandovers } = usePendingHandovers();
+  const custodyRows = pendingHandovers ?? [];
 
   const hasOpenSession = !!current?.session;
   const closedSessions = (sessions ?? []).filter((s) => s.status === "closed").slice(0, 20);
@@ -1873,8 +2073,13 @@ export function CashManagement() {
         </div>
 
         {/* Right sidebar: active shifts (managers) + session history */}
-        {(closedSessions.length > 0 || openSessions.length > 0) && (
-          <div className="w-1/3 min-w-72 border-l border-border flex flex-col shrink-0">
+        {(closedSessions.length > 0 || openSessions.length > 0 || custodyRows.length > 0) && (
+          <div className="w-1/3 min-w-72 border-l border-border flex flex-col shrink-0 overflow-y-auto">
+            {/* Cash technicians are still holding */}
+            {custodyRows.length > 0 && (
+              <CashCustodyPanel rows={custodyRows} onSigned={() => { refetchHandovers(); }} />
+            )}
+
             {/* Active Shifts — managers only */}
             {openSessions.length > 0 && (
               <>

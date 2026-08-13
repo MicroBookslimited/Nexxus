@@ -596,8 +596,15 @@ export function openShift(staffId: number, staffName: string, openingCash: numbe
 export function closeShift(
   staffId: number,
   sessionId: number,
-  body: { actualCash: number; actualCard: number; actualOther?: number; closingNotes?: string },
-): Promise<CashSession> {
+  body: {
+    actualCash: number;
+    actualCard: number;
+    actualOther?: number;
+    closingNotes?: string;
+    /** JSON map of note/coin value -> quantity counted, for the report. */
+    denominationBreakdown?: string;
+  },
+): Promise<CashSession & { handover?: CashHandover | null }> {
   return request(`/api/cash/sessions/${sessionId}/close`, {
     method: 'POST',
     body: JSON.stringify(body),
@@ -640,6 +647,111 @@ export function recordWoPayment(
   body: { amount: number; method: WoPaymentMethod; reference?: string },
 ): Promise<{ payment: WoPayment; newBalance: number }> {
   return request(`/api/work-orders/${workOrderId}/payments`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+
+/* ───────────── End-of-day report & cash custody ───────────── */
+
+export interface EodSession extends CashSession {
+  locationName: string | null;
+  actualCash: number | null;
+  actualCard: number | null;
+  actualOther: number | null;
+  closingNotes: string | null;
+  denominationBreakdown: string | null;
+}
+
+export interface EodPayoutRow { amount: number; reason: string; staffName: string | null; createdAt: string }
+export interface EodOrderRow { orderNumber: string; total: number; paymentMethod: string | null; status: string | null; createdAt: string }
+export interface EodJobPaymentRow {
+  amount: number;
+  method: string;
+  reference: string | null;
+  createdAt: string;
+  workOrderNumber: string | null;
+  customerName: string | null;
+}
+
+export interface CashHandover {
+  id: number;
+  sessionId: number;
+  staffId: number | null;
+  staffName: string;
+  amount: number;
+  status: 'pending' | 'signed';
+  receivedAmount: number | null;
+  receivedByStaffId: number | null;
+  receivedByName: string | null;
+  notes: string | null;
+  signedAt: string | null;
+  createdAt: string;
+  openedAt?: string;
+  closedAt?: string | null;
+}
+
+export interface SessionReport {
+  session: EodSession;
+  payouts: EodPayoutRow[];
+  orders: EodOrderRow[];
+  woPayments: EodJobPaymentRow[];
+  salesSummary: {
+    cashSales: number; cardSales: number; splitSales: number; creditSales: number; totalSales: number;
+    refundedCash: number; refundedCard: number; totalRefunds: number; voidedCount: number; voidedTotal: number;
+  };
+  expectedCash: number;
+  totalPayouts: number;
+  splitCashSales: number;
+  voucherCashIn: number;
+  layawayCashIn: number;
+  woCashIn: number;
+  woCardIn: number;
+  woTransferIn: number;
+  handover: CashHandover | null;
+}
+
+/** Full end-of-day detail for one shift (the technician's own, or any if manager). */
+export function getSessionReport(staffId: number, sessionId: number): Promise<SessionReport> {
+  return request<SessionReport>(`/api/cash/sessions/${sessionId}`, { headers: staffHeaders(staffId) });
+}
+
+/** Emails the report (PDF attached) to the business's admin addresses. */
+export function emailSessionReport(staffId: number, sessionId: number): Promise<{ success: boolean; sent: string[] }> {
+  return request(`/api/cash/sessions/${sessionId}/email-report`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/** Short-lived signed URL so the phone can open/save the PDF in its browser. */
+export function getSessionReportLink(staffId: number, sessionId: number): Promise<{ url: string }> {
+  return request(`/api/cash/sessions/${sessionId}/report-link`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/** Cash still awaiting a signature. Technicians see only their own. */
+export function listCashHandovers(staffId: number, status: 'pending' | 'signed' | 'all' = 'pending'): Promise<CashHandover[]> {
+  return request(`/api/cash/handovers?status=${status}`, { headers: staffHeaders(staffId) });
+}
+
+/** Staff allowed to sign for cash: admins, managers and flagged receivers. */
+export function listCashReceivers(staffId: number): Promise<{ id: number; name: string; role: string | null }[]> {
+  return request('/api/cash/handovers/receivers', { headers: staffHeaders(staffId) });
+}
+
+export function signCashHandover(
+  staffId: number,
+  handoverId: number,
+  body: { receivedByStaffId: number; pin: string; signature?: string; receivedAmount?: number; notes?: string },
+): Promise<CashHandover> {
+  return request(`/api/cash/handovers/${handoverId}/sign`, {
     method: 'POST',
     body: JSON.stringify(body),
     headers: staffHeaders(staffId),

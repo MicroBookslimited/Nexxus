@@ -26,6 +26,7 @@ const CreateStaffBody = z.object({
   pin: z.string().min(4).max(8),
   role: z.string().min(1).default("cashier"),
   isTechnician: z.boolean().optional().default(false),
+  canReceiveCash: z.boolean().optional().default(false),
   email: z.union([z.string().trim().email().max(255), z.literal("")]).optional(),
 });
 
@@ -35,6 +36,7 @@ const UpdateStaffBody = z.object({
   role: z.string().min(1).optional(),
   isActive: z.boolean().optional(),
   isTechnician: z.boolean().optional(),
+  canReceiveCash: z.boolean().optional(),
   email: z.union([z.string().trim().email().max(255), z.literal("")]).optional(),
 });
 
@@ -45,6 +47,7 @@ function sanitizeStaff(s: typeof staffTable.$inferSelect) {
     role: s.role,
     isActive: s.isActive,
     isTechnician: s.isTechnician,
+    canReceiveCash: s.canReceiveCash,
     email: s.email,
     createdAt: s.createdAt,
   };
@@ -96,6 +99,7 @@ router.post("/staff", async (req, res): Promise<void> => {
     pin: parsed.data.pin,
     role: parsed.data.role,
     isTechnician: parsed.data.isTechnician,
+    canReceiveCash: parsed.data.canReceiveCash,
     email,
     isActive: true,
   }).returning();
@@ -171,6 +175,7 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
   if (parsed.data.role !== undefined) updates.role = parsed.data.role;
   if (parsed.data.isActive !== undefined) updates.isActive = parsed.data.isActive;
   if (parsed.data.isTechnician !== undefined) updates.isTechnician = parsed.data.isTechnician;
+  if (parsed.data.canReceiveCash !== undefined) updates.canReceiveCash = parsed.data.canReceiveCash;
   if (parsed.data.email !== undefined) updates.email = parsed.data.email.trim() || null;
 
   // Atomic re-check inside the UPDATE itself so two concurrent requests can't

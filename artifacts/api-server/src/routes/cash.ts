@@ -1,9 +1,14 @@
 import { Router, type IRouter } from "express";
 import { eq, and, gte, lte, isNotNull, isNull, or, sql, desc } from "drizzle-orm";
-import { db, cashSessionsTable, cashPayoutsTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable, giftVouchersTable, layawayPaymentsTable, staffTable, workOrderPaymentsTable } from "@workspace/db";
+import { db, cashSessionsTable, cashPayoutsTable, cashHandoversTable, ordersTable, orderItemsTable, customersTable, accountsReceivableTable, productsTable, giftVouchersTable, layawayPaymentsTable, staffTable, workOrderPaymentsTable, workOrdersTable, tenantsTable, tenantAdminUsersTable } from "@workspace/db";
 import { z } from "zod";
+import jwt from "jsonwebtoken";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { logAudit } from "./audit";
+import { getAllSettings } from "./settings";
+import { sendMail, getFromDetails } from "../lib/mail";
+import { renderEodReportPdf, buildEodReportHtml, type EodReportData } from "../lib/eod-report-doc";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -484,21 +489,47 @@ router.get("/cash/sessions/current", async (req, res): Promise<void> => {
   res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, layawayCashIn, woCashIn, woCardIn, woTransferIn, itemSummary, creditOrders });
 });
 
-router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
-  const tenantId = getTenantId(req as never);
-  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  if (!(await allowShiftFinancials(req as never, res, tenantId))) return;
+/* ─── Onsite job payments (technician transaction list) ───
+ * A field technician takes no POS orders, so their shift's "transactions" are
+ * the work-order payments they collected. Same staff/window scoping as the
+ * money totals so the list always reconciles with expected cash. */
+async function computeWoPaymentList(
+  tenantId: number,
+  windowStart: Date,
+  windowEnd: Date | null,
+  staffId: number | null | undefined,
+) {
+  if (!staffId) return [];
+  return db
+    .select({
+      amount: workOrderPaymentsTable.amount,
+      method: workOrderPaymentsTable.method,
+      reference: workOrderPaymentsTable.reference,
+      createdAt: workOrderPaymentsTable.createdAt,
+      workOrderNumber: workOrdersTable.workOrderNumber,
+      customerName: customersTable.name,
+    })
+    .from(workOrderPaymentsTable)
+    .leftJoin(workOrdersTable, eq(workOrderPaymentsTable.workOrderId, workOrdersTable.id))
+    .leftJoin(customersTable, eq(workOrdersTable.customerId, customersTable.id))
+    .where(and(
+      eq(workOrderPaymentsTable.tenantId, tenantId),
+      eq(workOrderPaymentsTable.staffId, staffId),
+      gte(workOrderPaymentsTable.createdAt, windowStart),
+      ...(windowEnd ? [lte(workOrderPaymentsTable.createdAt, windowEnd)] : []),
+    ))
+    .orderBy(workOrderPaymentsTable.createdAt);
+}
 
-  const id = parseInt(req.params.id as string);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid session id" }); return; }
-
-  const [session] = await db
-    .select()
-    .from(cashSessionsTable)
-    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)));
-
-  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
-
+/* ─── Shared end-of-day report ───
+ * Everything one shift's report needs: sales, payouts, onsite job payments,
+ * cash reconciliation and the cash-custody record. Used by the session-detail
+ * route, the PDF/email renderers and the technician app. */
+export async function buildSessionReport(
+  tenantId: number,
+  session: typeof cashSessionsTable.$inferSelect,
+) {
+  const id = session.id;
   const payouts = await db
     .select()
     .from(cashPayoutsTable)
@@ -551,12 +582,63 @@ router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
   const voucherCashIn = issuedVouchers.reduce((s, v) => s + Number(v.amountPaid ?? v.originalValue ?? 0), 0);
   // Layaway deposits/installments collected in cash also enter the drawer.
   const layawayCashIn = await computeLayawayCashIn(tenantId, session.openedAt, closedAt, session.staffId);
-  const woCashIn = await computeWoCashIn(tenantId, session.openedAt, closedAt, session.staffId);
+  const woCashIn = await computeWoTenderIn(tenantId, session.openedAt, closedAt, session.staffId, "cash");
+  const woCardIn = await computeWoTenderIn(tenantId, session.openedAt, closedAt, session.staffId, "card");
+  const woTransferIn = await computeWoTenderIn(tenantId, session.openedAt, closedAt, session.staffId, "transfer");
   const expectedCash = session.openingCash + (salesSummary.cashSales - salesSummary.refundedCash) + splitCashSales + voucherCashIn + layawayCashIn + woCashIn - totalPayouts;
   const itemSummary = await computeItemSummary(tenantId, session.openedAt, closedAt);
   const creditOrders = await computeCreditOrders(tenantId, session.openedAt, closedAt);
+  const woPayments = await computeWoPaymentList(tenantId, session.openedAt, closedAt, session.staffId);
+  const [handover] = await db
+    .select()
+    .from(cashHandoversTable)
+    .where(and(eq(cashHandoversTable.tenantId, tenantId), eq(cashHandoversTable.sessionId, id)));
 
-  res.json({ session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts, splitCashSales, voucherCashIn, layawayCashIn, woCashIn, itemSummary, creditOrders });
+  return {
+    session, payouts, orders: orderRows, salesSummary, expectedCash, totalPayouts,
+    splitCashSales, voucherCashIn, layawayCashIn, woCashIn, woCardIn, woTransferIn,
+    itemSummary, creditOrders, woPayments, handover: handover ?? null,
+  };
+}
+
+/* ─── Own-shift-or-manager gate ───
+ * The technician app carries a technician-restricted tenant token, which the
+ * manager gate rejects outright. A technician may still read (and print/email)
+ * THEIR OWN shift report, identified by the x-staff-id header; every other
+ * caller has to clear the normal manager gate. */
+async function allowSessionReport(
+  req: { headers: Record<string, string | undefined> },
+  res: { status: (n: number) => { json: (b: object) => void } },
+  tenantId: number,
+  session: typeof cashSessionsTable.$inferSelect,
+): Promise<boolean> {
+  const raw = req.headers["x-staff-id"];
+  const staffId = raw ? parseInt(String(raw), 10) : NaN;
+  if (Number.isFinite(staffId) && session.staffId != null && staffId === session.staffId) return true;
+  return allowShiftFinancials(req, res, tenantId);
+}
+
+router.get("/cash/sessions/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid session id" }); return; }
+
+  const [session] = await db
+    .select()
+    .from(cashSessionsTable)
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)));
+
+  if (!session) {
+    // Run the manager gate before revealing whether the shift exists.
+    if (!(await allowShiftFinancials(req as never, res, tenantId))) return;
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+  if (!(await allowSessionReport(req as never, res, tenantId, session))) return;
+
+  res.json(await buildSessionReport(tenantId, session));
 });
 
 router.post("/cash/sessions", async (req, res): Promise<void> => {
@@ -726,11 +808,24 @@ router.post("/cash/sessions/:id/close", async (req, res): Promise<void> => {
       closingNotes: parsed.data.closingNotes ?? null,
       denominationBreakdown: parsed.data.denominationBreakdown ?? null,
     })
-    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)))
+    // Still-open predicate inside the UPDATE: if another device closed this
+    // shift a moment ago, this one must lose rather than overwrite its
+    // counted cash (and raise a second handover for the same money).
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId), eq(cashSessionsTable.status, "open")))
     .returning();
 
+  if (!closed) { res.status(409).json({ error: "This shift has already been closed" }); return; }
+
   await logAudit({ tenantId, staffId: session.staffId, staffName: session.staffName, action: "cash.session.close", entityType: "cash_session", entityId: id, details: { actualCash: parsed.data.actualCash, actualCard: parsed.data.actualCard } });
-  res.json(closed);
+
+  // A technician walks away with the counted cash, so record who holds it
+  // until someone signs for it, and send the office the end-of-day report.
+  const handover = await ensureHandoverForSession(tenantId, closed, parsed.data.actualCash);
+  void sendEodReportEmail(tenantId, id).catch((err) => {
+    logger.error({ err, sessionId: id }, "Automatic end-of-day report email failed");
+  });
+
+  res.json({ ...closed, handover });
 });
 
 /* ─── POST /cash/sessions/:id/admin-close — manager force-closes any session ─── */
@@ -787,6 +882,412 @@ router.post("/cash/sessions/:id/admin-close", async (req, res): Promise<void> =>
     .returning();
 
   res.json(closed);
+});
+
+/* ═══ End-of-day report: PDF, email and cash custody ═══════════════════════ */
+
+const MANAGER_OR_RECEIVER_MSG = "Only an admin, manager or an authorised cash receiver can sign for cash";
+
+async function loadReportContext(tenantId: number) {
+  const settings = await getAllSettings(tenantId);
+  return {
+    businessName: settings["business_name"] ?? "NEXXUS",
+    timeZone: settings["timezone"] ?? null,
+    currencySymbol: settings["currency_symbol"] ?? "$",
+    logo: null as Buffer | null,
+  };
+}
+
+type SessionReport = Awaited<ReturnType<typeof buildSessionReport>>;
+
+function toEodDocData(r: SessionReport): EodReportData {
+  return {
+    session: {
+      id: r.session.id,
+      staffName: r.session.staffName,
+      locationName: r.session.locationName,
+      openingCash: r.session.openingCash,
+      openedAt: r.session.openedAt,
+      closedAt: r.session.closedAt,
+      status: r.session.status,
+      actualCash: r.session.actualCash,
+      actualCard: r.session.actualCard,
+      actualOther: r.session.actualOther,
+      closingNotes: r.session.closingNotes,
+      denominationBreakdown: r.session.denominationBreakdown,
+    },
+    salesSummary: r.salesSummary,
+    payouts: r.payouts.map((p) => ({ amount: p.amount, reason: p.reason, staffName: p.staffName, createdAt: p.createdAt })),
+    orders: r.orders.map((o) => ({ orderNumber: o.orderNumber, total: o.total, paymentMethod: o.paymentMethod, status: o.status, createdAt: o.createdAt })),
+    woPayments: r.woPayments.map((w) => ({
+      amount: w.amount, method: w.method, reference: w.reference, createdAt: w.createdAt,
+      workOrderNumber: w.workOrderNumber, customerName: w.customerName,
+    })),
+    expectedCash: r.expectedCash,
+    totalPayouts: r.totalPayouts,
+    splitCashSales: r.splitCashSales,
+    voucherCashIn: r.voucherCashIn,
+    layawayCashIn: r.layawayCashIn,
+    woCashIn: r.woCashIn,
+    woCardIn: r.woCardIn,
+    woTransferIn: r.woTransferIn,
+    handover: r.handover
+      ? {
+          status: r.handover.status,
+          amount: r.handover.amount,
+          receivedAmount: r.handover.receivedAmount,
+          receivedByName: r.handover.receivedByName,
+          signature: r.handover.signature,
+          signedAt: r.handover.signedAt,
+          notes: r.handover.notes,
+        }
+      : null,
+  };
+}
+
+/** Admin recipients allowed to receive shift financials for this tenant. */
+async function tenantAdminEmails(tenantId: number): Promise<string[]> {
+  const [tenantRow] = await db.select({ email: tenantsTable.email }).from(tenantsTable).where(eq(tenantsTable.id, tenantId));
+  const adminRows = await db.select({ email: tenantAdminUsersTable.email }).from(tenantAdminUsersTable).where(eq(tenantAdminUsersTable.tenantId, tenantId));
+  const set = new Set<string>();
+  for (const e of [tenantRow?.email, ...adminRows.map((r) => r.email)]) {
+    if (e?.trim()) set.add(e.trim().toLowerCase());
+  }
+  return [...set];
+}
+
+/**
+ * Renders the report and mails it (PDF attached) to the tenant's admins, or to
+ * an explicit subset of them. Shift financials never go to an outside address.
+ */
+export async function sendEodReportEmail(
+  tenantId: number,
+  sessionId: number,
+  to?: string[],
+): Promise<{ sent: string[]; skipped: string[] }> {
+  const [session] = await db
+    .select()
+    .from(cashSessionsTable)
+    .where(and(eq(cashSessionsTable.id, sessionId), eq(cashSessionsTable.tenantId, tenantId)));
+  if (!session) throw new Error("Session not found");
+
+  const allowed = await tenantAdminEmails(tenantId);
+  const requested = (to && to.length > 0 ? to.map((e) => e.trim().toLowerCase()) : allowed);
+  const recipients = requested.filter((e) => allowed.includes(e));
+  const skipped = requested.filter((e) => !allowed.includes(e));
+  if (recipients.length === 0) return { sent: [], skipped };
+
+  const report = await buildSessionReport(tenantId, session);
+  const ctx = await loadReportContext(tenantId);
+  const data = toEodDocData(report);
+  const html = buildEodReportHtml(data, ctx);
+  const pdf = await renderEodReportPdf(data, ctx);
+  const { fromAddress, fromName } = await getFromDetails(tenantId);
+  const dateLabel = new Date(session.openedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const filename = `End-of-Day-${session.staffName.replace(/[^A-Za-z0-9]+/g, "-")}-${session.id}.pdf`;
+
+  const sent: string[] = [];
+  for (const address of recipients) {
+    await sendMail({
+      to: address,
+      subject: `End of Day Report — ${dateLabel} (${session.staffName})`,
+      html,
+      fromName,
+      fromAddress,
+      tenantId,
+      attachments: [{ filename, content: pdf, mimeType: "application/pdf" }],
+    });
+    sent.push(address);
+  }
+  return { sent, skipped };
+}
+
+/**
+ * Records that a technician still physically holds the counted cash after
+ * closing. One row per shift (unique on session_id), so a retried or repeated
+ * close can never raise the custody record twice.
+ */
+async function ensureHandoverForSession(
+  tenantId: number,
+  session: typeof cashSessionsTable.$inferSelect,
+  amount: number,
+) {
+  if (!session.staffId || !(amount > 0)) return null;
+  const [staff] = await db
+    .select({ isTechnician: staffTable.isTechnician })
+    .from(staffTable)
+    .where(and(eq(staffTable.id, session.staffId), eq(staffTable.tenantId, tenantId)));
+  if (!staff?.isTechnician) return null;
+
+  const [row] = await db
+    .insert(cashHandoversTable)
+    .values({
+      tenantId,
+      sessionId: session.id,
+      staffId: session.staffId,
+      staffName: session.staffName,
+      amount,
+      status: "pending",
+    })
+    .onConflictDoNothing()
+    .returning();
+  if (row) return row;
+  const [existing] = await db
+    .select()
+    .from(cashHandoversTable)
+    .where(and(eq(cashHandoversTable.tenantId, tenantId), eq(cashHandoversTable.sessionId, session.id)));
+  return existing ?? null;
+}
+
+/** Staff who may sign for cash: managerial roles, or anyone flagged as a receiver. */
+function isCashReceiver(staff: { role: string | null; canReceiveCash: boolean | null }): boolean {
+  return MANAGER_ROLES.has((staff.role ?? "").toLowerCase()) || staff.canReceiveCash === true;
+}
+
+function reportLinkSecret(): string {
+  const secret = process.env["SESSION_SECRET"];
+  if (!secret) throw new Error("SESSION_SECRET is required to sign report download links");
+  return secret;
+}
+
+/* ─── GET /cash/sessions/:id/report.pdf ───
+ * Authenticated by the normal tenant token, or by the short-lived `t` token
+ * minted by /report-link (so a phone can open the PDF in its browser). */
+router.get("/cash/sessions/:id/report.pdf", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid session id" }); return; }
+
+  let tenantId: number | null = null;
+  let linkAuthorised = false;
+  const linkToken = typeof req.query["t"] === "string" ? req.query["t"] : null;
+  if (linkToken) {
+    try {
+      const payload = jwt.verify(linkToken, reportLinkSecret()) as { tenantId?: number; sessionId?: number; kind?: string };
+      if (payload.kind === "eod-report" && payload.sessionId === id && payload.tenantId) {
+        tenantId = payload.tenantId;
+        linkAuthorised = true;
+      }
+    } catch {
+      // Fall through to header auth / 401 below.
+    }
+  }
+  if (!linkAuthorised) tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const [session] = await db
+    .select()
+    .from(cashSessionsTable)
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)));
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+  if (!linkAuthorised && !(await allowSessionReport(req as never, res, tenantId, session))) return;
+
+  const report = await buildSessionReport(tenantId, session);
+  const ctx = await loadReportContext(tenantId);
+  const pdf = await renderEodReportPdf(toEodDocData(report), ctx);
+  const filename = `End-of-Day-${session.staffName.replace(/[^A-Za-z0-9]+/g, "-")}-${session.id}.pdf`;
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(pdf);
+});
+
+/* ─── POST /cash/sessions/:id/report-link — short-lived PDF download URL ─── */
+router.post("/cash/sessions/:id/report-link", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid session id" }); return; }
+
+  const [session] = await db
+    .select()
+    .from(cashSessionsTable)
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)));
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+  if (!(await allowSessionReport(req as never, res, tenantId, session))) return;
+
+  let token: string;
+  try {
+    token = jwt.sign({ tenantId, sessionId: id, kind: "eod-report" }, reportLinkSecret(), { expiresIn: "15m" });
+  } catch {
+    res.status(500).json({ error: "Report links are unavailable — server signing key is not configured" });
+    return;
+  }
+  const headers = req.headers as Record<string, string | undefined>;
+  const proto = headers["x-forwarded-proto"]?.split(",")[0] ?? "https";
+  const host = headers["x-forwarded-host"]?.split(",")[0] ?? headers["host"];
+  res.json({
+    url: `${proto}://${host}/api/cash/sessions/${id}/report.pdf?t=${encodeURIComponent(token)}`,
+    expiresInSeconds: 15 * 60,
+  });
+});
+
+/* ─── POST /cash/sessions/:id/email-report ─── */
+const EmailReportBody = z.object({ to: z.array(z.string().email()).max(20).optional() });
+
+router.post("/cash/sessions/:id/email-report", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid session id" }); return; }
+
+  const parsed = EmailReportBody.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request body" }); return; }
+
+  const [session] = await db
+    .select()
+    .from(cashSessionsTable)
+    .where(and(eq(cashSessionsTable.id, id), eq(cashSessionsTable.tenantId, tenantId)));
+  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+  if (!(await allowSessionReport(req as never, res, tenantId, session))) return;
+
+  try {
+    const result = await sendEodReportEmail(tenantId, id, parsed.data.to);
+    if (result.sent.length === 0) {
+      res.status(400).json({ error: "No admin email address is on file for this business", skipped: result.skipped });
+      return;
+    }
+    res.json({ success: true, ...result });
+  } catch (err) {
+    const details = err instanceof Error ? err.message : String(err);
+    logger.error({ err, sessionId: id }, "End-of-day report email failed");
+    res.status(500).json({ error: "Failed to send the report", details });
+  }
+});
+
+/* ─── GET /cash/handovers — cash still held by technicians ─── */
+router.get("/cash/handovers", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const statusFilter = typeof req.query["status"] === "string" ? req.query["status"] : "pending";
+  const raw = (req.headers as Record<string, string | undefined>)["x-staff-id"];
+  const staffId = raw ? parseInt(String(raw), 10) : NaN;
+
+  let scopeToStaffId: number | null = null;
+  if (Number.isFinite(staffId)) {
+    const [staff] = await db
+      .select({ role: staffTable.role, canReceiveCash: staffTable.canReceiveCash })
+      .from(staffTable)
+      .where(and(eq(staffTable.id, staffId), eq(staffTable.tenantId, tenantId)));
+    if (!staff) { res.status(403).json({ error: "Unknown staff member" }); return; }
+    // A technician sees only their own custody; receivers/managers see all.
+    if (!isCashReceiver(staff)) scopeToStaffId = staffId;
+  } else {
+    // No staff identity — office dashboard. Technician tokens are blocked.
+    if (!requireFullTenant(req as never, res as never)) return;
+  }
+
+  const rows = await db
+    .select({
+      id: cashHandoversTable.id,
+      sessionId: cashHandoversTable.sessionId,
+      staffId: cashHandoversTable.staffId,
+      staffName: cashHandoversTable.staffName,
+      amount: cashHandoversTable.amount,
+      status: cashHandoversTable.status,
+      receivedAmount: cashHandoversTable.receivedAmount,
+      receivedByStaffId: cashHandoversTable.receivedByStaffId,
+      receivedByName: cashHandoversTable.receivedByName,
+      notes: cashHandoversTable.notes,
+      signedAt: cashHandoversTable.signedAt,
+      createdAt: cashHandoversTable.createdAt,
+      openedAt: cashSessionsTable.openedAt,
+      closedAt: cashSessionsTable.closedAt,
+      locationName: cashSessionsTable.locationName,
+    })
+    .from(cashHandoversTable)
+    .innerJoin(cashSessionsTable, eq(cashHandoversTable.sessionId, cashSessionsTable.id))
+    .where(and(
+      eq(cashHandoversTable.tenantId, tenantId),
+      ...(statusFilter && statusFilter !== "all" ? [eq(cashHandoversTable.status, statusFilter)] : []),
+      ...(scopeToStaffId != null ? [eq(cashHandoversTable.staffId, scopeToStaffId)] : []),
+    ))
+    .orderBy(desc(cashHandoversTable.createdAt));
+
+  res.json(rows);
+});
+
+/* ─── GET /cash/handovers/receivers — who may sign for cash ─── */
+router.get("/cash/handovers/receivers", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const rows = await db
+    .select({ id: staffTable.id, name: staffTable.name, role: staffTable.role, canReceiveCash: staffTable.canReceiveCash })
+    .from(staffTable)
+    .where(and(eq(staffTable.tenantId, tenantId), eq(staffTable.isActive, true)))
+    .orderBy(staffTable.name);
+
+  res.json(rows.filter(isCashReceiver).map((r) => ({ id: r.id, name: r.name, role: r.role })));
+});
+
+/* ─── POST /cash/handovers/:id/sign — receiver signs for the cash ─── */
+const SignHandoverBody = z.object({
+  receivedByStaffId: z.number().int().positive(),
+  pin: z.string().min(4).max(8),
+  signature: z.string().max(400_000).optional(),
+  receivedAmount: z.number().min(0).optional(),
+  notes: z.string().max(500).optional(),
+});
+
+router.post("/cash/handovers/:id/sign", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid handover id" }); return; }
+
+  const parsed = SignHandoverBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request body", details: parsed.error.issues }); return; }
+
+  const [signer] = await db
+    .select({ id: staffTable.id, name: staffTable.name, role: staffTable.role, pin: staffTable.pin, canReceiveCash: staffTable.canReceiveCash, isActive: staffTable.isActive })
+    .from(staffTable)
+    .where(and(eq(staffTable.id, parsed.data.receivedByStaffId), eq(staffTable.tenantId, tenantId)));
+  if (!signer || !signer.isActive) { res.status(404).json({ error: "Staff member not found" }); return; }
+  if (!isCashReceiver(signer)) { res.status(403).json({ error: MANAGER_OR_RECEIVER_MSG }); return; }
+  if (signer.pin !== parsed.data.pin) { res.status(401).json({ error: "Invalid PIN" }); return; }
+
+  // Lock the row so two devices can't both sign for the same cash.
+  const signed = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(cashHandoversTable)
+      .where(and(eq(cashHandoversTable.id, id), eq(cashHandoversTable.tenantId, tenantId)))
+      .for("update");
+    if (!row) return { error: "notfound" as const };
+    if (row.status === "signed") return { error: "already" as const, row };
+    if (row.staffId === signer.id) return { error: "self" as const };
+
+    const [updated] = await tx
+      .update(cashHandoversTable)
+      .set({
+        status: "signed",
+        receivedAmount: parsed.data.receivedAmount ?? row.amount,
+        receivedByStaffId: signer.id,
+        receivedByName: signer.name,
+        signature: parsed.data.signature ?? null,
+        notes: parsed.data.notes ?? null,
+        signedAt: new Date(),
+      })
+      .where(and(eq(cashHandoversTable.id, id), eq(cashHandoversTable.status, "pending")))
+      .returning();
+    return { row: updated };
+  });
+
+  if ("error" in signed && signed.error === "notfound") { res.status(404).json({ error: "Handover not found" }); return; }
+  if ("error" in signed && signed.error === "already") { res.status(409).json({ error: "This cash has already been signed for", handover: signed.row }); return; }
+  if ("error" in signed && signed.error === "self") { res.status(403).json({ error: "The technician holding the cash cannot sign for it" }); return; }
+
+  await logAudit({
+    tenantId,
+    staffId: signer.id,
+    staffName: signer.name,
+    action: "cash.handover.sign",
+    entityType: "cash_handover",
+    entityId: id,
+    details: { amount: signed.row?.receivedAmount, from: signed.row?.staffName, sessionId: signed.row?.sessionId },
+  });
+
+  res.json(signed.row);
 });
 
 export default router;

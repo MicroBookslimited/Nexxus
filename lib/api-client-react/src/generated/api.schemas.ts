@@ -1183,6 +1183,7 @@ export interface StaffMember {
   role: StaffMemberRole;
   isActive: boolean;
   isTechnician?: boolean;
+  canReceiveCash?: boolean;
   email?: string | null;
   createdAt: string;
 }
@@ -1202,6 +1203,7 @@ export interface CreateStaffBody {
   pin: string;
   role?: CreateStaffBodyRole;
   isTechnician?: boolean;
+  canReceiveCash?: boolean;
   email?: string;
 }
 
@@ -1221,6 +1223,7 @@ export interface UpdateStaffBody {
   role?: UpdateStaffBodyRole;
   isActive?: boolean;
   isTechnician?: boolean;
+  canReceiveCash?: boolean;
   email?: string;
 }
 

@@ -202,6 +202,31 @@ async function ensureSupplierLinkColumns() {
   await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS ap_entries_purchase_bill_unique ON ap_entries (tenant_id, purchase_bill_id) WHERE purchase_bill_id IS NOT NULL`);
 }
 
+// Cash custody: the record of money a technician still holds after closing a
+// shift, and the flag marking staff who are allowed to sign for it. Additive
+// and idempotent; the unique index keeps one custody record per shift.
+async function ensureCashCustodyTables() {
+  await db.execute(sql`ALTER TABLE staff ADD COLUMN IF NOT EXISTS can_receive_cash boolean NOT NULL DEFAULT false`);
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS cash_handovers (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL DEFAULT 0,
+    session_id integer NOT NULL REFERENCES cash_sessions(id),
+    staff_id integer,
+    staff_name text NOT NULL,
+    amount real NOT NULL,
+    status text NOT NULL DEFAULT 'pending',
+    received_amount real,
+    received_by_staff_id integer,
+    received_by_name text,
+    signature text,
+    notes text,
+    signed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS cash_handovers_session_unique ON cash_handovers (session_id)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS cash_handovers_tenant_status_idx ON cash_handovers (tenant_id, status)`);
+}
+
 // Repair any timestamp DEFAULTs that the deploy-time migration may have
 // dropped (see lib/repair-timestamp-defaults.ts for full context). Must run
 // BEFORE we start serving requests, otherwise the first save into the
@@ -209,6 +234,7 @@ async function ensureSupplierLinkColumns() {
 await repairTimestampDefaults();
 await ensureEquipmentDeductedColumn();
 await ensureSupplierLinkColumns();
+await ensureCashCustodyTables();
 
 app.listen(port, async (err) => {
   if (err) {
