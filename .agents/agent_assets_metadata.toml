@@ -83,3 +83,10 @@ id = "q429JeH5GThEThc7gNLI0"
 uri = "file://.local/nexxus_backup_20260623_002215.sql.gz"
 type = "unspecified"
 title = "NEXXUS POS Database Backup — 2026-06-23 (gzip)"
+
+[[outputs]]
+id = "s08gUc1oD1cIISoFYJz-g"
+uri = "file://docs/manuals/NEXXUS%20POS%20Supermarket%20Manual.pdf"
+type = "pdf"
+title = "NEXXUS POS — Supermarket Operations Manual"
+description = "29-page manual: setup, lane operation, weighed goods, cash control, purchasing, reports, troubleshooting, permission matrix and a printable cashier quick card."

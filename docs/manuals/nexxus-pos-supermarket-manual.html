@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>NEXXUS POS — Supermarket Operations Manual</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm 18mm 18mm;
+    @top-left { content: "NEXXUS POS · Supermarket Operations Manual"; font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #94a3b8; }
+    @bottom-right { content: counter(page); font-family: Helvetica, Arial, sans-serif; font-size: 8.5pt; color: #475569; }
+  }
+  @page cover { margin: 0; @top-left { content: ""; } @bottom-right { content: ""; } }
+
+  html { font-family: Helvetica, Arial, sans-serif; font-size: 10pt; color: #1e293b; line-height: 1.5; }
+  body { margin: 0; }
+
+  /* ---------- Cover ---------- */
+  .cover { page: cover; height: 297mm; background: #0b1b34; color: #fff; padding: 34mm 24mm 24mm 24mm; box-sizing: border-box; page-break-after: always; }
+  .cover .rule { width: 46mm; height: 3.5pt; background: #2e7bf6; margin-bottom: 12mm; }
+  .cover h1 { font-size: 34pt; line-height: 1.08; margin: 0 0 6mm 0; font-weight: 700; letter-spacing: -0.5pt; }
+  .cover h2 { font-size: 14pt; font-weight: 400; color: #9fc0f5; margin: 0 0 26mm 0; }
+  .cover .kicker { font-size: 9pt; letter-spacing: 3pt; text-transform: uppercase; color: #6ea3f5; margin-bottom: 5mm; }
+  .cover .meta { position: absolute; bottom: 24mm; font-size: 9pt; color: #7d94b8; }
+  .cover .meta strong { color: #dce8fa; font-weight: 600; }
+  .cover .audience { border-left: 2.5pt solid #2e7bf6; padding-left: 6mm; font-size: 10.5pt; color: #c9dcf7; max-width: 120mm; }
+
+  /* ---------- Headings ---------- */
+  h1.part { page-break-before: always; font-size: 20pt; color: #0b1b34; margin: 0 0 2mm 0; letter-spacing: -0.3pt; }
+  h1.part .num { display: block; font-size: 8.5pt; letter-spacing: 2.5pt; text-transform: uppercase; color: #2e7bf6; margin-bottom: 2mm; }
+  h1.part + .lede { color: #64748b; font-size: 10.5pt; margin: 0 0 7mm 0; padding-bottom: 4mm; border-bottom: 1pt solid #e2e8f0; }
+  h2 { font-size: 13pt; color: #0b1b34; margin: 8mm 0 2mm 0; page-break-after: avoid; }
+  h3 { font-size: 10.5pt; color: #12294d; margin: 5mm 0 1.5mm 0; page-break-after: avoid; }
+  p { margin: 0 0 3mm 0; }
+  ul, ol { margin: 0 0 3mm 0; padding-left: 5mm; }
+  li { margin-bottom: 1.2mm; }
+  strong { color: #0b1b34; }
+
+  /* ---------- Components ---------- */
+  .ui { font-family: "DejaVu Sans Mono", monospace; font-size: 8.6pt; background: #eef4ff; color: #1a4fa0; padding: 0.4mm 1.4mm; border-radius: 1.2mm; white-space: nowrap; }
+  .path { font-family: "DejaVu Sans Mono", monospace; font-size: 8.6pt; color: #475569; }
+
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm 0; font-size: 9pt; page-break-inside: avoid; }
+  th { background: #0b1b34; color: #fff; text-align: left; padding: 2mm 2.5mm; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.4pt; }
+  td { border-bottom: 0.6pt solid #e2e8f0; padding: 2mm 2.5mm; vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  table.compact td, table.compact th { padding: 1.4mm 2mm; font-size: 8.5pt; }
+
+  .box { border: 0.8pt solid #cfe0fb; background: #f4f8ff; border-left: 3pt solid #2e7bf6; padding: 3mm 4mm; margin: 3mm 0; page-break-inside: avoid; }
+  .box .t { font-size: 8pt; text-transform: uppercase; letter-spacing: 1.2pt; color: #2e7bf6; font-weight: 700; margin-bottom: 1.5mm; }
+  .warn { border-color: #f6d6b0; background: #fff8ef; border-left-color: #e08a1e; }
+  .warn .t { color: #b96e12; }
+  .stop { border-color: #f5c6c6; background: #fff5f5; border-left-color: #d63b3b; }
+  .stop .t { color: #b32626; }
+
+  ol.steps { counter-reset: step; list-style: none; padding-left: 0; margin: 2mm 0 4mm 0; }
+  ol.steps > li { counter-increment: step; position: relative; padding-left: 9mm; margin-bottom: 2.2mm; }
+  ol.steps > li::before {
+    content: counter(step); position: absolute; left: 0; top: 0.2mm;
+    width: 5.6mm; height: 5.6mm; background: #2e7bf6; color: #fff;
+    border-radius: 50%; text-align: center; font-size: 8pt; font-weight: 700; line-height: 5.6mm;
+  }
+
+  .toc { page-break-after: always; }
+  .toc h1 { font-size: 20pt; color: #0b1b34; margin: 0 0 6mm 0; }
+  .toc table td { border-bottom: 0.5pt dotted #cbd5e1; padding: 1.6mm 0; }
+  .toc td.n { color: #2e7bf6; font-weight: 700; width: 12mm; }
+  .toc td.p { text-align: right; color: #94a3b8; width: 12mm; }
+  .toc td.s { color: #64748b; font-size: 8.5pt; padding-left: 12mm; }
+
+  .cardgrid { display: flex; flex-wrap: wrap; gap: 3mm; margin: 3mm 0; }
+  .card { flex: 1 1 45%; border: 0.8pt solid #e2e8f0; border-radius: 2mm; padding: 3mm; page-break-inside: avoid; }
+  .card h4 { margin: 0 0 1.5mm 0; font-size: 9.5pt; color: #0b1b34; }
+  .card p { font-size: 9pt; color: #475569; margin: 0; }
+
+  .kv { font-size: 9pt; }
+  .kv td:first-child { width: 42mm; font-weight: 600; color: #0b1b34; }
+  .avoid { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="rule"></div>
+  <div class="kicker">Operations Manual</div>
+  <h1>NEXXUS POS<br/>for Supermarkets</h1>
+  <h2>Setup, daily checkout, inventory, cash control and reporting</h2>
+  <div class="audience">
+    Everything a supermarket needs to run NEXXUS POS — from the first day of setup
+    through to the nightly cash count. Written for owners, managers, supervisors
+    and cashiers.
+  </div>
+  <div class="meta">
+    <strong>Edition 1.0</strong> &nbsp;·&nbsp; August 2026<br/>
+    Applies to the NEXXUS POS web application (Supermarket layouts)
+  </div>
+</div>
+
+<!-- ============ TOC ============ -->
+<div class="toc">
+  <h1>Contents</h1>
+  <table>
+    <tr><td class="n">1</td><td>Before you begin</td><td class="p"></td></tr>
+    <tr><td></td><td class="s">What NEXXUS POS is · roles in your store · what you need on site · plans and limits</td><td></td></tr>
+    <tr><td class="n">2</td><td>Opening your account and first-time setup</td><td class="p"></td></tr>
+    <tr><td></td><td class="s">Signing up · the setup wizard · signing in · the staff PIN</td><td></td></tr>
+    <tr><td class="n">3</td><td>Configuring the store</td><td class="p"></td></tr>
+    <tr><td></td><td class="s">Business details · tax and currency · receipts · choosing the supermarket layout · lane security · branches</td><td></td></tr>
+    <tr><td class="n">4</td><td>Staff, roles and permissions</td><td class="p"></td></tr>
+    <tr><td class="n">5</td><td>Building your product catalogue</td><td class="p"></td></tr>
+    <tr><td></td><td class="s">Products and barcodes · categories · loose goods · importing · shelf labels</td><td></td></tr>
+    <tr><td class="n">6</td><td>Buying stock: suppliers, orders and bills</td><td class="p"></td></tr>
+    <tr><td class="n">7</td><td>Running the checkout lane</td><td class="p"></td></tr>
+    <tr><td></td><td class="s">Opening the lane · scanning · quantities · weighed goods · discounts · hold and recall · taking payment</td><td></td></tr>
+    <tr><td class="n">8</td><td>The weighing scale station</td><td class="p"></td></tr>
+    <tr><td class="n">9</td><td>Cash control and end of day</td><td class="p"></td></tr>
+    <tr><td class="n">10</td><td>Prices and promotions</td><td class="p"></td></tr>
+    <tr><td class="n">11</td><td>Customers, credit and gift vouchers</td><td class="p"></td></tr>
+    <tr><td class="n">12</td><td>Stock control after opening</td><td class="p"></td></tr>
+    <tr><td class="n">13</td><td>Reports and the audit trail</td><td class="p"></td></tr>
+    <tr><td class="n">14</td><td>Housekeeping: backups, plan and support</td><td class="p"></td></tr>
+    <tr><td class="n">15</td><td>Troubleshooting</td><td class="p"></td></tr>
+    <tr><td class="n">A</td><td>Appendix A — Permission matrix</td><td class="p"></td></tr>
+    <tr><td class="n">B</td><td>Appendix B — Daily, weekly and monthly routines</td><td class="p"></td></tr>
+    <tr><td class="n">C</td><td>Appendix C — Cashier quick card</td><td class="p"></td></tr>
+    <tr><td class="n">D</td><td>Appendix D — Glossary</td><td class="p"></td></tr>
+  </table>
+</div>
+
+<!-- ============ 1 ============ -->
+<h1 class="part"><span class="num">Chapter 1</span>Before you begin</h1>
+<p class="lede">What the system does, who uses which part of it, and what you need in place before the first sale.</p>
+
+<h2>1.1 What NEXXUS POS gives a supermarket</h2>
+<p>NEXXUS POS is a web-based point of sale. It runs in a browser on a till PC, laptop or tablet — there is nothing to install — and every till in every branch works from the same live catalogue, stock figures and price list.</p>
+<p>The parts of the system a supermarket uses every day are:</p>
+<div class="cardgrid">
+  <div class="card"><h4>The lane</h4><p>A scan-first checkout screen built for speed: scan, take payment, print, next customer.</p></div>
+  <div class="card"><h4>The catalogue</h4><p>Products, barcodes, prices, tax status and stock on hand, shared by every till.</p></div>
+  <div class="card"><h4>The scale station</h4><p>Weigh loose goods, print a barcoded weight label, and let the lane scan it.</p></div>
+  <div class="card"><h4>Cash control</h4><p>Shift floats, payouts, blind counts and over/short at the end of every shift.</p></div>
+  <div class="card"><h4>Purchasing</h4><p>Supplier orders and purchase bills that receive stock and update cost prices.</p></div>
+  <div class="card"><h4>Reporting</h4><p>Daily sales, GCT/tax, category and hourly performance, staff and stock variance.</p></div>
+</div>
+
+<h2>1.2 Who does what</h2>
+<table>
+  <tr><th style="width:32mm">Person</th><th>What they normally do in NEXXUS</th></tr>
+  <tr><td>Owner / Admin</td><td>Sets up the business, tax, receipts and branches; creates staff; sees every report; manages the subscription.</td></tr>
+  <tr><td>Manager</td><td>Runs the floor: approves discounts and voids, closes other people's shifts, manages products, prices and purchasing, reviews reports.</td></tr>
+  <tr><td>Supervisor</td><td>Approves lane overrides, opens and closes shifts, handles refunds and voids.</td></tr>
+  <tr><td>Cashier</td><td>Opens a shift, sells, holds and recalls bills, closes their own shift.</td></tr>
+  <tr><td>Inventory clerk</td><td>Receives goods, counts stock, prints shelf labels, keeps the catalogue tidy.</td></tr>
+</table>
+
+<h2>1.3 What you need on site</h2>
+<ul>
+  <li>A reliable internet connection. The lane keeps working through short outages (see §7.13), but setup, reporting and gift vouchers need a connection.</li>
+  <li>One PC, laptop or tablet per lane, running a current browser (Chrome or Edge recommended).</li>
+  <li>A USB or Bluetooth <strong>barcode scanner</strong> configured as a keyboard wedge — that is, it types the barcode and presses Enter. This is the default for almost every scanner sold.</li>
+  <li>A <strong>receipt printer</strong> (58&nbsp;mm or 80&nbsp;mm) installed as a normal printer on the till.</li>
+  <li>For loose goods: a weighing scale at the deli/produce counter and a <strong>label printer</strong>, or a scale that prints its own EAN-13 weight-embedded labels.</li>
+  <li>Optional: cash drawer, customer-facing display, second screen.</li>
+</ul>
+
+<h2>1.4 Plans and limits</h2>
+<p>Your subscription decides how many products, staff and branches you can have. A supermarket almost always needs <strong>Professional</strong> or <strong>Enterprise</strong> because of the catalogue size.</p>
+<table class="compact">
+  <tr><th>Plan</th><th>Products</th><th>Staff</th><th>Branches</th><th>Invoices</th></tr>
+  <tr><td>Free (3-day trial)</td><td>25</td><td>2</td><td>1</td><td>50</td></tr>
+  <tr><td>Starter</td><td>100</td><td>5</td><td>1</td><td>500</td></tr>
+  <tr><td>Professional</td><td>500</td><td>15</td><td>3</td><td>5,000</td></tr>
+  <tr><td>Enterprise</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
+</table>
+<div class="box"><div class="t">Note</div>Only <em>active</em> products count towards the limit. Archiving discontinued lines frees space, and you cannot downgrade to a plan whose product limit is below your current count.</div>
+
+<!-- ============ 2 ============ -->
+<h1 class="part"><span class="num">Chapter 2</span>Opening your account and first-time setup</h1>
+<p class="lede">From sign-up to a working till, in one sitting.</p>
+
+<h2>2.1 The setup wizard</h2>
+<p>New accounts are created at the sign-up page and walked through seven steps:</p>
+<table class="kv">
+  <tr><td>Account</td><td>Business Name, Your Name, Email Address, Password (at least 8 characters), accept the Terms &amp; Conditions. This email becomes your login and receives all system mail.</td></tr>
+  <tr><td>Business</td><td>Phone Number, Business Address, Country and <strong>Timezone</strong>. The timezone drives every date and time on receipts and reports — set it correctly now.</td></tr>
+  <tr><td>Plan</td><td>Monthly or annual billing (annual saves 17%), then the plan. Every account starts on a 3-day free trial.</td></tr>
+  <tr><td>Payment</td><td>PayPal or card. Skipped entirely on the Free plan.</td></tr>
+  <tr><td>Setup</td><td>Create the owner's <strong>admin PIN</strong> (4–8 digits, entered twice). The owner becomes the first staff member with the Admin role.</td></tr>
+  <tr><td>Hardware</td><td>Register the tills, printers and scanners you already have, download drivers, or choose <span class="ui">Just give me the app</span> and do it later.</td></tr>
+  <tr><td>Launch</td><td>Confirmation, and a shortcut straight into the POS.</td></tr>
+</table>
+
+<h2>2.2 Signing in each day</h2>
+<ol class="steps">
+  <li>Open the NEXXUS POS address in the browser and sign in with the business email and password. This is the <strong>store login</strong> — normally done once per device, and the till stays signed in.</li>
+  <li>Each member of staff then identifies themselves with their own <strong>4–8 digit PIN</strong>. Switching cashier does not require signing the store out — use <span class="ui">Switch User</span> in the header.</li>
+</ol>
+<div class="box"><div class="t">Why two logins</div>The store login proves the device belongs to your business. The PIN records <em>who</em> made each sale, approved each discount and counted each drawer. Never share PINs — the audit trail is only as good as the PINs behind it.</div>
+
+<h2>2.3 Add the till to the home screen</h2>
+<p>NEXXUS POS can be installed as an app from the browser menu (<em>Install</em> or <em>Add to Home Screen</em>). It then opens full-screen without browser tabs, which stops cashiers from wandering off to other sites and makes offline mode more reliable.</p>
+
+<!-- ============ 3 ============ -->
+<h1 class="part"><span class="num">Chapter 3</span>Configuring the store</h1>
+<p class="lede">Everything in this chapter lives under the gear icon → <span class="ui">Settings</span>. Work down the list once; after that you will rarely return except for prices and staff.</p>
+
+<h2>3.1 The order to do it in</h2>
+<p>Settings is divided into sections down the left: <em>Business, Industry &amp; Features, Receipt, Currency, Email, Notifications, Inventory, POS Security, POS Interface, Optional Modules, Payment Methods, QR Code, Admin Users, Automation, Integrations, Roles.</em> For a supermarket, complete them in this order: <strong>Business → Industry → Receipt (tax) → Currency → POS Interface → POS Security → Inventory → Notifications → Roles → Payment Methods</strong>.</p>
+
+<h2>3.2 Business information</h2>
+<table class="kv">
+  <tr><td>Business Name</td><td>Prints at the top of every receipt. Line breaks are respected, so a second line such as a branch name is fine.</td></tr>
+  <tr><td>Phone Number, Address</td><td>Receipt header.</td></tr>
+  <tr><td>GCT Registration Number</td><td>Printed on receipts and used by the GCT/Tax report.</td></tr>
+  <tr><td>Timezone</td><td>Controls the date and time on receipts and the cut-off for "today" in reports.</td></tr>
+  <tr><td>Business Logo</td><td>Upload a PNG or JPG, then set <span class="ui">Logo size on receipts</span> (40–250&nbsp;px). Keep it small on 58&nbsp;mm paper.</td></tr>
+</table>
+
+<h2>3.3 Industry &amp; features</h2>
+<p>Set <strong>Business Type</strong> to <em>Supermarket</em>. This tunes the default receipt template and the feature flags offered elsewhere. Restaurant-only features (Tables, Kitchen) disappear from the menu.</p>
+
+<h2>3.4 Tax and receipts</h2>
+<table class="kv">
+  <tr><td>Default Tax Rate</td><td>Your GCT/VAT percentage, e.g. 15.</td></tr>
+  <tr><td>Tax Mode</td><td><strong>Tax Exclusive</strong> — tax is added on top of the shelf price at the till. <strong>Tax Inclusive</strong> — the shelf price already contains the tax, and the receipt shows how much of it was tax. Most supermarkets price inclusive; choose the one your shelf edge labels reflect.</td></tr>
+  <tr><td>Default Markup</td><td>Used to suggest a selling price from cost when you add products.</td></tr>
+  <tr><td>Receipt Paper Size</td><td>58&nbsp;mm or 80&nbsp;mm — must match the printer or receipts print wide or clipped.</td></tr>
+  <tr><td>Auto-print receipts</td><td>Prints silently the moment a sale completes. Essential on a busy lane.</td></tr>
+  <tr><td>Print receipt-number barcode</td><td>Prints a scannable barcode on the receipt so returns and reprints can be found by scanning.</td></tr>
+  <tr><td>Receipt Template</td><td>Choose the supermarket template.</td></tr>
+  <tr><td>Receipt Footer Message</td><td>Return policy, opening hours, thank-you line.</td></tr>
+</table>
+<div class="box warn"><div class="t">Important</div>Changing <strong>Tax Mode</strong> after you have loaded prices changes what every product costs the customer. Decide before you import the catalogue.</div>
+
+<h2>3.5 Currency</h2>
+<p>Set the <strong>Base Currency</strong> (JMD by default). A <strong>Secondary Currency</strong> with an exchange rate can be shown alongside it — useful for tourist-area stores.</p>
+
+<h2>3.6 Choosing the supermarket layout</h2>
+<p>Under <span class="ui">POS Interface</span> the checkout screen can take one of several shapes. They are mutually exclusive — turn on exactly one:</p>
+<table>
+  <tr><th style="width:52mm">Layout</th><th>Use it when</th></tr>
+  <tr><td><strong>Supermarket Layout (scan-only)</strong></td><td>Every item has a barcode. There is no product grid at all, which keeps cashiers scanning instead of hunting. The fastest lane.</td></tr>
+  <tr><td><strong>Supermarket Mode (with item name search)</strong></td><td>Same lane, plus a search box that finds items by name, SKU or barcode — for damaged barcodes, loose goods and new lines. Recommended for most stores.</td></tr>
+  <tr><td>Hardware Store Layout</td><td>Trade counter with quotes and long item descriptions.</td></tr>
+  <tr><td>Retail Layout</td><td>Boutique-style grid with pictures.</td></tr>
+  <tr><td>Courier Layout</td><td>Parcel receiving and pickup.</td></tr>
+</table>
+<p>After changing the layout, open <span class="ui">POS</span> again to see it.</p>
+
+<h2>3.7 Lane security (POS Security)</h2>
+<p><span class="ui">Supermarket Mode</span> in this section is the anti-shrinkage control. With it on, a cashier must get a <strong>manager, supervisor or admin PIN</strong> before they can:</p>
+<ul>
+  <li>reduce the quantity of a line,</li>
+  <li>remove a line from the bill,</li>
+  <li>clear the whole bill.</li>
+</ul>
+<p>Increasing a quantity never needs approval. Discounts and price overrides always require a manager PIN, whether or not this setting is on.</p>
+<div class="box"><div class="t">Recommended</div>Turn this on. The most common till fraud is scanning goods, voiding lines after the customer has paid cash, and pocketing the difference.</div>
+<p><strong>Kiosk lock</strong>, elsewhere in settings, stops staff leaving full-screen mode without a manager PIN.</p>
+
+<h2>3.8 Inventory behaviour</h2>
+<table class="kv">
+  <tr><td>Allow Overselling</td><td>If on, the lane will sell an item whose stock shows zero. Supermarkets normally leave this <strong>on</strong> — a wrong stock figure should never stop a queue — and fix the count later.</td></tr>
+  <tr><td>Stock Method</td><td>FIFO (first in, first out) or LIFO, used for costing.</td></tr>
+</table>
+
+<h2>3.9 Alerts and the daily digest</h2>
+<p>Under <span class="ui">Notifications</span>:</p>
+<ul>
+  <li><strong>Daily Email Digest</strong> — yesterday's trading summary to a chosen address at a chosen time. Use <span class="ui">Send Test Email Now</span> to confirm it arrives.</li>
+  <li><strong>Low Stock Alerts</strong> — enable, set the recipient, the alert time and the <strong>Low Stock Threshold</strong>. The system checks hourly and emails the buyer.</li>
+</ul>
+
+<h2>3.10 Branches and stations</h2>
+<p><span class="ui">Locations</span> holds your branches. <span class="ui">New Location</span> captures Branch Name, Address and Phone. Each branch has its own <em>Inventory</em> tab and <em>Transfer History</em>; use <span class="ui">Init All Products</span> to give a new branch a stock row for every product.</p>
+<p>There is no separate screen for tills. A cashier picks the <strong>Station / Till Number</strong> when opening their cash shift, which is what ties a sale to lane 1, 2 or 3.</p>
+
+<h2>3.11 Hardware register</h2>
+<p><span class="ui">My Hardware</span> is an asset register: record each receipt printer, scanner, cash drawer, card reader, customer display, label printer and tablet with make, model, serial, purchase date and condition. The <em>Driver Downloads</em> tab keeps installer links per platform so a replacement till can be set up quickly.</p>
+
+<!-- ============ 4 ============ -->
+<h1 class="part"><span class="num">Chapter 4</span>Staff, roles and permissions</h1>
+<p class="lede">Every action at the lane is tied to a PIN. Get this right and the reports tell you the truth.</p>
+
+<h2>4.1 Adding a member of staff</h2>
+<ol class="steps">
+  <li>Go to <span class="ui">Staff</span> → <span class="ui">Add Staff</span>.</li>
+  <li>Enter <strong>Full Name</strong>.</li>
+  <li>Enter a <strong>PIN</strong> of 4–8 digits. It must be unique across all staff — no two people may share one. Leaving the PIN blank when editing keeps the existing one.</li>
+  <li>Choose the <strong>Role</strong> (see the table below).</li>
+  <li>Tick <strong>Can receive cash</strong> for anyone who will hold a drawer.</li>
+  <li>Save. To restrict someone to certain branches, open <span class="ui">Branch Access</span> and tick the branches, marking one as Primary. Leaving all unticked means all branches.</li>
+</ol>
+<p>When someone leaves, edit them and untick <strong>Active</strong> rather than deleting — their sales history stays intact.</p>
+
+<h2>4.2 The standard roles</h2>
+<table>
+  <tr><th style="width:34mm">Role</th><th>Typical use in a supermarket</th></tr>
+  <tr><td>Admin</td><td>Owner and IT. Everything, including settings and staff.</td></tr>
+  <tr><td>Manager</td><td>Store manager. Everything except changing system settings and creating staff.</td></tr>
+  <tr><td>Supervisor</td><td>Floor supervisor. Sells, approves discounts, voids and refunds, opens and closes shifts.</td></tr>
+  <tr><td>Cashier</td><td>Sells, opens their own shift, views orders and customers. Cannot void or refund.</td></tr>
+  <tr><td>Inventory Clerk</td><td>Receiving and counting: full inventory access, reports, and the scale.</td></tr>
+  <tr><td>Accountant</td><td>Read-only across orders, inventory, reports and customers, plus exports.</td></tr>
+  <tr><td>View Only</td><td>Look, don't touch — for auditors and trainees.</td></tr>
+</table>
+<p>Roles can be edited and new ones created under <span class="ui">Settings → Roles</span>, where each permission is a tick box. Appendix A lists the full matrix.</p>
+
+<!-- ============ 5 ============ -->
+<h1 class="part"><span class="num">Chapter 5</span>Building your product catalogue</h1>
+<p class="lede">The catalogue is the single biggest job in setting up a supermarket, and the one that decides how fast your lanes run.</p>
+
+<h2>5.1 What a product record holds</h2>
+<table class="kv">
+  <tr><td>Name</td><td>What the cashier and the receipt see. Include size: <em>Milk 1L</em>, not <em>Milk</em>.</td></tr>
+  <tr><td>Barcode</td><td>The EAN/UPC printed on the pack. This is what makes the lane fast — every scannable item needs one.</td></tr>
+  <tr><td>SKU</td><td>Your own code. Useful for loose goods and store-packed items.</td></tr>
+  <tr><td>Category</td><td>Drives the Category Sales report and shelf reporting. Keep the list short and consistent.</td></tr>
+  <tr><td>Price</td><td>Shelf price. Whether tax is inside it depends on your Tax Mode (§3.4).</td></tr>
+  <tr><td>Cost</td><td>Purchase cost, used for profit reporting. Updated automatically when you receive a purchase bill.</td></tr>
+  <tr><td>Attracts sales tax</td><td>Untick for zero-rated basics. The lane then prints those lines as tax-exempt.</td></tr>
+  <tr><td>Stock</td><td>Quantity on hand. Per branch when you use Locations.</td></tr>
+  <tr><td>Sold by weight</td><td>Turns the item into a loose good — see §5.4.</td></tr>
+  <tr><td>Selling unit / size</td><td>Optional label such as <em>each</em>, <em>pack</em>, <em>500g</em>, shown on the receipt.</td></tr>
+</table>
+
+<h2>5.2 Importing an existing catalogue</h2>
+<p>Do not type thousands of products. <span class="ui">Products</span> → <span class="ui">Import</span> takes a CSV:</p>
+<ol class="steps">
+  <li>Download a template — a generic one, or the Loyverse or QuickBooks layout if you are moving from those systems.</li>
+  <li>Fill it in from your supplier price file or old system export.</li>
+  <li>Upload it. NEXXUS matches the columns automatically; check the mapping for <em>name, price, category, barcode, SKU, stock, in stock</em> and <em>selling unit</em>, and correct anything mismatched.</li>
+  <li>Import, then read the row-by-row result list and fix the rejects.</li>
+</ol>
+<div class="box warn"><div class="t">Before importing</div>De-duplicate the file on barcode. Two products sharing one barcode will make the lane ask the cashier which one they meant — every single time it is scanned.</div>
+
+<h2>5.3 Categories</h2>
+<p>Categories power the Category Sales report and make the catalogue searchable. Aim for 15–30 (Produce, Meat, Dairy, Frozen, Bakery, Dry Goods, Beverages, Household, Personal Care, Baby, Pet, Tobacco…) rather than hundreds.</p>
+
+<h2>5.4 Loose and weighed goods</h2>
+<p>Anything sold by weight — meat, produce, deli, bulk rice — is set up as a normal product with <strong>Sold by weight</strong> turned on and a unit of lb, kg, oz or g. The price is the price per that unit. Two things then change:</p>
+<ul>
+  <li>At the lane, choosing the item asks for a weight instead of a quantity, and the line reads e.g. <em>3.750 lb</em>.</li>
+  <li>At the scale station the item can be weighed and given a printed barcode label that the lane simply scans (Chapter 8).</li>
+</ul>
+
+<h2>5.5 Bundles and multi-buys</h2>
+<p>A product can be built as a <strong>composite</strong> — a hamper or a "three for" pack made of other products. Selling the bundle draws stock from the components. For simple date-limited price cuts, use Promotions (§10.2) instead.</p>
+
+<h2>5.6 Shelf and product labels</h2>
+<p>The printer icon on a product card opens <span class="ui">Print Label</span>: choose Small, Medium or Large, the quantity to print, and whether to show store name, price, category and the barcode number. A CODE128 barcode is generated; if a product has no barcode of its own, NEXXUS prints one based on the product number so it can still be scanned.</p>
+
+<h2>5.7 Watching for gaps</h2>
+<p>The Products page shows live <strong>running low</strong> and <strong>out of stock</strong> counts. Click either badge to list exactly which lines are affected, then edit or restock from there.</p>
+
+<!-- ============ 6 ============ -->
+<h1 class="part"><span class="num">Chapter 6</span>Buying stock: suppliers, orders and bills</h1>
+<p class="lede">Two documents: an order is what you asked for, a bill is what arrived. Only the bill moves stock.</p>
+
+<h2>6.1 Suppliers</h2>
+<p>Create each supplier once with name, contact, phone, email, website, address and notes. Purchase documents then link to the supplier record, so <span class="ui">Payables</span> can show what you owe each one.</p>
+
+<h2>6.2 Raising a purchase order</h2>
+<ol class="steps">
+  <li><span class="ui">Products</span> → <span class="ui">Orders</span> tab → <span class="ui">New Purchase Order</span>.</li>
+  <li>Choose the supplier and add products with quantities, expected cost and tax.</li>
+  <li>Set the expected date and save as a draft; when you send it to the supplier, mark it <strong>Sent</strong>.</li>
+</ol>
+<p>An order changes nothing in stock or accounts. It exists so you can check the delivery against what you ordered.</p>
+
+<h2>6.3 Receiving a delivery</h2>
+<ol class="steps">
+  <li><span class="ui">Products</span> → <span class="ui">Purchases</span> tab → <span class="ui">New Purchase Bill</span> (or convert the matching purchase order).</li>
+  <li>Enter the supplier's invoice number, date and lines — quantity received and the cost actually charged, with per-line tax if the invoice is taxed.</li>
+  <li>For perishables with batch tracking enabled, record the batch/lot number and expiry date.</li>
+  <li>Check the total against the supplier's invoice, then <span class="ui">Confirm &amp; Receive</span>.</li>
+</ol>
+<p>Confirming does three things: it <strong>adds the goods to stock</strong>, <strong>updates each product's cost price</strong>, and <strong>raises the amount owed</strong> in Payables.</p>
+<div class="box warn"><div class="t">Get it right first time</div>Confirm only when the delivery has been checked in. A confirmed bill has moved stock and money; correcting it afterwards is far more work than fixing a draft.</div>
+
+<h2>6.4 Returns to supplier</h2>
+<p>Damaged or short-dated goods going back to the supplier are recorded as a supplier return, which removes the stock and reduces what you owe.</p>
+
+<!-- ============ 7 ============ -->
+<h1 class="part"><span class="num">Chapter 7</span>Running the checkout lane</h1>
+<p class="lede">This chapter is the cashier's chapter. Print Appendix C and tape it beside the till.</p>
+
+<h2>7.1 Getting the lane open</h2>
+<p>Opening <span class="ui">POS</span> presents up to two gates:</p>
+<ol class="steps">
+  <li><strong>Staff PIN Required</strong> — the cashier types their 4–8 digit PIN.</li>
+  <li><strong>No Open Shift</strong> — a full-screen message with <span class="ui">Open Shift in Cash Management</span>. No one can sell without an open cash shift; see §9.1.</li>
+</ol>
+<p>With both cleared, the header shows <em>Supermarket Mode</em> and the station number, and the lane is ready.</p>
+
+<h2>7.2 The lane at a glance</h2>
+<p><strong>Left — CURRENT BILL:</strong> the running list of items with Item, Qty and Amount. When empty it reads <em>"Scan an item to begin."</em></p>
+<p><strong>Right — the scan box and keypad:</strong> the box is labelled <span class="ui">Scan or type SKU / barcode</span> (or <span class="ui">Search by name, SKU, or barcode</span> in search mode). Below it sit the number keypad, totals and the payment buttons.</p>
+<p><strong>Header buttons:</strong> <span class="ui">Add Customer</span>, <span class="ui">Hold</span>, <span class="ui">Recall</span> (with a badge showing how many bills are parked), <span class="ui">Clear</span>, <span class="ui">Dashboard</span>, reload, <span class="ui">Switch User</span>, <span class="ui">Lock</span>, and the X that closes the shift.</p>
+<div class="box"><div class="t">Keep the cursor in the scan box</div>The lane keeps focus in the scan box on purpose. If scanning stops registering, click once in the box and carry on.</div>
+
+<h2>7.3 Scanning</h2>
+<p>Scan the barcode; the scanner types it and presses Enter, and the item drops onto the bill. You can also type a barcode or SKU by hand and press Enter.</p>
+<ul>
+  <li><strong>Unknown code</strong> — <em>"No product found."</em> Try the item's SKU, or search by name if your lane has search mode. In search mode a genuinely new line can be added on the spot with <span class="ui">Add "…" as a new product</span>.</li>
+  <li><strong>Two products share a barcode</strong> — the lane asks which one; pick the right one and have the office fix the duplicate.</li>
+  <li><strong>Search mode</strong> — type part of a name and up to eight matches appear with barcode and price; click one to add it.</li>
+</ul>
+
+<h2>7.4 Quantities</h2>
+<p>Three ways, in order of speed:</p>
+<ol class="steps">
+  <li><strong>Multiple of the same item:</strong> type the number on the keypad <em>before</em> scanning. The keypad shows <em>× qty</em> and the next scan is added that many times. Six tins: press 6, scan one tin.</li>
+  <li><strong>Adjust a line:</strong> use the + and − buttons on the line.</li>
+  <li><strong>Set exactly:</strong> tap the line to select it, key the number, press <span class="ui">Set Quantity</span>.</li>
+</ol>
+<p><span class="ui">C</span> clears the keypad and the backspace key deletes the last digit. Weighed lines show a fixed decimal quantity and have no +/− buttons — remove and re-add to change them.</p>
+
+<h2>7.5 Weighed goods at the lane</h2>
+<p><strong>Scale label:</strong> scan the label printed at the deli or produce counter. It is an EAN-13 starting with 2 that carries the product and the weight, so the line arrives complete — no popup, no typing. Each label can only be sold once.</p>
+<p><strong>No label:</strong> select the loose product; the lane asks for the weight, then adds a line such as <em>Beef Stew Cut — 3.750 lb</em>.</p>
+<div class="box warn"><div class="t">Two rules for scale labels</div>A bill containing a scale label <strong>cannot be held</strong>. And if a label is removed from the bill, or the bill is cleared, the label is released and can be scanned again at another lane.</div>
+
+<h2>7.6 Price check</h2>
+<p><span class="ui">Price Check</span> looks up any item without touching the bill or stock — scan or type the code and the screen shows the product, unit, size, the price in large type, and whether tax is included, added or exempt. Use it for shelf-edge queries mid-queue.</p>
+
+<h2>7.7 Attaching a customer</h2>
+<p><span class="ui">Add Customer</span> searches by name, phone or email, or adds a new one on the spot. A customer is required for a <strong>Credit</strong> sale and for any remainder put on account in a split. Attaching a customer also builds their purchase history and loyalty record.</p>
+
+<h2>7.8 Discounts</h2>
+<ol class="steps">
+  <li>Press <span class="ui">Discount</span>.</li>
+  <li>A manager, supervisor or admin enters their PIN on the <em>Manager Override Required</em> screen.</li>
+  <li>Choose <strong>Percent</strong> or <strong>Fixed $</strong>, enter the value, press <span class="ui">Apply Discount</span>.</li>
+</ol>
+<p>The discount shows in the totals with the approver recorded against it, and it is applied before tax. Remove it with the X. Held bills keep their discount when recalled. Every discount appears in the <em>Discounts &amp; Voids</em> report — review it weekly.</p>
+
+<h2>7.9 Holding and recalling a bill</h2>
+<p>Customer forgot the milk? Press <span class="ui">Hold</span>. The bill is parked, the lane clears, and the next customer can be served. <span class="ui">Recall</span> lists the parked bills with their totals and item counts; tap one, confirm that it replaces what is on screen, and it comes back — discount and all.</p>
+<p>Bills with scale labels or parcel pickups cannot be held.</p>
+
+<h2>7.10 Taking payment</h2>
+<p>Four buttons: <span class="ui">Cash</span>, <span class="ui">Card</span>, <span class="ui">Credit</span>, <span class="ui">Split</span>.</p>
+<table>
+  <tr><th style="width:26mm">Tender</th><th>How it works</th></tr>
+  <tr><td>Cash</td><td>Press Cash, then key what the customer handed over — or tap a quick button (exact amount, or the sensible rounded notes). <strong>Change Due</strong> is displayed in large type.</td></tr>
+  <tr><td>Card</td><td>Press Card and choose <strong>Debit</strong> or <strong>Credit</strong>; the choice is required because it separates the two on your banking report. Take the payment on the terminal as usual, then complete the sale.</td></tr>
+  <tr><td>Credit</td><td>Puts the whole sale on the customer's account. A customer must be selected first, and the balance appears in Receivables.</td></tr>
+  <tr><td>Split</td><td>Opens a panel where you enter the card amount (with card type), the cash amount, and anything left over goes on account. Card plus cash may not exceed the total, and an on-account remainder needs a customer. The summary reads <em>Tap to edit split</em>.</td></tr>
+</table>
+
+<h2>7.11 Gift vouchers</h2>
+<p>Enter the code in the <strong>Voucher code</strong> box and press <span class="ui">Apply</span>. NEXXUS checks it is valid, not cancelled, not expired and has a balance, then shows the code, its balance, the amount applied and the amount still due. A voucher is a <em>tender</em>, not a discount: it pays part of the bill. If it covers everything, the payment buttons dim and the checkout button reads <span class="ui">CHECKOUT · Voucher $…</span>. Otherwise take the remainder in cash or card as normal.</p>
+<div class="box stop"><div class="t">Offline</div>Vouchers need a live connection — they cannot be validated or redeemed while the lane is offline.</div>
+
+<h2>7.12 Finishing the sale</h2>
+<p>Press the large <span class="ui">CHECKOUT · $amount</span> button. It is blocked if the bill is empty, a split does not add up, a customer is missing for credit, or a card type has not been chosen.</p>
+<p><strong>Sale Complete</strong> then shows the order number, subtotal, tax and total — plus cash tendered and change due on a cash sale. <span class="ui">Print Receipt</span> reprints; <span class="ui">Done</span> clears the lane for the next customer. With auto-print on, the receipt is already coming out of the printer.</p>
+<div class="box"><div class="t">Double charges</div>Every checkout carries a one-time reference, so a slow response, an impatient second press or a dropped connection cannot turn one sale into two.</div>
+
+<h2>7.13 When the internet drops</h2>
+<p>A banner appears: <em>"You're offline — changes will sync automatically when your connection returns."</em> The lane keeps serving from what it has already loaded and queues each sale. When the connection returns the queue is sent automatically and the banner clears.</p>
+<ul>
+  <li>Do not close the browser or shut the till down while the banner is showing — the queue lives on that device.</li>
+  <li>Gift vouchers are unavailable offline.</li>
+  <li>Stock figures and prices are as they were when the connection dropped.</li>
+</ul>
+
+<h2>7.14 Refunds, voids and reprints</h2>
+<p>Completed sales live in <span class="ui">Order List</span>. Find the order (scan the barcode on the receipt if you enabled it), then reprint the receipt, void it, or refund the whole sale or individual lines. Refunded stock goes back on hand automatically. Voids and refunds need the right permission — normally supervisor and above — and every one is listed in the <em>Discounts &amp; Voids</em> report and the audit trail.</p>
+
+<!-- ============ 8 ============ -->
+<h1 class="part"><span class="num">Chapter 8</span>The weighing scale station</h1>
+<p class="lede">Deli, butchery and produce: weigh once at the counter, scan at the lane.</p>
+
+<h2>8.1 Printing a weight label</h2>
+<ol class="steps">
+  <li>Open <span class="ui">Weighing Scale</span>. Only products marked <em>sold by weight</em> appear here.</li>
+  <li>Find the item with <span class="ui">Search by name, barcode or PLU…</span>.</li>
+  <li>Put the goods on the scale and enter the weight — typed, keyed on the on-screen keypad, or sent straight from a USB scale.</li>
+  <li>Optionally set <strong>Pack Date</strong> and <strong>Expiration Date</strong> for fresh goods.</li>
+  <li>Press <span class="ui">Generate &amp; Print Label</span>. The label prints with the weight, the price and a barcode.</li>
+</ol>
+
+<h2>8.2 Active labels</h2>
+<p>The <strong>Active Labels</strong> panel lists every printed label not yet sold, with its weight and total price. Each can be reprinted (if the sticker is damaged) or voided (if the goods went back). Labels disappear from the list once the lane sells them.</p>
+<div class="box"><div class="t">End-of-day habit</div>Void the labels still showing at close for goods that were never sold, so tomorrow's list is clean.</div>
+
+<h2>8.3 Managing which products are weighed</h2>
+<p><span class="ui">Manage Products</span> on the same page lets you search the catalogue and switch <em>sold by weight</em> and the unit on or off without leaving the counter.</p>
+
+<!-- ============ 9 ============ -->
+<h1 class="part"><span class="num">Chapter 9</span>Cash control and end of day</h1>
+<p class="lede">A shift is the accounting unit of the lane: one cashier, one drawer, one count.</p>
+
+<h2>9.1 Opening a shift</h2>
+<ol class="steps">
+  <li>Open <span class="ui">Cash Mgmt</span> and identify yourself with your PIN.</li>
+  <li>Choose the <strong>Branch/Location</strong> and the <strong>Station / Till Number</strong>, then Continue.</li>
+  <li>Count the float into the drawer and enter it as the <strong>opening cash</strong>. Submit.</li>
+</ol>
+<p>The lane unlocks. The active shift panel shows Opening Cash, cash sales, payouts and <strong>Expected Cash</strong>, calculated as <em>Opening + Cash Sales − Payouts</em>.</p>
+
+<h2>9.2 Money leaving the drawer during the shift</h2>
+<p>Any cash taken out — paying a supplier, petty cash, a bank drop — is recorded with <span class="ui">Add Payout</span>: the amount and a <strong>reason</strong>, which is required. Payouts are listed on the shift and subtracted from expected cash. Cash coming in is simply the cash you take in sales.</p>
+
+<h2>9.3 Closing the shift</h2>
+<ol class="steps">
+  <li>Press <span class="ui">Close Shift</span>.</li>
+  <li>Count the drawer and enter what is actually there. Enter the denomination breakdown (notes and coins) if your store requires one, then <span class="ui">Confirm &amp; Close</span>.</li>
+  <li>The screen shows <strong>Expected from System</strong> against <strong>Actual Cash Counted</strong> and the difference — over or short.</li>
+</ol>
+<p>The count is entered before the variance is settled, so cashiers cannot count "towards" the expected figure. Investigate anything beyond your tolerance the same day, while people still remember the shift.</p>
+
+<h2>9.4 Manager close and stuck shifts</h2>
+<p>A manager or admin can close a shift for a cashier who has gone home — the close dialog shows an admin banner. If a till crashed mid-shift and the shift will not close, an admin can use <span class="ui">Force Close Stuck Session</span>.</p>
+
+<h2>9.5 The end-of-day report</h2>
+<p>After closing, the EOD detail breaks the shift down — cash sales, card, credit, split components, voucher takings, refunds, payouts, opening float and expected cash. <span class="ui">Print EOD Report</span> for the cash bag, or download it for the office.</p>
+
+<!-- ============ 10 ============ -->
+<h1 class="part"><span class="num">Chapter 10</span>Prices and promotions</h1>
+<p class="lede">Move a whole category's prices in one pass, and run date-limited specials without touching the base price.</p>
+
+<h2>10.1 Bulk price updates</h2>
+<ol class="steps">
+  <li>Open <span class="ui">Price Manager</span> → <em>Bulk Update</em>.</li>
+  <li><strong>Pick what to update:</strong> <span class="ui">All Products</span>, <span class="ui">By Category</span> or <span class="ui">Specific Products</span>.</li>
+  <li>Choose the adjustment: a percentage, a markup on cost, or a fixed amount.</li>
+  <li>Choose rounding — none, or to the nearest $5, $10, $50, $100 or $1000 — so shelf prices stay tidy.</li>
+  <li>Press <span class="ui">Preview changes</span> and read the old-versus-new list carefully.</li>
+  <li>Apply. Every change is written to the <em>History</em> tab with who did it and when.</li>
+</ol>
+
+<h2>10.2 Promotions</h2>
+<p><span class="ui">Promotions</span> → <span class="ui">New Promotion</span>: pick the product, the promo price and the start and end date-and-time. The list shows the regular price struck through beside the promo price, and whether the promotion is upcoming, active or expired. While it is active the lane charges the promo price automatically; when it expires the price returns on its own with no action needed.</p>
+
+<!-- ============ 11 ============ -->
+<h1 class="part"><span class="num">Chapter 11</span>Customers, credit and gift vouchers</h1>
+
+<h2>11.1 Customer records</h2>
+<p><span class="ui">Customers</span> holds name, phone, email, address and notes, each with a loyalty card number, purchase history and account balance. Customers can be created at the lane while serving.</p>
+
+<h2>11.2 Selling on account</h2>
+<p>A <strong>Credit</strong> sale (or the on-account leg of a split) posts the amount to the customer's balance in <span class="ui">Receivables</span>, where you can see who owes what and record payments as they come in. Only sell on account to customers you have agreed terms with.</p>
+
+<h2>11.3 Gift vouchers</h2>
+<p><span class="ui">Gift Vouchers</span> issues and manages vouchers: each has a code, a balance, and an optional expiry, and can be cancelled. Redemption happens at the lane (§7.11). A voucher can be spent across several visits until the balance runs out, and a refund can be issued as a new voucher rather than cash.</p>
+
+<!-- ============ 12 ============ -->
+<h1 class="part"><span class="num">Chapter 12</span>Stock control after opening</h1>
+
+<h2>12.1 Counts and adjustments</h2>
+<p>Stock drifts — breakage, theft, miskeyed deliveries. Count a section at a time (a full-store count means closing the doors) and post the count so the system figure matches the shelf. Every adjustment records the staff member and reason, and the <em>Stock Variance</em> report shows where the losses are concentrated.</p>
+
+<h2>12.2 Multi-branch stock</h2>
+<p>With Locations in use, each branch carries its own stock figures and its own <em>Transfer History</em>. Moving goods between branches is recorded as a transfer with From Branch, To Branch, Product, Quantity and Notes — never as an adjustment at both ends, which loses the audit trail.</p>
+
+<h2>12.3 Batches and expiry</h2>
+<p>Where batch/expiry tracking is enabled, purchase bills capture the lot number and expiry date, which is what lets you find affected stock quickly in a recall and rotate short-dated goods.</p>
+
+<h2>12.4 Low stock in practice</h2>
+<p>Combine three things: the running-low badges on the Products page for a quick look, the emailed low-stock alert for the buyer's morning routine, and the <em>Inventory</em> and <em>Product Sales</em> reports for what actually sells.</p>
+
+<!-- ============ 13 ============ -->
+<h1 class="part"><span class="num">Chapter 13</span>Reports and the audit trail</h1>
+<p class="lede">Every report takes a date range: Today, Yesterday, Last 7 Days, Last 30 Days or a custom From/To. Many can be exported to CSV.</p>
+
+<table>
+  <tr><th style="width:42mm">Report</th><th>What it answers</th></tr>
+  <tr><td>Daily Sales</td><td>Orders, gross, subtotal, tax and discount for each trading day.</td></tr>
+  <tr><td>Payment Methods</td><td>How customers paid — cash, card, credit, split, voucher.</td></tr>
+  <tr><td>Product Sales</td><td>Units and value by product. Your best and worst sellers.</td></tr>
+  <tr><td>Category Sales</td><td>Performance by department — produce against grocery against household.</td></tr>
+  <tr><td>Hourly Sales</td><td>Trade by hour of day. Use it to roster cashiers where the queues actually are.</td></tr>
+  <tr><td>Inventory</td><td>Stock on hand and its value.</td></tr>
+  <tr><td>Stock Variance</td><td>Counted against expected. The shrinkage report.</td></tr>
+  <tr><td>Staff / Sales by Staff</td><td>Sales, items and averages per cashier.</td></tr>
+  <tr><td>Discounts &amp; Voids</td><td>Every discount, void and who approved it. Review this weekly.</td></tr>
+  <tr><td>Profit Snapshot</td><td>Margin based on cost prices.</td></tr>
+  <tr><td>GCT / Tax</td><td>Tax collected, laid out for filing. Exportable.</td></tr>
+  <tr><td>Service Fee</td><td>Service charge totals where used.</td></tr>
+  <tr><td>Register Report</td><td>Managers and admins: cash, card, credit, split, refunds, payouts, opening float and expected cash per register. Printable.</td></tr>
+</table>
+
+<h2>13.1 Audit trail</h2>
+<p><span class="ui">Audit Trail</span> records who did what and when across the system — price changes, voids, refunds, setting changes, staff edits. When a figure looks wrong, start here.</p>
+
+<!-- ============ 14 ============ -->
+<h1 class="part"><span class="num">Chapter 14</span>Housekeeping: backups, plan and support</h1>
+
+<h2>14.1 Backups</h2>
+<p><span class="ui">Backup</span> exports a copy of your business data and can restore it. Take a backup before any bulk operation — a large import, a bulk price change, a catalogue clean-up.</p>
+<div class="box warn"><div class="t">Restores replace</div>A restore replaces your current data with the backup's contents. Use it deliberately, not as an undo button for a single mistake.</div>
+
+<h2>14.2 Subscription and add-ons</h2>
+<p><span class="ui">Plan</span> shows your subscription, renewal date and paid add-ons, and is where you upgrade when the catalogue or staff list outgrows your plan.</p>
+
+<h2>14.3 Getting help</h2>
+<p><span class="ui">Support</span> holds step-by-step guides and raises a ticket with the NEXXUS team. Include the till, the time and the order number — it turns a day of back-and-forth into one reply.</p>
+
+<!-- ============ 15 ============ -->
+<h1 class="part"><span class="num">Chapter 15</span>Troubleshooting</h1>
+
+<table>
+  <tr><th style="width:56mm">Symptom</th><th>What to do</th></tr>
+  <tr><td>Scanning does nothing</td><td>Click into the scan box to restore focus. Still nothing: scan into a text box elsewhere to confirm the scanner types and presses Enter; re-seat the USB or re-pair Bluetooth.</td></tr>
+  <tr><td>"No product found"</td><td>The barcode is not on any product. Add it to the product record (Products → find the item → edit the barcode), or sell by SKU/name search meanwhile.</td></tr>
+  <tr><td>The lane asks which product every time</td><td>Two products share that barcode. Fix the duplicate in Products.</td></tr>
+  <tr><td>"No Open Shift"</td><td>Nobody has opened the drawer for this till. Cash Mgmt → open a shift with the float.</td></tr>
+  <tr><td>Cashier cannot remove a line</td><td>Working as designed with Supermarket Mode security on — a manager, supervisor or admin PIN is required.</td></tr>
+  <tr><td>Discount button asks for a PIN</td><td>Always the case. Discounts need managerial approval and the approver is recorded.</td></tr>
+  <tr><td>Scale label will not scan</td><td>Check the label is not already sold or voided, and that the barcode is not creased or smudged. Reprint from Active Labels.</td></tr>
+  <tr><td>Weight item cannot be held</td><td>Correct — bills containing scale labels cannot be parked. Complete or clear the sale.</td></tr>
+  <tr><td>Receipt prints tiny, wide or cut off</td><td>Receipt Paper Size in Settings does not match the printer (58 vs 80&nbsp;mm), or the browser print dialog has the wrong paper size selected.</td></tr>
+  <tr><td>Receipts do not print automatically</td><td>Turn on <em>Auto-print receipts (silent printing)</em> and allow the browser to print without a dialog for this site.</td></tr>
+  <tr><td>Offline banner will not clear</td><td>The device has no connection. Check the network; the queued sales send themselves once it returns. Do not close the browser.</td></tr>
+  <tr><td>Cash count is short</td><td>Check payouts were all recorded with reasons, look for voids after payment in the Discounts &amp; Voids report, and check the audit trail for the shift.</td></tr>
+  <tr><td>Cannot add a new product</td><td>You are at the plan's product limit. Archive discontinued lines or upgrade the plan.</td></tr>
+  <tr><td>Stock figure is obviously wrong</td><td>Count the section and post an adjustment; then check whether the delivery was received as a confirmed purchase bill.</td></tr>
+</table>
+
+<!-- ============ APPENDIX A ============ -->
+<h1 class="part"><span class="num">Appendix A</span>Permission matrix</h1>
+<p class="lede">The standard roles and what they may do. Roles are editable under Settings → Roles; Admin and Owner always bypass every check.</p>
+<table class="compact">
+  <tr><th>Permission</th><th>Admin</th><th>Manager</th><th>Supervisor</th><th>Cashier</th><th>Inv. Clerk</th><th>Accountant</th></tr>
+  <tr><td>Sell at the POS</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td><td></td></tr>
+  <tr><td>Void a sale</td><td>✓</td><td>✓</td><td>✓</td><td></td><td></td><td></td></tr>
+  <tr><td>Apply a discount</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td><td></td></tr>
+  <tr><td>Refund</td><td>✓</td><td>✓</td><td>✓</td><td></td><td></td><td></td></tr>
+  <tr><td>Open the cash drawer</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td><td></td></tr>
+  <tr><td>View orders</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+  <tr><td>Manage orders</td><td>✓</td><td>✓</td><td>✓</td><td></td><td></td><td></td></tr>
+  <tr><td>View inventory</td><td>✓</td><td>✓</td><td>✓</td><td></td><td>✓</td><td>✓</td></tr>
+  <tr><td>Manage inventory</td><td>✓</td><td>✓</td><td></td><td></td><td>✓</td><td></td></tr>
+  <tr><td>View reports</td><td>✓</td><td>✓</td><td>✓</td><td></td><td>✓</td><td>✓</td></tr>
+  <tr><td>Export reports</td><td>✓</td><td>✓</td><td>✓</td><td></td><td></td><td>✓</td></tr>
+  <tr><td>View customers</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td><td>✓</td></tr>
+  <tr><td>Manage customers</td><td>✓</td><td>✓</td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>Open a cash session</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td><td></td></tr>
+  <tr><td>Close a cash session</td><td>✓</td><td>✓</td><td>✓</td><td></td><td></td><td></td></tr>
+  <tr><td>Manage payouts</td><td>✓</td><td>✓</td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>Use the weighing scale</td><td>✓</td><td>✓</td><td>✓</td><td></td><td>✓</td><td></td></tr>
+  <tr><td>Manage prices</td><td>✓</td><td>✓</td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>Manage gift vouchers</td><td>✓</td><td>✓</td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>View staff</td><td>✓</td><td>✓</td><td></td><td></td><td></td><td>✓</td></tr>
+  <tr><td>Manage staff</td><td>✓</td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>View settings</td><td>✓</td><td>✓</td><td></td><td></td><td></td><td>✓</td></tr>
+  <tr><td>Manage settings</td><td>✓</td><td></td><td></td><td></td><td></td><td></td></tr>
+</table>
+
+<!-- ============ APPENDIX B ============ -->
+<h1 class="part"><span class="num">Appendix B</span>Daily, weekly and monthly routines</h1>
+
+<h2>Opening the store</h2>
+<ul>
+  <li>Sign in on each till and confirm the lane loads.</li>
+  <li>Each cashier opens a shift with a counted float, on their own station number.</li>
+  <li>Check the printer has paper and prints a test receipt.</li>
+  <li>Read the overnight low-stock alert and start the day's ordering.</li>
+</ul>
+
+<h2>During the day</h2>
+<ul>
+  <li>Record every cash removal as a payout, with a reason, as it happens.</li>
+  <li>Receive deliveries as purchase bills the same day they arrive.</li>
+  <li>Void unsold scale labels rather than leaving them active.</li>
+</ul>
+
+<h2>Closing the store</h2>
+<ul>
+  <li>Every cashier closes their shift with a counted drawer; investigate variances now, not tomorrow.</li>
+  <li>Print or download the EOD report for the cash bag.</li>
+  <li>Glance at Daily Sales and Payment Methods against the money in hand.</li>
+</ul>
+
+<h2>Weekly</h2>
+<ul>
+  <li>Read the <em>Discounts &amp; Voids</em> report line by line.</li>
+  <li>Count one or two sections and post adjustments.</li>
+  <li>Check <em>Category Sales</em> and <em>Hourly Sales</em> for rostering and space decisions.</li>
+  <li>Confirm supplier bills are entered and Payables matches the statements.</li>
+</ul>
+
+<h2>Monthly</h2>
+<ul>
+  <li>Export the GCT/Tax report for filing.</li>
+  <li>Review <em>Profit Snapshot</em> and <em>Stock Variance</em> by department.</li>
+  <li>Take a backup, and archive products you no longer stock.</li>
+  <li>Review staff, roles and PINs — remove leavers.</li>
+</ul>
+
+<!-- ============ APPENDIX C ============ -->
+<h1 class="part"><span class="num">Appendix C</span>Cashier quick card</h1>
+<p class="lede">Print this page and keep it at the lane.</p>
+
+<table>
+  <tr><th style="width:60mm">To do this</th><th>Do that</th></tr>
+  <tr><td>Start selling</td><td>Enter your PIN → open a shift with the counted float → choose your station.</td></tr>
+  <tr><td>Add an item</td><td>Scan it. Or type the barcode/SKU and press Enter.</td></tr>
+  <tr><td>Six of the same item</td><td>Press <strong>6</strong> on the keypad, then scan one.</td></tr>
+  <tr><td>Change a quantity</td><td>+ / − on the line, or tap the line, key the number, <span class="ui">Set Quantity</span>.</td></tr>
+  <tr><td>Loose goods</td><td>Scan the scale label. No label? Select the item and enter the weight.</td></tr>
+  <tr><td>Check a price</td><td><span class="ui">Price Check</span> — it does not touch the bill.</td></tr>
+  <tr><td>Customer nips back for an item</td><td><span class="ui">Hold</span>, serve the next customer, then <span class="ui">Recall</span>.</td></tr>
+  <tr><td>Discount</td><td><span class="ui">Discount</span> → call a manager for the PIN → percent or fixed → apply.</td></tr>
+  <tr><td>Remove a line</td><td>X on the line — a manager PIN may be required.</td></tr>
+  <tr><td>Cash</td><td><span class="ui">Cash</span> → key what they handed you → read <strong>Change Due</strong> → checkout.</td></tr>
+  <tr><td>Card</td><td><span class="ui">Card</span> → Debit or Credit → take payment on the terminal → checkout.</td></tr>
+  <tr><td>Part cash, part card</td><td><span class="ui">Split</span> → enter each amount → checkout.</td></tr>
+  <tr><td>Gift voucher</td><td>Enter the code → <span class="ui">Apply</span> → take the remainder as normal.</td></tr>
+  <tr><td>Reprint a receipt</td><td><span class="ui">Print Receipt</span> on the Sale Complete screen, or find the sale in Order List.</td></tr>
+  <tr><td>Step away</td><td><span class="ui">Lock</span>. Handing over? <span class="ui">Switch User</span>.</td></tr>
+  <tr><td>Finish your shift</td><td><span class="ui">Close Shift</span> → count the drawer → enter the total → confirm.</td></tr>
+  <tr><td>Screen says offline</td><td>Keep serving. Do not close the browser. It will sync on its own.</td></tr>
+</table>
+
+<!-- ============ APPENDIX D ============ -->
+<h1 class="part"><span class="num">Appendix D</span>Glossary</h1>
+<table class="compact">
+  <tr><td style="width:44mm"><strong>Bill / current bill</strong></td><td>The sale in progress on the lane screen.</td></tr>
+  <tr><td><strong>Blind count</strong></td><td>Counting the drawer before seeing what the system expects, so the count is honest.</td></tr>
+  <tr><td><strong>Composite</strong></td><td>A product built from other products — a hamper or multipack.</td></tr>
+  <tr><td><strong>EAN-13 weight label</strong></td><td>The barcode printed by a scale, starting with 2, carrying the product and its weight.</td></tr>
+  <tr><td><strong>Float</strong></td><td>The change put in the drawer at the start of a shift.</td></tr>
+  <tr><td><strong>Held bill</strong></td><td>A sale parked so the lane can serve someone else.</td></tr>
+  <tr><td><strong>Override</strong></td><td>A manager PIN authorising something a cashier may not do alone.</td></tr>
+  <tr><td><strong>Payout</strong></td><td>Cash taken out of the drawer for a reason other than change.</td></tr>
+  <tr><td><strong>PLU</strong></td><td>Price look-up code, used to find loose goods quickly.</td></tr>
+  <tr><td><strong>Purchase bill</strong></td><td>A supplier invoice recorded in NEXXUS. Confirming it receives stock.</td></tr>
+  <tr><td><strong>Purchase order</strong></td><td>What you asked the supplier for. Moves no stock.</td></tr>
+  <tr><td><strong>Shift / cash session</strong></td><td>One cashier's drawer, from float to final count.</td></tr>
+  <tr><td><strong>Shrinkage</strong></td><td>Stock lost to theft, damage or error — visible in Stock Variance.</td></tr>
+  <tr><td><strong>Station</strong></td><td>The till number chosen when a shift is opened.</td></tr>
+  <tr><td><strong>Tax inclusive / exclusive</strong></td><td>Whether the shelf price already contains GCT, or has it added at the till.</td></tr>
+  <tr><td><strong>Tender</strong></td><td>A way of paying: cash, card, credit, voucher.</td></tr>
+  <tr><td><strong>Variance</strong></td><td>The difference between expected and counted — over or short.</td></tr>
+</table>
+
+<div style="margin-top:14mm; padding-top:4mm; border-top:1pt solid #e2e8f0; color:#94a3b8; font-size:8.5pt;">
+  NEXXUS POS — Supermarket Operations Manual · Edition 1.0 · August 2026.
+  Screens and labels described here reflect the Supermarket layouts of the NEXXUS POS web application.
+</div>
+
+</body>
+</html>
