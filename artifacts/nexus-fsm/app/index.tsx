@@ -72,11 +72,26 @@ export default function JobQueueScreen() {
       ]}
     >
       <View style={styles.cardTop}>
-        <Text style={[styles.woNumber, { color: colors.mutedForeground }]}>
+        <Text
+          style={[
+            styles.woNumber,
+            { color: colors.primary, textShadowColor: 'rgba(45, 212, 191, 0.55)' },
+          ]}
+          numberOfLines={1}
+        >
           {item.workOrderNumber}
         </Text>
         <PriorityChip priority={item.priority} />
       </View>
+      <Text
+        style={[
+          styles.customerName,
+          { color: colors.foreground, textShadowColor: 'rgba(244, 247, 251, 0.35)' },
+        ]}
+        numberOfLines={1}
+      >
+        {item.customerName ?? 'Walk-in'}
+      </Text>
       <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
         {item.itemDescription}
       </Text>
@@ -91,12 +106,6 @@ export default function JobQueueScreen() {
             color={item.fieldPhase === 'done' ? '#22C55E' : colors.accent}
           />
         ) : null}
-        <View style={styles.cardMeta}>
-          <Feather name="user" size={12} color={colors.mutedForeground} />
-          <Text style={[styles.metaText, { color: colors.mutedForeground }]} numberOfLines={1}>
-            {item.customerName ?? 'Walk-in'}
-          </Text>
-        </View>
         {(item.appointmentDate ?? item.promisedDate) ? (
           <View style={styles.cardMeta}>
             <Feather name="clock" size={12} color={colors.mutedForeground} />
@@ -256,8 +265,24 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  woNumber: { fontSize: 12, fontFamily: 'Inter_500Medium' },
-  cardTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold' },
+  woNumber: {
+    fontSize: 17,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.3,
+    flexShrink: 1,
+    marginRight: 8,
+    // Illuminated: soft glow around the text so it reads at arm's length.
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
+  customerName: {
+    fontSize: 19,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.2,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+  },
+  cardTitle: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
   cardProblem: { fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 18 },
   cardBottom: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' },
   cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 },
