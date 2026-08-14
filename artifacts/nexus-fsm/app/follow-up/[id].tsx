@@ -25,9 +25,9 @@ import { canEditWorkOrders, createFollowUpVisit, getJob, listStaff } from '@/lib
 import {
   APPOINTMENT_SLOTS,
   DEFAULT_APPOINTMENT_SLOT_ID,
-  isValidDateInput,
   slotToRange,
 } from '@workspace/api-client-react';
+import DatePicker from '@/components/DatePicker';
 
 export default function FollowUpScreen() {
   const colors = useColors();
@@ -61,8 +61,7 @@ export default function FollowUpScreen() {
 
   // Require a real calendar date (rejects e.g. 2026-02-31, which JS would
   // silently roll over into March).
-  const dateValid = isValidDateInput(date);
-  const canSubmit = dateValid;
+  const canSubmit = !!date;
 
   const submitMutation = useMutation({
     mutationFn: () => {
@@ -135,10 +134,9 @@ export default function FollowUpScreen() {
           The assigned technicians and the customer are emailed as soon as you schedule the visit.
         </Text>
 
-        <Field label="Visit date (YYYY-MM-DD) *" value={date} onChange={setDate} colors={colors} placeholder="e.g. 2026-08-15" />
-        {!!date.trim() && !dateValid && (
-          <Text style={styles.fieldError}>Use the format YYYY-MM-DD.</Text>
-        )}
+        <Text style={[styles.label, { color: colors.mutedForeground }]}>Visit date *</Text>
+        <DatePicker value={date} onChange={setDate} />
+        <View style={{ height: 12 }} />
         <Text style={[styles.label, { color: colors.mutedForeground }]}>Arrival window *</Text>
         <View style={styles.chipRow}>
           {APPOINTMENT_SLOTS.map((s) => (

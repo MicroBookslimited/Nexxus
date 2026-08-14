@@ -23,6 +23,9 @@ export type Vendor = {
   phone: string | null;
   email: string | null;
   address: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
   taxId: string | null;
   currency: string;
   paymentTermsDays: number | null;

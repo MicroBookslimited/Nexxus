@@ -26,6 +26,9 @@ export const vendorsTable = pgTable("vendors", {
   phone: text("phone"),
   email: text("email"),
   address: text("address"),
+  city: text("city"),
+  state: text("state"),       // parish in Jamaica
+  postalCode: text("postal_code"),
   taxId: text("tax_id"),                                       // TRN / VAT number
   currency: text("currency").notNull().default("JMD"),         // supplier default currency
   paymentTermsDays: integer("payment_terms_days").default(30), // default credit days

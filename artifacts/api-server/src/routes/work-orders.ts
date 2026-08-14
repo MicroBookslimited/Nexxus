@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, lte, lt, desc, sql, inArray, isNull } from "drizzle-orm";
+import { and, eq, gte, gt, lte, lt, desc, sql, inArray, isNull } from "drizzle-orm";
 import { createHmac, randomInt } from "crypto";
 import { hashManagerCode, MANAGER_CODE_TTL_MINUTES } from "../lib/manager-code";
 import {
@@ -1610,6 +1610,65 @@ router.post("/work-orders/:id/follow-up", async (req, res): Promise<void> => {
 });
 
 /* ─── Dashboard stats ─────────────────────────────────────────────────────────── */
+
+/* ─── Appointment conflict check ──────────────────────────────────────────── */
+/**
+ * GET /api/work-order-appointments/conflicts?staffIds=1,2&start=ISO&end=ISO
+ *
+ * Returns any appointments that overlap the given window for the supplied
+ * staff members. Never blocks a booking — only used to show warnings on the
+ * client. Requires x-staff-id (same visibility rules as the calendar feed).
+ */
+router.get("/work-order-appointments/conflicts", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const callerStaffId = getStaffId(req as never);
+  if (callerStaffId == null) { res.status(403).json({ error: "x-staff-id header required" }); return; }
+
+  const staffIdsRaw = String(req.query["staffIds"] ?? "");
+  const startRaw = String(req.query["start"] ?? "");
+  const endRaw   = String(req.query["end"]   ?? "");
+
+  const staffIds = staffIdsRaw.split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  const start = startRaw ? new Date(startRaw) : null;
+  const end   = endRaw   ? new Date(endRaw)   : null;
+
+  if (!staffIds.length || !start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) {
+    res.status(400).json({ error: "staffIds, start, and end are required" });
+    return;
+  }
+
+  // Appointments that overlap [start, end) and involve any of the given staff.
+  const rows = await db
+    .select({
+      id: workOrderAppointmentsTable.id,
+      workOrderId: workOrderAppointmentsTable.workOrderId,
+      staffId: workOrderAppointmentsTable.staffId,
+      staffIds: workOrderAppointmentsTable.staffIds,
+      startTime: workOrderAppointmentsTable.startTime,
+      endTime: workOrderAppointmentsTable.endTime,
+      appointmentType: workOrderAppointmentsTable.appointmentType,
+      status: workOrderAppointmentsTable.status,
+    })
+    .from(workOrderAppointmentsTable)
+    .where(
+      and(
+        eq(workOrderAppointmentsTable.tenantId, tenantId),
+        // Overlaps when start < appt.endTime AND end > appt.startTime
+        lt(workOrderAppointmentsTable.startTime, end),
+        gt(workOrderAppointmentsTable.endTime, start),
+        sql`(
+          ${workOrderAppointmentsTable.staffId} = ANY(${sql.raw(`ARRAY[${staffIds.join(",")}]::int[]`)})
+          OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(${workOrderAppointmentsTable.staffIds}) elem
+            WHERE elem::int = ANY(${sql.raw(`ARRAY[${staffIds.join(",")}]::int[]`)})
+          )
+        )`,
+      )
+    );
+
+  res.json(rows);
+});
 
 /* ─── Aggregated appointments (calendar feed) ─────────────────────────────── */
 router.get("/work-order-appointments", async (req, res): Promise<void> => {

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { emailError, phoneError } from "@workspace/api-client-react";
 import {
   useListCustomers,
   useCreateCustomer,
@@ -556,6 +557,7 @@ export function Customers() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<GetCustomerResponse | null>(null);
   const [form, setForm] = useState<CustomerForm>(emptyForm());
+  const [formTouched, setFormTouched] = useState<{ phone?: boolean; email?: boolean }>({});
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [historyCustomer, setHistoryCustomer] = useState<GetCustomerResponse | null>(null);
   const [cardCustomer, setCardCustomer] = useState<GetCustomerResponse | null>(null);
@@ -565,11 +567,13 @@ export function Customers() {
   const openAdd = () => {
     setEditingCustomer(null);
     setForm(emptyForm());
+    setFormTouched({});
     setDialogOpen(true);
   };
 
   const openEdit = (c: GetCustomerResponse) => {
     setEditingCustomer(c);
+    setFormTouched({});
     setForm({
       name: c.name,
       email: c.email ?? "",
@@ -587,9 +591,17 @@ export function Customers() {
     setDialogOpen(true);
   };
 
+  const custPhoneErr = formTouched.phone ? phoneError(form.phone) : null;
+  const custEmailErr = formTouched.email ? emailError(form.email) : null;
+
   const handleSave = () => {
     if (!form.name.trim()) {
       toast({ title: "Name is required", variant: "destructive" });
+      return;
+    }
+    setFormTouched({ phone: true, email: true });
+    if (phoneError(form.phone) || emailError(form.email)) {
+      toast({ title: "Please fix the highlighted fields", variant: "destructive" });
       return;
     }
 
@@ -769,11 +781,26 @@ export function Customers() {
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
                 <Label>Email</Label>
-                <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="jane@example.com" />
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  onBlur={() => setFormTouched(t => ({ ...t, email: true }))}
+                  placeholder="jane@example.com"
+                  className={custEmailErr ? "border-destructive" : ""}
+                />
+                {custEmailErr && <p className="text-xs text-destructive">{custEmailErr}</p>}
               </div>
               <div className="grid gap-1.5">
                 <Label>Phone</Label>
-                <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+1 555 000 0000" />
+                <Input
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  onBlur={() => setFormTouched(t => ({ ...t, phone: true }))}
+                  placeholder="876-555-0000"
+                  className={custPhoneErr ? "border-destructive" : ""}
+                />
+                {custPhoneErr && <p className="text-xs text-destructive">{custPhoneErr}</p>}
               </div>
             </div>
             <div className="grid gap-1.5">

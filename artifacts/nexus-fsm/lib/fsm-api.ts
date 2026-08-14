@@ -297,6 +297,19 @@ export interface MaterialHandover {
 }
 
 /** Returns awaiting a signature. Technicians see only their own. */
+/** Create the first appointment on a freshly-created work order. */
+export function createWorkOrderAppointment(
+  staffId: number,
+  jobId: number,
+  body: { startTime: string; endTime: string; staffId?: number },
+): Promise<{ id: number; startTime: string; endTime: string }> {
+  return request(`/api/work-orders/${jobId}/appointments`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
 export function listMaterialHandovers(
   staffId: number,
   status: 'pending' | 'signed' | 'all' = 'pending',
