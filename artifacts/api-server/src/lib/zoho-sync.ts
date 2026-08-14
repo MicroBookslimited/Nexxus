@@ -13,7 +13,7 @@
  */
 
 import crypto from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import {
   db,
   customersTable,
