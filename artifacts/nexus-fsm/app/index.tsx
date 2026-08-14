@@ -19,6 +19,12 @@ import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
 import { isAdminRole, listJobs, type FsmJob } from '@/lib/fsm-api';
 
+/** Warning triangle (issues & exceptions) and money-collectible colours. */
+const EXCEPTION_COLOR = '#F59E0B';
+const MONEY_COLOR = '#22C55E';
+
+const money = (n: number) => `$${(Math.round(n * 100) / 100).toFixed(2)}`;
+
 export default function JobQueueScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -81,7 +87,25 @@ export default function JobQueueScreen() {
         >
           {item.workOrderNumber}
         </Text>
-        <PriorityChip priority={item.priority} />
+        <View style={styles.cardFlags}>
+          {item.exceptions?.length ? (
+            <Feather
+              testID={`job-exception-${item.id}`}
+              name="alert-triangle"
+              size={16}
+              color={EXCEPTION_COLOR}
+            />
+          ) : null}
+          {item.amountDue > 0 ? (
+            <Feather
+              testID={`job-money-${item.id}`}
+              name="dollar-sign"
+              size={16}
+              color={MONEY_COLOR}
+            />
+          ) : null}
+          <PriorityChip priority={item.priority} />
+        </View>
       </View>
       <Text
         style={[
@@ -98,6 +122,26 @@ export default function JobQueueScreen() {
       <Text style={[styles.cardProblem, { color: colors.mutedForeground }]} numberOfLines={2}>
         {item.problemDescription}
       </Text>
+      {item.exceptions?.length || item.amountDue > 0 ? (
+        <View style={styles.cardAlerts}>
+          {item.exceptions?.length ? (
+            <View style={styles.cardMeta}>
+              <Feather name="alert-triangle" size={12} color={EXCEPTION_COLOR} />
+              <Text style={[styles.alertText, { color: EXCEPTION_COLOR }]} numberOfLines={1}>
+                {item.exceptions.join(' · ')}
+              </Text>
+            </View>
+          ) : null}
+          {item.amountDue > 0 ? (
+            <View style={styles.cardMeta}>
+              <Feather name="dollar-sign" size={12} color={MONEY_COLOR} />
+              <Text style={[styles.alertText, { color: MONEY_COLOR }]}>
+                {money(item.amountDue)} to collect
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
       <View style={styles.cardBottom}>
         <StatusChip status={item.status} serviceChannel={item.serviceChannel} />
         {item.assignmentStatus === 'accepted' && item.fieldPhase !== 'idle' ? (
@@ -265,6 +309,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardFlags: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardAlerts: { flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
+  alertText: { fontSize: 12, fontFamily: 'Inter_600SemiBold', flexShrink: 1 },
   woNumber: {
     fontSize: 13,
     fontFamily: 'Inter_700Bold',

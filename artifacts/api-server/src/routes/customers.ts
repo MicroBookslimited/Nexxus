@@ -16,6 +16,7 @@ import {
   GetCustomerOrdersResponse,
 } from "@workspace/api-zod";
 import { verifyTenantToken } from "./saas-auth";
+import { queueCustomerPush, pruneMappings } from "../lib/zoho-sync";
 
 const router: IRouter = Router();
 
@@ -207,6 +208,10 @@ router.post("/customers", async (req, res): Promise<void> => {
     }).catch(() => {});
   }
 
+  // Mirror the new customer into Zoho Books (no-op unless the tenant has an
+  // active connection with auto-sync on). Fire-and-forget: never blocks the POS.
+  if (customer) queueCustomerPush(tenantId, customer.id);
+
   res.status(201).json(GetCustomerResponse.parse(normalizeCustomer(customer)));
 });
 
@@ -367,6 +372,9 @@ router.put("/customers/:id", async (req, res): Promise<void> => {
     await syncOpeningBalanceAr(tenantId, customer);
   }
 
+  // Mirror the edit into Zoho Books (no-op when Zoho isn't connected).
+  queueCustomerPush(tenantId, customer.id);
+
   res.json(UpdateCustomerResponse.parse(normalizeCustomer(customer)));
 });
 
@@ -390,6 +398,10 @@ router.delete("/customers/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Customer not found" });
     return;
   }
+
+  // Forget the Zoho link (the Zoho contact itself is left alone — deleting
+  // accounting contacts is the tenant's call, not a side effect of the POS).
+  await pruneMappings(tenantId, [customer.id]).catch(() => undefined);
 
   res.sendStatus(204);
 });

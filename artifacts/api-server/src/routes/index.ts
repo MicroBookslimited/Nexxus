@@ -57,6 +57,7 @@ import supplierReturnsRouter from "./supplier-returns";
 import overrideCardsRouter from "./override-cards";
 import giftVouchersRouter from "./gift-vouchers";
 import shopifyRouter from "./shopify";
+import zohoRouter from "./zoho";
 import superadminAnalyticsRouter from "./superadmin-analytics";
 import supportTicketsRouter from "./support-tickets";
 import layawaysRouter from "./layaways";
@@ -129,6 +130,7 @@ router.use(productBatchesRouter);
 router.use(supplierReturnsRouter);
 router.use(overrideCardsRouter);
 router.use(shopifyRouter);
+router.use(zohoRouter);
 router.use(supportTicketsRouter);
 
 export default router;

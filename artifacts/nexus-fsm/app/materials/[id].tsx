@@ -134,11 +134,31 @@ export default function MaterialsScreen() {
             onToggle={() => setOpenId(openId === a.id ? null : a.id)}
             readOnly={readOnly}
             contentLocked={signedOff || notStarted}
+            allowDirectReturn={admin}
             saving={patchMutation.isPending}
             onPatch={(body) => patchMutation.mutate({ allocationId: a.id, body })}
           />
         ))}
       </ScrollView>
+
+      {!readOnly && allocations.some((a) => a.qtyAllocated - a.qtyReturned > 0) ? (
+        <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: insets.bottom + 12 }]}>
+          <Pressable
+            testID="return-to-office-button"
+            onPress={() => router.push(`/material-return?jobId=${id}`)}
+            style={[styles.returnBtn, { backgroundColor: job.materialReturnPending ? colors.card : colors.primary, borderColor: colors.border }]}
+          >
+            <Feather
+              name={job.materialReturnPending ? 'edit-3' : 'corner-up-left'}
+              size={16}
+              color={job.materialReturnPending ? colors.foreground : '#fff'}
+            />
+            <Text style={[styles.returnBtnText, { color: job.materialReturnPending ? colors.foreground : '#fff' }]}>
+              {job.materialReturnPending ? 'Return waiting for signature' : 'Return to office'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {admin && (
         <AddAllocationModal
@@ -155,7 +175,7 @@ export default function MaterialsScreen() {
 
 /* ── Allocation card ───────────────────────────────────────────────────────── */
 
-function AllocationCard({ a, colors, open, onToggle, readOnly, contentLocked, saving, onPatch }: {
+function AllocationCard({ a, colors, open, onToggle, readOnly, contentLocked, allowDirectReturn, saving, onPatch }: {
   a: Allocation;
   colors: ReturnType<typeof useColors>;
   open: boolean;
@@ -163,6 +183,9 @@ function AllocationCard({ a, colors, open, onToggle, readOnly, contentLocked, sa
   readOnly: boolean;
   /** Sign-off freeze: blocks run/remark edits but still allows returns. */
   contentLocked: boolean;
+  /** Office staff can adjust returned quantities directly; technicians must
+   * go through the signed return handover so nobody clears their own custody. */
+  allowDirectReturn: boolean;
   saving: boolean;
   onPatch: (body: { qtyReturned?: number; runs?: CableRun[] }) => void;
 }) {
@@ -194,7 +217,13 @@ function AllocationCard({ a, colors, open, onToggle, readOnly, contentLocked, sa
             <RunLog key={`runs-${a.id}-${a.updatedAt}`} runs={a.runs} colors={colors} readOnly={readOnly || contentLocked} saving={saving} onSave={(runs) => onPatch({ runs })} />
           )}
           {!readOnly && (
-            <ReturnRow key={`ret-${a.id}-${a.updatedAt}`} a={a} colors={colors} onSave={(qtyReturned) => onPatch({ qtyReturned })} />
+            allowDirectReturn ? (
+              <ReturnRow key={`ret-${a.id}-${a.updatedAt}`} a={a} colors={colors} onSave={(qtyReturned) => onPatch({ qtyReturned })} />
+            ) : (
+              <Text style={[styles.cardSub, { color: colors.mutedForeground, marginTop: 6 }]}>
+                Returns are recorded through “Return to office” below — an authorised person signs for them.
+              </Text>
+            )
           )}
         </View>
       )}
@@ -512,6 +541,12 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: 48, gap: 10 },
   emptyText: { fontSize: 13, textAlign: 'center' },
   card: { borderWidth: 1, borderRadius: 12, marginBottom: 10 },
+  footer: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  returnBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderRadius: 12, borderWidth: 1, paddingVertical: 14,
+  },
+  returnBtnText: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
   cardHead: { flexDirection: 'row', alignItems: 'center', padding: 12 },
   cardTitle: { fontSize: 14, fontWeight: '600' },
   cardSub: { fontSize: 12, marginTop: 2 },

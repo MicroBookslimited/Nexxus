@@ -268,6 +268,55 @@ export const workOrderAllocationsTable = pgTable("work_order_allocations", {
 export type WorkOrderAllocation = typeof workOrderAllocationsTable.$inferSelect;
 export type CableRun = NonNullable<WorkOrderAllocation["runs"]>[number];
 
+// ─── Work Order Material / Tool Return Handovers ─────────────────────────────
+// Mirrors the cash-handover custody model for physical items: after a job the
+// technician declares what they are bringing back (a pending row — nothing
+// moves in inventory yet), then hands the phone to a manager / supervisor /
+// authorised receiver who picks their name, enters their PIN and signs. Only
+// that signature applies the returns to `work_order_allocations.qty_returned`
+// and restores stock, so a technician can never clear their own custody.
+export const workOrderMaterialHandoversTable = pgTable("work_order_material_handovers", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  workOrderId: integer("work_order_id").notNull().references(() => workOrdersTable.id, { onDelete: "cascade" }),
+  // Technician returning the items.
+  staffId: integer("staff_id"),
+  staffName: text("staff_name").notNull(),
+  status: text("status").notNull().default("pending"), // pending | signed | cancelled
+  // Declared lines. qtyReturned is what the technician says they are handing
+  // back; qtyAccepted is what actually got applied at signing time (capped at
+  // the outstanding balance, so a concurrent office return can't double-count).
+  items: jsonb("items").notNull().$type<Array<{
+    allocationId: number;
+    description: string;
+    unit: string;
+    isReturnable: boolean;
+    qtyOutstanding: number;
+    qtyReturned: number;
+    qtyAccepted?: number;
+    remarks?: string;
+  }>>().default([]),
+  notes: text("notes"),
+  // Receiver (manager / supervisor / authorised person)
+  receivedByStaffId: integer("received_by_staff_id"),
+  receivedByName: text("received_by_name"),
+  receivedNotes: text("received_notes"),
+  signature: text("signature"),
+  signedAt: timestamp("signed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  woIdx: index("wo_material_handovers_wo_idx").on(t.tenantId, t.workOrderId),
+  staffIdx: index("wo_material_handovers_staff_idx").on(t.tenantId, t.staffId, t.status),
+  // At most one return can be waiting for a signature per job — the declare
+  // endpoint relies on this to turn a race into a clean 409.
+  onePending: uniqueIndex("wo_material_handovers_one_pending")
+    .on(t.tenantId, t.workOrderId)
+    .where(sql`status = 'pending'`),
+}));
+
+export type WorkOrderMaterialHandover = typeof workOrderMaterialHandoversTable.$inferSelect;
+export type MaterialHandoverItem = WorkOrderMaterialHandover["items"][number];
+
 // ─── Work Order Appointments ──────────────────────────────────────────────────
 export const workOrderAppointmentsTable = pgTable("work_order_appointments", {
   id: serial("id").primaryKey(),

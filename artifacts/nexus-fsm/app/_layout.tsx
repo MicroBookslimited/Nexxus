@@ -52,6 +52,7 @@ function RootLayoutNav() {
       <Stack.Screen name="job/[id]" />
       <Stack.Screen name="eod-report" />
       <Stack.Screen name="cash-handover" />
+      <Stack.Screen name="material-return" />
       <Stack.Screen name="printer-settings" />
     </Stack>
   );

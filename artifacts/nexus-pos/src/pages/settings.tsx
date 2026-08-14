@@ -23,6 +23,7 @@ import { useLocation } from "wouter";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { QRCodeSVG } from "qrcode.react";
 import { ShopifyIntegrationCard } from "@/components/ShopifyIntegrationCard";
+import { ZohoIntegrationCard } from "@/components/ZohoIntegrationCard";
 
 /* ── Settings sections: nav labels + search keywords ──────────────────────
  * `keywords` powers the settings search box: a section stays visible when
@@ -2016,7 +2017,10 @@ export function AdminSettings() {
 
       <div id="section-admins" className={hideCls("section-admins")}><AdminUsersSettings /></div>
       <div id="section-automation" className={hideCls("section-automation")}><EmailAutomationSettings /></div>
-      <div className={hideCls("section-integrations")}><ShopifyIntegrationCard /></div>
+      <div className={`space-y-4 ${hideCls("section-integrations")}`}>
+        <ShopifyIntegrationCard />
+        <ZohoIntegrationCard />
+      </div>
       <div id="section-roles" className={hideCls("section-roles")}><RolesSettings /></div>
     </div>
   );

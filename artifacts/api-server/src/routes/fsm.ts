@@ -7,6 +7,10 @@ import {
   workOrderStatusHistoryTable,
   workOrderTimeEntriesTable,
   workOrderPhotosTable,
+  workOrderPaymentsTable,
+  workOrderAllocationsTable,
+  workOrderMaterialHandoversTable,
+  productsTable,
   customersTable,
   staffTable,
 } from "@workspace/db";
@@ -92,7 +96,54 @@ function jobScope(staff: FsmStaff) {
 
 const ACTIVE_STATUSES = ["received", "in_progress", "awaiting_parts", "on_hold", "ready"] as const;
 
-function toJob(w: typeof workOrdersTable.$inferSelect, customerName?: string | null, customerPhone?: string | null) {
+/** Extra, query-derived signals shown as icons on the job card. */
+type JobFlags = {
+  /** Sum of money already collected against this job (work_order_payments). */
+  amountPaid: number;
+  /** Returnable (tool) quantity still signed out to the technician. */
+  returnablesOutstanding: number;
+  /** A declared materials return is waiting for a manager's signature. */
+  materialReturnPending: boolean;
+};
+
+const NO_FLAGS: JobFlags = { amountPaid: 0, returnablesOutstanding: 0, materialReturnPending: false };
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * Money the technician is expected to collect on this job: the job total less
+ * any deposit and any payment already recorded against it.
+ */
+function amountDueFor(w: typeof workOrdersTable.$inferSelect, flags: JobFlags): number {
+  return Math.max(0, round2((w.total ?? 0) - (w.depositPaid ?? 0) - flags.amountPaid));
+}
+
+/**
+ * Issues & exceptions surfaced as a warning triangle on the job card, most
+ * urgent first. Everything here is derived from existing job state — there is
+ * no separate "exception" record to keep in sync.
+ */
+function exceptionsFor(w: typeof workOrdersTable.$inferSelect, flags: JobFlags): string[] {
+  const out: string[] = [];
+  if (w.assignmentStatus === "declined") out.push("Declined");
+  if (w.status === "on_hold") out.push("On hold");
+  if (w.status === "awaiting_parts") out.push("Awaiting parts");
+  const due = w.appointmentDate ?? w.promisedDate;
+  if (due && new Date(due).getTime() < Date.now() && !w.workCompletedAt && w.status !== "ready") {
+    out.push("Overdue");
+  }
+  if (w.workCompletedAt && flags.returnablesOutstanding > 0 && !flags.materialReturnPending) {
+    out.push("Tools not returned");
+  }
+  return out;
+}
+
+function toJob(
+  w: typeof workOrdersTable.$inferSelect,
+  customerName?: string | null,
+  customerPhone?: string | null,
+  flags: JobFlags = NO_FLAGS,
+) {
   return {
     id: w.id,
     workOrderNumber: w.workOrderNumber,
@@ -129,6 +180,12 @@ function toJob(w: typeof workOrdersTable.$inferSelect, customerName?: string | n
     completionSignedBy: w.completionSignedBy,
     completionSignedAt: w.completionSignedAt,
     fieldPhase: fieldPhase(w),
+    // Card signals
+    amountPaid: round2(flags.amountPaid),
+    amountDue: amountDueFor(w, flags),
+    exceptions: exceptionsFor(w, flags),
+    returnablesOutstanding: flags.returnablesOutstanding,
+    materialReturnPending: flags.materialReturnPending,
     createdAt: w.createdAt,
     updatedAt: w.updatedAt,
   };
@@ -165,8 +222,65 @@ router.get("/fsm/jobs", async (req, res): Promise<void> => {
     .orderBy(desc(workOrdersTable.createdAt))
     .limit(200);
 
-  res.json(rows.map((r) => toJob(r.workOrder, r.customerName, r.customerPhone)));
+  const flags = await loadJobFlags(tenantId, rows.map((r) => r.workOrder.id));
+  res.json(rows.map((r) => toJob(r.workOrder, r.customerName, r.customerPhone, flags.get(r.workOrder.id))));
 });
+
+/**
+ * Batched card signals for a page of jobs. Three grouped queries — never a
+ * per-job round trip, the job list is unpaged and can hold 200 rows.
+ */
+async function loadJobFlags(tenantId: number, workOrderIds: number[]): Promise<Map<number, JobFlags>> {
+  const out = new Map<number, JobFlags>();
+  if (workOrderIds.length === 0) return out;
+
+  const [payments, returnables, pendingReturns] = await Promise.all([
+    db
+      .select({
+        workOrderId: workOrderPaymentsTable.workOrderId,
+        paid: sql<number>`coalesce(sum(${workOrderPaymentsTable.amount}), 0)::double precision`,
+      })
+      .from(workOrderPaymentsTable)
+      .where(and(
+        eq(workOrderPaymentsTable.tenantId, tenantId),
+        inArray(workOrderPaymentsTable.workOrderId, workOrderIds),
+      ))
+      .groupBy(workOrderPaymentsTable.workOrderId),
+    db
+      .select({
+        workOrderId: workOrderAllocationsTable.workOrderId,
+        outstanding: sql<number>`coalesce(sum(${workOrderAllocationsTable.qtyAllocated} - ${workOrderAllocationsTable.qtyReturned}), 0)::double precision`,
+      })
+      .from(workOrderAllocationsTable)
+      .where(and(
+        eq(workOrderAllocationsTable.tenantId, tenantId),
+        inArray(workOrderAllocationsTable.workOrderId, workOrderIds),
+        eq(workOrderAllocationsTable.isReturnable, true),
+      ))
+      .groupBy(workOrderAllocationsTable.workOrderId),
+    db
+      .select({ workOrderId: workOrderMaterialHandoversTable.workOrderId })
+      .from(workOrderMaterialHandoversTable)
+      .where(and(
+        eq(workOrderMaterialHandoversTable.tenantId, tenantId),
+        inArray(workOrderMaterialHandoversTable.workOrderId, workOrderIds),
+        eq(workOrderMaterialHandoversTable.status, "pending"),
+      )),
+  ]);
+
+  const paidBy = new Map(payments.map((p) => [p.workOrderId, Number(p.paid)]));
+  const outstandingBy = new Map(returnables.map((r) => [r.workOrderId, Number(r.outstanding)]));
+  const pendingBy = new Set(pendingReturns.map((r) => r.workOrderId));
+
+  for (const id of workOrderIds) {
+    out.set(id, {
+      amountPaid: paidBy.get(id) ?? 0,
+      returnablesOutstanding: Math.max(0, round2(outstandingBy.get(id) ?? 0)),
+      materialReturnPending: pendingBy.has(id),
+    });
+  }
+  return out;
+}
 
 // GET one of my jobs (with notes + history)
 router.get("/fsm/jobs/:id", async (req, res): Promise<void> => {
@@ -214,9 +328,10 @@ router.get("/fsm/jobs/:id", async (req, res): Promise<void> => {
     .filter((e) => e.entryType !== "work" && e.minutes != null)
     .reduce((s, e) => s + (e.minutes ?? 0), 0);
   const activeEntry = timeEntries.find((e) => !e.endedAt) ?? null;
+  const flags = await loadJobFlags(tenantId, [id]);
 
   res.json({
-    ...toJob(row.workOrder, row.customerName, row.customerPhone),
+    ...toJob(row.workOrder, row.customerName, row.customerPhone, flags.get(id)),
     notes, history, timeEntries, billableMinutes, pausedMinutes, activeEntry,
     photos,
     completionSignature: row.workOrder.completionSignature,
@@ -266,9 +381,306 @@ router.patch("/fsm/jobs/:id/allocations/:allocId", async (req, res): Promise<voi
     res.status(400).json({ error: "Start work first — tap Arrive on Site before logging cable runs" });
     return;
   }
+  // Custody: a technician can't clear their own materials off the books. Only
+  // office staff adjust returned quantities directly; everyone else goes
+  // through the signed return handover below.
+  if (parsed.data.qtyReturned !== undefined && !isFsmAdmin(ctx.staff)) {
+    res.status(403).json({
+      error: "Returns must be signed for — use “Return to office” so an authorised person receives the items",
+    });
+    return;
+  }
   const result = await updateAllocation(ctx.tenantId, ctx.job.id, allocId, parsed.data);
   if (result.error) { res.status(result.status ?? 400).json({ error: result.error }); return; }
   res.json(result.allocation);
+});
+
+/* ─── Materials & tools return handover ───────────────────────────────────────
+ * Custody chain for physical items, mirroring the cash handover:
+ *   1. Technician declares what they are bringing back  → pending row.
+ *   2. A manager / supervisor / authorised receiver picks their name, enters
+ *      their PIN and signs on the technician's phone.
+ *   3. Only that signature moves inventory (allocation qtyReturned + stock).
+ * A technician can never sign for their own return. */
+
+/** Who may sign for returned items: managerial roles, or anyone explicitly
+ * flagged as an authorised receiver (the same opt-in used for cash). */
+function isReturnReceiver(s: { role: string | null; canReceiveCash: boolean | null }): boolean {
+  return /^(admin|manager|supervisor|owner)$/i.test((s.role ?? "").trim()) || s.canReceiveCash === true;
+}
+
+const RETURN_RECEIVER_MSG = "Only an admin, manager, supervisor or authorised receiver can sign for returned items";
+
+const DeclareReturnBody = z.object({
+  items: z.array(z.object({
+    allocationId: z.number().int().positive(),
+    qtyReturned: z.number().min(0),
+    remarks: z.string().max(300).optional(),
+  })).min(1),
+  notes: z.string().max(500).optional(),
+});
+
+const SignReturnBody = z.object({
+  receivedByStaffId: z.number().int().positive(),
+  pin: z.string().min(4).max(8),
+  // Mandatory: the receiver's signature is the whole point of the handover.
+  signature: z.string().min(1).max(400_000),
+  notes: z.string().max(500).optional(),
+});
+
+/** Staff allowed to sign for returned materials and tools. */
+router.get("/fsm/return-receivers", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const staff = await getVerifiedStaff(req as never, tenantId);
+  if (!staff) { res.status(401).json({ error: "Technician identity required" }); return; }
+
+  const rows = await db
+    .select({ id: staffTable.id, name: staffTable.name, role: staffTable.role, canReceiveCash: staffTable.canReceiveCash })
+    .from(staffTable)
+    .where(and(eq(staffTable.tenantId, tenantId), eq(staffTable.isActive, true)))
+    .orderBy(staffTable.name);
+
+  res.json(rows.filter(isReturnReceiver).map((r) => ({ id: r.id, name: r.name, role: r.role })));
+});
+
+/** Returns awaiting a signature. Technicians see only their own; managers all. */
+router.get("/fsm/material-handovers", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const staff = await getVerifiedStaff(req as never, tenantId);
+  if (!staff) { res.status(401).json({ error: "Technician identity required" }); return; }
+
+  const statusFilter = typeof req.query["status"] === "string" ? req.query["status"] : "pending";
+  const [full] = await db
+    .select({ role: staffTable.role, canReceiveCash: staffTable.canReceiveCash })
+    .from(staffTable)
+    .where(and(eq(staffTable.id, staff.id), eq(staffTable.tenantId, tenantId)));
+  const seesAll = !!full && isReturnReceiver(full);
+
+  const rows = await db
+    .select({
+      handover: workOrderMaterialHandoversTable,
+      workOrderNumber: workOrdersTable.workOrderNumber,
+      customerName: workOrdersTable.contactName,
+    })
+    .from(workOrderMaterialHandoversTable)
+    .innerJoin(workOrdersTable, eq(workOrderMaterialHandoversTable.workOrderId, workOrdersTable.id))
+    .where(and(
+      eq(workOrderMaterialHandoversTable.tenantId, tenantId),
+      ...(statusFilter && statusFilter !== "all" ? [eq(workOrderMaterialHandoversTable.status, statusFilter)] : []),
+      ...(seesAll ? [] : [eq(workOrderMaterialHandoversTable.staffId, staff.id)]),
+    ))
+    .orderBy(desc(workOrderMaterialHandoversTable.createdAt))
+    .limit(100);
+
+  res.json(rows.map((r) => ({
+    ...r.handover,
+    signature: undefined,
+    workOrderNumber: r.workOrderNumber,
+    customerName: r.customerName,
+  })));
+});
+
+/** Return history for one job (newest first). */
+router.get("/fsm/jobs/:id/material-handovers", async (req, res): Promise<void> => {
+  const ctx = await loadAssignedJob(req as never, res as never, { requireOpen: false });
+  if (!ctx) return;
+  const rows = await db.select().from(workOrderMaterialHandoversTable)
+    .where(and(
+      eq(workOrderMaterialHandoversTable.tenantId, ctx.tenantId),
+      eq(workOrderMaterialHandoversTable.workOrderId, ctx.job.id),
+    ))
+    .orderBy(desc(workOrderMaterialHandoversTable.createdAt));
+  res.json(rows);
+});
+
+/** Technician declares what they are handing back. Nothing moves yet. */
+router.post("/fsm/jobs/:id/material-handovers", async (req, res): Promise<void> => {
+  const ctx = await loadAssignedJob(req as never, res as never, { requireOpen: false });
+  if (!ctx) return;
+  const parsed = DeclareReturnBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Enter at least one item to return" }); return; }
+
+  const allocations = await listAllocations(ctx.tenantId, ctx.job.id);
+  const byId = new Map(allocations.map((a) => [a.id, a]));
+
+  const items: typeof workOrderMaterialHandoversTable.$inferInsert["items"] = [];
+  for (const line of parsed.data.items) {
+    const alloc = byId.get(line.allocationId);
+    if (!alloc) { res.status(400).json({ error: "One of the items is not on this job" }); return; }
+    const outstanding = Math.max(0, round2(alloc.qtyAllocated - alloc.qtyReturned));
+    const qty = round2(Math.min(line.qtyReturned, outstanding));
+    if (qty <= 0) continue;
+    items.push({
+      allocationId: alloc.id,
+      description: alloc.description,
+      unit: alloc.unit,
+      isReturnable: alloc.isReturnable,
+      qtyOutstanding: outstanding,
+      qtyReturned: qty,
+      ...(line.remarks ? { remarks: line.remarks } : {}),
+    });
+  }
+  if (items.length === 0) {
+    res.status(400).json({ error: "Nothing left to return on this job" }); return;
+  }
+
+  try {
+    const [row] = await db.insert(workOrderMaterialHandoversTable).values({
+      tenantId: ctx.tenantId,
+      workOrderId: ctx.job.id,
+      staffId: ctx.staff.id,
+      staffName: ctx.staff.name,
+      status: "pending",
+      items,
+      notes: parsed.data.notes ?? null,
+    }).returning();
+    res.status(201).json(row);
+  } catch (err) {
+    // Partial unique index: one open return per work order at a time. Drizzle
+    // wraps driver errors, so look for the PG code on the error or its cause.
+    const pgCode = (e: unknown): string | undefined =>
+      typeof e === "object" && e !== null ? (e as { code?: string }).code : undefined;
+    const cause = typeof err === "object" && err !== null ? (err as { cause?: unknown }).cause : undefined;
+    if (pgCode(err) === "23505" || pgCode(cause) === "23505") {
+      res.status(409).json({ error: "A return for this job is already waiting for a signature" });
+      return;
+    }
+    throw err;
+  }
+});
+
+/** Technician (or a manager) withdraws an unsigned return declaration. */
+router.delete("/fsm/material-handovers/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const staff = await getVerifiedStaff(req as never, tenantId);
+  if (!staff) { res.status(401).json({ error: "Technician identity required" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [row] = await db.select().from(workOrderMaterialHandoversTable)
+    .where(and(eq(workOrderMaterialHandoversTable.id, id), eq(workOrderMaterialHandoversTable.tenantId, tenantId)));
+  if (!row) { res.status(404).json({ error: "Return not found" }); return; }
+  if (row.status !== "pending") { res.status(409).json({ error: "This return has already been signed for" }); return; }
+  if (row.staffId !== staff.id && !isFsmAdmin(staff)) {
+    res.status(403).json({ error: "Only the technician who created this return can withdraw it" }); return;
+  }
+
+  await db.update(workOrderMaterialHandoversTable)
+    .set({ status: "cancelled" })
+    .where(and(eq(workOrderMaterialHandoversTable.id, id), eq(workOrderMaterialHandoversTable.status, "pending")));
+  res.json({ success: true });
+});
+
+/**
+ * Receiver signs for the items. Applies every declared line to its allocation
+ * and restores stock in ONE transaction: allocation rows are locked (and each
+ * accepted quantity capped at what is still outstanding) so a concurrent
+ * office-side return can never be double-counted.
+ */
+router.post("/fsm/material-handovers/:id/sign", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const staff = await getVerifiedStaff(req as never, tenantId);
+  if (!staff) { res.status(401).json({ error: "Technician identity required" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = SignReturnBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "A receiver, PIN and signature are required" }); return; }
+  // The signature is the custody record — never move stock without one.
+  if (!isSafeSignatureSvg(parsed.data.signature)) {
+    res.status(400).json({ error: "Invalid signature" }); return;
+  }
+
+  const [signer] = await db
+    .select({
+      id: staffTable.id, name: staffTable.name, role: staffTable.role,
+      pin: staffTable.pin, canReceiveCash: staffTable.canReceiveCash, isActive: staffTable.isActive,
+    })
+    .from(staffTable)
+    .where(and(eq(staffTable.id, parsed.data.receivedByStaffId), eq(staffTable.tenantId, tenantId)));
+  if (!signer || !signer.isActive) { res.status(404).json({ error: "Staff member not found" }); return; }
+  if (!isReturnReceiver(signer)) { res.status(403).json({ error: RETURN_RECEIVER_MSG }); return; }
+  if (signer.pin !== parsed.data.pin) { res.status(401).json({ error: "Invalid PIN" }); return; }
+
+  const outcome = await db.transaction(async (tx) => {
+    const [row] = await tx.select().from(workOrderMaterialHandoversTable)
+      .where(and(eq(workOrderMaterialHandoversTable.id, id), eq(workOrderMaterialHandoversTable.tenantId, tenantId)))
+      .for("update");
+    if (!row) return { error: "notfound" as const };
+    if (row.status === "signed") return { error: "already" as const };
+    if (row.status !== "pending") return { error: "cancelled" as const };
+    if (row.staffId === signer.id) return { error: "self" as const };
+
+    const applied: typeof row.items = [];
+    // Deterministic lock order (by allocation id) to avoid deadlocks with
+    // concurrent dispatch/return transactions on the same job.
+    for (const item of [...(row.items ?? [])].sort((a, b) => a.allocationId - b.allocationId)) {
+      const [alloc] = await tx.select().from(workOrderAllocationsTable)
+        .where(and(
+          eq(workOrderAllocationsTable.id, item.allocationId),
+          eq(workOrderAllocationsTable.tenantId, tenantId),
+          eq(workOrderAllocationsTable.workOrderId, row.workOrderId),
+        ))
+        .for("update");
+      if (!alloc) { applied.push({ ...item, qtyAccepted: 0 }); continue; }
+
+      const outstanding = Math.max(0, round2(alloc.qtyAllocated - alloc.qtyReturned));
+      const accept = round2(Math.min(Math.max(0, item.qtyReturned), outstanding));
+      if (accept > 0) {
+        const newReturned = round2(alloc.qtyReturned + accept);
+        await tx.update(workOrderAllocationsTable)
+          .set({
+            qtyReturned: newReturned,
+            status: newReturned >= alloc.qtyAllocated ? "returned" : alloc.status,
+            updatedAt: new Date(),
+          })
+          .where(eq(workOrderAllocationsTable.id, alloc.id));
+
+        if (alloc.productId != null) {
+          await tx.select({ id: productsTable.id }).from(productsTable)
+            .where(and(eq(productsTable.id, alloc.productId), eq(productsTable.tenantId, tenantId)))
+            .for("update");
+          await tx.update(productsTable)
+            .set({
+              stockCount: sql`${productsTable.stockCount} + ${accept}`,
+              inStock: sql`CASE WHEN ${productsTable.stockCount} + ${accept} > 0 THEN true ELSE ${productsTable.inStock} END`,
+            })
+            .where(and(eq(productsTable.id, alloc.productId), eq(productsTable.tenantId, tenantId)));
+        }
+      }
+      applied.push({ ...item, qtyAccepted: accept });
+    }
+
+    const [updated] = await tx.update(workOrderMaterialHandoversTable)
+      .set({
+        status: "signed",
+        items: applied,
+        receivedByStaffId: signer.id,
+        receivedByName: signer.name,
+        receivedNotes: parsed.data.notes ?? null,
+        signature: parsed.data.signature ?? null,
+        signedAt: new Date(),
+      })
+      .where(and(
+        eq(workOrderMaterialHandoversTable.id, id),
+        eq(workOrderMaterialHandoversTable.status, "pending"),
+      ))
+      .returning();
+    return { row: updated };
+  });
+
+  if ("error" in outcome) {
+    if (outcome.error === "notfound") { res.status(404).json({ error: "Return not found" }); return; }
+    if (outcome.error === "already") { res.status(409).json({ error: "This return has already been signed for" }); return; }
+    if (outcome.error === "cancelled") { res.status(409).json({ error: "This return was withdrawn" }); return; }
+    res.status(403).json({ error: "The technician returning the items cannot sign for them" });
+    return;
+  }
+  res.json(outcome.row);
 });
 
 const InstallDetailsBody = z.object({

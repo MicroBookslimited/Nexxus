@@ -119,6 +119,16 @@ export interface FsmJob {
   completionSignedBy: string | null;
   completionSignedAt: string | null;
   fieldPhase: FieldPhase;
+  /** Money already collected against this job. */
+  amountPaid: number;
+  /** Still collectible from the customer (total − deposit − payments). */
+  amountDue: number;
+  /** Issues & exceptions, most urgent first (e.g. "On hold", "Overdue"). */
+  exceptions: string[];
+  /** Tool/returnable quantity still signed out to the technician. */
+  returnablesOutstanding: number;
+  /** A declared materials return is waiting for a manager's signature. */
+  materialReturnPending: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -253,6 +263,89 @@ export function updateAllocation(
     body: JSON.stringify(body),
     headers: staffHeaders(staffId),
   });
+}
+
+/* ───────────── Materials & tools return handover ───────────── */
+
+export interface MaterialHandoverItem {
+  allocationId: number;
+  description: string;
+  unit: string;
+  isReturnable: boolean;
+  qtyOutstanding: number;
+  qtyReturned: number;
+  qtyAccepted?: number;
+  remarks?: string;
+}
+
+export interface MaterialHandover {
+  id: number;
+  workOrderId: number;
+  staffId: number | null;
+  staffName: string;
+  status: 'pending' | 'signed' | 'cancelled';
+  items: MaterialHandoverItem[];
+  notes: string | null;
+  receivedByStaffId: number | null;
+  receivedByName: string | null;
+  receivedNotes: string | null;
+  signedAt: string | null;
+  createdAt: string;
+  /** Present on the list endpoint only. */
+  workOrderNumber?: string;
+  customerName?: string | null;
+}
+
+/** Returns awaiting a signature. Technicians see only their own. */
+export function listMaterialHandovers(
+  staffId: number,
+  status: 'pending' | 'signed' | 'all' = 'pending',
+): Promise<MaterialHandover[]> {
+  return request(`/api/fsm/material-handovers?status=${status}`, { headers: staffHeaders(staffId) });
+}
+
+/** Return history for one job. */
+export function listJobMaterialHandovers(staffId: number, jobId: number): Promise<MaterialHandover[]> {
+  return request(`/api/fsm/jobs/${jobId}/material-handovers`, { headers: staffHeaders(staffId) });
+}
+
+/** Technician declares what they are bringing back — nothing moves until signed. */
+export function declareMaterialReturn(
+  staffId: number,
+  jobId: number,
+  body: { items: { allocationId: number; qtyReturned: number; remarks?: string }[]; notes?: string },
+): Promise<MaterialHandover> {
+  return request(`/api/fsm/jobs/${jobId}/material-handovers`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/** Withdraw an unsigned return declaration. */
+export function cancelMaterialReturn(staffId: number, handoverId: number): Promise<{ success: boolean }> {
+  return request(`/api/fsm/material-handovers/${handoverId}`, {
+    method: 'DELETE',
+    headers: staffHeaders(staffId),
+  });
+}
+
+/** Manager/supervisor/authorised person signs for the items received. */
+export function signMaterialReturn(
+  staffId: number,
+  handoverId: number,
+  body: { receivedByStaffId: number; pin: string; signature: string; notes?: string },
+): Promise<MaterialHandover> {
+  return request(`/api/fsm/material-handovers/${handoverId}/sign`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/** Staff allowed to sign for returned materials and tools. */
+export function listReturnReceivers(staffId: number): Promise<{ id: number; name: string; role: string | null }[]> {
+  return request('/api/fsm/return-receivers', { headers: staffHeaders(staffId) });
 }
 
 /** Admin-only: dispatch a new material/cable allocation from the phone. */
