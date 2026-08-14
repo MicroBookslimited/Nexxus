@@ -92,6 +92,27 @@ async function resolveStaffNames(input: WorkOrderMailInput): Promise<string> {
   return ids.map((id) => nameMap.get(id) ?? "").filter(Boolean).join(", ");
 }
 
+/**
+ * Returns name + email for every assigned technician who has an email
+ * address on file. Used to CC them on customer-facing documents.
+ */
+async function resolveStaffEmails(
+  input: WorkOrderMailInput,
+): Promise<Array<{ name: string; email: string }>> {
+  const ids = (input.assignedStaffIds && input.assignedStaffIds.length > 0)
+    ? input.assignedStaffIds
+    : input.assignedStaffId ? [input.assignedStaffId] : [];
+  if (ids.length === 0) return [];
+  const { inArray } = await import("drizzle-orm");
+  const rows = await db
+    .select({ id: staffTable.id, name: staffTable.name, email: staffTable.email })
+    .from(staffTable)
+    .where(and(eq(staffTable.tenantId, input.tenantId), inArray(staffTable.id, ids)));
+  return rows
+    .filter((r) => !!r.email?.trim())
+    .map((r) => ({ name: r.name, email: r.email!.trim() }));
+}
+
 function formatScheduledDate(iso: string | null): string | null {
   if (!iso) return null;
   try {
@@ -365,22 +386,27 @@ export interface WorkOrderSignedMailInput extends WorkOrderMailInput {
 }
 
 /**
- * Sends the signed completion copy to the customer (PDF with the drawn
- * signature attached), copied to accounts@. Fire-and-forget safe.
+ * Sends the signed completion copy (PDF with drawn signature + barcode + QR)
+ * to the customer (with accounts@ BCC) and to every assigned technician who
+ * has an email on file. Photo proof PDF is attached when available.
+ * Fire-and-forget safe.
  */
 export async function sendWorkOrderSignedEmail(input: WorkOrderSignedMailInput): Promise<void> {
   try {
-    const [toEmail, staffName, business, from] = await Promise.all([
+    const [toEmail, staffName, staffEmails, business, from] = await Promise.all([
       resolveToEmail(input),
       resolveStaffNames(input),
+      resolveStaffEmails(input),
       getBusinessDetails(input.tenantId),
       getFromDetails(input.tenantId),
     ]);
-    if (!toEmail) {
-      console.info(`[work-order-mail] No recipient for signed copy WO ${input.workOrderNumber} — skipping`);
+
+    if (!toEmail && staffEmails.length === 0) {
+      console.info(`[work-order-mail] No recipients for signed copy WO ${input.workOrderNumber} — skipping`);
       return;
     }
 
+    // Render the completion PDF (contains signature strokes + barcode + QR).
     const pdfBuffer = await renderWorkOrderPdf({
       workOrderNumber:     input.workOrderNumber,
       dateIssued:          new Date(),
@@ -408,138 +434,226 @@ export async function sendWorkOrderSignedEmail(input: WorkOrderSignedMailInput):
         console.error(`[work-order-mail] Photo report render failed for WO ${input.workOrderNumber}:`, err instanceof Error ? err.message : err);
         return null;
       });
-      // Final safety net: never let an oversized attachment sink the signed copy.
       if (photosPdf && photosPdf.length > 18 * 1024 * 1024) {
-        console.warn(`[work-order-mail] Photo report for WO ${input.workOrderNumber} too large (${photosPdf.length} bytes) — sending signed copy without it`);
+        console.warn(`[work-order-mail] Photo report for WO ${input.workOrderNumber} too large — omitting from completion email`);
         photosPdf = null;
       }
     }
+
+    const completionAttachments = [
+      {
+        filename: `Work-Order-${input.workOrderNumber}-Signed.pdf`,
+        content:  pdfBuffer,
+        mimeType: "application/pdf",
+      },
+      ...(photosPdf ? [{
+        filename: `Work-Order-${input.workOrderNumber}-Photos.pdf`,
+        content:  photosPdf,
+        mimeType: "application/pdf",
+      }] : []),
+    ];
 
     const signedOn = input.signature.signedAt.toLocaleString("en-US", {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
       hour: "numeric", minute: "2-digit",
     });
 
-    const bodyHtml = `
-    <p>Thank you for confirming the completed work on your work order. A signed copy of the completion document is attached to this email for your records.</p>
-    <div class="details"><table>
-      <tr><td>Work Order #:</td><td><b>${escHtml(input.workOrderNumber)}</b></td></tr>
-      <tr><td>Item:</td><td>${escHtml(input.itemDescription)}</td></tr>
-      <tr><td>Signed By:</td><td>${escHtml(input.signature.signedBy)}</td></tr>
-      <tr><td>Signed On:</td><td>${escHtml(signedOn)}</td></tr>
-    </table></div>
-    <p>If anything about the completed work is not to your satisfaction, please reply to this email or contact us right away.</p>`;
+    // ── Customer email ──────────────────────────────────────────────────────
+    if (toEmail) {
+      const bodyHtml = `
+      <p>Thank you for confirming the completed work on your work order. A signed copy of the completion document is attached to this email for your records.</p>
+      <div class="details"><table>
+        <tr><td>Work Order #:</td><td><b>${escHtml(input.workOrderNumber)}</b></td></tr>
+        <tr><td>Item:</td><td>${escHtml(input.itemDescription)}</td></tr>
+        <tr><td>Signed By:</td><td>${escHtml(input.signature.signedBy)}</td></tr>
+        <tr><td>Signed On:</td><td>${escHtml(signedOn)}</td></tr>
+      </table></div>
+      <p>If anything about the completed work is not to your satisfaction, please reply to this email or contact us right away.</p>`;
 
-    await sendMail({
-      to: toEmail,
-      subject: `Work Order ${input.workOrderNumber} – Signed Completion Confirmation`,
-      html: buildNotificationHtml({
-        businessName: business.name,
-        businessPhone: business.phone,
-        businessEmail: business.email,
-        headerSub: "Signed Completion Confirmation",
-        clientName: input.contactName ?? "",
-        bodyHtml,
-      }),
-      fromName: from.fromName,
-      fromAddress: from.fromAddress,
-      tenantId: input.tenantId,
-      platformCopy: true, // signed copies are always copied to accounts@
-      attachments: [
-        {
-          filename: `Work-Order-${input.workOrderNumber}-Signed.pdf`,
-          content:  pdfBuffer,
-          mimeType: "application/pdf",
-        },
-        ...(photosPdf ? [{
-          filename: `Work-Order-${input.workOrderNumber}-Photos.pdf`,
-          content:  photosPdf,
-          mimeType: "application/pdf",
-        }] : []),
-      ],
-    });
-    console.info(`[work-order-mail] Sent signed copy to ${toEmail} (${input.workOrderNumber})`);
+      await sendMail({
+        to:           toEmail,
+        subject:      `Work Order ${input.workOrderNumber} – Signed Completion Confirmation`,
+        html:         buildNotificationHtml({
+          businessName:  business.name,
+          businessPhone: business.phone,
+          businessEmail: business.email,
+          headerSub:     "Signed Completion Confirmation",
+          clientName:    input.contactName ?? "",
+          bodyHtml,
+        }),
+        fromName:     from.fromName,
+        fromAddress:  from.fromAddress,
+        tenantId:     input.tenantId,
+        platformCopy: true, // signed copies always BCC accounts@
+        attachments:  completionAttachments,
+      });
+      console.info(`[work-order-mail] Sent signed copy to ${toEmail} (${input.workOrderNumber})`);
+    }
+
+    // ── Technician copies ───────────────────────────────────────────────────
+    if (staffEmails.length > 0) {
+      const esc = escHtml;
+      await Promise.all(staffEmails.map(({ name, email }) => {
+        const techHtml = /* html */ `<!DOCTYPE html>
+<html lang="en"><body style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;font-size:14px;">
+  <div style="max-width:600px;margin:0 auto;">
+    <div style="background:#f8f9fa;border-bottom:3px solid #00AEEF;padding:20px 32px;">
+      <h1 style="margin:0;font-size:20px;">${esc(business.name)}</h1>
+      <div style="font-size:12px;color:#6b7280;margin-top:4px;">Job Completion — Your Copy</div>
+    </div>
+    <div style="padding:28px 32px;">
+      <p>Hi ${esc(name)},</p>
+      <p>The following work order has been signed off. The signed completion document${photosPdf ? " and photo proof report are" : " is"} attached for your records.</p>
+      <table cellpadding="0" cellspacing="0" style="font-size:13px;background:#f8f9fa;border-radius:8px;padding:16px 20px;width:100%;">
+        <tr><td style="padding:2px 12px 2px 0;color:#666;">Work Order #</td><td><b>${esc(input.workOrderNumber)}</b></td></tr>
+        <tr><td style="padding:2px 12px 2px 0;color:#666;">Job</td><td>${esc(input.itemDescription)}</td></tr>
+        <tr><td style="padding:2px 12px 2px 0;color:#666;">Signed By</td><td>${esc(input.signature.signedBy)}</td></tr>
+        <tr><td style="padding:2px 12px 2px 0;color:#666;">Signed On</td><td>${esc(signedOn)}</td></tr>
+      </table>
+      <p style="margin-top:20px;color:#6b7280;font-size:12px;">— ${esc(business.name)}${business.phone ? `  |  ${esc(business.phone)}` : ""}</p>
+    </div>
+  </div>
+</body></html>`;
+        return sendMail({
+          to:           email,
+          subject:      `Job complete: Work Order ${input.workOrderNumber} – ${input.itemDescription}`,
+          html:         techHtml,
+          fromName:     from.fromName,
+          fromAddress:  from.fromAddress,
+          tenantId:     input.tenantId,
+          platformCopy: false,
+          attachments:  completionAttachments,
+        });
+      }));
+      console.info(`[work-order-mail] Sent signed copy to ${staffEmails.length} technician(s) (${input.workOrderNumber})`);
+    }
   } catch (err) {
     console.error("[work-order-mail] Failed to send signed copy email", {
-      wo: input.workOrderNumber,
+      wo:       input.workOrderNumber,
       tenantId: input.tenantId,
-      err: err instanceof Error ? err.message : String(err),
+      err:      err instanceof Error ? err.message : String(err),
     });
   }
 }
 
 /**
- * Generates and sends the work order confirmation email.
+ * Generates and sends the work order confirmation email to the customer,
+ * then sends a technician copy (same PDF, staff-facing subject) to every
+ * assigned technician who has an email on file.
  * Safe to call fire-and-forget — errors are caught and logged only.
  */
 export async function sendWorkOrderEmail(input: WorkOrderMailInput): Promise<void> {
   try {
-    const [toEmail, staffName, business, from, currency] = await Promise.all([
+    const [toEmail, staffName, staffEmails, business, from] = await Promise.all([
       resolveToEmail(input),
       resolveStaffNames(input),
+      resolveStaffEmails(input),
       getBusinessDetails(input.tenantId),
       getFromDetails(input.tenantId),
-      Promise.resolve(input.currency),
     ]);
-
-    if (!toEmail) {
-      console.info(`[work-order-mail] No recipient email for WO ${input.workOrderNumber} — skipping`);
-      return;
-    }
 
     const scheduledLabel = formatScheduledDate(input.scheduledDate);
     const promisedLabel  = formatScheduledDate(input.promisedDate);
 
-    const [pdfBuffer] = await Promise.all([
-      renderWorkOrderPdf({
-        workOrderNumber:      input.workOrderNumber,
-        dateIssued:           new Date(),
-        clientName:           input.contactName ?? "Customer",
-        techniciansAssigned:  staffName,
-        scheduledVisit:       scheduledLabel,
-        itemDescription:      input.itemDescription,
-        scopeOfWork:          input.problemDescription,
-        lineItems:            input.lineItems,
-        notes:                input.notes,
-        currency,
-        business,
-      }),
-    ]);
-
-    const html = buildEmailHtml({
-      clientName:        input.contactName ?? "",
-      workOrderNumber:   input.workOrderNumber,
-      itemDescription:   input.itemDescription,
-      problemDescription: input.problemDescription,
-      technicianName:    staffName,
-      scheduledVisit:    scheduledLabel,
-      promisedDate:      promisedLabel,
-      businessName:      business.name,
-      businessPhone:     business.phone,
-      businessEmail:     business.email,
+    const pdfBuffer = await renderWorkOrderPdf({
+      workOrderNumber:      input.workOrderNumber,
+      dateIssued:           new Date(),
+      clientName:           input.contactName ?? "Customer",
+      techniciansAssigned:  staffName,
+      scheduledVisit:       scheduledLabel,
+      itemDescription:      input.itemDescription,
+      scopeOfWork:          input.problemDescription,
+      lineItems:            input.lineItems,
+      notes:                input.notes,
+      currency:             input.currency,
+      business,
     });
 
-    await sendMail({
-      to:          toEmail,
-      subject:     `Work Order ${input.workOrderNumber} – ${input.itemDescription}`,
-      html,
-      fromName:    from.fromName,
-      fromAddress: from.fromAddress,
-      tenantId:    input.tenantId,
-      platformCopy: false, // tenant→customer email, not copied to accounts@
-      attachments: [{
-        filename: `Work-Order-${input.workOrderNumber}.pdf`,
-        content:  pdfBuffer,
-        mimeType: "application/pdf",
-      }],
-    });
+    const pdfAttachment = {
+      filename: `Work-Order-${input.workOrderNumber}.pdf`,
+      content:  pdfBuffer,
+      mimeType: "application/pdf",
+    };
 
-    console.info(`[work-order-mail] Sent WO confirmation to ${toEmail} (${input.workOrderNumber})`);
+    // ── Customer email ──────────────────────────────────────────────────────
+    if (toEmail) {
+      const html = buildEmailHtml({
+        clientName:         input.contactName ?? "",
+        workOrderNumber:    input.workOrderNumber,
+        itemDescription:    input.itemDescription,
+        problemDescription: input.problemDescription,
+        technicianName:     staffName,
+        scheduledVisit:     scheduledLabel,
+        promisedDate:       promisedLabel,
+        businessName:       business.name,
+        businessPhone:      business.phone,
+        businessEmail:      business.email,
+      });
+      await sendMail({
+        to:           toEmail,
+        subject:      `Work Order ${input.workOrderNumber} – ${input.itemDescription}`,
+        html,
+        fromName:     from.fromName,
+        fromAddress:  from.fromAddress,
+        tenantId:     input.tenantId,
+        platformCopy: false,
+        attachments:  [pdfAttachment],
+      });
+      console.info(`[work-order-mail] Sent WO confirmation to ${toEmail} (${input.workOrderNumber})`);
+    } else {
+      console.info(`[work-order-mail] No customer email for WO ${input.workOrderNumber} — customer copy skipped`);
+    }
+
+    // ── Technician copy (one per assigned tech with an email) ───────────────
+    if (staffEmails.length > 0) {
+      const esc = escHtml;
+      const scheduledRow = scheduledLabel
+        ? `<tr><td style="padding:2px 12px 2px 0;color:#666;">Scheduled</td><td>${esc(scheduledLabel)}</td></tr>`
+        : "";
+      const customerRow = input.contactName
+        ? `<tr><td style="padding:2px 12px 2px 0;color:#666;">Customer</td><td>${esc(input.contactName)}</td></tr>`
+        : "";
+
+      await Promise.all(staffEmails.map(({ name, email }) => {
+        const techHtml = /* html */ `<!DOCTYPE html>
+<html lang="en"><body style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;font-size:14px;">
+  <div style="max-width:600px;margin:0 auto;">
+    <div style="background:#f8f9fa;border-bottom:3px solid #00AEEF;padding:20px 32px;">
+      <h1 style="margin:0;font-size:20px;">${esc(business.name)}</h1>
+      <div style="font-size:12px;color:#6b7280;margin-top:4px;">Work Order — Your Assignment</div>
+    </div>
+    <div style="padding:28px 32px;">
+      <p>Hi ${esc(name)},</p>
+      <p>Please find the official work order document attached for your reference. Present this to the client at the start of the visit and obtain their sign-off on completion.</p>
+      <table cellpadding="0" cellspacing="0" style="font-size:13px;background:#f8f9fa;border-radius:8px;padding:16px 20px;width:100%;">
+        <tr><td style="padding:2px 12px 2px 0;color:#666;">Work Order #</td><td><b>${esc(input.workOrderNumber)}</b></td></tr>
+        <tr><td style="padding:2px 12px 2px 0;color:#666;">Job</td><td>${esc(input.itemDescription)}</td></tr>
+        ${customerRow}
+        ${scheduledRow}
+      </table>
+      <p style="margin-top:20px;">Open the NEXXUS FSM app to accept this job and view full details.</p>
+      <p style="color:#6b7280;font-size:12px;">— ${esc(business.name)}${business.phone ? `  |  ${esc(business.phone)}` : ""}</p>
+    </div>
+  </div>
+</body></html>`;
+        return sendMail({
+          to:           email,
+          subject:      `Your assignment: Work Order ${input.workOrderNumber} – ${input.itemDescription}`,
+          html:         techHtml,
+          fromName:     from.fromName,
+          fromAddress:  from.fromAddress,
+          tenantId:     input.tenantId,
+          platformCopy: false,
+          attachments:  [pdfAttachment],
+        });
+      }));
+      console.info(`[work-order-mail] Sent WO dispatch copy to ${staffEmails.length} technician(s) (${input.workOrderNumber})`);
+    }
   } catch (err) {
     console.error("[work-order-mail] Failed to send work order email", {
-      wo: input.workOrderNumber,
+      wo:       input.workOrderNumber,
       tenantId: input.tenantId,
-      err: err instanceof Error ? err.message : String(err),
+      err:      err instanceof Error ? err.message : String(err),
     });
   }
 }
