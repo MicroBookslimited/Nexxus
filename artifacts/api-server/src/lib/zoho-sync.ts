@@ -41,11 +41,23 @@ const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 /**
  * Zoho Books allows roughly 100 API calls per minute per organisation. A first
  * sync of a large catalogue would blow straight through that, so each run does
- * a bounded amount of write work and reports what is left for the next run.
+ * a bounded amount of work and reports what is left for the next run.
+ *
+ * The counter tracks BILLABLE UNITS OF WORK, not strictly writes: an update
+ * that must first re-read the contact detail (see `fetchContactDetail`) charges
+ * both calls, so adding a read to a path can never silently double a run's
+ * Zoho traffic. One site also charges a local DB insert, which costs no Zoho
+ * call but is bounded work all the same.
+ *
+ * NOTE: the pacing here is looser than the documented limit — 150 units at
+ * WRITE_DELAY_MS apart is ~18s of sleep, i.e. well above 100/min if Zoho counts
+ * strictly. That predates this counter and has not caused observed 429s; a 429
+ * aborts the run and the next one resumes from `summary.remaining`. Tighten
+ * WRITE_DELAY_MS if 429s start appearing, at the cost of slower syncs.
  */
 const MAX_WRITES_PER_RUN = 150;
 
-/** Small pause between write calls to stay well inside Zoho's rate limit. */
+/** Small pause between calls to stay inside Zoho's rate limit. */
 const WRITE_DELAY_MS = 120;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -256,6 +268,30 @@ function primaryPerson(contact: ZohoContact) {
   );
 }
 
+/**
+ * Fetch a contact's full detail before it is used to build an UPDATE payload.
+ *
+ * Zoho's LIST endpoint (`GET /contacts`, behind both `listContacts` and
+ * `searchContacts`) omits `contact_persons` — only the detail endpoint
+ * (`GET /contacts/:id`) returns them. Because Zoho REPLACES the contact_persons
+ * array with whatever an update sends, a payload built from a list-shaped
+ * contact posts a lone person with no `contact_person_id` and silently deletes
+ * every other contact person on the tenant's books.
+ *
+ * This ALWAYS re-fetches rather than sniffing for a missing `contact_persons`:
+ * an empty array is truthy in JS, so if a list response ever returned `[]` the
+ * guard would pass and quietly resume wiping data. Call it only where the
+ * contact is known to come from a list/search — a caller holding a `getContact`
+ * result already has the detail. Costs one Zoho API call, so charge it to the
+ * run budget at the call site.
+ */
+async function fetchContactDetail(
+  client: ZohoBooksClient,
+  contact: ZohoContact,
+): Promise<ZohoContact> {
+  return (await client.getContact(contact.contact_id)) ?? contact;
+}
+
 /** Fields a Zoho contact contributes to a NEXXUS customer. */
 export function customerFieldsFromContact(contact: ZohoContact): Partial<Customer> & { name: string } {
   const person = primaryPerson(contact);
@@ -448,9 +484,10 @@ export async function pushCustomer(
     }
     const existing = await client.getContact(mapping.zohoContactId);
     if (existing) {
+      // `existing` came from getContact, so it already carries contact_persons.
       const updated = await client.updateContact(
         mapping.zohoContactId,
-        contactPayload(customer, { primaryContactPersonId: primaryPerson(existing)?.contact_person_id ?? null }),
+        contactPayload(customer, { mode: "update", existing }),
       );
       await upsertMapping({
         tenantId: conn.tenantId,
@@ -467,9 +504,11 @@ export async function pushCustomer(
   // Not mapped yet: try to adopt an existing Zoho contact before creating one.
   const adopted = await findExistingContact(client, customer);
   if (adopted) {
+    // Adopted via searchContacts (list shape) — fetch the persons before update.
+    const detailed = await fetchContactDetail(client, adopted);
     const updated = await client.updateContact(
       adopted.contact_id,
-      contactPayload(customer, { primaryContactPersonId: primaryPerson(adopted)?.contact_person_id ?? null }),
+      contactPayload(customer, { mode: "update", existing: detailed }),
     );
     await upsertMapping({
       tenantId: conn.tenantId,
@@ -481,7 +520,7 @@ export async function pushCustomer(
     return { status: "updated", contactId: adopted.contact_id };
   }
 
-  const created = await client.createContact(contactPayload(customer, { includeOpeningBalance: true }));
+  const created = await client.createContact(contactPayload(customer, { mode: "create" }));
   await upsertMapping({
     tenantId: conn.tenantId,
     customerId: customer.id,
@@ -764,11 +803,15 @@ export async function runFullCustomerSync(conn: ZohoConnection): Promise<SyncSum
                 summary.remaining += 1;
                 continue;
               }
+              // `contact` came from listContacts (list shape) — fetch persons
+              // first, and charge the read to the budget so a run's Zoho
+              // traffic stays bounded rather than silently doubling.
+              const detailed = await fetchContactDetail(client, contact);
+              writes += 1;
+              await sleep(WRITE_DELAY_MS);
               const updated = await client.updateContact(
                 contact.contact_id,
-                contactPayload(local, {
-                  primaryContactPersonId: primaryPerson(contact)?.contact_person_id ?? null,
-                }),
+                contactPayload(local, { mode: "update", existing: detailed }),
               );
               writes += 1;
               await sleep(WRITE_DELAY_MS);
