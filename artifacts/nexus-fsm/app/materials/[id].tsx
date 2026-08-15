@@ -9,6 +9,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -16,6 +17,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -392,6 +394,7 @@ function AddAllocationModal({ visible, onClose, onSubmit, pending, colors }: {
   const [isCable, setIsCable] = useState(false);
   const [isReturnable, setIsReturnable] = useState(false);
   const [boxSizeFt, setBoxSizeFt] = useState('1000');
+  const { height } = useWindowDimensions();
 
   const { data: matches } = useQuery({
     queryKey: ['fsm-product-search', search],
@@ -408,6 +411,13 @@ function AddAllocationModal({ visible, onClose, onSubmit, pending, colors }: {
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      {/* Lifts the whole sheet above the keyboard on iOS; Android resizes the
+          window itself. The scroll area is capped against screen height so the
+          Dispatch button stays reachable on small phones. */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <View style={styles.modalBackdrop}>
         <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
           <View style={styles.modalHead}>
@@ -416,7 +426,7 @@ function AddAllocationModal({ visible, onClose, onSubmit, pending, colors }: {
               <Feather name="x" size={20} color={colors.mutedForeground} />
             </Pressable>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 440 }}>
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: Math.min(440, height * 0.45) }}>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>From inventory (deducts stock)</Text>
             <TextInput
               style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
@@ -510,6 +520,7 @@ function AddAllocationModal({ visible, onClose, onSubmit, pending, colors }: {
           </Pressable>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -133,11 +133,15 @@ export interface FsmJob {
   updatedAt: string;
 }
 
+/** A billable line on the work order: a part, labour, or a fee. */
 export interface FsmWorkItem {
   description: string;
   quantity: number;
   price: number;
   type?: string;
+  productId?: number;
+  isTaxable?: boolean;
+  costPrice?: number;
 }
 
 export interface FsmPhoto {
@@ -475,6 +479,22 @@ export function updateWorkOrder(staffId: number, id: number, body: {
   return request(`/api/work-orders/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/**
+ * Admin/manager/owner: replace the work order's billable lines (parts, labour
+ * and fees). The server recomputes subtotal/tax/total from what it is sent and
+ * refuses the change once the customer has signed off, so always build the new
+ * array from a freshly fetched job rather than a stale copy.
+ */
+export function updateWorkOrderItems(staffId: number, id: number, items: FsmWorkItem[]): Promise<{ id: number }> {
+  return request(`/api/work-orders/${id}`, {
+    method: 'PATCH',
+    // Legacy lines predate the type column; the server only accepts
+    // part | labor | fee, and an untyped line is a part.
+    body: JSON.stringify({ items: items.map((it) => ({ ...it, type: it.type ?? 'part' })) }),
     headers: staffHeaders(staffId),
   });
 }

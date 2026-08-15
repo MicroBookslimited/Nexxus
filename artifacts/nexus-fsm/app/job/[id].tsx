@@ -559,6 +559,26 @@ export default function JobDetailScreen() {
               <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
             </Pressable>
 
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CHARGES & FEES</Text>
+            <Pressable
+              testID="job-charges-link"
+              onPress={() => router.push(`/charges/${job.id}`)}
+              style={[styles.card, styles.installLink, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Feather name="dollar-sign" size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.body, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
+                  Parts, labour & fees
+                </Text>
+                <Text style={[styles.installLinkSub, { color: colors.mutedForeground }]}>
+                  {(job.items?.length ?? 0) > 0
+                    ? `${job.items.length} line${job.items.length === 1 ? '' : 's'} · ${'$'}${job.total.toFixed(2)}`
+                    : 'Add a call-out fee, labour or other charge'}
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            </Pressable>
+
             {job.total > 0 ? (
               <>
                 <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>PAYMENT</Text>
