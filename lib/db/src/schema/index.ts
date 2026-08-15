@@ -38,3 +38,4 @@ export * from "./layaway";
 export * from "./work-orders";
 export * from "./packages";
 export * from "./messaging";
+export * from "./assets";

@@ -107,6 +107,9 @@ export interface FsmJob {
   storageLocation: string | null;
   customerId: number | null;
   assignedStaffIds: number[];
+  /** When a job is assigned to a technician team. Absent on older API builds. */
+  assignedTeamId?: number | null;
+  assignedTeamName?: string | null;
   appointmentDate: string | null;
   estimatedMinutes: number | null;
   promisedDate: string | null;
@@ -375,6 +378,94 @@ export function createAllocation(
   },
 ): Promise<Allocation> {
   return request(`/api/fsm/jobs/${jobId}/allocations`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/* ───────────── Tools catalog (my tools) ───────────── */
+
+export type ToolCondition = 'good' | 'fair' | 'needs_repair' | 'out_of_service';
+export type ToolServiceState = 'none' | 'ok' | 'due_soon' | 'overdue';
+export type ToolScope = 'mine' | 'team' | 'all';
+
+/** A tool currently in this technician's (or their team's) hands. */
+export interface FsmTool {
+  id: number;
+  assetTag: string;
+  name: string;
+  category: string | null;
+  photoUrl: string | null;
+  condition: ToolCondition;
+  status: string;
+  serviceState: ToolServiceState;
+  nextServiceDue: string | null;
+  /** True when the caller holds it personally (vs. one of their teams). */
+  heldByMe: boolean;
+  /** "me" or the holding team's name. */
+  holder: string;
+  assigneeType: 'staff' | 'team';
+  teamId: number | null;
+  teamName: string | null;
+  since: string;
+  expectedReturnDate: string | null;
+  workOrderId: number | null;
+  workOrderNumber: string | null;
+}
+
+export interface FsmToolHistory {
+  id: number;
+  assigneeType: 'staff' | 'team';
+  staffName: string | null;
+  teamName: string | null;
+  workOrderId: number | null;
+  workOrderNumber: string | null;
+  assignedAt: string;
+  assignedByName: string | null;
+  expectedReturnDate: string | null;
+  conditionOut: string | null;
+  status: 'active' | 'returned';
+  returnedAt: string | null;
+  returnedToName: string | null;
+  conditionIn: string | null;
+}
+
+export interface FsmToolDetail {
+  id: number;
+  assetTag: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  serialNumber: string | null;
+  photoUrl: string | null;
+  condition: ToolCondition;
+  status: string;
+  serviceState: ToolServiceState;
+  nextServiceDue: string | null;
+  lastServiceDate: string | null;
+  currentAssignment: FsmTool | null;
+  history: FsmToolHistory[];
+}
+
+/** Tools in my hands (scope=mine) or my team's (team) or both (all, default). */
+export function listMyTools(staffId: number, scope: ToolScope = 'all'): Promise<FsmTool[]> {
+  return request(`/api/fsm/tools?scope=${scope}`, { headers: staffHeaders(staffId) });
+}
+
+export function getTool(staffId: number, id: number): Promise<FsmToolDetail> {
+  return request(`/api/fsm/tools/${id}`, { headers: staffHeaders(staffId) });
+}
+
+/** Flag a tool's condition from the field. Doesn't change custody. */
+export function reportToolCondition(
+  staffId: number,
+  id: number,
+  body: { condition: ToolCondition; note?: string },
+): Promise<{ id: number; condition: ToolCondition; serviceState: ToolServiceState }> {
+  return request(`/api/fsm/tools/${id}/report-condition`, {
     method: 'POST',
     body: JSON.stringify(body),
     headers: staffHeaders(staffId),

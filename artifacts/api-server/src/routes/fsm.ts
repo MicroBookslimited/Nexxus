@@ -13,6 +13,11 @@ import {
   productsTable,
   customersTable,
   staffTable,
+  fixedAssetsTable,
+  assetAssignmentsTable,
+  assetServiceRecordsTable,
+  technicianTeamsTable,
+  technicianTeamMembersTable,
 } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken } from "./saas-auth";
@@ -30,6 +35,7 @@ import {
 import { createHash, randomInt } from "node:crypto";
 import { hashManagerCode, MANAGER_CODE_MAX_ATTEMPTS } from "../lib/manager-code";
 import { getSetting } from "./settings";
+import { serviceState, releaseAssetForJob, type Tx } from "../lib/asset-custody";
 
 /**
  * NEXXUS FSM (Field Service Management) — technician-facing endpoints.
@@ -89,9 +95,30 @@ export function assignedToStaff(staffId: number) {
   return sql`(${workOrdersTable.assignedStaffId} = ${staffId} OR ${workOrdersTable.assignedStaffIds} @> ${JSON.stringify([staffId])}::jsonb)`;
 }
 
-/** Job visibility scope: admins see every job in the tenant; technicians only theirs. */
-function jobScope(staff: FsmStaff) {
-  return isFsmAdmin(staff) ? sql`TRUE` : assignedToStaff(staff.id);
+/**
+ * SQL condition: the job is assigned to a technician team this staff member
+ * leads. A team leader gets office-style reach over their team's jobs, so this
+ * widens the plain assignee test. Done entirely in SQL (an EXISTS against
+ * technician_teams) so list, detail and mutation guards all agree — a leader
+ * must never see a job in the list and then be refused when opening it.
+ */
+export function leadsAssignedTeam(staffId: number, tenantId: number) {
+  return sql`EXISTS (
+    SELECT 1 FROM technician_teams tt
+    WHERE tt.tenant_id = ${tenantId}
+      AND tt.leader_staff_id = ${staffId}
+      AND tt.id = ${workOrdersTable.assignedTeamId}
+  )`;
+}
+
+/**
+ * Job visibility scope: admins see every job in the tenant; a team leader sees
+ * their own jobs plus every job assigned to a team they lead; everyone else
+ * only their own.
+ */
+function jobScope(staff: FsmStaff, tenantId: number) {
+  if (isFsmAdmin(staff)) return sql`TRUE`;
+  return sql`(${assignedToStaff(staff.id)} OR ${leadsAssignedTeam(staff.id, tenantId)})`;
 }
 
 const ACTIVE_STATUSES = ["received", "in_progress", "awaiting_parts", "on_hold", "ready"] as const;
@@ -137,7 +164,8 @@ function stillInTechnicianCustody(staff: FsmStaff, tenantId: number) {
  */
 function technicianQueueScope(staff: FsmStaff, tenantId: number) {
   return and(
-    assignedToStaff(staff.id),
+    // Their own jobs, plus every job assigned to a team they lead.
+    sql`(${assignedToStaff(staff.id)} OR ${leadsAssignedTeam(staff.id, tenantId)})`,
     or(
       and(
         inArray(workOrdersTable.status, [...ACTIVE_STATUSES]),
@@ -201,10 +229,13 @@ function toJob(
   customerName?: string | null,
   customerPhone?: string | null,
   flags: JobFlags = NO_FLAGS,
+  teamName?: string | null,
 ) {
   return {
     id: w.id,
     workOrderNumber: w.workOrderNumber,
+    assignedTeamId: w.assignedTeamId ?? null,
+    assignedTeamName: teamName ?? null,
     status: w.status,
     assignmentStatus: w.assignmentStatus,
     assignmentRespondedAt: w.assignmentRespondedAt,
@@ -269,9 +300,11 @@ router.get("/fsm/jobs", async (req, res): Promise<void> => {
       workOrder: workOrdersTable,
       customerName: customersTable.name,
       customerPhone: customersTable.phone,
+      teamName: technicianTeamsTable.name,
     })
     .from(workOrdersTable)
     .leftJoin(customersTable, and(eq(workOrdersTable.customerId, customersTable.id), eq(customersTable.tenantId, tenantId)))
+    .leftJoin(technicianTeamsTable, and(eq(workOrdersTable.assignedTeamId, technicianTeamsTable.id), eq(technicianTeamsTable.tenantId, tenantId)))
     .where(and(
       eq(workOrdersTable.tenantId, tenantId),
       // Office roles see the whole book — every status, closed jobs included.
@@ -281,7 +314,7 @@ router.get("/fsm/jobs", async (req, res): Promise<void> => {
     .limit(isFsmAdmin(staff) ? 400 : 200);
 
   const flags = await loadJobFlags(tenantId, rows.map((r) => r.workOrder.id));
-  res.json(rows.map((r) => toJob(r.workOrder, r.customerName, r.customerPhone, flags.get(r.workOrder.id))));
+  res.json(rows.map((r) => toJob(r.workOrder, r.customerName, r.customerPhone, flags.get(r.workOrder.id), r.teamName)));
 });
 
 /**
@@ -354,13 +387,15 @@ router.get("/fsm/jobs/:id", async (req, res): Promise<void> => {
       workOrder: workOrdersTable,
       customerName: customersTable.name,
       customerPhone: customersTable.phone,
+      teamName: technicianTeamsTable.name,
     })
     .from(workOrdersTable)
     .leftJoin(customersTable, and(eq(workOrdersTable.customerId, customersTable.id), eq(customersTable.tenantId, tenantId)))
+    .leftJoin(technicianTeamsTable, and(eq(workOrdersTable.assignedTeamId, technicianTeamsTable.id), eq(technicianTeamsTable.tenantId, tenantId)))
     .where(and(
       eq(workOrdersTable.id, id),
       eq(workOrdersTable.tenantId, tenantId),
-      jobScope(staff),
+      jobScope(staff, tenantId),
     ));
   if (!row) { res.status(404).json({ error: "Job not found" }); return; }
 
@@ -389,7 +424,7 @@ router.get("/fsm/jobs/:id", async (req, res): Promise<void> => {
   const flags = await loadJobFlags(tenantId, [id]);
 
   res.json({
-    ...toJob(row.workOrder, row.customerName, row.customerPhone, flags.get(id)),
+    ...toJob(row.workOrder, row.customerName, row.customerPhone, flags.get(id), row.teamName),
     notes, history, timeEntries, billableMinutes, pausedMinutes, activeEntry,
     photos,
     completionSignature: row.workOrder.completionSignature,
@@ -709,6 +744,22 @@ router.post("/fsm/material-handovers/:id/sign", async (req, res): Promise<void> 
             })
             .where(and(eq(productsTable.id, alloc.productId), eq(productsTable.tenantId, tenantId)));
         }
+
+        // A signed return that fully brings a tracked tool back also hands its
+        // asset custody back — same transaction, so the ledger and the
+        // allocation can never disagree. No-op unless the open custody row
+        // belongs to this job (releaseAssetForJob guards that).
+        if (alloc.assetId != null && newReturned >= alloc.qtyAllocated) {
+          await releaseAssetForJob(tx as Tx, {
+            tenantId,
+            assetId: alloc.assetId,
+            workOrderId: row.workOrderId,
+            excludeAllocationId: alloc.id,
+            receivedByStaffId: signer.id,
+            receivedByName: signer.name,
+            notes: parsed.data.notes ?? null,
+          });
+        }
       }
       applied.push({ ...item, qtyAccepted: accept });
     }
@@ -739,6 +790,261 @@ router.post("/fsm/material-handovers/:id/sign", async (req, res): Promise<void> 
     return;
   }
   res.json(outcome.row);
+});
+
+/* ─── Tools catalog (field) ───────────────────────────────────────────────────
+ * The tools a technician (or their team) is currently holding. Custody lives in
+ * asset_assignments; this reads the open spells for the technician plus every
+ * team they belong to. `serviceState` is shared with the office asset register
+ * (lib/asset-custody.ts) so both agree on what "overdue" means. */
+
+/** Team ids this staff member belongs to (as a member row). */
+async function myTeamIds(tenantId: number, staffId: number): Promise<number[]> {
+  const rows = await db
+    .select({ teamId: technicianTeamMembersTable.teamId })
+    .from(technicianTeamMembersTable)
+    .where(and(
+      eq(technicianTeamMembersTable.tenantId, tenantId),
+      eq(technicianTeamMembersTable.staffId, staffId),
+    ));
+  return rows.map((r) => r.teamId);
+}
+
+type ToolScope = "mine" | "team" | "all";
+
+/**
+ * The open custody predicate for the tools this technician can see: held by
+ * them personally, or by one of their teams — filtered by the requested scope.
+ */
+function heldByMeOrTeam(staffId: number, teamIds: number[], scope: ToolScope) {
+  const mine = sql`(${assetAssignmentsTable.assigneeType} = 'staff' AND ${assetAssignmentsTable.staffId} = ${staffId})`;
+  const teamHeld = teamIds.length
+    ? sql`(${assetAssignmentsTable.assigneeType} = 'team' AND ${assetAssignmentsTable.teamId} IN (${sql.join(teamIds.map((t) => sql`${t}`), sql`, `)}))`
+    : sql`FALSE`;
+  if (scope === "mine") return mine;
+  if (scope === "team") return teamHeld;
+  return sql`(${mine} OR ${teamHeld})`;
+}
+
+/** Shape one held-tool row (asset joined to its open custody spell). */
+function toToolCard(
+  a: typeof fixedAssetsTable.$inferSelect,
+  holder: typeof assetAssignmentsTable.$inferSelect,
+  staffId: number,
+) {
+  const heldByMe = holder.assigneeType === "staff" && holder.staffId === staffId;
+  return {
+    id: a.id,
+    assetTag: a.assetTag,
+    name: a.name,
+    category: a.category,
+    photoUrl: a.photoUrl,
+    condition: a.condition,
+    status: a.status,
+    serviceState: serviceState(a.nextServiceDue),
+    nextServiceDue: a.nextServiceDue,
+    // Who has it right now, and whether that's the caller or one of their teams.
+    heldByMe,
+    holder: heldByMe ? "me" : (holder.teamName ?? holder.staffName ?? "Team"),
+    assigneeType: holder.assigneeType,
+    teamId: holder.teamId,
+    teamName: holder.teamName,
+    since: holder.assignedAt,
+    expectedReturnDate: holder.expectedReturnDate,
+    // The job the tool went out on, when it was dispatched against one.
+    workOrderId: holder.workOrderId,
+    workOrderNumber: holder.workOrderNumber,
+  };
+}
+
+// LIST tools currently in my (or my team's) hands.
+router.get("/fsm/tools", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const staff = await getVerifiedStaff(req as never, tenantId);
+  if (!staff) { res.status(401).json({ error: "Technician identity required" }); return; }
+
+  const rawScope = typeof req.query["scope"] === "string" ? req.query["scope"] : "all";
+  const scope: ToolScope = rawScope === "mine" || rawScope === "team" ? rawScope : "all";
+  const teamIds = await myTeamIds(tenantId, staff.id);
+
+  const rows = await db
+    .select({ asset: fixedAssetsTable, holder: assetAssignmentsTable })
+    .from(assetAssignmentsTable)
+    .innerJoin(fixedAssetsTable, and(
+      eq(fixedAssetsTable.id, assetAssignmentsTable.assetId),
+      eq(fixedAssetsTable.tenantId, tenantId),
+      eq(fixedAssetsTable.isTool, true),
+    ))
+    .where(and(
+      eq(assetAssignmentsTable.tenantId, tenantId),
+      eq(assetAssignmentsTable.status, "active"),
+      heldByMeOrTeam(staff.id, teamIds, scope),
+    ))
+    .orderBy(desc(assetAssignmentsTable.assignedAt));
+
+  res.json(rows.map((r) => toToolCard(r.asset, r.holder, staff.id)));
+});
+
+// GET one tool with its recent custody history.
+router.get("/fsm/tools/:id", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const staff = await getVerifiedStaff(req as never, tenantId);
+  if (!staff) { res.status(401).json({ error: "Technician identity required" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [asset] = await db
+    .select()
+    .from(fixedAssetsTable)
+    .where(and(
+      eq(fixedAssetsTable.id, id),
+      eq(fixedAssetsTable.tenantId, tenantId),
+      eq(fixedAssetsTable.isTool, true),
+    ));
+  if (!asset) { res.status(404).json({ error: "Tool not found" }); return; }
+
+  const teamIds = await myTeamIds(tenantId, staff.id);
+  const [holder] = await db
+    .select()
+    .from(assetAssignmentsTable)
+    .where(and(
+      eq(assetAssignmentsTable.tenantId, tenantId),
+      eq(assetAssignmentsTable.assetId, id),
+      eq(assetAssignmentsTable.status, "active"),
+    ));
+
+  // Only a tool the caller (or their team) currently holds is theirs to open;
+  // office staff (admins) may inspect any tool.
+  const heldByCaller = !!holder && (
+    (holder.assigneeType === "staff" && holder.staffId === staff.id) ||
+    (holder.assigneeType === "team" && holder.teamId != null && teamIds.includes(holder.teamId))
+  );
+  if (!heldByCaller && !isFsmAdmin(staff)) {
+    res.status(403).json({ error: "This tool isn't in your hands" }); return;
+  }
+
+  const history = await db
+    .select()
+    .from(assetAssignmentsTable)
+    .where(and(
+      eq(assetAssignmentsTable.tenantId, tenantId),
+      eq(assetAssignmentsTable.assetId, id),
+    ))
+    .orderBy(desc(assetAssignmentsTable.assignedAt))
+    .limit(20);
+
+  res.json({
+    id: asset.id,
+    assetTag: asset.assetTag,
+    name: asset.name,
+    description: asset.description,
+    category: asset.category,
+    manufacturer: asset.manufacturer,
+    model: asset.model,
+    serialNumber: asset.serialNumber,
+    photoUrl: asset.photoUrl,
+    condition: asset.condition,
+    status: asset.status,
+    serviceState: serviceState(asset.nextServiceDue),
+    nextServiceDue: asset.nextServiceDue,
+    lastServiceDate: asset.lastServiceDate,
+    currentAssignment: holder ? toToolCard(asset, holder, staff.id) : null,
+    history: history.map((h) => ({
+      id: h.id,
+      assigneeType: h.assigneeType,
+      staffName: h.staffName,
+      teamName: h.teamName,
+      workOrderId: h.workOrderId,
+      workOrderNumber: h.workOrderNumber,
+      assignedAt: h.assignedAt,
+      assignedByName: h.assignedByName,
+      expectedReturnDate: h.expectedReturnDate,
+      conditionOut: h.conditionOut,
+      status: h.status,
+      returnedAt: h.returnedAt,
+      returnedToName: h.returnedToName,
+      conditionIn: h.conditionIn,
+    })),
+  });
+});
+
+const ReportConditionBody = z.object({
+  condition: z.enum(["good", "fair", "needs_repair", "out_of_service"]),
+  note: z.string().max(2000).optional(),
+});
+
+/**
+ * The technician flags a tool's condition from the field. Allowed only for a
+ * tool they (or their team) currently hold. Writes an "inspection" service
+ * record for the audit trail and updates the asset's condition — but never
+ * touches custody or status: a damaged tool stays in their hands until it is
+ * physically handed back through the signed return.
+ */
+router.post("/fsm/tools/:id/report-condition", async (req, res): Promise<void> => {
+  const tenantId = getTenantId(req as never);
+  if (!tenantId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const staff = await getVerifiedStaff(req as never, tenantId);
+  if (!staff) { res.status(401).json({ error: "Technician identity required" }); return; }
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const parsed = ReportConditionBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "A valid condition is required" }); return; }
+
+  const teamIds = await myTeamIds(tenantId, staff.id);
+
+  const outcome = await db.transaction(async (tx) => {
+    const [asset] = await tx
+      .select()
+      .from(fixedAssetsTable)
+      .where(and(
+        eq(fixedAssetsTable.id, id),
+        eq(fixedAssetsTable.tenantId, tenantId),
+        eq(fixedAssetsTable.isTool, true),
+      ))
+      .for("update");
+    if (!asset) return { error: 404 as const };
+
+    const [holder] = await tx
+      .select()
+      .from(assetAssignmentsTable)
+      .where(and(
+        eq(assetAssignmentsTable.tenantId, tenantId),
+        eq(assetAssignmentsTable.assetId, id),
+        eq(assetAssignmentsTable.status, "active"),
+      ));
+    const heldByCaller = !!holder && (
+      (holder.assigneeType === "staff" && holder.staffId === staff.id) ||
+      (holder.assigneeType === "team" && holder.teamId != null && teamIds.includes(holder.teamId))
+    );
+    if (!heldByCaller) return { error: 403 as const };
+
+    await tx.insert(assetServiceRecordsTable).values({
+      tenantId,
+      assetId: id,
+      serviceType: "inspection",
+      performedBy: staff.name,
+      createdByStaffId: staff.id,
+      notes: parsed.data.note
+        ? `Condition reported as ${parsed.data.condition}: ${parsed.data.note}`
+        : `Condition reported as ${parsed.data.condition}`,
+    });
+
+    const [updated] = await tx
+      .update(fixedAssetsTable)
+      .set({ condition: parsed.data.condition, updatedAt: new Date() })
+      .where(and(eq(fixedAssetsTable.id, id), eq(fixedAssetsTable.tenantId, tenantId)))
+      .returning();
+    return { asset: updated };
+  });
+
+  if ("error" in outcome) {
+    if (outcome.error === 404) { res.status(404).json({ error: "Tool not found" }); return; }
+    res.status(403).json({ error: "This tool isn't in your hands" }); return;
+  }
+  const a = outcome.asset!;
+  res.json({ id: a.id, condition: a.condition, serviceState: serviceState(a.nextServiceDue) });
 });
 
 const InstallDetailsBody = z.object({
@@ -952,7 +1258,7 @@ async function execTransition(
       .where(and(
         eq(workOrdersTable.id, id),
         eq(workOrdersTable.tenantId, tenantId),
-        jobScope(staff),
+        jobScope(staff, tenantId),
       ))
       .for("update");
     if (!job) return { error: 404 as const };
@@ -1241,7 +1547,7 @@ async function loadAssignedJob(req: never, res: never, opts?: { requireOpen?: bo
     .where(and(
       eq(workOrdersTable.id, id),
       eq(workOrdersTable.tenantId, tenantId),
-      jobScope(staff),
+      jobScope(staff, tenantId),
     ));
   if (!job) { rs.status(404).json({ error: "Job not found" }); return null; }
   if (opts?.requireOpen !== false && (job.status === "collected" || job.status === "cancelled")) {
@@ -1568,7 +1874,7 @@ router.post("/fsm/jobs/:id/notes", async (req, res): Promise<void> => {
     .where(and(
       eq(workOrdersTable.id, id),
       eq(workOrdersTable.tenantId, tenantId),
-      jobScope(staff),
+      jobScope(staff, tenantId),
     ));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
 

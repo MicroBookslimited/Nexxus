@@ -65,6 +65,8 @@ import workOrdersRouter from "./work-orders";
 import fsmRouter from "./fsm";
 import packagesRouter from "./packages";
 import messagingRouter from "./messaging";
+import assetsRouter from "./assets";
+import teamsRouter from "./teams";
 
 const router: IRouter = Router();
 
@@ -80,6 +82,8 @@ router.use(workOrdersRouter);
 router.use(fsmRouter);
 router.use(packagesRouter);
 router.use(messagingRouter);
+router.use(assetsRouter);
+router.use(teamsRouter);
 router.use(giftVouchersRouter);
 router.use(dashboardRouter);
 router.use(customersRouter);

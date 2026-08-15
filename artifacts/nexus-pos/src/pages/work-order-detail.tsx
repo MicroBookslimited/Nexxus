@@ -48,6 +48,7 @@ import { PENDING_WORK_ORDER_KEY, STATUS_LABEL, STATUS_STYLES, woStatusLabel } fr
 import { generateJobCard } from "@/lib/work-order-doc";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { useStaff } from "@/contexts/StaffContext";
+import { useTeams } from "@/lib/assets-api";
 import { ThreadPanel } from "@/components/messaging/thread-panel";
 import { PinPad } from "@/components/PinPad";
 import { SignatureCanvas } from "@/components/SignatureCanvas";
@@ -118,6 +119,7 @@ export default function WorkOrderDetailPage() {
   const { data: settings } = useGetSettings();
   const { data: customers } = useListCustomers();
   const { data: staff } = useListStaff();
+  const { data: teams } = useTeams();
   const { data: products } = useListProducts();
   const updateWO = useUpdateWorkOrder();
   const deleteWO = useDeleteWorkOrder();
@@ -309,7 +311,7 @@ export default function WorkOrderDetailPage() {
 
       {/* ── Tab content ── */}
       {tab === "overview" && (
-        <OverviewTab wo={wo} customers={customers ?? []} staff={staff ?? []} currency={currency} onPatch={patchWO} />
+        <OverviewTab wo={wo} customers={customers ?? []} staff={staff ?? []} teams={teams ?? []} currency={currency} onPatch={patchWO} />
       )}
       {tab === "items" && (
         <ItemsTab wo={wo} products={products ?? []} currency={currency} onPatch={patchWO} />
@@ -503,11 +505,12 @@ export default function WorkOrderDetailPage() {
 
 /* ── Overview Tab ─────────────────────────────────────────────────────────── */
 function OverviewTab({
-  wo, customers, staff, currency, onPatch,
+  wo, customers, staff, teams, currency, onPatch,
 }: {
   wo: WorkOrder;
   customers: any[];
   staff: any[];
+  teams: { id: number; name: string; colour: string | null; memberCount: number; members: { staffId: number; name: string }[] }[];
   currency: string;
   onPatch: (data: any, msg?: string) => void;
 }) {
@@ -580,6 +583,43 @@ function OverviewTab({
               <Field label="Service type" value={wo.serviceType} />
               <Field label="Channel" value={wo.serviceChannel?.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} />
               <Field label="Priority" value={wo.priority?.replace(/\b\w/g, (c) => c.toUpperCase())} />
+              <div className="col-span-2">
+                <p className="text-xs text-muted-foreground mb-1">Team</p>
+                {(() => {
+                  // Degrade to "no team" if the server hasn't shipped the field yet.
+                  const teamId = wo.assignedTeamId ?? null;
+                  const teamName = wo.assignedTeamName ?? teams.find((t) => t.id === teamId)?.name ?? null;
+                  if (isTerminal) {
+                    return <p className="text-sm font-medium">{teamName || "No team"}</p>;
+                  }
+                  return (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {teamId != null && (
+                        <Badge variant="outline" className="gap-1.5">
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: teams.find((t) => t.id === teamId)?.colour ?? "#94a3b8" }}
+                          />
+                          {teamName || `Team #${teamId}`}
+                        </Badge>
+                      )}
+                      <select
+                        className="h-8 rounded-md border border-input bg-background px-2 text-sm flex-1 min-w-[8rem]"
+                        value={teamId ?? ""}
+                        onChange={(e) => {
+                          const next = e.target.value ? Number(e.target.value) : null;
+                          onPatch({ assignedTeamId: next }, next ? "Team assigned" : "Team cleared");
+                        }}
+                      >
+                        <option value="">No team</option>
+                        {teams.map((t) => (
+                          <option key={t.id} value={t.id}>{t.name} ({t.memberCount})</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })()}
+              </div>
               <div className="col-span-2">
                 <p className="text-xs text-muted-foreground mb-1">
                   Assigned technician{(wo.assignedStaffIds?.length ?? 0) > 1 ? "s" : ""}

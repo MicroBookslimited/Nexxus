@@ -19,7 +19,7 @@ import { Feather } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PriorityChip, StatusChip, formatDate } from '@/components/JobBits';
+import { Chip, PriorityChip, StatusChip, formatDate } from '@/components/JobBits';
 import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
 import SignaturePad, { strokesToSvgDataUrl } from '@/components/SignaturePad';
@@ -363,6 +363,9 @@ export default function JobDetailScreen() {
               <View style={styles.chipsRow}>
                 <StatusChip status={job.status} serviceChannel={job.serviceChannel} />
                 <PriorityChip priority={job.priority} />
+                {job.assignedTeamName ? (
+                  <Chip label={job.assignedTeamName} color={colors.accent} />
+                ) : null}
                 {job.assignmentStatus === 'accepted' ? (
                   <View style={[styles.acceptedBadge, { backgroundColor: '#22C55E22' }]}>
                     <Feather name="check" size={12} color="#22C55E" />

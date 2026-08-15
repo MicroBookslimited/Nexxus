@@ -45,6 +45,9 @@ export const workOrdersTable = pgTable("work_orders", {
   // assignedStaffIds is the full ordered list (used by the multi-technician UI).
   assignedStaffId: integer("assigned_staff_id").references(() => staffTable.id),
   assignedStaffIds: jsonb("assigned_staff_ids").notNull().$type<number[]>().default([]),
+  // When a whole technician team is assigned to the job (in addition to
+  // expanding its members into assignedStaffIds). Nullable.
+  assignedTeamId: integer("assigned_team_id"),
 
   // Universal installation form: dispatcher-selected service areas gate which
   // dynamic sections the technician sees; answers live in install_details JSONB
@@ -235,6 +238,10 @@ export const workOrderAllocationsTable = pgTable("work_order_allocations", {
   tenantId: integer("tenant_id").notNull(),
   workOrderId: integer("work_order_id").notNull().references(() => workOrdersTable.id, { onDelete: "cascade" }),
   productId: integer("product_id"), // nullable: free-text / purchased-on-site items
+  // Links this line to a specific tracked tool in the fixed-asset register.
+  // Set when a registered tool goes out on the job; returning the line hands
+  // custody back, so per-job custody and the asset ledger stay in step.
+  assetId: integer("asset_id"),
   description: text("description").notNull(),
   category: text("category"), // e.g. PVC, TRK, ADH, TOOL, CABLE
   unit: text("unit").notNull().default("pcs"), // pcs | length | ft | box | tin | pc …

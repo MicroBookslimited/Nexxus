@@ -88,3 +88,5 @@
 - [Zoho list vs detail payload shape](zoho-list-vs-detail-shape.md) — list endpoints omit contact_persons & Zoho REPLACES arrays on update; building an update from a list-shaped record silently wipes sub-records. Never sniff (`[]` is truthy) — re-fetch detail.
 - [FSM in-app messaging](fsm-messaging.md) — direct + job threads, office is a collective identity, job access derived live from assignment; last-message preview needs compare-and-set, read cursor must be capped to the thread.
 - [Supplier master linking](supplier-master-linking.md) — POs/bills link to the vendors master and the server copies the name into the legacy text; confirmed bills raise ONE AP subledger row (GL credit is separate, not a double count).
+- [Fixed-asset custody ledger](fixed-assets-custody.md) — asset_assignments is truth; one open tool line per job, release only when none outstanding, only in_store dispatchable; teams expand into assigned_staff_ids.
+- [Verify tracked-file edits after a subagent fan-out](parallel-subagent-rollback.md) — a snapshot can silently revert edits to tracked files while new files survive; grep every identifier, re-apply via sendFollowup.

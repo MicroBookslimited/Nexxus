@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useTeams } from "@/lib/assets-api";
 
 interface Props {
   open: boolean;
@@ -29,6 +30,7 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
   const { toast } = useToast();
   const { data: customers } = useListCustomers();
   const { data: staff } = useListStaff();
+  const { data: teams } = useTeams();
   const createWO = useCreateWorkOrder();
 
   const [custId, setCustId] = useState<number | "">("");
@@ -46,6 +48,7 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
   const [serviceChannel, setServiceChannel] = useState("in_store");
   const [priority, setPriority] = useState("normal");
   const [assignedStaffIds, setAssignedStaffIds] = useState<number[]>([]);
+  const [assignedTeamId, setAssignedTeamId] = useState<number | "">("");
   const [promisedDate, setPromisedDate] = useState("");
   const [estimatedHours, setEstimatedHours] = useState("");
   const [depositRequired, setDepositRequired] = useState("");
@@ -56,7 +59,7 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
     setItemDescription(""); setBrand(""); setModel(""); setSerialNumber("");
     setColour(""); setConditionReceived(""); setProblemDescription("");
     setServiceType(""); setServiceChannel("in_store"); setPriority("normal");
-    setAssignedStaffIds([]); setPromisedDate(""); setEstimatedHours(""); setDepositRequired(""); setNotes("");
+    setAssignedStaffIds([]); setAssignedTeamId(""); setPromisedDate(""); setEstimatedHours(""); setDepositRequired(""); setNotes("");
   };
 
   const toggleStaff = (id: number) => {
@@ -87,6 +90,7 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
         serviceChannel: serviceChannel as "in_store" | "on_site" | "pickup" | "delivery" | "remote",
         priority: priority as "low" | "normal" | "high" | "urgent" | "emergency",
         ...(assignedStaffIds.length > 0 ? { assignedStaffIds } : {}),
+        ...(assignedTeamId ? { assignedTeamId: Number(assignedTeamId) } : {}),
         ...(promisedDate ? { promisedDate } : {}),
         ...(Number(estimatedHours) > 0 ? { estimatedMinutes: Math.round(Number(estimatedHours) * 60) } : {}),
         ...(depositRequired ? { depositRequired: Number(depositRequired) } : {}),
@@ -246,6 +250,35 @@ export function CreateWorkOrderDialog({ open, onClose, onCreated }: Props) {
                     <option value="emergency">Emergency</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Team picker — expands to its members server-side; the technician
+                  picker below stays usable for ad-hoc additions. */}
+              <div>
+                <Label>Team</Label>
+                <select
+                  className="w-full mt-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={assignedTeamId}
+                  onChange={(e) => setAssignedTeamId(e.target.value ? Number(e.target.value) : "")}
+                >
+                  <option value="">— no team —</option>
+                  {(teams ?? []).map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.memberCount})
+                    </option>
+                  ))}
+                </select>
+                {(() => {
+                  const team = (teams ?? []).find((t) => t.id === assignedTeamId);
+                  if (!team) return null;
+                  return team.members.length > 0 ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Puts on the job: {team.members.map((m) => m.name).join(", ")}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground">This team has no members yet.</p>
+                  );
+                })()}
               </div>
 
               {/* Multi-technician selector */}

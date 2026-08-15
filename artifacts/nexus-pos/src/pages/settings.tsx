@@ -116,6 +116,7 @@ export function AdminSettings() {
   const [workOrdersAddon, setWorkOrdersAddon] = useState<TenantAddonRow | null | undefined>(null);
   const [, navigate] = useLocation();
   const [packagesEnabled, setPackagesEnabled] = useState(false);
+  const [fixedAssetsEnabled, setFixedAssetsEnabled] = useState(false);
   const [showProductSize, setShowProductSize] = useState(false);
   const [stockMethod, setStockMethod] = useState<"fifo" | "lifo">("fifo");
   const [receiptLogoSize, setReceiptLogoSize] = useState("90");
@@ -185,6 +186,7 @@ export function AdminSettings() {
       .then((r) => setWorkOrdersAddon(r.mine.find((m) => m.addonSlug === "work_orders")))
       .catch(() => setWorkOrdersAddon(undefined));
     setPackagesEnabled(settings.packages_enabled === "true");
+    setFixedAssetsEnabled(settings.fixed_assets_enabled === "true");
     setShowProductSize(settings.show_product_size === "true");
     setStockMethod(settings.stock_method === "lifo" ? "lifo" : "fifo");
     setReceiptLogoSize(settings.receipt_logo_size ?? "90");
@@ -245,6 +247,7 @@ export function AdminSettings() {
           layaway_enabled: layawayEnabled ? "true" : "false",
           work_orders_enabled: workOrdersEnabled ? "true" : "false",
           packages_enabled: packagesEnabled ? "true" : "false",
+          fixed_assets_enabled: fixedAssetsEnabled ? "true" : "false",
           show_product_size: showProductSize ? "true" : "false",
           stock_method: stockMethod,
           receipt_logo_size: receiptLogoSize,
@@ -1992,6 +1995,31 @@ export function AdminSettings() {
               )} />
             </button>
           </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+            <div>
+              <p className="text-sm font-medium">Fixed Assets</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Keep a register of owned equipment — cost, straight-line depreciation and book value, condition, photos and scannable tags. Assets marked as tools appear in the field-service tools catalog, where they can be signed out to a technician or a team.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={fixedAssetsEnabled}
+              onClick={() => { setFixedAssetsEnabled(!fixedAssetsEnabled); markDirty(); }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                fixedAssetsEnabled ? "bg-orange-500" : "bg-muted-foreground/30"
+              )}
+            >
+              <span className={cn(
+                "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform",
+                fixedAssetsEnabled ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+
         </CardContent>
       </Card>
 

@@ -54,6 +54,8 @@ const WorkOrderDetailPage = lazy(() => import("@/pages/work-order-detail"));
 const WorkOrderPortalPage = lazy(() => import("@/pages/work-order-portal"));
 const MessagesPage = lazy(() => import("@/pages/messages"));
 const PackagesPage = lazy(() => import("@/pages/packages"));
+const AssetsPage = lazy(() => import("@/pages/assets"));
+const TeamsPage = lazy(() => import("@/pages/teams"));
 const GiftVouchers = lazy(() => import("@/pages/gift-vouchers"));
 const Account = lazy(() => import("@/pages/account"));
 const Support = lazy(() => import("@/pages/support/support"));
@@ -225,6 +227,8 @@ function POSRouter() {
       <Route path="/messages"><ProtectedRoute component={MessagesPage} permission="orders.view" /></Route>
       <Route path="/wo/:id/:token" component={WorkOrderPortalPage} />
       <Route path="/packages"><ProtectedRoute component={PackagesPage} permission="orders.view" /></Route>
+      <Route path="/assets"><ProtectedRoute component={AssetsPage} permission="inventory.view" /></Route>
+      <Route path="/teams"><ProtectedRoute component={TeamsPage} permission="staff.view" /></Route>
       <Route path="/gift-vouchers"><ProtectedRoute component={GiftVouchers} permission="vouchers.manage" /></Route>
       <Route path="/scale"><ProtectedRoute component={ScalePage} permission="scale.use" /></Route>
       <Route path="/store"><ProtectedRoute component={StorePage} /></Route>

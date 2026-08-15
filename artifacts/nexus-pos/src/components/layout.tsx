@@ -7,6 +7,7 @@ import {
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
   FlaskConical, Factory, Store, Cpu, Landmark, Banknote, ClipboardList, Smartphone, DatabaseBackup,
   Scale, CheckCircle, Tag, FileText, Ticket, LifeBuoy, PiggyBank, Wrench, PackageCheck, MessageSquare,
+  UsersRound, Boxes,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -60,6 +61,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/work-orders",  label: "Work Orders",     icon: Wrench,          color: "text-amber-300",   permission: "orders.view",        settingKey: "work_orders_enabled" },
   { href: "/messages",     label: "Messages",        icon: MessageSquare,   color: "text-sky-400",     permission: "orders.view",        settingKey: "work_orders_enabled" },
   { href: "/packages",     label: "Packages",        icon: PackageCheck,    color: "text-sky-300",     permission: "orders.view",        settingKey: "packages_enabled" },
+  { href: "/teams",        label: "Teams",           icon: UsersRound,      color: "text-amber-200",   permission: "staff.view",         settingKey: "work_orders_enabled" },
   { href: "/gift-vouchers",label: "Gift Vouchers",   icon: Ticket,          color: "text-fuchsia-300", permission: "vouchers.manage" },
   { href: "/cash",         label: "Cash Mgmt",       icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session",  alwaysShowLabel: true },
   { href: "/clock",        label: "Time Clock",      icon: Clock,           color: "text-emerald-400", permission: null },
@@ -73,6 +75,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/customers",    label: "Customers",       icon: Users,           color: "text-pink-400",    permission: "customers.view" },
   { href: "/staff",        label: "Staff",           icon: UserCog,         color: "text-indigo-400",  permission: "staff.view" },
   { href: "/locations",    label: "Locations",       icon: MapPin,          color: "text-rose-400",    permission: "inventory.manage" },
+  { href: "/assets",       label: "Fixed Assets",    icon: Boxes,           color: "text-orange-300",  permission: "inventory.view",     settingKey: "fixed_assets_enabled" },
   { href: "/production",   label: "Production",      icon: FlaskConical,    color: "text-lime-400",    permission: "inventory.manage" },
   { href: "/accounting",   label: "Accounting",      icon: Calculator,      color: "text-cyan-400",    permission: "reports.view" },
   { href: "/price-manager",label: "Price Manager",   icon: Calculator,      color: "text-yellow-400",  permission: "pricing.manage" },

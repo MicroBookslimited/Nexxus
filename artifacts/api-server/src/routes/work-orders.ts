@@ -17,12 +17,16 @@ import {
   workOrderAllocationsTable,
   workOrderPaymentsTable,
   cashSessionsTable,
+  technicianTeamsTable,
+  technicianTeamMembersTable,
+  fixedAssetsTable,
 } from "@workspace/db";
 import { z } from "zod";
 import { verifyTenantToken, requireFullTenant } from "./saas-auth";
 import { hasWorkOrdersEntitlement } from "../lib/addon-entitlement";
 import { getSetting } from "./settings";
 import { sendWorkOrderEmail, sendWorkOrderStatusEmail, sendTechnicianAssignmentEmail, sendFollowUpVisitEmails } from "../lib/work-order-mail";
+import { claimAssetForJob, releaseAssetForJob, outstandingToolLines } from "../lib/asset-custody";
 
 const router: IRouter = Router();
 
@@ -117,6 +121,7 @@ const CreateWorkOrderBody = z.object({
   priority: z.enum(["low", "normal", "high", "urgent", "emergency"]).optional(),
   assignedStaffId: z.number().int().optional(),
   assignedStaffIds: z.array(z.number().int()).optional(),
+  assignedTeamId: z.number().int().nullable().optional(),
   estimatedMinutes: z.number().int().positive().max(60 * 24 * 30).optional(),
   promisedDate: z.coerce.date().optional(),
   appointmentDate: z.coerce.date().optional(),
@@ -153,6 +158,7 @@ const UpdateWorkOrderBody = z.object({
   priority: z.enum(["low", "normal", "high", "urgent", "emergency"]).optional(),
   assignedStaffId: z.number().int().nullable().optional(),
   assignedStaffIds: z.array(z.number().int()).nullable().optional(),
+  assignedTeamId: z.number().int().nullable().optional(),
   estimatedMinutes: z.number().int().positive().max(60 * 24 * 30).nullable().optional(),
   promisedDate: z.coerce.date().nullable().optional(),
   appointmentDate: z.coerce.date().nullable().optional(),
@@ -366,6 +372,45 @@ async function syncContactToCustomer(
   return fallback?.id ?? null;
 }
 
+/** Resolve a technician team (tenant-scoped) into its ordered member staff IDs,
+ * leader first, de-duplicated. Returns null when the team isn't this tenant's.
+ * Assigning a team expands into assignedStaffIds — the array stays the single
+ * source of truth for every visibility/dispatch rule — so the resolved list is
+ * unioned with any explicitly-passed staff IDs at the call site. */
+async function resolveTeamMemberIds(
+  tenantId: number,
+  teamId: number,
+): Promise<{ leaderStaffId: number | null; memberIds: number[] } | null> {
+  const [team] = await db
+    .select({ id: technicianTeamsTable.id, leaderStaffId: technicianTeamsTable.leaderStaffId })
+    .from(technicianTeamsTable)
+    .where(and(eq(technicianTeamsTable.id, teamId), eq(technicianTeamsTable.tenantId, tenantId)));
+  if (!team) return null;
+  const rows = await db
+    .select({ staffId: technicianTeamMembersTable.staffId })
+    .from(technicianTeamMembersTable)
+    .where(and(eq(technicianTeamMembersTable.teamId, teamId), eq(technicianTeamMembersTable.tenantId, tenantId)));
+  // Leader first, then the rest, de-duplicated.
+  const ordered = [team.leaderStaffId, ...rows.map((r) => r.staffId)].filter(
+    (v): v is number => v != null,
+  );
+  return { leaderStaffId: team.leaderStaffId, memberIds: [...new Set(ordered)] };
+}
+
+/** Batch-lookup team names for multiple work orders' assignedTeamId column. */
+async function batchResolveTeamNames(
+  tenantId: number,
+  allIds: Array<number | null>,
+): Promise<Map<number, string>> {
+  const unique = [...new Set(allIds.filter((v): v is number => v != null))];
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .select({ id: technicianTeamsTable.id, name: technicianTeamsTable.name })
+    .from(technicianTeamsTable)
+    .where(and(eq(technicianTeamsTable.tenantId, tenantId), inArray(technicianTeamsTable.id, unique)));
+  return new Map(rows.map((r) => [r.id, r.name]));
+}
+
 /** Batch-lookup staff names for multiple work orders' assignedStaffIds arrays. */
 async function batchResolveStaffNames(
   tenantId: number,
@@ -394,6 +439,7 @@ function normalize(
   customerPhone?: string | null,
   staffName?: string | null,
   staffNamesMap?: Map<number, string>,
+  teamNamesMap?: Map<number, string>,
 ) {
   const ids: number[] = Array.isArray(w.assignedStaffIds) ? w.assignedStaffIds as number[] : [];
   const assignedStaffNames = staffNamesMap && ids.length > 0
@@ -408,6 +454,7 @@ function normalize(
     customerPhone: customerPhone ?? undefined,
     assignedStaffName: assignedStaffNames?.[0] ?? staffName ?? undefined,
     assignedStaffNames: assignedStaffNames,
+    assignedTeamName: w.assignedTeamId != null ? teamNamesMap?.get(w.assignedTeamId) ?? undefined : undefined,
     portalToken: makePortalToken(w.id, w.tenantId),
   };
 }
@@ -444,7 +491,8 @@ router.get("/work-orders", async (req, res): Promise<void> => {
     Array.isArray(r.workOrder.assignedStaffIds) ? (r.workOrder.assignedStaffIds as number[]) : [],
   );
   const staffNamesMap = await batchResolveStaffNames(tenantId, allStaffIds);
-  res.json(rows.map((r) => normalize(r.workOrder, r.customerName, r.customerPhone, r.staffName, staffNamesMap)));
+  const teamNamesMap = await batchResolveTeamNames(tenantId, rows.map((r) => r.workOrder.assignedTeamId));
+  res.json(rows.map((r) => normalize(r.workOrder, r.customerName, r.customerPhone, r.staffName, staffNamesMap, teamNamesMap)));
 });
 
 // GET ONE
@@ -469,12 +517,13 @@ router.get("/work-orders/:id", async (req, res): Promise<void> => {
   if (!row) { res.status(404).json({ error: "Work order not found" }); return; }
   const woIds: number[] = Array.isArray(row.workOrder.assignedStaffIds) ? row.workOrder.assignedStaffIds as number[] : [];
   const staffNamesMap = await batchResolveStaffNames(tenantId, woIds);
+  const teamNamesMap = await batchResolveTeamNames(tenantId, [row.workOrder.assignedTeamId]);
   const [review] = await db.select().from(workOrderReviewsTable)
     .where(and(eq(workOrderReviewsTable.tenantId, tenantId), eq(workOrderReviewsTable.workOrderId, id)));
   const [managerReview] = await db.select().from(workOrderManagerReviewsTable)
     .where(and(eq(workOrderManagerReviewsTable.tenantId, tenantId), eq(workOrderManagerReviewsTable.workOrderId, id)));
   res.json({
-    ...normalize(row.workOrder, row.customerName, row.customerPhone, row.staffName, staffNamesMap),
+    ...normalize(row.workOrder, row.customerName, row.customerPhone, row.staffName, staffNamesMap, teamNamesMap),
     review: review ? { rating: review.rating, comment: review.comment, reviewerName: review.reviewerName, createdAt: review.createdAt } : null,
     managerReview: managerReview ? {
       rating: managerReview.rating,
@@ -593,9 +642,20 @@ router.post("/work-orders", async (req, res): Promise<void> => {
     return;
   }
   // Resolve the canonical staff ID list: assignedStaffIds overrides the legacy single ID
-  const staffIds = data.assignedStaffIds && data.assignedStaffIds.length > 0
+  const explicitStaffIds = data.assignedStaffIds && data.assignedStaffIds.length > 0
     ? data.assignedStaffIds
     : data.assignedStaffId != null ? [data.assignedStaffId] : [];
+
+  // Assigning a team expands its members into assignedStaffIds (leader first),
+  // unioned with any explicitly-passed staff so the array stays the single
+  // source of truth for every visibility/dispatch rule.
+  let teamMemberIds: number[] = [];
+  if (data.assignedTeamId != null) {
+    const team = await resolveTeamMemberIds(tenantId, data.assignedTeamId);
+    if (!team) { res.status(400).json({ error: "Team not found" }); return; }
+    teamMemberIds = team.memberIds;
+  }
+  const staffIds = [...new Set([...teamMemberIds, ...explicitStaffIds])];
   const primaryStaffId = staffIds[0] ?? null;
 
   const refError = await validateRefs(tenantId, data.customerId, null, staffIds.length > 0 ? staffIds : null);
@@ -646,6 +706,7 @@ router.post("/work-orders", async (req, res): Promise<void> => {
         priority: data.priority ?? "normal",
         assignedStaffId: primaryStaffId,
         assignedStaffIds: staffIds,
+        assignedTeamId: data.assignedTeamId ?? null,
         estimatedMinutes: data.estimatedMinutes ?? null,
         promisedDate: data.promisedDate ?? null,
         appointmentDate: data.appointmentDate ?? null,
@@ -681,7 +742,8 @@ router.post("/work-orders", async (req, res): Promise<void> => {
 
   const createdIds: number[] = Array.isArray(row.assignedStaffIds) ? row.assignedStaffIds as number[] : [];
   const createdStaffMap = await batchResolveStaffNames(tenantId, createdIds);
-  res.status(201).json(normalize(row, undefined, undefined, undefined, createdStaffMap));
+  const createdTeamMap = await batchResolveTeamNames(tenantId, [row.assignedTeamId]);
+  res.status(201).json(normalize(row, undefined, undefined, undefined, createdStaffMap, createdTeamMap));
 
   // Fire-and-forget — never blocks the HTTP response
   const currency = await getSetting("currency", tenantId).catch(() => "JMD");
@@ -807,12 +869,36 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
     }
   }
 
-  // Resolve the canonical staff ID list for update
-  const updStaffIds = data.assignedStaffIds != null
+  // Resolve the explicit staff ID list for update
+  const explicitUpdStaffIds = data.assignedStaffIds != null
     ? data.assignedStaffIds
     : data.assignedStaffId !== undefined
       ? (data.assignedStaffId != null ? [data.assignedStaffId] : [])
-      : null; // null = not being changed
+      : null; // null = not being changed via the staff fields
+
+  // Assigning a team expands its members into assignedStaffIds (leader first),
+  // unioned with whatever staff this PATCH keeps/sets — so the team pick adds
+  // people without ever silently dropping technicians already on the job.
+  // Clearing the team (assignedTeamId = null) only clears the column.
+  let updTeamMemberIds: number[] | null = null;
+  if (data.assignedTeamId != null) {
+    const team = await resolveTeamMemberIds(tenantId, data.assignedTeamId);
+    if (!team) { res.status(400).json({ error: "Team not found" }); return; }
+    updTeamMemberIds = team.memberIds;
+  }
+
+  // Compute the canonical staff list only when this PATCH actually touches the
+  // assignment (either the staff arrays or a team was picked). null = leave
+  // the stored assignment untouched.
+  let updStaffIds: number[] | null = null;
+  if (updTeamMemberIds != null) {
+    const prevIds: number[] = Array.isArray(existing.assignedStaffIds) ? existing.assignedStaffIds as number[] : [];
+    // Base is the explicit list if given, otherwise whoever is already on the job.
+    const base = explicitUpdStaffIds != null ? explicitUpdStaffIds : prevIds;
+    updStaffIds = [...new Set([...updTeamMemberIds, ...base])];
+  } else if (explicitUpdStaffIds != null) {
+    updStaffIds = explicitUpdStaffIds;
+  }
 
   const updPrimaryStaffId = updStaffIds != null ? (updStaffIds[0] ?? null) : undefined;
 
@@ -821,11 +907,18 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
 
   const updates: Partial<typeof workOrdersTable.$inferInsert> = { updatedAt: new Date() };
 
+  // Persist the picked team (or clear it). Clearing the team never strips the
+  // expanded staff — assignedStaffIds is handled separately below.
+  if (data.assignedTeamId !== undefined) {
+    updates.assignedTeamId = data.assignedTeamId;
+  }
+
   // Handle staff assignment update
   if (updStaffIds !== null) {
     updates.assignedStaffIds = updStaffIds;
     updates.assignedStaffId = updPrimaryStaffId ?? null;
     // FSM: a change in who is assigned resets the technician acceptance flow.
+    // A team pick that adds people counts as an assignment change.
     const prevIds: number[] = Array.isArray(existing.assignedStaffIds) ? existing.assignedStaffIds as number[] : [];
     const changed = prevIds.length !== updStaffIds.length || prevIds.some((v, i) => v !== updStaffIds[i]);
     if (changed) {
@@ -963,7 +1056,8 @@ router.patch("/work-orders/:id", async (req, res): Promise<void> => {
 
   const updatedIds: number[] = Array.isArray(row.assignedStaffIds) ? row.assignedStaffIds as number[] : [];
   const updStaffNamesMap = await batchResolveStaffNames(tenantId, updatedIds);
-  res.json(normalize(row, undefined, undefined, undefined, updStaffNamesMap));
+  const updTeamNamesMap = await batchResolveTeamNames(tenantId, [row.assignedTeamId]);
+  res.json(normalize(row, undefined, undefined, undefined, updStaffNamesMap, updTeamNamesMap));
 
   // Fire-and-forget: notify the customer (copied to accounts@) on any status change.
   if (data.status && data.status !== existing.status) {
@@ -1981,6 +2075,9 @@ export const CableRunSchema = z.object({
 
 export const AllocationCreateSchema = z.object({
   productId: z.number().int().optional(),
+  // Links this line to a tracked tool in the fixed-asset register. Dispatching
+  // the line signs the tool out in the job's name (asset custody ledger).
+  assetId: z.number().int().optional(),
   description: z.string().max(300).optional(),
   category: z.string().max(30).optional(),
   unit: z.string().max(20).optional(),
@@ -2061,7 +2158,7 @@ const SUPERVISOR_EDITABLE_FIELDS = new Set([
   "customerId", "contactName", "contactPhone", "contactEmail",
   "itemDescription", "brand", "model", "serialNumber", "imei", "assetTag", "colour",
   "problemDescription", "serviceType", "serviceChannel", "priority",
-  "assignedStaffId", "assignedStaffIds",
+  "assignedStaffId", "assignedStaffIds", "assignedTeamId",
   "estimatedMinutes", "promisedDate", "appointmentDate", "storageLocation",
   "notes",
 ]);
@@ -2184,7 +2281,6 @@ export async function createAllocation(
         })
         .where(and(eq(productsTable.id, data.productId), eq(productsTable.tenantId, tenantId)));
     }
-    if (!description) return { error: "Description or product required", status: 400 };
 
     let dispatchedByName: string | null = null;
     if (data.staffId != null) {
@@ -2193,10 +2289,78 @@ export async function createAllocation(
       dispatchedByName = s?.name ?? null;
     }
 
+    // A tool-linked line signs the physical tool out to the job — done in the
+    // SAME transaction as the allocation insert so the dispatch slip and the
+    // asset custody ledger can never disagree.
+    if (data.assetId != null) {
+      const [asset] = await tx.select({ isTool: fixedAssetsTable.isTool, name: fixedAssetsTable.name })
+        .from(fixedAssetsTable)
+        .where(and(eq(fixedAssetsTable.id, data.assetId), eq(fixedAssetsTable.tenantId, tenantId)));
+      if (!asset) return { error: "Tool not found", status: 400 };
+      if (!asset.isTool) return { error: "Only tracked tools can be signed out to a job", status: 400 };
+      // A tracked tool is one physical item, and it can only be on one open
+      // line per job — otherwise settling one line would hand custody back
+      // while another line still says the tool is out.
+      if (data.qtyAllocated !== 1) {
+        return { error: "A tracked tool goes out one at a time — use quantity 1.", status: 400 };
+      }
+      const alreadyOut = await outstandingToolLines(tx, { tenantId, assetId: data.assetId, workOrderId });
+      if (alreadyOut > 0) {
+        return { error: "That tool is already on this job's dispatch list.", status: 409 };
+      }
+      if (!description) description = asset.name;
+      // Resolve the job's assignee so the custody row records who holds it.
+      const [wo] = await tx.select({
+        workOrderNumber: workOrdersTable.workOrderNumber,
+        assignedTeamId: workOrdersTable.assignedTeamId,
+        assignedStaffId: workOrdersTable.assignedStaffId,
+      })
+        .from(workOrdersTable)
+        .where(and(eq(workOrdersTable.id, workOrderId), eq(workOrdersTable.tenantId, tenantId)));
+      let staffName: string | null = null;
+      if (wo?.assignedTeamId == null && wo?.assignedStaffId != null) {
+        const [s] = await tx.select({ name: staffTable.name }).from(staffTable)
+          .where(and(eq(staffTable.id, wo.assignedStaffId), eq(staffTable.tenantId, tenantId)));
+        staffName = s?.name ?? null;
+      }
+      let teamName: string | null = null;
+      if (wo?.assignedTeamId != null) {
+        const [t] = await tx.select({ name: technicianTeamsTable.name }).from(technicianTeamsTable)
+          .where(and(eq(technicianTeamsTable.id, wo.assignedTeamId), eq(technicianTeamsTable.tenantId, tenantId)));
+        teamName = t?.name ?? null;
+      }
+      try {
+        await claimAssetForJob(tx, {
+          tenantId,
+          assetId: data.assetId,
+          workOrderId,
+          workOrderNumber: wo?.workOrderNumber ?? null,
+          staffId: wo?.assignedTeamId == null ? (wo?.assignedStaffId ?? null) : null,
+          staffName,
+          teamId: wo?.assignedTeamId ?? null,
+          teamName,
+          dispatchedByStaffId: data.staffId ?? null,
+          dispatchedByName,
+        });
+      } catch (e) {
+        const name = (e as Error).name;
+        if (name === "AssetAlreadyAssigned") {
+          return { error: "That tool is already signed out on another job — return it first.", status: 409 };
+        }
+        if (name === "AssetNotFound" || name === "AssetNotAvailable") {
+          return { error: "That tool isn't available to sign out.", status: 400 };
+        }
+        throw e;
+      }
+    }
+
+    if (!description) return { error: "Description or product required", status: 400 };
+
     const [allocation] = await tx.insert(workOrderAllocationsTable).values({
       tenantId,
       workOrderId,
       productId: data.productId ?? null,
+      assetId: data.assetId ?? null,
       description,
       category: data.category ?? null,
       unit: data.unit ?? "pcs",
@@ -2261,6 +2425,23 @@ export async function updateAllocation(
       }
     }
 
+    // A tool-linked line that is now fully returned hands custody back — in the
+    // same transaction, so the dispatch slip and the asset ledger stay in step.
+    if (existing.assetId != null && existing.qtyReturned < existing.qtyAllocated) {
+      const finalReturned = updates.qtyReturned !== undefined ? (updates.qtyReturned as number) : existing.qtyReturned;
+      const finalStatus = updates.status !== undefined ? (updates.status as string) : existing.status;
+      if (finalReturned >= existing.qtyAllocated || finalStatus === "returned") {
+        await releaseAssetForJob(tx, {
+          tenantId,
+          assetId: existing.assetId,
+          workOrderId,
+          excludeAllocationId: existing.id,
+          receivedByStaffId: null,
+          receivedByName: null,
+        });
+      }
+    }
+
     const [allocation] = await tx.update(workOrderAllocationsTable)
       .set(updates)
       .where(eq(workOrderAllocationsTable.id, allocationId))
@@ -2301,18 +2482,46 @@ export async function deleteAllocation(
         })
         .where(and(eq(productsTable.id, existing.productId), eq(productsTable.tenantId, tenantId)));
     }
+    // Removing a tool-linked line hands the tool back (no-op unless the open
+    // custody spell belongs to this job).
+    if (existing.assetId != null) {
+      await releaseAssetForJob(tx, {
+        tenantId,
+        assetId: existing.assetId,
+        workOrderId,
+        excludeAllocationId: existing.id,
+        receivedByStaffId: null,
+        receivedByName: null,
+      });
+    }
     await tx.delete(workOrderAllocationsTable).where(eq(workOrderAllocationsTable.id, allocationId));
     return {};
   });
 }
 
-export function listAllocations(tenantId: number, workOrderId: number) {
-  return db.select().from(workOrderAllocationsTable)
+export async function listAllocations(tenantId: number, workOrderId: number) {
+  const rows = await db
+    .select({
+      allocation: workOrderAllocationsTable,
+      // Show which physical tool went out, so the UI can label tool lines.
+      assetTag: fixedAssetsTable.assetTag,
+      assetName: fixedAssetsTable.name,
+    })
+    .from(workOrderAllocationsTable)
+    .leftJoin(fixedAssetsTable, and(
+      eq(workOrderAllocationsTable.assetId, fixedAssetsTable.id),
+      eq(fixedAssetsTable.tenantId, tenantId),
+    ))
     .where(and(
       eq(workOrderAllocationsTable.tenantId, tenantId),
       eq(workOrderAllocationsTable.workOrderId, workOrderId),
     ))
     .orderBy(workOrderAllocationsTable.id);
+  return rows.map((r) => ({
+    ...r.allocation,
+    assetTag: r.assetTag ?? undefined,
+    assetName: r.assetName ?? undefined,
+  }));
 }
 
 // LIST allocations
@@ -2323,6 +2532,20 @@ router.get("/work-orders/:id/allocations", async (req, res): Promise<void> => {
   if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   res.json(await listAllocations(tenantId, id));
 });
+
+/** Attach the linked tool's tag/name to a single allocation response so the UI
+ * can show what physical tool went out (no-op when the line isn't tool-linked). */
+async function withAssetLabel(
+  tenantId: number,
+  allocation: typeof workOrderAllocationsTable.$inferSelect,
+) {
+  if (allocation.assetId == null) return allocation;
+  const [asset] = await db
+    .select({ assetTag: fixedAssetsTable.assetTag, name: fixedAssetsTable.name })
+    .from(fixedAssetsTable)
+    .where(and(eq(fixedAssetsTable.id, allocation.assetId), eq(fixedAssetsTable.tenantId, tenantId)));
+  return { ...allocation, assetTag: asset?.assetTag ?? undefined, assetName: asset?.name ?? undefined };
+}
 
 // CREATE allocation (dispatch)
 router.post("/work-orders/:id/allocations", async (req, res): Promise<void> => {
@@ -2335,7 +2558,7 @@ router.post("/work-orders/:id/allocations", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const result = await createAllocation(tenantId, id, parsed.data);
   if (result.error) { res.status(result.status ?? 400).json({ error: result.error }); return; }
-  res.status(201).json(result.allocation);
+  res.status(201).json(await withAssetLabel(tenantId, result.allocation!));
 });
 
 // UPDATE allocation (returns, cable runs, remarks)
@@ -2350,7 +2573,7 @@ router.patch("/work-orders/:id/allocations/:allocId", async (req, res): Promise<
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const result = await updateAllocation(tenantId, id, allocId, parsed.data);
   if (result.error) { res.status(result.status ?? 400).json({ error: result.error }); return; }
-  res.json(result.allocation);
+  res.json(await withAssetLabel(tenantId, result.allocation!));
 });
 
 // DELETE allocation (restores un-returned stock)

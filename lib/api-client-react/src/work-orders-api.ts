@@ -50,6 +50,8 @@ export type WorkOrder = {
   assignedStaffIds: number[];
   assignedStaffName?: string;
   assignedStaffNames?: string[];
+  assignedTeamId?: number | null;
+  assignedTeamName?: string | null;
   assignmentStatus?: "pending" | "accepted" | "declined";
   assignmentRespondedAt?: string | null;
   declineReason?: string | null;
@@ -210,6 +212,7 @@ export type CreateWorkOrderInput = {
   priority?: string;
   assignedStaffId?: number;
   assignedStaffIds?: number[];
+  assignedTeamId?: number | null;
   estimatedMinutes?: number;
   promisedDate?: string;
   appointmentDate?: string;

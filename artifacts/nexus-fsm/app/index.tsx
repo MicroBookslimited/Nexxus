@@ -169,6 +169,9 @@ export default function JobQueueScreen() {
       ) : null}
       <View style={styles.cardBottom}>
         <StatusChip status={item.status} serviceChannel={item.serviceChannel} />
+        {item.assignedTeamName ? (
+          <Chip label={item.assignedTeamName} color={colors.accent} />
+        ) : null}
         {item.assignmentStatus === 'accepted' && item.fieldPhase !== 'idle' ? (
           <Chip
             label={item.fieldPhase === 'en_route' ? 'EN ROUTE' : item.fieldPhase === 'on_site' ? 'ON SITE' : 'WORK DONE'}
@@ -234,6 +237,16 @@ export default function JobQueueScreen() {
           ]}
         >
           <Feather name="calendar" size={18} color={colors.foreground} />
+        </Pressable>
+        <Pressable
+          testID="tools-button"
+          onPress={() => router.push('/tools')}
+          style={({ pressed }) => [
+            styles.iconButton,
+            { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1, marginRight: 8 },
+          ]}
+        >
+          <Feather name="tool" size={18} color={colors.foreground} />
         </Pressable>
         {isAdminRole(staff?.role) ? (
           <Pressable
