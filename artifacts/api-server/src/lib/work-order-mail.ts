@@ -4,7 +4,10 @@
  * Called fire-and-forget from the CREATE route — errors are logged, never
  * bubble up to the HTTP response.
  */
-import { db, tenantsTable, staffTable, customersTable } from "@workspace/db";
+import {
+  db, tenantsTable, staffTable, customersTable,
+  workOrdersTable, workOrderAllocationsTable,
+} from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { sendMail, getFromDetails, PLATFORM_COPY_ADDRESS } from "./mail";
 import { renderWorkOrderPdf, renderWorkOrderPhotosPdf } from "./work-order-pdf";
@@ -1029,6 +1032,196 @@ export async function sendFollowUpVisitEmails(input: {
     console.error("[work-order-mail] Failed to send follow-up visit emails", {
       wo: input.workOrderNumber,
       err: err instanceof Error ? err.message : err,
+    });
+  }
+}
+
+/* ─── Materials dispatch slip ────────────────────────────────────────────────── */
+
+/**
+ * Emails the parts & materials list plus the dispatch slip PDF to every
+ * technician assigned to a job. Sent automatically when a technician accepts
+ * the job in the FSM app, so the field team leaves with the same sheet the
+ * office printed.
+ *
+ * Self-contained: reads the work order, its allocations and the assigned staff
+ * itself so callers only pass identifiers. Fire-and-forget — errors are logged.
+ */
+export async function sendDispatchSlipEmail(input: {
+  tenantId: number;
+  workOrderId: number;
+}): Promise<void> {
+  let woNumber = String(input.workOrderId);
+  try {
+    const { inArray } = await import("drizzle-orm");
+    const { renderDispatchSlipPdf } = await import("./dispatch-slip-pdf");
+
+    const job = await db.query.workOrdersTable.findFirst({
+      where: and(eq(workOrdersTable.id, input.workOrderId), eq(workOrdersTable.tenantId, input.tenantId)),
+    });
+    if (!job) return;
+    woNumber = job.workOrderNumber;
+
+    const staffIds = [
+      ...new Set([
+        ...(Array.isArray(job.assignedStaffIds) ? (job.assignedStaffIds as number[]) : []),
+        ...(job.assignedStaffId != null ? [job.assignedStaffId] : []),
+      ]),
+    ];
+    if (staffIds.length === 0) return;
+
+    const [staffRows, allocations, business, from] = await Promise.all([
+      db.select({ id: staffTable.id, name: staffTable.name, email: staffTable.email })
+        .from(staffTable)
+        .where(and(eq(staffTable.tenantId, input.tenantId), inArray(staffTable.id, staffIds))),
+      db.select().from(workOrderAllocationsTable)
+        .where(and(
+          eq(workOrderAllocationsTable.tenantId, input.tenantId),
+          eq(workOrderAllocationsTable.workOrderId, input.workOrderId),
+        ))
+        .orderBy(workOrderAllocationsTable.id),
+      getBusinessDetails(input.tenantId),
+      getFromDetails(input.tenantId),
+    ]);
+
+    const recipients = staffRows.filter((s) => s.email?.trim());
+    if (recipients.length === 0) {
+      console.info(`[work-order-mail] No technician emails on file for WO ${woNumber} — dispatch slip skipped`);
+      return;
+    }
+
+    // Parts carried on the job itself (labour and fees are money, not materials).
+    const parts = (Array.isArray(job.items) ? job.items : [])
+      .filter((it) => it.type === "part")
+      .map((it) => ({ description: it.description, quantity: it.quantity }));
+
+    if (allocations.length === 0 && parts.length === 0) {
+      console.info(`[work-order-mail] WO ${woNumber} has no materials or parts — dispatch slip skipped`);
+      return;
+    }
+
+    // Site = linked customer name + address, falling back to the walk-in contact.
+    let siteName = job.contactName ?? null;
+    if (job.customerId) {
+      const customer = await db.query.customersTable.findFirst({
+        where: and(eq(customersTable.id, job.customerId), eq(customersTable.tenantId, input.tenantId)),
+      });
+      if (customer) {
+        siteName = [customer.name, [customer.address, customer.city].filter(Boolean).join(", ")]
+          .filter(Boolean).join(" — ") || siteName;
+      }
+    }
+
+    const technicianNames = staffIds
+      .map((id) => staffRows.find((s) => s.id === id)?.name)
+      .filter((n): n is string => !!n)
+      .join(", ");
+
+    const pdfBuffer = await renderDispatchSlipPdf({
+      workOrderNumber: job.workOrderNumber,
+      dispatchDate:    new Date(),
+      siteName,
+      technicianNames,
+      jobDescription:  job.itemDescription,
+      allocations:     allocations.map((a) => ({
+        description:     a.description,
+        category:        a.category,
+        unit:            a.unit,
+        qtyAllocated:    a.qtyAllocated,
+        qtyReturned:     a.qtyReturned,
+        isReturnable:    a.isReturnable,
+        isCable:         a.isCable,
+        boxSizeFt:       a.boxSizeFt,
+        runs:            Array.isArray(a.runs) ? a.runs : [],
+        dispatchedByName: a.dispatchedByName,
+        remarks:         a.remarks,
+      })),
+      parts,
+      business,
+    });
+
+    const attachment = {
+      filename: `Dispatch-Slip-${job.workOrderNumber}.pdf`,
+      content:  pdfBuffer,
+      mimeType: "application/pdf",
+    };
+
+    const esc = escHtml;
+    const fmtQty = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(2);
+    const materialRows = allocations.map((a) => `
+      <tr>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${esc(a.description)}${
+          a.isCable ? ` <span style="color:#6b7280;">(cable${a.boxSizeFt != null ? `, ${fmtQty(a.boxSizeFt)} ft box` : ""})</span>` : ""
+        }</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;white-space:nowrap;">${fmtQty(a.qtyAllocated)} ${esc(a.unit)}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${a.isReturnable ? "Tool — return required" : "Consumable"}</td>
+      </tr>`).join("");
+    const partRows = parts.map((p) => `
+      <tr>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">${esc(p.description)}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:right;white-space:nowrap;">${fmtQty(p.quantity)}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;">Part on job</td>
+      </tr>`).join("");
+
+    const returnables = allocations.filter((a) => a.isReturnable);
+    const returnNote = returnables.length > 0
+      ? `<p style="margin:14px 0 0;padding:10px 12px;background:#fff7ed;border-left:3px solid #f59e0b;font-size:13px;">
+           <b>${returnables.length} item${returnables.length === 1 ? " is" : "s are"} signed out to you and must be returned to the office</b>
+           once the job is done. The job stays on your list in the FSM app until the hand-back is signed.</p>`
+      : "";
+
+    // allSettled: one bad address must not suppress the others' logging.
+    const results = await Promise.allSettled(recipients.map((s) => sendMail({
+      to:      s.email!.trim(),
+      subject: `Parts & materials for ${job.workOrderNumber} – ${job.itemDescription}`,
+      html: /* html */ `<!DOCTYPE html>
+<html lang="en"><body style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.6;font-size:14px;">
+  <div style="max-width:640px;margin:0 auto;">
+    <div style="background:#f8f9fa;border-bottom:3px solid #00AEEF;padding:20px 32px;">
+      <h1 style="margin:0;font-size:20px;">${esc(business.name)}</h1>
+      <div style="font-size:12px;color:#6b7280;margin-top:4px;">Parts &amp; Materials — Dispatch Slip</div>
+    </div>
+    <div style="padding:24px 32px;">
+      <p>Hi ${esc(s.name)},</p>
+      <p>You accepted work order <b>${esc(job.workOrderNumber)}</b>${siteName ? ` at <b>${esc(siteName)}</b>` : ""}.
+         Here is everything issued for the job. The signed dispatch slip is attached as a PDF — print it or show it on your phone.</p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;margin:18px 0;">
+        <thead>
+          <tr style="background:#f3f4f6;">
+            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #d1d5db;">Item</th>
+            <th style="padding:6px 8px;text-align:right;border-bottom:1px solid #d1d5db;">Qty</th>
+            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #d1d5db;">Type</th>
+          </tr>
+        </thead>
+        <tbody>${materialRows}${partRows}</tbody>
+      </table>
+      ${returnNote}
+      <p style="margin-top:18px;">Log your cable runs and footage on the slip as you work, then complete the job in the NEXXUS FSM app.</p>
+      <p style="color:#6b7280;font-size:12px;">— ${esc(business.name)}${business.phone ? `  |  ${esc(business.phone)}` : ""}</p>
+    </div>
+  </div>
+</body></html>`,
+      fromName:     from.fromName,
+      fromAddress:  from.fromAddress,
+      tenantId:     input.tenantId,
+      platformCopy: false, // internal tenant→staff email
+      attachments:  [attachment],
+    })));
+
+    const sent = results.filter((r) => r.status === "fulfilled").length;
+    results.forEach((r, i) => {
+      if (r.status === "rejected") {
+        console.error(`[work-order-mail] Dispatch slip for WO ${woNumber} failed for ${recipients[i]?.email}`, {
+          err: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
+      }
+    });
+    console.info(`[work-order-mail] Sent dispatch slip for WO ${woNumber} to ${sent}/${recipients.length} technician(s)`);
+  } catch (err) {
+    console.error("[work-order-mail] Failed to send dispatch slip email", {
+      wo: woNumber,
+      tenantId: input.tenantId,
+      err: err instanceof Error ? err.message : String(err),
     });
   }
 }

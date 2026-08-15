@@ -71,6 +71,7 @@
 - [Universal installation form](install-form-architecture.md) — form schema lives only in shared lib; per-section saves merge atomically via SQL jsonb `||`, never read-modify-write.
 - [WO OTP sign-off & review emails](wo-otp-review.md) — 'otp-verified' signature sentinel (renderers must special-case), hash-bound atomic OTP verify, retry-safe review-email claim, pre-arrival edit gating.
 - [WO follow-up & calendar](wo-followup-calendar.md) — follow-up = appointment row w/ staff_ids jsonb (manual DDL both DBs); calendar feed requires x-staff-id and server-filters non-office staff to their own visits.
+- [Dispatch slip email](dispatch-slip-email.md) — parts/materials PDF mails on FSM job acceptance (pending-only transition = built-in send-once); slip has an HTML twin in web; PDFKit footers need bottom margin 0.
 - [FSM job queue visibility](fsm-job-visibility.md) — techs see live work only (completed vanishes); custody of unreturned tools keeps a job listed and must sit OUTSIDE the active-status test; detail stays reachable by id.
 - [WO billable lines are one array](wo-items-array-write.md) — charges/fees save as a whole-array PATCH with no server locking; fingerprint + re-read before writing, remove by index only, default missing type to part.
 - [WO edit & notify](wo-edit-notify.md) — supervisors edit WOs via server-side field allowlist on the generic PATCH; assignment/customer emails fire only for newly-added recipients.

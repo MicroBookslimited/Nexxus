@@ -25,7 +25,7 @@ import {
 } from "./work-orders";
 import {
   sendWorkOrderStatusEmail, sendWorkOrderSignedEmail,
-  sendCompletionOtpEmail, sendWorkOrderReviewEmail,
+  sendCompletionOtpEmail, sendWorkOrderReviewEmail, sendDispatchSlipEmail,
 } from "../lib/work-order-mail";
 import { createHash, randomInt } from "node:crypto";
 import { hashManagerCode, MANAGER_CODE_MAX_ATTEMPTS } from "../lib/manager-code";
@@ -844,7 +844,8 @@ async function respondToJob(
       return { error: 400 as const, message: "This job is closed" };
     }
     if (existing.assignmentStatus === action) {
-      return { row: existing }; // idempotent — already in this state
+      // Idempotent — already in this state, so no notifications fire again.
+      return { row: existing, changed: false };
     }
     if (existing.assignmentStatus !== "pending") {
       // Another assigned technician already responded — don't overwrite their answer.
@@ -878,7 +879,7 @@ async function respondToJob(
         : `Job declined by ${staff.name}: ${declineReason}`,
     });
 
-    return { row };
+    return { row, changed: true };
   });
 
   if ("error" in updated) {
@@ -887,6 +888,15 @@ async function respondToJob(
     return;
   }
   res.json(toJob(updated.row));
+
+  // Fire-and-forget: on a real acceptance, email every assigned technician the
+  // parts & materials list with the dispatch slip PDF attached. Re-accepting an
+  // already-accepted job is a no-op above, so this never double-sends; a
+  // reassignment resets assignmentStatus to pending, so the new technician gets
+  // their own copy when they accept.
+  if (action === "accepted" && updated.changed) {
+    sendDispatchSlipEmail({ tenantId, workOrderId: id }).catch(() => { /* logged inside */ });
+  }
 }
 
 router.post("/fsm/jobs/:id/accept", (req, res) => respondToJob(req as never, res as never, "accepted"));
