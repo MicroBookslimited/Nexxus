@@ -26,7 +26,24 @@ const needsSsl =
 export const pool = new Pool({
   connectionString,
   ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
+  // A managed Postgres endpoint can disappear (suspend, restart, failover) at
+  // any time. Fail a connection attempt in seconds instead of hanging a
+  // request thread, and recycle idle clients so the pool doesn't hoard
+  // sockets that the server has already dropped.
+  connectionTimeoutMillis: 10_000,
+  idleTimeoutMillis: 30_000,
+  keepAlive: true,
 });
+
+// CRITICAL: an idle pooled client that errors (database suspended, network
+// drop, server restart) emits 'error' on the Pool. With no listener attached
+// Node treats it as an unhandled 'error' event and kills the whole process —
+// which is how a database blip used to take the entire API server down.
+// Log it and let the pool discard the client; the next query opens a fresh one.
+pool.on("error", (err) => {
+  console.error("[db] idle client error (pool will recover):", err.message);
+});
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";

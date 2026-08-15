@@ -15,11 +15,38 @@ import { sendPendingForCampaign } from "./lib/campaign-sender";
 import { sendMail } from "./lib/mail";
 import { repairTimestampDefaults } from "./lib/repair-timestamp-defaults";
 import { backfillWorkOrdersLegacyAccess, seedAddonCatalog } from "./lib/addon-entitlement";
+import { isDbConnectivityError, noteDbFailure, withTimeout } from "./lib/db-health";
+
+/* ───── Crash guards ─────────────────────────────────────────────────────────
+ * A dropped database socket or a failed background job must never take the
+ * whole API down — the HTTP layer already reports those failures per request
+ * (503 for connectivity, 500 otherwise) and the maintenance retry loop heals
+ * the schema work once the database returns.
+ *
+ * A genuine uncaught exception is different: process state is unknown after
+ * one, so we still fail fast and let the supervisor restart us. Only
+ * connectivity errors are survived in place. */
+process.on("unhandledRejection", (reason) => {
+  if (isDbConnectivityError(reason)) noteDbFailure(reason);
+  logger.error({ err: reason }, "Unhandled promise rejection — server staying up");
+});
+process.on("uncaughtException", (err) => {
+  if (isDbConnectivityError(err)) {
+    noteDbFailure(err);
+    logger.error({ err }, "Uncaught database connectivity error — server staying up");
+    return;
+  }
+  logger.fatal({ err }, "Uncaught exception — shutting down for a clean restart");
+  // Give pino's worker a moment to flush before the process goes away.
+  setTimeout(() => process.exit(1), 250).unref();
+});
 
 const RESUME_ALERT_THRESHOLD = 3;
 
+// Throws on failure by design: the startup-maintenance runner logs it and
+// retries once the database is reachable again.
 async function migratePrimaryAdminUsers() {
-  try {
+  {
     const tenants = await db
       .select({
         id: tenantsTable.id,
@@ -55,8 +82,6 @@ async function migratePrimaryAdminUsers() {
       );
       logger.info({ count: tenants.length }, "Migrated existing admin tenants to admin users table");
     }
-  } catch (err) {
-    logger.error({ err }, "Failed to migrate primary admin users");
   }
 }
 
@@ -107,8 +132,11 @@ async function sendResumeLoopAlert(campaign: { id: number; subject: string; resu
   }
 }
 
+// Throws on failure by design: the startup-maintenance runner logs it and
+// retries once the database is reachable. Retrying is safe — a resumed
+// campaign leaves 'sending' status, so it is not picked up twice.
 async function resumeInterruptedCampaigns() {
-  try {
+  {
     // Find every campaign stuck in 'sending' status.
     const stuckCampaigns = await db
       .select({ id: marketingCampaignsTable.id })
@@ -166,8 +194,6 @@ async function resumeInterruptedCampaigns() {
         logger.error({ err, campaignId: id }, "Failed to resume marketing campaign");
       });
     }
-  } catch (err) {
-    logger.error({ err }, "Failed to check for interrupted marketing campaigns");
   }
 }
 
@@ -288,16 +314,117 @@ async function ensureMessagingTables() {
   await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS thread_reads_thread_staff_unique ON thread_reads (thread_id, staff_id)`);
 }
 
-// Repair any timestamp DEFAULTs that the deploy-time migration may have
-// dropped (see lib/repair-timestamp-defaults.ts for full context). Must run
-// BEFORE we start serving requests, otherwise the first save into the
-// affected tables crashes with a not-null constraint violation.
-await repairTimestampDefaults();
-await ensureEquipmentDeductedColumn();
-await ensureSupplierLinkColumns();
-await ensureCashCustodyTables();
-await ensureManagerReviewTable();
-await ensureMessagingTables();
+/* ───── Startup maintenance ─────────────────────────────────────────────────
+ * Schema repairs, additive DDL and one-off seeds that used to run as bare
+ * top-level awaits. A single rejection there killed the process before the
+ * HTTP server ever started, so a database outage took every NEXXUS surface
+ * offline and kept it offline until someone restarted the workflow by hand.
+ *
+ * Now every step is individually guarded and each one that fails is retried in
+ * the background with backoff until it succeeds. Steps are idempotent, and
+ * only the ones still outstanding are retried — a step that already ran (for
+ * example resuming interrupted campaigns) is never repeated.
+ * ------------------------------------------------------------------------ */
+
+type MaintenanceStep = {
+  name: string;
+  run: () => Promise<void>;
+  /** Set while an attempt is still running, so a timeout never double-starts it. */
+  inFlight?: Promise<void>;
+};
+
+/** Must finish before we start serving, when the database is reachable. */
+const PRE_LISTEN_STEPS: MaintenanceStep[] = [
+  // Restores timestamp DEFAULTs the deploy-time migration may have dropped;
+  // without it the first save into the affected tables violates NOT NULL.
+  { name: "repairTimestampDefaults", run: repairTimestampDefaults },
+  { name: "ensureEquipmentDeductedColumn", run: ensureEquipmentDeductedColumn },
+  { name: "ensureSupplierLinkColumns", run: ensureSupplierLinkColumns },
+  { name: "ensureCashCustodyTables", run: ensureCashCustodyTables },
+  { name: "ensureManagerReviewTable", run: ensureManagerReviewTable },
+  { name: "ensureMessagingTables", run: ensureMessagingTables },
+];
+
+/** Safe to run once the server is already accepting requests. */
+const POST_LISTEN_STEPS: MaintenanceStep[] = [
+  { name: "migratePrimaryAdminUsers", run: migratePrimaryAdminUsers },
+  { name: "seedAddonCatalog", run: seedAddonCatalog },
+  { name: "backfillWorkOrdersLegacyAccess", run: backfillWorkOrdersLegacyAccess },
+  { name: "resumeInterruptedCampaigns", run: resumeInterruptedCampaigns },
+];
+
+const pendingSteps: MaintenanceStep[] = [];
+
+/**
+ * Starts a step, or returns the attempt already in flight.
+ *
+ * Single-flight matters because the timeouts below only stop us *waiting* —
+ * they cannot abort a query already sent to the database. Without this, a slow
+ * step that eventually succeeds could be started a second time by the retry
+ * loop (re-sending a marketing campaign, for example). The step is dequeued by
+ * the underlying promise whenever it actually settles, timeout or not.
+ */
+function startStep(step: MaintenanceStep): Promise<void> {
+  if (!step.inFlight) {
+    step.inFlight = step
+      .run()
+      .then(() => {
+        const at = pendingSteps.indexOf(step);
+        if (at >= 0) pendingSteps.splice(at, 1);
+      })
+      .finally(() => {
+        step.inFlight = undefined;
+      });
+    // The runner may have stopped waiting on this promise (timeout); keep a
+    // handler attached so a late rejection is never an unhandled rejection.
+    step.inFlight.catch(() => {});
+  }
+  return step.inFlight;
+}
+
+/**
+ * Runs the outstanding steps, dropping each one that succeeds. Never throws.
+ * `deadlineMs` bounds the whole pass so an unresponsive database (sockets that
+ * hang rather than refuse) can't hold up the boot past the platform's
+ * port-open timeout — whatever is left stays pending for the retry loop.
+ */
+async function runPendingMaintenance(deadlineMs?: number): Promise<void> {
+  for (const step of [...pendingSteps]) {
+    const remaining = deadlineMs ? deadlineMs - Date.now() : Infinity;
+    if (remaining <= 0) break;
+    try {
+      await withTimeout(startStep(step), Math.min(30_000, remaining), `startup step ${step.name}`);
+    } catch (err) {
+      logger.error({ err, step: step.name }, "Startup maintenance step failed — will retry");
+    }
+  }
+}
+
+/** Retry outstanding steps with backoff (5s → 10s → … → 5min) until done. */
+function scheduleMaintenanceRetry(attempt = 1): void {
+  if (pendingSteps.length === 0) return;
+  const delay = Math.min(300_000, 5_000 * 2 ** (attempt - 1));
+  setTimeout(() => {
+    void (async () => {
+      const before = pendingSteps.length;
+      await runPendingMaintenance();
+      if (pendingSteps.length === 0) {
+        logger.info({ attempt, recovered: before }, "Startup maintenance completed after retry");
+        return;
+      }
+      scheduleMaintenanceRetry(attempt + 1);
+    })();
+  }, delay).unref();
+}
+
+pendingSteps.push(...PRE_LISTEN_STEPS);
+await runPendingMaintenance(Date.now() + 20_000);
+if (pendingSteps.length > 0) {
+  logger.warn(
+    { pending: pendingSteps.map((s) => s.name) },
+    "Starting with database maintenance outstanding — the server will serve traffic and retry in the background",
+  );
+}
 
 app.listen(port, async (err) => {
   if (err) {
@@ -312,10 +439,9 @@ app.listen(port, async (err) => {
       "Set RESEND_WEBHOOK_SECRET (Svix whsec_...) to verify Resend webhook signatures.",
     );
   }
-  await migratePrimaryAdminUsers();
-  await seedAddonCatalog();
-  await backfillWorkOrdersLegacyAccess();
-  await resumeInterruptedCampaigns();
+  pendingSteps.push(...POST_LISTEN_STEPS);
+  await runPendingMaintenance();
+  scheduleMaintenanceRetry();
 });
 
 /* ───── Daily Digest Cron ───── */

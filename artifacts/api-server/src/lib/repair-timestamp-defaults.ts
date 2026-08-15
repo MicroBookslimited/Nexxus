@@ -66,8 +66,12 @@ export async function repairTimestampDefaults(): Promise<void> {
       logger.info({ repaired }, "Restored DEFAULT now() on timestamp columns");
     }
   } catch (err) {
-    // Don't crash the server — log and continue. A warm DB is better than no DB.
+    // Rethrow: the startup-maintenance runner in index.ts owns the guard now.
+    // It logs the failure, starts the server anyway, and retries this repair in
+    // the background — swallowing here would leave the defaults broken until
+    // the next restart.
     logger.error({ err }, "repairTimestampDefaults failed");
+    throw err;
   } finally {
     try {
       await client.end();

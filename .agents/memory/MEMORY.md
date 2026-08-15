@@ -1,3 +1,4 @@
+- [Database outage resilience](db-outage-resilience.md) — boot must never top-level-await the DB, pool needs an 'error' listener, retries single-flight; 28000=transient, 28P01=not.
 - [Card payment type vs on-account credit](card-type-vs-credit.md) — cardType (debit/credit) is ONLY for paymentMethod "card"/split card-portion; never set/label it for the on-account "credit" method.
 - [Ding top-up amount display currency](topup-currency-display.md) — UI shows Ding ReceiveValue in home currency; wallet/cost stays on SendValue (USD); SendTransfer uses only SkuCode; history stays on sendValue (legacy benefitValue mislabeled).
 - [Web receipt printing](web-receipt-printing.md) — web POS uses browser print; Android prints a lean image-free text receipt (ESC/POS pass-through services crash on heavy bitmaps), desktop unchanged. Mobile Expo ESC/POS is separate.

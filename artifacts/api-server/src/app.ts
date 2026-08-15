@@ -5,6 +5,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { sessionRevocationMiddleware } from "./middleware/session-revocation";
 import { subscriptionGuardMiddleware } from "./middleware/subscription-guard";
+import { isDbConnectivityError, noteDbFailure } from "./lib/db-health";
 
 // Refuse to boot in production if SESSION_SECRET is missing — otherwise the
 // JWT signing helpers throughout the codebase silently fall back to a hard-
@@ -60,5 +61,27 @@ app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
 app.use("/api", sessionRevocationMiddleware, subscriptionGuardMiddleware, router);
+
+// Final error handler. Express 5 forwards rejected async handlers here, so a
+// database outage lands as a normal error instead of an unhandled rejection.
+// Connectivity failures are reported as 503 "temporarily unavailable" (a
+// retry will work once the database is back) and never as fake/empty data.
+app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  const dbDown = isDbConnectivityError(err);
+  if (dbDown) noteDbFailure(err);
+  logger.error(
+    { err, url: req.originalUrl, method: req.method },
+    dbDown ? "Database unavailable while handling request" : "Unhandled request error",
+  );
+  res.status(dbDown ? 503 : 500).json(
+    dbDown
+      ? { error: "The database is temporarily unavailable. Please try again in a moment.", code: "DB_UNAVAILABLE" }
+      : { error: "Internal server error" },
+  );
+});
 
 export default app;
