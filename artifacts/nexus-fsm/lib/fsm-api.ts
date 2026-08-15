@@ -863,3 +863,113 @@ export function signCashHandover(
     headers: staffHeaders(staffId),
   });
 }
+
+/* ───────────── Messages ─────────────
+ * Text-only conversations with the office. The office is a collective
+ * identity: any admin/manager replies from the same thread. Delivery is by
+ * polling — there is no push channel in the Expo Go build.
+ */
+
+export interface MessageThreadSummary {
+  id: number;
+  kind: 'direct' | 'job';
+  workOrderId: number | null;
+  workOrderNumber: string | null;
+  workOrderItem: string | null;
+  workOrderStatus: string | null;
+  customerName: string | null;
+  staffId: number | null;
+  title: string;
+  lastMessageId: number | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  lastMessageSenderName: string | null;
+  unreadCount: number;
+}
+
+export interface ChatMessage {
+  id: number;
+  body: string;
+  senderStaffId: number | null;
+  senderName: string;
+  senderSide: 'office' | 'technician';
+  mine: boolean;
+  createdAt: string;
+}
+
+export function listThreads(
+  staffId: number,
+): Promise<{ side: 'office' | 'technician'; threads: MessageThreadSummary[] }> {
+  return request('/api/messaging/threads', { headers: staffHeaders(staffId) });
+}
+
+export function getUnreadCount(
+  staffId: number,
+): Promise<{ unreadCount: number; unreadThreads: number }> {
+  return request('/api/messaging/unread-count', { headers: staffHeaders(staffId) });
+}
+
+/** Opens (creating if needed) this technician's conversation with the office. */
+export function openDirectThread(
+  staffId: number,
+  withStaffId: number,
+): Promise<{ id: number; title: string }> {
+  return request(`/api/messaging/threads/direct/${withStaffId}`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+    headers: staffHeaders(staffId),
+  });
+}
+
+/** Opens (creating if needed) the shared conversation for one job. */
+export function openJobThread(
+  staffId: number,
+  workOrderId: number,
+): Promise<{ id: number; title: string }> {
+  return request(`/api/messaging/threads/job/${workOrderId}`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+    headers: staffHeaders(staffId),
+  });
+}
+
+export function listMessages(
+  staffId: number,
+  threadId: number,
+  afterId?: number,
+): Promise<{
+  threadId: number;
+  kind: 'direct' | 'job';
+  workOrderId: number | null;
+  side: 'office' | 'technician';
+  messages: ChatMessage[];
+}> {
+  const qs = afterId != null ? `?afterId=${afterId}` : '';
+  return request(`/api/messaging/threads/${threadId}/messages${qs}`, {
+    headers: staffHeaders(staffId),
+  });
+}
+
+export function sendMessage(
+  staffId: number,
+  threadId: number,
+  body: string,
+): Promise<ChatMessage> {
+  return request(`/api/messaging/threads/${threadId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+    headers: staffHeaders(staffId),
+  });
+}
+
+export function markThreadRead(
+  staffId: number,
+  threadId: number,
+  lastMessageId?: number,
+): Promise<{ ok: boolean; lastReadMessageId: number }> {
+  return request(`/api/messaging/threads/${threadId}/read`, {
+    method: 'POST',
+    body: JSON.stringify(lastMessageId != null ? { lastMessageId } : {}),
+    headers: staffHeaders(staffId),
+  });
+}

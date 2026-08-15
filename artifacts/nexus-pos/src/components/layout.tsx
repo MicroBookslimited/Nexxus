@@ -6,7 +6,7 @@ import {
   CreditCard, LogOut, ChevronDown, AlertTriangle, Clock, MapPin, Calculator,
   Menu, X, MoreHorizontal, BookOpen, Sun, Moon, ShieldOff, UserCheck, Monitor,
   FlaskConical, Factory, Store, Cpu, Landmark, Banknote, ClipboardList, Smartphone, DatabaseBackup,
-  Scale, CheckCircle, Tag, FileText, Ticket, LifeBuoy, PiggyBank, Wrench, PackageCheck,
+  Scale, CheckCircle, Tag, FileText, Ticket, LifeBuoy, PiggyBank, Wrench, PackageCheck, MessageSquare,
 } from "lucide-react";
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -58,6 +58,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/quotations",   label: "Quotations",      icon: FileText,        color: "text-teal-300",    permission: "orders.view" },
   { href: "/layaway",      label: "Layaway",         icon: PiggyBank,       color: "text-violet-300",  permission: "orders.view",        settingKey: "layaway_enabled" },
   { href: "/work-orders",  label: "Work Orders",     icon: Wrench,          color: "text-amber-300",   permission: "orders.view",        settingKey: "work_orders_enabled" },
+  { href: "/messages",     label: "Messages",        icon: MessageSquare,   color: "text-sky-400",     permission: "orders.view",        settingKey: "work_orders_enabled" },
   { href: "/packages",     label: "Packages",        icon: PackageCheck,    color: "text-sky-300",     permission: "orders.view",        settingKey: "packages_enabled" },
   { href: "/gift-vouchers",label: "Gift Vouchers",   icon: Ticket,          color: "text-fuchsia-300", permission: "vouchers.manage" },
   { href: "/cash",         label: "Cash Mgmt",       icon: Coins,           color: "text-yellow-400",  permission: "cash.open_session",  alwaysShowLabel: true },

@@ -18,6 +18,7 @@ import {
   useUpdateWorkOrderAppointment,
   useDeleteWorkOrderAppointment,
   useSaveManagerReview,
+  useOpenJobThread,
   APPOINTMENT_SLOTS,
   DEFAULT_APPOINTMENT_SLOT_ID,
   slotToRange,
@@ -36,10 +37,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, ShoppingCart, Printer, Wrench, ChevronDown,
-  Plus, Trash2, Search, Clock, MessageSquare, Calendar,
+  Plus, Trash2, Search, Clock, MessageSquare, MessageCircle, Calendar,
   FileText, Activity, Lock, Pencil, Check, X,
   ChevronRight, Save, ClipboardList, Boxes,
-  Star,
+  Star, Loader2,
 } from "lucide-react";
 import { WorkOrderInstallForm } from "@/components/WorkOrderInstallForm";
 import { WorkOrderMaterials } from "@/components/WorkOrderMaterials";
@@ -47,6 +48,7 @@ import { PENDING_WORK_ORDER_KEY, STATUS_LABEL, STATUS_STYLES, woStatusLabel } fr
 import { generateJobCard } from "@/lib/work-order-doc";
 import { useBusinessProfile } from "@/hooks/useBusinessProfile";
 import { useStaff } from "@/contexts/StaffContext";
+import { ThreadPanel } from "@/components/messaging/thread-panel";
 import { PinPad } from "@/components/PinPad";
 import { SignatureCanvas } from "@/components/SignatureCanvas";
 import type { SignatureCanvasHandle } from "@/components/SignatureCanvas";
@@ -102,7 +104,7 @@ const APPT_STATUS_STYLE: Record<string, string> = {
   no_show: "bg-slate-500/15 text-slate-500 border-slate-500/30",
 };
 
-type Tab = "overview" | "items" | "install" | "materials" | "notes" | "appointments" | "history" | "review" | "jobcard";
+type Tab = "overview" | "items" | "install" | "materials" | "notes" | "messages" | "appointments" | "history" | "review" | "jobcard";
 
 /* ─── Main component ─────────────────────────────────────────────────────── */
 export default function WorkOrderDetailPage() {
@@ -240,6 +242,7 @@ export default function WorkOrderDetailPage() {
     { key: "install", label: "Installation", icon: ClipboardList },
     { key: "materials", label: "Materials", icon: Boxes },
     { key: "notes", label: "Notes", icon: MessageSquare },
+    { key: "messages", label: "Messages", icon: MessageCircle },
     { key: "appointments", label: "Appointments", icon: Calendar },
     { key: "history", label: "History", icon: Activity },
     { key: "review", label: "QA Review", icon: Star },
@@ -333,6 +336,7 @@ export default function WorkOrderDetailPage() {
         />
       )}
       {tab === "notes" && <NotesTab workOrderId={wo.id} />}
+      {tab === "messages" && <JobMessagesTab workOrderId={wo.id} />}
       {tab === "appointments" && <AppointmentsTab workOrderId={wo.id} staff={staff ?? []} />}
       {tab === "history" && <HistoryTab workOrderId={wo.id} serviceChannel={wo.serviceChannel} />}
       {tab === "review" && <ManagerReviewTab wo={wo} />}
@@ -1115,6 +1119,59 @@ function ManagerReviewTab({ wo }: { wo: WorkOrder }) {
 }
 
 /* ── Notes Tab ───────────────────────────────────────────────────────────── */
+/* ─── Messages tab ────────────────────────────────────────────────────────
+ * Shared conversation for this job: the office plus every technician
+ * currently assigned to it. The thread is created on first open, so the tab
+ * works even before anyone has said anything. Notes remain the operational
+ * record — this is the back-and-forth that used to happen on WhatsApp.
+ */
+function JobMessagesTab({ workOrderId }: { workOrderId: number }) {
+  const { staff: sessionStaff } = useStaff();
+  const openJobThread = useOpenJobThread();
+  const [threadId, setThreadId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const requestedRef = useRef(false);
+
+  useEffect(() => {
+    if (!sessionStaff || requestedRef.current) return;
+    requestedRef.current = true;
+    openJobThread.mutate(
+      { staffId: sessionStaff.id, workOrderId },
+      {
+        onSuccess: (t) => setThreadId(t.id),
+        onError: (e: unknown) =>
+          setError(e instanceof Error ? e.message : "Could not open the conversation"),
+      },
+    );
+    // Runs once per mount; the ref guards against a duplicate create request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStaff, workOrderId]);
+
+  if (!sessionStaff) {
+    return (
+      <p className="p-6 text-center text-sm text-muted-foreground">
+        Enter your staff PIN to use messages — every message is sent under your name.
+      </p>
+    );
+  }
+  if (error) {
+    return <p className="p-6 text-center text-sm text-destructive">{error}</p>;
+  }
+  if (threadId == null) {
+    return (
+      <div className="flex justify-center p-8">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-[60vh] flex-col overflow-hidden rounded-lg border">
+      <ThreadPanel threadId={threadId} staffId={sessionStaff.id} />
+    </div>
+  );
+}
+
 function NotesTab({ workOrderId }: { workOrderId: number }) {
   const { data: notes, isLoading } = useWorkOrderNotes(workOrderId);
   const addNote = useAddWorkOrderNote();

@@ -8,6 +8,7 @@ export * from "./purchasing-api";
 export * from "./products-api";
 export * from "./layaway-api";
 export * from "./work-orders-api";
+export * from "./messaging-api";
 export * from "./work-order-install-form";
 export * from "./work-order-appointment-slots";
 export * from "./validation";

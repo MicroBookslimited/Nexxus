@@ -52,6 +52,7 @@ const LayawayPage = lazy(() => import("@/pages/layaway"));
 const WorkOrdersPage = lazy(() => import("@/pages/work-orders"));
 const WorkOrderDetailPage = lazy(() => import("@/pages/work-order-detail"));
 const WorkOrderPortalPage = lazy(() => import("@/pages/work-order-portal"));
+const MessagesPage = lazy(() => import("@/pages/messages"));
 const PackagesPage = lazy(() => import("@/pages/packages"));
 const GiftVouchers = lazy(() => import("@/pages/gift-vouchers"));
 const Account = lazy(() => import("@/pages/account"));
@@ -221,6 +222,7 @@ function POSRouter() {
       <Route path="/layaway"><ProtectedRoute component={LayawayPage} permission="orders.view" /></Route>
       <Route path="/work-orders"><ProtectedRoute component={WorkOrdersPage} permission="orders.view" /></Route>
       <Route path="/work-orders/:id"><ProtectedRoute component={WorkOrderDetailPage} permission="orders.view" /></Route>
+      <Route path="/messages"><ProtectedRoute component={MessagesPage} permission="orders.view" /></Route>
       <Route path="/wo/:id/:token" component={WorkOrderPortalPage} />
       <Route path="/packages"><ProtectedRoute component={PackagesPage} permission="orders.view" /></Route>
       <Route path="/gift-vouchers"><ProtectedRoute component={GiftVouchers} permission="vouchers.manage" /></Route>

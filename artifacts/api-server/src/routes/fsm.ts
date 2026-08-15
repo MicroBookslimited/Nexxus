@@ -85,7 +85,7 @@ export function isFsmAdmin(staff: FsmStaff): boolean {
 }
 
 /** SQL condition: staff is the primary assignee OR appears in the JSONB id list. */
-function assignedToStaff(staffId: number) {
+export function assignedToStaff(staffId: number) {
   return sql`(${workOrdersTable.assignedStaffId} = ${staffId} OR ${workOrdersTable.assignedStaffIds} @> ${JSON.stringify([staffId])}::jsonb)`;
 }
 

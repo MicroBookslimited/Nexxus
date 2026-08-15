@@ -245,6 +245,49 @@ async function ensureManagerReviewTable() {
   await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS work_order_manager_reviews_wo_unique ON work_order_manager_reviews (tenant_id, work_order_id)`);
 }
 
+// In-app messaging (Work Orders / FSM module). Additive and idempotent.
+// The partial unique indexes are load-bearing: they are what makes
+// get-or-create of a direct/job thread race-safe under concurrent opens.
+async function ensureMessagingTables() {
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS message_threads (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL,
+    kind text NOT NULL,
+    work_order_id integer REFERENCES work_orders(id) ON DELETE CASCADE,
+    staff_id integer,
+    last_message_id integer,
+    last_message_at timestamptz,
+    last_message_preview text,
+    last_message_sender_name text,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS message_threads_tenant_recent_idx ON message_threads (tenant_id, last_message_at)`);
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS message_threads_direct_unique ON message_threads (tenant_id, staff_id) WHERE kind = 'direct'`);
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS message_threads_job_unique ON message_threads (tenant_id, work_order_id) WHERE kind = 'job'`);
+
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS thread_messages (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL,
+    thread_id integer NOT NULL REFERENCES message_threads(id) ON DELETE CASCADE,
+    body text NOT NULL,
+    sender_staff_id integer,
+    sender_name text NOT NULL,
+    sender_side text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS thread_messages_thread_idx ON thread_messages (tenant_id, thread_id, id)`);
+
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS thread_reads (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL,
+    thread_id integer NOT NULL REFERENCES message_threads(id) ON DELETE CASCADE,
+    staff_id integer NOT NULL,
+    last_read_message_id integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS thread_reads_thread_staff_unique ON thread_reads (thread_id, staff_id)`);
+}
+
 // Repair any timestamp DEFAULTs that the deploy-time migration may have
 // dropped (see lib/repair-timestamp-defaults.ts for full context). Must run
 // BEFORE we start serving requests, otherwise the first save into the
@@ -254,6 +297,7 @@ await ensureEquipmentDeductedColumn();
 await ensureSupplierLinkColumns();
 await ensureCashCustodyTables();
 await ensureManagerReviewTable();
+await ensureMessagingTables();
 
 app.listen(port, async (err) => {
   if (err) {

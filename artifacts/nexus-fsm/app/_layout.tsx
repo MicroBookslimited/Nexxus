@@ -50,6 +50,8 @@ function RootLayoutNav() {
       <Stack.Screen name="login" />
       <Stack.Screen name="pin" />
       <Stack.Screen name="job/[id]" />
+      <Stack.Screen name="messages/index" />
+      <Stack.Screen name="messages/[id]" />
       <Stack.Screen name="eod-report" />
       <Stack.Screen name="cash-handover" />
       <Stack.Screen name="material-return" />

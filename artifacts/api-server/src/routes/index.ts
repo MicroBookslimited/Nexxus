@@ -64,6 +64,7 @@ import layawaysRouter from "./layaways";
 import workOrdersRouter from "./work-orders";
 import fsmRouter from "./fsm";
 import packagesRouter from "./packages";
+import messagingRouter from "./messaging";
 
 const router: IRouter = Router();
 
@@ -78,6 +79,7 @@ router.use(layawaysRouter);
 router.use(workOrdersRouter);
 router.use(fsmRouter);
 router.use(packagesRouter);
+router.use(messagingRouter);
 router.use(giftVouchersRouter);
 router.use(dashboardRouter);
 router.use(customersRouter);

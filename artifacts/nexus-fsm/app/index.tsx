@@ -17,7 +17,7 @@ import { Chip, PriorityChip, StatusChip, formatDate, isToday } from '@/component
 import { useAuth } from '@/context/AuthContext';
 import { useStaff } from '@/context/StaffContext';
 import { useColors } from '@/hooks/useColors';
-import { isAdminRole, listJobs, type FsmJob } from '@/lib/fsm-api';
+import { getUnreadCount, isAdminRole, listJobs, type FsmJob } from '@/lib/fsm-api';
 
 /** Warning triangle (issues & exceptions) and money-collectible colours. */
 const EXCEPTION_COLOR = '#F59E0B';
@@ -41,6 +41,17 @@ export default function JobQueueScreen() {
     enabled: !!token && !!staff,
     refetchInterval: 60_000,
   });
+
+  // Unread badge. Polled slowly — the thread screen polls fast while open.
+  const unreadQuery = useQuery({
+    queryKey: ['messaging-unread', staff?.id],
+    queryFn: () => getUnreadCount(staff!.id),
+    enabled: !!token && !!staff,
+    refetchInterval: 30_000,
+    // Messaging rides on the Work Orders add-on; if it's off, just hide the badge.
+    retry: false,
+  });
+  const unread = unreadQuery.data?.unreadCount ?? 0;
 
   const sections = useMemo(() => {
     const jobs = jobsQuery.data ?? [];
@@ -174,6 +185,23 @@ export default function JobQueueScreen() {
           </Text>
         </View>
         <Pressable
+          testID="messages-button"
+          onPress={() => router.push('/messages')}
+          style={({ pressed }) => [
+            styles.iconButton,
+            { backgroundColor: colors.card, borderColor: unread > 0 ? colors.primary : colors.border, opacity: pressed ? 0.7 : 1, marginRight: 8 },
+          ]}
+        >
+          <Feather name="message-square" size={18} color={colors.foreground} />
+          {unread > 0 ? (
+            <View testID="messages-badge" style={[styles.iconBadge, { backgroundColor: colors.primary, borderColor: colors.background }]}>
+              <Text style={[styles.iconBadgeText, { color: colors.primaryForeground }]}>
+                {unread > 9 ? '9+' : unread}
+              </Text>
+            </View>
+          ) : null}
+        </Pressable>
+        <Pressable
           testID="shift-button"
           onPress={() => router.push('/shift')}
           style={({ pressed }) => [
@@ -289,6 +317,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconBadgeText: { fontSize: 10, fontFamily: 'Inter_700Bold' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32 },
   emptyTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold' },
   emptyText: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center' },

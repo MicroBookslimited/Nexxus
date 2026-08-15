@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   Modal,
   Platform,
@@ -45,6 +46,7 @@ import {
   generateManagerCode,
   getWoPayments,
   recordWoPayment,
+  openJobThread,
   type FsmJobHistory,
   type FsmJobNote,
   type WoPaymentMethod,
@@ -126,6 +128,7 @@ export default function JobDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const jobId = parseInt(String(params.id), 10);
 
+  const [openingChat, setOpeningChat] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
   const [pauseOpen, setPauseOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
@@ -521,6 +524,36 @@ export default function JobDetailScreen() {
                   {(job.allocations?.length ?? 0) > 0
                     ? `${job.allocations.length} item${job.allocations.length === 1 ? '' : 's'} dispatched`
                     : 'View dispatch slip & log cable runs'}
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            </Pressable>
+
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>MESSAGES</Text>
+            <Pressable
+              testID="job-messages-link"
+              disabled={openingChat}
+              onPress={async () => {
+                if (!staff) return;
+                setOpeningChat(true);
+                try {
+                  const thread = await openJobThread(staff.id, job.id);
+                  router.push(`/messages/${thread.id}?title=${encodeURIComponent(`Job ${job.workOrderNumber}`)}`);
+                } catch (e) {
+                  Alert.alert('Messages', e instanceof Error ? e.message : 'Could not open the conversation');
+                } finally {
+                  setOpeningChat(false);
+                }
+              }}
+              style={[styles.card, styles.installLink, { backgroundColor: colors.card, borderColor: colors.border, opacity: openingChat ? 0.6 : 1 }]}
+            >
+              <Feather name="message-square" size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.body, { color: colors.foreground, fontFamily: 'Inter_600SemiBold' }]}>
+                  Message the office & crew
+                </Text>
+                <Text style={[styles.installLinkSub, { color: colors.mutedForeground }]}>
+                  Shared chat for everyone assigned to this job
                 </Text>
               </View>
               <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
