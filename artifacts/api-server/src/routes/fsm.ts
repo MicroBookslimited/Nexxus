@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, desc, inArray, sql, isNull } from "drizzle-orm";
+import { and, eq, ne, desc, inArray, sql, isNull, or } from "drizzle-orm";
 import {
   db,
   workOrdersTable,
@@ -95,6 +95,64 @@ function jobScope(staff: FsmStaff) {
 }
 
 const ACTIVE_STATUSES = ["received", "in_progress", "awaiting_parts", "on_hold", "ready"] as const;
+
+/**
+ * A finished job stays on the technician's list only while they still owe
+ * something physical on it: returnable tools signed out and not yet brought
+ * back, or a declared return waiting for a manager's signature. Without this
+ * the hand-back flow — which lives inside the job — would be unreachable.
+ */
+function stillInTechnicianCustody(staff: FsmStaff, tenantId: number) {
+  return sql`(
+    EXISTS (
+      SELECT 1 FROM ${workOrderAllocationsTable}
+      WHERE ${workOrderAllocationsTable.tenantId} = ${tenantId}
+        AND ${workOrderAllocationsTable.workOrderId} = ${workOrdersTable.id}
+        AND ${workOrderAllocationsTable.isReturnable} = TRUE
+        AND ${workOrderAllocationsTable.qtyAllocated} > ${workOrderAllocationsTable.qtyReturned}
+    )
+    OR EXISTS (
+      SELECT 1 FROM ${workOrderMaterialHandoversTable}
+      WHERE ${workOrderMaterialHandoversTable.tenantId} = ${tenantId}
+        AND ${workOrderMaterialHandoversTable.workOrderId} = ${workOrdersTable.id}
+        AND ${workOrderMaterialHandoversTable.status} = 'pending'
+        -- A declared return is personal: it belongs to the technician who
+        -- declared it, not to everyone else assigned to the job.
+        AND (${workOrderMaterialHandoversTable.staffId} = ${staff.id}
+             OR ${workOrderMaterialHandoversTable.staffId} IS NULL)
+    )
+  )`;
+}
+
+/**
+ * What a technician may see in their queue: live work assigned to them, plus
+ * any job — whatever the office has since done with it — where company property
+ * is still signed out. Completed work otherwise disappears at once, both to
+ * keep the list to live work and so customer details don't linger on a personal
+ * phone after the visit.
+ *
+ * Custody deliberately sits OUTSIDE the active-status test: the office can move
+ * a finished job on to collected while the tools are still in the van, and the
+ * hand-back flow lives inside the job.
+ */
+function technicianQueueScope(staff: FsmStaff, tenantId: number) {
+  return and(
+    assignedToStaff(staff.id),
+    or(
+      and(
+        inArray(workOrdersTable.status, [...ACTIVE_STATUSES]),
+        isNull(workOrdersTable.workCompletedAt),
+      ),
+      and(
+        ne(workOrdersTable.status, "cancelled"),
+        stillInTechnicianCustody(staff, tenantId),
+      ),
+    ),
+  );
+}
+
+/** Live work first, finished/closed jobs after it. */
+const queueOrder = sql`(${workOrdersTable.status} IN ('collected','cancelled') OR ${workOrdersTable.workCompletedAt} IS NOT NULL)`;
 
 /** Extra, query-derived signals shown as icons on the job card. */
 type JobFlags = {
@@ -216,11 +274,11 @@ router.get("/fsm/jobs", async (req, res): Promise<void> => {
     .leftJoin(customersTable, and(eq(workOrdersTable.customerId, customersTable.id), eq(customersTable.tenantId, tenantId)))
     .where(and(
       eq(workOrdersTable.tenantId, tenantId),
-      inArray(workOrdersTable.status, [...ACTIVE_STATUSES]),
-      jobScope(staff),
+      // Office roles see the whole book — every status, closed jobs included.
+      isFsmAdmin(staff) ? undefined : technicianQueueScope(staff, tenantId),
     ))
-    .orderBy(desc(workOrdersTable.createdAt))
-    .limit(200);
+    .orderBy(queueOrder, desc(workOrdersTable.createdAt))
+    .limit(isFsmAdmin(staff) ? 400 : 200);
 
   const flags = await loadJobFlags(tenantId, rows.map((r) => r.workOrder.id));
   res.json(rows.map((r) => toJob(r.workOrder, r.customerName, r.customerPhone, flags.get(r.workOrder.id))));

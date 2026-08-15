@@ -53,8 +53,19 @@ export default function JobQueueScreen() {
   });
   const unread = unreadQuery.data?.unreadCount ?? 0;
 
+  const admin = isAdminRole(staff?.role);
+
   const sections = useMemo(() => {
-    const jobs = jobsQuery.data ?? [];
+    const all = jobsQuery.data ?? [];
+    /**
+     * Finished work is kept apart from live work. Technicians only ever receive
+     * a finished job while tools are still signed out on it; office roles get
+     * the whole history, parked at the bottom.
+     */
+    const finished = all.filter(
+      (j) => !!j.workCompletedAt || j.status === 'collected' || j.status === 'cancelled',
+    );
+    const jobs = all.filter((j) => !finished.includes(j));
     const pending = jobs.filter((j) => j.assignmentStatus === 'pending');
     const accepted = jobs.filter((j) => j.assignmentStatus === 'accepted');
     const declined = jobs.filter((j) => j.assignmentStatus === 'declined');
@@ -71,8 +82,11 @@ export default function JobQueueScreen() {
     if (inProgress.length) out.push({ title: 'In progress', data: inProgress });
     if (upcoming.length) out.push({ title: 'Upcoming', data: upcoming });
     if (declined.length) out.push({ title: 'Declined', data: declined });
+    if (finished.length) {
+      out.push({ title: admin ? 'Completed & closed' : 'Awaiting tool return', data: finished });
+    }
     return out;
-  }, [jobsQuery.data]);
+  }, [jobsQuery.data, admin]);
 
   const renderJob = ({ item }: { item: FsmJob }) => (
     <Pressable
